@@ -1,0 +1,361 @@
+﻿#2::
+
+#NoEnv
+
+MsgBox, 0, Loading..., Autofarmer will start checking for battles. ,1
+	
+roundnumber = 0
+
+TestRound:
+sleep, 500
+loop,
+{
+sleep, 1000
+ImageSearch, roundX, roundY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\roundfinish.png
+if Errorlevel = 0
+	{
+	roundnumber = 0
+	}
+ImageSearch, startX, startY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\roundstart.png
+If ErrorLevel = 0
+	{
+	roundnumber++
+	Goto, RoundStart
+	}
+}
+
+RoundStart:
+Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+CoordMode, pixel, screen
+
+ImageSearch, playerX, playerY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\player.png
+if ErrorLevel = 0
+	{
+	player := "wolf"
+	}
+if ErrorLevel = 1
+	{
+	ImageSearch, playerX, playerY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\player2.png
+		if ErrorLevel = 0
+			{
+			player := "Alyssa"
+			}
+		if (ErrorLevel = 1)
+			{
+			MsgBox, 4, Oops! Something went wrong., Could not locate the active player on screen. Would you like to continue?, 5
+			IfMsgBox, Yes
+				{
+				return
+				}
+			IfMsgBox, No
+				{
+				ExitApp
+				}
+			}
+	} else if (Errorlevel = 0)
+		{
+		school = 0	
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\storm\storm.png
+		if Errorlevel = 0
+			{
+			priority = 1
+			school := "storm"
+			Goto, TestHammer
+			}
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\fire\fire.png
+		if Errorlevel = 0
+			{
+			priority = 2
+			school := "fire"
+			Goto, TestHammer
+			} 
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\myth\myth.png
+		if Errorlevel = 0
+			{
+			priority = 3
+			school := "myth"
+			Goto, TestHammer
+			}
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\life\life.png
+		if Errorlevel = 0
+			{
+			priority = 4
+			school := "life"
+			Goto, TestHammer
+			}
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\death\death.png
+		if Errorlevel = 0
+			{
+			priority = 5
+			school := "death"
+			Goto, TestHammer
+			}
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\ice.png
+		if Errorlevel = 0
+			{
+			priority = 6
+			school := "resources"
+			Goto, TestHammer
+			}
+		ImageSearch, schoolX, schoolY, playerX - 100, playerY - 100, playerX + 250, playerY + 250, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\balance.png
+		if Errorlevel = 0
+			{
+			priority = 7
+			school := "resources"
+			Goto, TestHammer
+			}
+		TestHammer:
+		hitter = 0
+		ImageSearch, hitterX, hitterY, 0, A_ScreenHeight / 2, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\storm\storm.png
+		if Errorlevel = 0
+			{
+			hitter := 1
+			hitschool := "storm"
+			}
+		if Errorlevel = 1
+			{	
+			ImageSearch, hitterX, hitterY, 0, A_ScreenHeight / 2, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\fire\fire.png
+			if Errorlevel = 0
+				{
+				hitter := 2
+				hitschool := "fire"
+				}
+			if Errorlevel = 1
+				{
+				ImageSearch, hitterX, hitterY, 0, A_ScreenHeight / 2, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\myth\myth.png
+				if Errorlevel = 0
+					{
+					hitter := 3
+					hitschool := "myth"
+					}
+				} 
+			}
+		}
+Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+
+if (hitter <= 3)
+	{
+	hammerX = %hitterX%
+	hammerY = %hitterY%
+	}
+enchant = 0 
+ImageSearch, enchantX, enchantY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\epic.png
+If ErrorLevel = 0
+	{
+	enchant = 4
+	} else if (Errorlevel = 1)
+		{
+		ImageSearch, enchantX, enchantY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\colossal.png
+		if ErrorLevel = 0
+			{
+			enchant = 3
+			} else if ErrorLevel = 1
+				{
+				ImageSearch, enchantX, enchantY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\gargantuan.png
+				if ErrorLevel = 0
+					{
+					enchant = 2
+					} else if Errorlevel = 1 
+						{
+						ImageSearch, enchantX, enchantY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\life\enchant.png
+						if ErrorLevel = 0
+							{
+							enchant = 1
+							} 
+						}
+				} 
+		}
+sharp = 0
+ImageSearch, sharpX, sharpY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\sharpen.png
+If ErrorLevel = 0
+	{
+	sharp = 1
+	}
+pass = 0
+ImageSearch, passX, passY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\pass.png
+If ErrorLevel = 0
+	{
+	pass = 1
+    } 
+blade = 0
+ImageSearch, bladeX, bladeY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\blade.png
+if ErrorLevel = 0
+	{
+	blade = 1
+	} 
+elemental = 0
+ImageSearch, elementalX, elementalY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\elemental.png
+if ErrorLevel = 0
+	{
+	elemental = 1
+	}
+selemental = 0
+ImageSearch, selementalX, selementalY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey 	Scripts\Wizard101\Autofarmer\resources\selemental.png
+if ErrorLevel = 0
+	{
+	selemental = %roundnumber%
+	}	
+aura = 0
+ImageSearch, auraX, auraY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\aura.png
+if ErrorLevel = 0
+	{
+	aura = 1
+	} 
+tower = 0
+ImageSearch, towerX, towerY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\tower.png
+if ErrorLevel = 0
+	{
+	tower = 1
+	}
+	
+if (priority <= 5)
+{
+hit3 = 0
+ImageSearch, hit3X, hit3Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit3.png
+if ErrorLevel = 0
+	{
+	hit3 = 1
+	}
+hit2 = 0
+ImageSearch, hit2X, hit2Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit2.png
+if ErrorLevel = 0
+	{
+	hit2 = 1
+	}
+hit1 = 0
+ImageSearch, hit1X, hit1Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit1.png
+if ErrorLevel = 0
+	{
+	hit1 = 1
+	}
+}	
+	
+MsgBox, Round:(%roundnumber%) Player:([%player%] X:%playerX% Y:%playerY%) Hammer:([%hammer%] X:%hammerX% Y:%hitterY%) School:(%school%) Elemental:(%elemental%) SharpenedElemental:(%selemental%)  Sharp:(%sharp%) Blade:(%blade%) Aura:(%aura%) Enchant:(%enchant%) Active hits:([%hit3%]:[%hit2%]:[%hit1%]) Tower:(%tower%) 
+	
+if (roundnumber >= 2) and (sharp >= 1) and (elemental = 1) and (hitter >= 1) 
+	{	
+	Mousemove, sharpX, sharpY, 5
+	Click
+	Mousemove, elementalX, elementalY, 5
+	Click
+	Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+	ImageSearch, elementalX, elementalY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\elemental.png
+	Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+	sleep, 1000
+	Mousemove, elementalX, elementalY, 5
+	Click
+	Mousemove, hammerX + 50, hammerY, 5
+	Click
+	} else if (elemental = 1) and (hitter >= 1)
+		{
+		ImageSearch, elementalX, elementalY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\elemental.png
+		Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+		sleep, 1000
+		Mousemove, elementalX, elementalY, 5
+		Click
+		Mousemove, hammerX + 50, hammerY, 5
+		Click
+		} else if (sharp = 1) and (blade = 1) and (school != "life")
+			{
+			Mousemove, sharpX, sharpY, 5
+			Click
+			Mousemove, bladeX, bladeY, 5
+			Click
+			Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+			sleep, 1000
+			ImageSearch, bladeX, bladeY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\blade.png
+			Mousemove, bladeX, bladeY, 5
+			Click
+			Mousemove, hammerX + 50, hammerY, 5
+			Click
+			} else if (blade = 1) and (school != "life")
+				{
+				Mousemove, bladeX, bladeY, 5
+				Click
+				Mousemove, hammerX + 50, hammerY, 5
+				Click 	
+				} else if (school = "life") and (blade = 1)
+					{
+					Mousemove, bladeX, bladeY, 5
+					Click
+					Mousemove, playerX, playerY, 5
+					Click
+					}
+						else if (aura = 1)
+						{
+						Mousemove, auraX, auraY, 5
+						Click
+						sleep, 1000
+						} else if (enchant >= 1) and (hit3 = 1)
+							{
+							Mousemove, enchantX, enchantY, 5
+							Click
+							sleep, 200
+							Mousemove, hit3X, hit3Y, 5
+							Click
+							Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+							sleep, 1000
+							ImageSearch, hit3X, hit3Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit3.png
+							Mousemove, hit3X, hit3Y, 5
+							Click
+							} else if (enchant = 0) and (hit3 = 1)
+								{
+								Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+								sleep, 500
+								ImageSearch, hit3X, hit3Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 	C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit3.png
+								Mousemove, hit3X, hit3Y, 5
+								Click
+								} else if (enchant >= 1) and (hit2 = 1) and (hit3 = 0)
+									{
+									Mousemove, enchantX, enchantY, 5
+									Click
+									sleep, 200
+									Mousemove, hit2X, hit2Y, 5
+									Click
+									Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+									sleep, 1000
+									ImageSearch, hit2X, hit2Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit2.png
+									Mousemove, hit2X, hit2Y, 5
+									Click
+									} else if (enchant = 0) and (hit2 = 1) and (hit3 = 0)
+										{
+										Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+										sleep, 500
+										ImageSearch, hit2X, hit2Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit2.png
+										Mousemove, hit2X, hit2Y, 5
+										Click
+										} else if (enchant >= 1) and (hit1 = 1) and (hit2 = 0) and 	(hit3 = 0) and (blade = 0) and (aura = 0)
+											{
+											Mousemove, enchantX, enchantY, 5
+											Click
+											sleep, 200
+											Mousemove, hit1X, hit1Y, 5
+											Click
+											Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+											sleep, 1000
+											ImageSearch, hit1X, hit1Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit1.png
+											Mousemove, hit1X, hit1Y, 5
+											Click
+											} else if (enchant = 0) and (hit1 = 1) and (hit2 = 0) and (hit3 = 0) and (blade = 0) and (aura = 0)
+												{
+												Mousemove, A_ScreenWidth/ 2, A_ScreenHeight / 2 + 100, 5
+												sleep, 500
+												ImageSearch, hit1X, hit1Y, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\%school%\hit1.png
+												Mousemove, hit1X, hit1Y, 5
+												Click
+												} else if (hit1 = 0) and (hit2 = 0) and (hit3 = 0) and (blade = 0) and (aura = 0) and (tower = 1)
+													{
+													ImageSearch, towerX, towerY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\tower.png
+													Mousemove, towerX, towerY, 5
+													Click
+													Mousemove, hammerX, hammerY, 5
+													Click
+													} else if (hit1 = 0) and (hit2 = 0) and (hit3 = 0) and (blade = 0) and (aura = 0) and (tower = 0)
+														{
+														ImageSearch, passX, passY, 0, 0, A_ScreenWidth, A_ScreenHeight, *3 C:\Users\Joshua\Documents\Autohotkey Scripts\Wizard101\Autofarmer\resources\pass.png
+														Mousemove, passX, passY, 5
+														Click
+}
+sleep, 10000
+Goto, TestRound
+Esc::ExitApp
