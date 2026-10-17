@@ -25,7 +25,7 @@ Keep each exe in its folder - it reads the pictures, PlayerStats.txt and
 vision\ from there (and AutoQuester\resources\). The vision helper still needs
 Python 3 with numpy and Pillow (pip install numpy pillow); without it cards are
 found the old way (ImageSearch). Rebuild after changing a script:
-powershell -ExecutionPolicy Bypass -File ..\build.ps1 (needs AutoHotkey v1.1).
+double-click ..\build.cmd (needs AutoHotkey v1.1 with its compiler; close the bot first).
 Ready-built: the Releases page of the GitHub repo (a zip with everything). Hover the green H in the tray to see what
 the walker is doing; debug.log has the battle and walking decisions in order.
 
