@@ -1,3 +1,5 @@
+<p align="center"><img src="assets/avatar.png" width="180" alt="Wizard101 bots"></p>
+
 # Wizard101 bots
 
 AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card learning, potions, dashboard) and
