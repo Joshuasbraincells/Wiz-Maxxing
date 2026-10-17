@@ -7,7 +7,7 @@ AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card lear
 
 ## Set up a PC
 
-1. Download **Wizard101-bots-vX.Y.zip** from the [Releases](../../releases) page and unzip it anywhere.
+1. Download the newest **Wiz-Maxxing-vX.Y.zip** from the [Releases](../../releases) page and unzip it anywhere.
 2. Double-click **Setup.exe**. It shows what's there already and installs what's missing:
    Python 3 and its numpy and Pillow packages (for the card matching), unblocks the downloaded files,
    and puts a "Wizard101 bot" shortcut on the desktop. AutoHotkey v1.1 and Git are optional (only to
