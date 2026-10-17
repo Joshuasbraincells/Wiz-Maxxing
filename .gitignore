@@ -14,3 +14,6 @@ backups/
 # Python
 __pycache__/
 *.pyc
+
+# Built executables (build.ps1) - published as GitHub release assets instead
+*.exe

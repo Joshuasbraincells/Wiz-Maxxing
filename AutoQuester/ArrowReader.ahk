@@ -385,13 +385,29 @@ ArrowLocate(scale)
 
 ;Reference shapes for mode 0 (arrow_refs.txt) or modes 1 and 2 (arrow_refs_hue.txt), each pre-rotated by
 ;-12.5..12.5 degrees (11 steps of 2.5, index 6 = 0). Loaded once; "" if the file is missing
+;The AutoQuester folder (resources\ is in it). A compiled script has no .ahk files to go by, so then:
+;next to the exe (AutoQuester.exe), else ..\AutoQuester (AutoFarmer.exe in AutoFarmer\)
+AqDir()
+	{
+	static dir := ""
+	if (dir != "")
+		return dir
+	if (!A_IsCompiled)
+		SplitPath, A_LineFile,, dir
+	else if (FileExist(A_ScriptDir "\resources\arrow_refs.txt"))
+		dir := A_ScriptDir
+	else
+		dir := A_ScriptDir "\..\AutoQuester"
+	return dir
+	}
+
 ArrowRefs(mode := 0)
 	{
 	static cache := {}, OFF := 70, GridW := 141
 	if (cache.HasKey(mode))
 		return cache[mode]
 	cache[mode] := ""
-	SplitPath, A_LineFile,, dir
+	dir := AqDir()
 	FileRead, text, % dir "\resources\" (mode >= 1 ? "arrow_refs_hue.txt" : "arrow_refs.txt")
 	if (ErrorLevel)
 		return ""

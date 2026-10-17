@@ -1688,7 +1688,7 @@ WalkZone(fresh := false)
 WalkZonesLoad()
 	{
 	WkKnownZones := {}
-	SplitPath, A_LineFile,, dir
+	dir := AqDir()
 	WkZonesFile := dir "\resources\known_zones.txt"
 	Loop, Read, %WkZonesFile%
 		if (Trim(A_LoopReadLine) != "")
@@ -1708,7 +1708,7 @@ WalkMemLoad()
 	WkMem := []
 	if (WkMemFile = "")
 		{
-		SplitPath, A_LineFile,, dir
+		dir := AqDir()
 		WkMemFile := dir "\resources\walk_memory.txt"
 		}
 	Loop, Read, %WkMemFile%

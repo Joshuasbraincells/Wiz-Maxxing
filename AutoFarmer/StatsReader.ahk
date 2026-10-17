@@ -34,7 +34,8 @@ FileDelete, %A_ScriptDir%\StatsReader.log
 ;AutoFarmer running? Then it does the reading (message 0x5555 = "read the stats")
 DetectHiddenWindows, On
 SetTitleMatchMode, RegEx
-farmer := WinExist("i)\\Autofarmer\.ahk - AutoHotkey ahk_class AutoHotkey")
+;(the script's window, or the compiled AutoFarmer.exe's)
+farmer := WinExist("i)\\Autofarmer\.(ahk - AutoHotkey|exe$) ahk_class AutoHotkey")
 SetTitleMatchMode, 1
 if (farmer)
 	{
