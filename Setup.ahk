@@ -8,7 +8,8 @@
 ;   numpy and Pillow  the Python packages the vision helper uses (pip), then checked by importing them
 ;   Unblock files     Windows marks files that came from the internet and warns about every exe; this
 ;                     takes the mark off the bot's files
-;   Desktop shortcut  "Wizard101 bot" -> AutoFarmer\Autofarmer.exe
+;   Start menu        a Wiz-Maxxing folder: Wiz-Maxxing (the bot), Wiz-Maxxing Setup, Stats reader, Quest walker only
+;   Desktop shortcut  "Wiz-Maxxing" -> Wiz-Maxxing.exe (it starts AutoFarmer\Autofarmer.exe)
 ;   AutoHotkey v1.1   only to change the scripts and rebuild the exes (build.cmd); asks for admin
 ;   Git               only to get updates with git pull; asks for admin
 #NoEnv
@@ -16,7 +17,7 @@
 SetWorkingDir, %A_ScriptDir%
 SetBatchLines, -1
 
-global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart
+global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS
 global SuLogHwnd := 0, SuBusy := 0
 
 if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
@@ -37,7 +38,9 @@ Gui, Su:Add, Checkbox, xm y+8 w260 vSuPk, numpy and Pillow (Python packages)
 Gui, Su:Add, Text, x+8 w350 vSuPkS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuUn, Unblock the bot's files
 Gui, Su:Add, Text, x+8 w350 vSuUnS, ...
-Gui, Su:Add, Checkbox, xm y+8 w260 vSuSh, Desktop shortcut "Wizard101 bot"
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuSm, Start menu (Wiz-Maxxing)
+Gui, Su:Add, Text, x+8 w350 vSuSmS, ...
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuSh, Desktop shortcut "Wiz-Maxxing"
 Gui, Su:Add, Text, x+8 w350 vSuShS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuAh, AutoHotkey v1.1 (to rebuild the exes)
 Gui, Su:Add, Text, x+8 w350 vSuAhS, ...
@@ -61,7 +64,9 @@ SuCheck(tick := false)
 	SuShow("SuPk", "SuPkS", pk, pk ? "installed" : (py = "" ? "needs Python first" : "not installed"), tick)
 	marked := SuMarkedCount()
 	SuShow("SuUn", "SuUnS", marked = 0, marked = 0 ? "nothing blocked" : marked " file(s) marked as downloaded", tick)
-	sc := FileExist(A_Desktop "\Wizard101 bot.lnk") != ""
+	sm := FileExist(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk") != ""
+	SuShow("SuSm", "SuSmS", sm, sm ? "in the Start menu" : "not there", tick)
+	sc := FileExist(A_Desktop "\Wiz-Maxxing.lnk") != ""
 	SuShow("SuSh", "SuShS", sc, sc ? "on the desktop" : "not there", tick)
 	ahk := SuAhk()
 	SuShow("SuAh", "SuAhS", ahk != "", ahk != "" ? "found: " SuShort(ahk) : "not installed (only needed to rebuild)", tick, false)
@@ -89,6 +94,8 @@ SuInstall:
 		SuInstallPackages()
 	if (SuUn)
 		SuUnblock()
+	if (SuSm)
+		SuStartMenu()
 	if (SuSh)
 		SuShortcut()
 	if (SuAh)
@@ -103,6 +110,12 @@ SuInstall:
 	return
 
 SuStartBot:
+	exe := A_ScriptDir "\Wiz-Maxxing.exe"
+	if (FileExist(exe))
+		{
+		Run, "%exe%", %A_ScriptDir%
+		return
+		}
 	exe := A_ScriptDir "\AutoFarmer\Autofarmer.exe"
 	if (FileExist(exe))
 		Run, "%exe%", %A_ScriptDir%\AutoFarmer
@@ -173,11 +186,48 @@ SuUnblock()
 SuShortcut()
 	{
 	SuLogLine("== Desktop shortcut")
-	target := A_ScriptDir "\AutoFarmer\Autofarmer.exe"
-	if (!FileExist(target))
-		target := A_ScriptDir "\AutoFarmer\Autofarmer.ahk"
-	FileCreateShortcut, %target%, %A_Desktop%\Wizard101 bot.lnk, %A_ScriptDir%\AutoFarmer, , Wizard101 bot (battles and quest walking)
-	SuLogLine(ErrorLevel ? "couldn't make it" : "made: " A_Desktop "\Wizard101 bot.lnk -> " target)
+	target := SuBotExe()
+	FileCreateShortcut, %target%, %A_Desktop%\Wiz-Maxxing.lnk, %A_ScriptDir%, , Wiz-Maxxing - the Wizard101 bot (battles and quest walking)
+	SuLogLine(ErrorLevel ? "couldn't make it" : "made: " A_Desktop "\Wiz-Maxxing.lnk -> " target)
+	;(the one an earlier Setup made, by its old name)
+	if (FileExist(A_Desktop "\Wizard101 bot.lnk"))
+		{
+		FileGetShortcut, %A_Desktop%\Wizard101 bot.lnk, old
+		if (InStr(old, A_ScriptDir) = 1)
+			FileDelete, %A_Desktop%\Wizard101 bot.lnk
+		}
+	}
+
+;Start menu: a Wiz-Maxxing folder with the bot, Setup, the stats reader and the quest walker on its own (only
+;the ones that are here). Start-menu search finds them ("Wiz-Maxxing")
+SuStartMenu(menuDir := "")
+	{
+	SuLogLine("== Start menu")
+	if (menuDir = "")
+		menuDir := A_Programs "\Wiz-Maxxing"
+	FileCreateDir, %menuDir%
+	made := 0
+	for each, e in [["Wiz-Maxxing", SuBotExe(), A_ScriptDir, "The Wizard101 bot: battles and quest walking"]
+		, ["Wiz-Maxxing Setup", A_ScriptDir "\Setup.exe", A_ScriptDir, "Installs what the bot needs"]
+		, ["Stats reader", A_ScriptDir "\AutoFarmer\StatsReader.exe", A_ScriptDir "\AutoFarmer", "Reads your wizard's stats for the kill check"]
+		, ["Quest walker only", A_ScriptDir "\AutoQuester\AutoQuester.exe", A_ScriptDir "\AutoQuester", "Walks to the quest goal, no battles"]]
+		{
+		if (!FileExist(e[2]))
+			continue
+		FileCreateShortcut, % e[2], % menuDir "\" e[1] ".lnk", % e[3], , % e[4]
+		if (!ErrorLevel)
+			made++, SuLogLine("made: " e[1] " -> " e[2])
+		}
+	SuLogLine(made ? made " shortcut(s) in " menuDir " - search the Start menu for Wiz-Maxxing" : "couldn't make any")
+	}
+
+;What starts the bot: Wiz-Maxxing.exe, else AutoFarmer\Autofarmer.exe, else the script
+SuBotExe()
+	{
+	for each, f in [A_ScriptDir "\Wiz-Maxxing.exe", A_ScriptDir "\AutoFarmer\Autofarmer.exe"]
+		if (FileExist(f))
+			return f
+	return A_ScriptDir "\AutoFarmer\Autofarmer.ahk"
 	}
 
 SuInstallAhk()

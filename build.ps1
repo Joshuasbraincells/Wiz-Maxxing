@@ -1,5 +1,5 @@
 # Builds the executables with AutoHotkey's compiler (Ahk2Exe):
-#   Setup.exe, AutoFarmer\Autofarmer.exe, AutoFarmer\StatsReader.exe, AutoQuester\AutoQuester.exe
+#   Setup.exe, Wiz-Maxxing.exe (starts the bot), AutoFarmer\Autofarmer.exe, AutoFarmer\StatsReader.exe, AutoQuester\AutoQuester.exe
 # Each exe has to stay in its folder: it reads the pictures, PlayerStats.txt, vision\ and
 # ..\AutoQuester\resources\ from there.
 # Easiest: double-click build.cmd (it runs this with PowerShell's script blocking turned off for this run).
@@ -44,7 +44,7 @@ $icon = Join-Path $PSScriptRoot 'assets\wizard.ico'
 $iconArg = if (Test-Path $icon) { " /icon `"$icon`"" } else { '' }
 
 # ---- build (a running exe can't be replaced)
-foreach ($script in 'Setup.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
+foreach ($script in 'Setup.ahk', 'Wiz-Maxxing.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
     $in = Join-Path $PSScriptRoot $script
     $out = [IO.Path]::ChangeExtension($in, '.exe')
     if (-not (Test-Path $in)) { throw "$script isn't there - run this from the Wizard101 folder (build.ps1 sits next to AutoFarmer\ and AutoQuester\)." }

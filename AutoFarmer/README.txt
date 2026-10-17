@@ -19,7 +19,8 @@ the walker) and the log as it's written. Windows+2 or the tray menu shows /
 hides it; it opens on a monitor the game isn't on and remembers where you put
 it (dashboard.ini). It never takes the focus by itself.
 
-Executables: Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
+Executables: ..\Wiz-Maxxing.exe starts the bot (Setup.exe puts it in the Start menu
+and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
 ..\AutoQuester) do the same as the .ahk scripts without AutoHotkey installed.
 Keep each exe in its folder - it reads the pictures, PlayerStats.txt and
 vision\ from there (and AutoQuester\resources\). The vision helper still needs
