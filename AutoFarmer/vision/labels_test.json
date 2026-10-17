@@ -1,0 +1,137 @@
+{
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/20261017_064826.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/wand",
+   null,
+   "balance/wand",
+   "balance/wand",
+   "balance/hit1",
+   "balance/hit1",
+   "balance/hit1"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/20261017_064853.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/hit1",
+   "balance/wand",
+   "balance/wand",
+   "balance/hit1",
+   "balance/wand",
+   "balance/hit1",
+   null
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/20261017_070718.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/hit1",
+   "balance/wand",
+   "balance/hit1",
+   null,
+   "balance/hit1",
+   "balance/wand",
+   "balance/wand"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/rounds/round_074440.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/wand",
+   "balance/wand",
+   "balance/hit1",
+   "balance/hit1",
+   "balance/heal1",
+   "balance/wand",
+   "balance/heal1"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/rounds/round_074554.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/heal1",
+   "balance/heal1",
+   "balance/wand",
+   "balance/hit1",
+   null,
+   "balance/heal1",
+   "balance/wand"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/rounds/round_074631.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/wand",
+   "balance/heal1",
+   "balance/heal1",
+   "balance/wand",
+   null,
+   "balance/heal1",
+   "balance/wand"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/bal/rounds/round_074657.png": {
+  "scale": 1.144,
+  "dirs": [
+   "balance",
+   "resources",
+   "life"
+  ],
+  "hand": [
+   "balance/hit1",
+   "balance/wand",
+   "balance/heal1",
+   "balance/heal1",
+   "balance/wand",
+   null,
+   "balance/heal1"
+  ]
+ },
+ "C:/Users/joshu/AppData/Local/Temp/claude/E--OneDrive-Programming-Projects-Ahk-Wizard101/b0bf81ea-387f-4dfd-b0fa-26fcf28e7b90/scratchpad/fs/round1.png": {
+  "scale": 1.144,
+  "dirs": [
+   "myth",
+   "resources"
+  ],
+  "hand": [
+   "myth/blade",
+   "resources/sharpen",
+   "myth/blade",
+   "resources/potent",
+   null,
+   null,
+   "resources/colossal"
+  ]
+ }
+}

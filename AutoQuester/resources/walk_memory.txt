@@ -1,0 +1,22 @@
+; Walker.ahk's remembered obstacles, one per line (delete a line, or the file, to forget):
+; zone|distance to the goal where it got stuck|side that got round it (1 right, -1 left)|ms walked along it|times it worked|times it didn't
+Karamelle/KM_Z00_HUB|349|1|1800|1|0
+Karamelle/KM_Z03_GumdropForest|381|1|900|2|0
+Karamelle/KM_Z03_GumdropForest|325|-1|900|1|0
+Karamelle/KM_Z03_GumdropForest|351|-1|900|2|0
+Karamelle/KM_Z00_HUB|323|-1|900|1|0
+Polaris/PL_Z01_Harbor|538|1|900|1|1
+Polaris/Interiors/PL_Z06_KambataUnderwater|47|-1|3600|1|0
+WizardCity/WC_Ravenwood|538|-1|900|1|0
+WizardCity/WC_Streets/WC_Unicorn|270|1|900|2|0
+WizardCity/WC_Streets/WC_Unicorn|176|-1|900|1|0
+WizardCity/WC_Streets/WC_Unicorn|28|1|900|1|0
+WizardCity/WC_Streets/Interiors/WC_Unicorn_HedgeMaze|28|1|900|1|0
+WizardCity/WC_Streets/WC_Unicorn|313|-1|900|2|0
+WizardCity/WC_Streets/WC_Unicorn|226|1|900|1|0
+WizardCity/WC_Hub|247|1|900|1|0
+WizardCity/WC_Streets/WC_Cyclops|200|-1|1800|1|0
+WizardCity/WC_Streets/WC_OldeTown|167|-1|1800|1|0
+WizardCity/WC_Streets/WC_Triton|209|1|1800|1|0
+WizardCity/WC_Streets/WC_Triton|185|-1|2700|1|0
+WizardCity/WC_Streets/WC_Triton|150|1|900|2|0

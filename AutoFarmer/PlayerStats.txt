@@ -1,0 +1,148 @@
+damage:160
+avbosshealth:10000
+; ^ Keep these two lines first; older AutoFarmer versions read them by position. avbosshealth isn't used anymore.
+; StatsReader last read your storm stats on 2026-10-14 19:33
+;
+; AutoFarmer kill calculator settings. Each line is key:value and anything after ; is a comment.
+; A key you delete falls back to the default shown here. Edit, then restart the script (Windows+1).
+;
+; At the start of each round the script reads every enemy's health off the nameplates at the top
+; of the game window, works out the MINIMUM damage of each hit in your hand (no crits), and if one
+; kills everything it casts that hit right away instead of putting up more blades/traps.
+; Wizard101 needs Options > Gameplay Options > "2D Combat Display" turned ON for the nameplates.
+
+; ---- Your wizard (from your character stats page) ----
+; damage: your outgoing damage % for the school you hit with (written above)
+pierce:7
+; enemyresist: resist % assumed for every enemy, since it can't be read from the screen
+enemyresist:15
+; killmargin: only count a kill when predicted damage >= health + this % (covers shields, misreads)
+killmargin:15
+; solotraps: 0 = never count traps/feints on the boss (safe: another player's or a henchman's hit on the
+; boss uses them up without the script seeing it). Set it to 1 only if you fight bosses alone.
+solotraps:0
+; reboost: 1 = after each hit the script may cast its blades/traps again for the next hit.
+; 0 = each blade/trap is cast once per battle (how AutoFarmer always played).
+reboost:0
+; Discarding (right-click): spare blades/Sharpen are always discarded once they can't stack any more
+; (with reboost:0 that's after a blade's sharpened and plain casts have both been used this battle).
+; discardunaffordable: 1 = a hit that won't cast is discarded (unless enchanted). 0 = keep it for a later round.
+; (The script reads your pips off your nameplate and doesn't try hits you can't afford yet.)
+discardunaffordable:0
+; (Values may be written with or without a %. A line that can't be read pops up a warning at start.)
+
+; ---- Clicking ----
+; mousespeed: how the mouse moves to what it clicks: 0 = jumps there, 1 = fastest glide (was 5, slow)
+mousespeed:1
+; clickwait: ms between the mouse arriving and the click (was 150)
+clickwait:40
+; clickafter: % of the old wait after each click (a card, then its target) - lower is faster; raise it if
+; a target click gets missed after a card
+clickafter:50
+
+; ---- Health reading ----
+; healthocr: 1 = read enemy health and use the kill check, 0 = off (old behaviour)
+healthocr:1
+; ocrscale: how much to enlarge the nameplates before reading them (the next size up is also read
+; and both must agree). If Statistic mode (Alt+S) keeps saying health couldn't be read, try 1, 2 or 3.
+ocrscale:2
+; platestrip: height in pixels of the strip at the top of the game window holding the enemy nameplates
+platestrip:110
+
+; ---- Hit spells: MINIMUM damage of the card each hitN.png picture is, per school ----
+; These are guesses from common spells. Set them to the spells actually in your deck!
+; For X-pip spells (e.g. Tempest) put the damage PER PIP and set its pips to 0; the kill check multiplies by your pips.
+; Damage over time doesn't count, only the up-front hit.
+storm.hit1:80
+; ^ Tempest, damage per pip (picture: storm\hit1.png, from your deck)
+storm.hit1pips:0
+; ^ X-pip spell
+storm.hit2:520
+storm.hit2pips:5
+; ^ Glowbug Squall (picture: storm\hit2.png, from your deck)
+storm.hit3:690
+storm.hit3pips:7
+; ^ Storm Lord (picture: storm\hit3.png, from your deck)
+storm.hit4:805
+storm.hit4pips:9
+; ^ Sirens (storm\hit4.png is still the old 2018 picture; only used in boss fights)
+fire.hit1:305
+; ^ Meteor Strike
+fire.hit2:430
+; ^ Raging Bull
+fire.hit3:540
+; ^ Fire Dragon (up-front hit only)
+fire.hit4:1265
+; ^ Wicked Bull
+myth.hit1:290   ; Mystic Colossus (removes a shield, then this much)
+myth.hit1pips:5
+myth.hit1target:1
+; ^ Mystic Colossus strikes one enemy
+myth.hit2:275   ; Humongofrog, to all enemies (275-315: the lowest, like every hit here)
+myth.hit2pips:4
+myth.hit3:700
+; ^ myth\hit3.png isn't cut yet (only the old 2018 picture), so this isn't used
+myth.hit4:790
+; ^ myth\hit4.png isn't cut yet either
+balance.hit1:65   ; Scarab (65-105, the lowest)
+balance.hit1pips:1
+balance.hit1target:1
+balance.hit2:160   ; learned 20261017: Scorpion 160-200 (read as 260-200, corrected) - picture ui1.144\learned\c261017102906_1474.card.png
+balance.hit2pips:2
+balance.wand:65   ; Minor Clash, the wand's card (no pips)
+balance.wandtarget:1
+balance.heal1pips:2   ; Pixie: heals you 400 (balance\heal1.png)
+; ^ strikes one enemy: after the card, click an enemy (the boss, else the one with the least health)
+
+; ---- Healing ----
+; healat: cast a healing card (heal1.png / heal2.png in the school's folder) on yourself when your health
+; is under this % (read off your name plate). Set <school>.heal1pips for its cost.
+healat:40
+; potionat: out of battle, drink a potion (Ctrl+O) when your health is under this % - out of potions, the
+; bot buys more with gold along the route you recorded (tray menu "Record potion route...", Potions.ahk)
+potionat:40
+
+; ---- Blades on your hitter (%) ----
+blade:35
+; ^ your school's blade (Stormblade/Fireblade/Mythblade)
+elementalblade:35
+spiritblade:35
+blade3:25
+; ^ Balanceblade
+blade4:20
+; ^ Bladestorm
+sharpen:10
+; ^ extra % a Sharpened blade gets
+
+; ---- Traps on the boss (%) ----
+trap:40
+; ^ your school's trap
+elementaltrap:30
+spirittrap:30
+trap3:30
+; ^ Hex
+feint:70
+potent:10
+; ^ extra % a Potent trap gets
+
+; ---- Other boosts ----
+aura:25
+; ^ your school aura (counted for 3 rounds after you cast it)
+; (Your bubble/global is never counted: any global an enemy or ally casts replaces it.)
+enchant1:100
+; ^ life\enchant.png enchant (Strong = 100, Giant = 125, Monstrous = 175)
+enchant2:225
+; ^ Gargantuan
+enchant3:275
+; ^ Colossal
+enchant4:300
+; ^ Epic
+
+; ---- Read from your stats page by StatsReader.ahk (for reference) ----
+accuracy:35
+block:101
+critical:703
+
+; ---- Cards the bot learned by itself (CardLearn.ahk; learned\cards.txt lists them) ----
+balance.hit2target:1
+balance.maxhealth:1057   ; your balance wizard's most health (off its name plate in battle; Potions.ahk)

@@ -1,0 +1,253 @@
+Made By JoshuasBrainCells
+
+One script for battles and walking:
+Autofarmer.ahk now does both and starts by itself when you double-click it:
+it fights whenever a battle round is up (the Pass button shows) and otherwise
+walks your wizard towards the quest goal by following the yellow quest arrow
+(the walking comes from ..\AutoQuester\Walker.ahk). Keys:
+	F8           walking on / off
+	Windows+1    restart (Alt+Esc too)
+	Windows+Esc  quit
+It only presses movement keys while Wizard101 is the active window. Don't run
+AutoQuester.ahk at the same time. Hover the green H in the tray to see what
+the walker is doing; debug.log has the battle and walking decisions in order.
+
+Auto-reconnect (Reconnect.ahk, on from the start):
+	- Disconnected (e.g. "You have been disconnected due to inactivity." after
+	  about 15 minutes idle outside battle, or "Connection Lost!"): it reads
+	  the game's own log, finds RECONNECT on the box and clicks it - never
+	  QUIT. That logs back in without a password and puts you back where you
+	  were. It first clicks with the game left in the background; if the game
+	  ignores that it brings the game to the front for a moment and gives
+	  focus back. If the character select screen stays up, it clicks Play
+	  (with the game brought to the front: that screen ignores background
+	  clicks).
+	  Failed tries wait longer each time (30 s, 1, 2, 4, then 10 minutes).
+	- The game closed (a crash or Quit): it asks whether to start it again
+	  (yes after 60 seconds if nobody answers), starts it, types your saved
+	  login into the game's login box and goes back in. It only presses Enter
+	  once it can read your username back in the login box, and stops for
+	  good if the game turns the login down.
+	- "Client is out of date" after maintenance: it starts the launcher so it
+	  can patch (it fills in the launcher's login too - not tried yet).
+	Tray menu: "Auto-reconnect on/off", and "Set Wizard101 login..." to save
+	your username and password for when the game has to be started again.
+	The login is kept encrypted in Windows Credential Manager as
+	"Wizard101Bot" (Control Panel > Credential Manager > Windows Credentials
+	to see or remove it), never in a file and never in debug.log. Without
+	it, only the RECONNECT part works. debug.log lines start "Reconnect:".
+
+Window size / UI size (any resolution):
+The game draws its buttons and cards bigger or smaller depending on the
+window size / resolution, the Windows display scaling and Options > UI Size,
+and a picture only matches at the size it was cut at. Pictures are cut at a
+few sizes:
+	resources\, storm\, ...  the main set: 1920x1080 window, 100% scaling,
+	                         UI Size Small (UI scale 1)
+	ui1.265\                 1920x1200 window at 100% scaling (UI 1.265x):
+	                         Storm and Myth cards, Pass, the spellbook, the
+	                         name plate, the school icons (see its README)
+At any other size the bot makes its own set (PicScale.ahk): in the first
+battle round at that size it reads the Pass and Flee buttons (OCR) to measure
+the UI scale, checks it by making the Pass button at sizes around that, then
+resizes every picture it needs from the sharpest cut set into
+generated\ui<scale>\ (debug.log: "UI size: ..." and "made ..."). That first
+round takes ~10 s longer; the made set is kept, so later rounds and later
+runs at that size start straight away. Seen working at 2560x1440 borderless
+(UI 1.14). Made pictures are found with a little more colour tolerance and
+remade by themselves when a cut picture changes; delete generated\ to make
+them all again. Shrinking works best, so cut new pictures at the biggest size
+you play at (a ui<scale> folder: the bot finds those by itself).
+The script uses whichever set's Pass button or spellbook it can see (debug.log
+says "Pictures: ..."), and sizes its search areas to match. A card with no
+picture in any set just counts as not in hand (debug.log says which).
+
+Sometimes we just need a break from all that farming in wizard101
+or maybe you've been questing and are just sick of it, i have just
+the solution for you. I thought I'd take some time out of my life
+to create a program which basically plays the game for me. With this
+program, I've been able to read so many books AND get Darkmoor gear
+easily. Sound Good? You say you don't like to read? Well just endure
+this much and then you'll be overpowered in Wizard101 in no time.
+
+To begin install Autohotkey from https://www.autohotkey.com then 
+open the AutoFarmer.ahk file. Once its open, you should be able to see 
+it in the tab menu on the Taskbar. You can then activate the script 
+by pressing the key combo "Windows+1".
+
+Now whenever you join a battle the program will take over your
+mouse and create a strategy based on the cards you have. Please
+note however it only has a select few cards out of the many that 
+are in Wizard101. so far it mainly uses hit all spells, blades,
+traps, feints, auras, enchants, towers, and bubbles
+
+This program prioritizes cards based on priority. The priority 
+chart goes in this order, feint, trap, blade, aura, hit, tower,
+reshuffle, and if no other move can be found, it'll pass. So what
+this means is that if there's a blade and a tower in hand, it'll use
+the blade first because it has a higher priority.
+
+Now this program isn't smart enough to figure out where a 
+boss might be(If it can't do that it can't trap, feint or convert!), 
+so I've added a hotkey that allows you to manually set it, the 
+key combo is Alt+1, A message box will appear instructing 
+the player to click where the boss is. Please be careful where you click
+if you click in the wrong spot, it'll remember it and won't work correctly.
+
+Occasionally the program chooses a ally to blade which the player
+using the program disagrees with, I've added a hotkey to 
+solve this issue as well. Use the key combo Alt+2 to 
+manually set the "Hammers" location. Works exactly like the 
+boss location.
+
+Kill check:
+At the start of every round the program reads each enemy's health off the
+nameplates at the top of the screen and works out how much damage each hit
+in your hand would do. If one of them kills every enemy it casts it right
+away (the cheapest one that works, and without the enchant if it doesn't
+need it) instead of putting up more blades and traps. If it can't read the
+health, or no hit is enough yet, it plays exactly like before.
+	- Turn on Options > Gameplay Options > "2D Combat Display" in Wizard101,
+	  that's what shows the enemy nameplates.
+	- Needs Windows 10 or 11 (it uses the OCR built into Windows).
+	- Open PlayerStats.txt and set your damage %, and the damage of the hit
+	  spells in your deck. The numbers in there are only guesses.
+	- When you set the boss with Alt+1, click the boss's nameplate at the top
+	  of the screen. That way the program knows which enemy your traps and
+	  feints are on. In a boss fight the kill check stays off until it can
+	  find the boss's nameplate.
+	- Statistic mode (Alt+S) shows a box beside the game window with the
+	  health it read and the damage it thinks each hit will do, handy for
+	  checking your settings. It needs room beside the window (it's never
+	  drawn over the game); Windows+2 in developer mode shows the same info.
+	- It plays it safe rather than wasting a hit: it assumes no crits, adds a
+	  safety margin, only counts blades the program put on your own wizard,
+	  only counts traps if you set solotraps to 1 in PlayerStats.txt (only do
+	  that if you fight bosses alone), and never counts bubbles (anyone's
+	  global replaces yours).
+	- It's switched off in Dual mode, since both windows share what's been
+	  cast and it can't tell what has landed yet.
+
+Stats reader (any window size, any wizard):
+The kill check needs your wizard's Damage and Armor Piercing for the school it
+hits with. They're read off the Spellbook's stats pages (it presses C, which
+opens the book at the character page, reads Damage, Accuracy, Critical, Block
+and Armor Piercing for that school, and closes the book) and kept in
+PlayerStats.txt as <school>.damage, <school>.pierce, ... - one set per
+school, with <school>.charid saying which character they're from. The plain
+damage / pierce lines near the top are only used for a school with none.
+	- AutoFarmer does it by itself: when it fights with a wizard whose
+	  school has no stats yet, or whose stats are from another character of
+	  that school, it reads them at the next quiet moment out of battle -
+	  with Wizard101 in front and your hands off the mouse and keyboard for
+	  5 s (it stops at once if you touch them, if the game loses focus or a
+	  battle starts). At most once every 30 minutes per character.
+	  debug.log: "Stats: ...". It knows each character's school from the
+	  badge by its name plate in battle (resources\characters.txt).
+	- Tray menu "Read wizard stats now" (or double-click StatsReader.ahk;
+	  while AutoFarmer runs, that just asks AutoFarmer to do it): read them
+	  again, e.g. after changing gear.
+	- StatsReader.ahk on its own (AutoFarmer not running): works out the UI
+	  size and which character is logged in by itself; for a character
+	  AutoFarmer has never seen fight, it takes the school with clearly the
+	  highest damage. School at the top of StatsReader.ahk forces one.
+Numbers are read with digit pictures resized to the UI size, checked with
+Windows OCR; one that can't be read for sure keeps its old value, so it never
+writes a wrong number (StatsReader.log / debug.log list every reading, and
+pictures of the two pages go to %TEMP%\Wizard101 bot rounds\stats_*.bmp).
+
+New cards (CardLearn.ahk - needs the Python vision helper):
+Every round the bot reads the hand card by card. A card it has no picture
+for, shown in colour (a greyed-out one - not enough pips - waits until it's
+castable), is learned:
+	- its type from the icon at the bottom right of its picture
+	  (ui1.144\cardicons: damage = hits one enemy, aoe = hits all, heal,
+	  ward = a shield), its pip cost from the yellow digit
+	  (ui1.144\carddigits), its numbers from its text (OCR: "65-105" -> 65)
+	- it's saved as <picture set>\learned\<id>.card.png (the whole card, for
+	  you to look at) and .png (the picture the bot looks for)
+	- it goes into a free slot (one whose picture was never cut), so the
+	  battle code uses it like the hand-cut cards: a hit -> <school>\hit1-3,
+	  only where they stay weakest to strongest (the battle casts hit3 first;
+	  hit4 only for one stronger than all, as hit4 is only cast on bosses), no
+	  pips -> wand, heal -> heal1/heal2, shield -> resources\tower. Its numbers
+	  go into PlayerStats.txt (<school>.hitN, hitNpips, hitNtarget, ...) under
+	  "Cards the bot learned by itself". The damage is read at three sizes
+	  and two must agree (and make sense, low-high); if not it's written as 0,
+	  so the kill check never counts on it - fix the number by hand then.
+	- cards are learned per school (each wizard's own), shields for all
+	- seen at another UI size, a learned card is cut again at that size
+	- no free slot or an unknown type: it's only kept and recognised from then
+	  on (and tried for a slot again whenever it's in hand)
+Copies of a card shimmer a little, so a learned picture is cut solid from one
+copy and the pixels that differ in the next copies turn see-through by
+themselves. A pip cost that couldn't be read is guessed as the pips you had
+(the card was castable), and brought down whenever it shows up castable with
+fewer. learned\cards.txt lists everything learned; debug.log: "learned a new
+card ...".
+
+Potions (Potions.ahk - needs the Python vision helper):
+Out of battle the bot reads your health off the red globe. Under potionat %
+(PlayerStats.txt, default 40) of your most health (read off your name plate in
+battle) it drinks a potion (Ctrl+O). If health doesn't go up, you're out, and
+it goes to buy more WITH GOLD (never Crowns) along a route you record once:
+	- Tray menu "Record potion route...": the bot marks your spot (Page
+	  Down) and takes you to this world's Commons (End). Walk to the potion
+	  seller (Hilda Brewer, Wizard City Fairegrounds) with the KEYBOARD only,
+	  press X to talk, click Fill All (and close the window), press F9. The
+	  route is saved for that Commons (routes\<zone>.txt) and you're recalled
+	  back (Page Up). One route per world you farm in; use the mount you'll
+	  farm with, since a route is a timing.
+	- When out of potions: Mark (Page Down), Commons (End), the route,
+	  drink, Recall (Page Up) back to the mark. Before each click it reads the
+	  screen round it - any "Crown" stops the run. A battle, you touching the
+	  mouse or keyboard, or a missing loading screen stops it too.
+	- Tray menu "Buy potions now (along the route)" does a run straight away.
+Mark & Recall: since Nov 2024 they cost 1-10 mana and recalling keeps the
+mark. Some places (dorms, houses, some dungeons) can't be marked.
+
+Along side simply playing the game this program has certain modes
+all of which include, command mode, response mode, dual mode and lore mode.
+Just as a note, all of these can be turned off be re-inputing the
+same key combo.
+
+At any moment you can close the program with "Windows+Escape"
+
+Dual mode:
+Pressing the key combo Alt+D will activate this mode. When activated,
+at the end of each round the program will tab out as to switch to another
+instance of wizard101. Dual mode is only to be used when you're playing on
+two accounts. For better consistency close everything but the two instances
+of Wizard101.
+
+Command mode:
+This mode allows the use of commands from other players, especially used
+for teleporting. To activate, use the key combo "Alt+C". When activated
+all commands are available to other players. The phrases are as shown.
+	Port: 
+		When sent to the player running the program, it'll teleport to
+		the playing calling.
+	Afk: 
+		When sent to the player running the program, it goes 
+		into a "Timeout prevention sequence" which basically means it
+		makes the player move so that you wont disconnect from timeout.
+	Enter:
+		When sent to the player running the program, 
+		it'll press "X" and it's used for interacting with things, and 
+		entering sigils.
+	Walk:
+		When sent to the player running the program, it walks
+		the recipient exactly two seconds forward.
+		
+LoreMode:
+When activated, this mode will proceed to farm lore infinitely
+so long as the player has mana and or potions. The main way of getting back
+to the sigil is by logging out and in, so don't get scared when it does so.
+Every cycle, the program waits exactly 30 seconds for the player to regain health.
+		
+Response mode:
+what this mode does is respond to the player issuing the command before 
+initiating the command itself. I Primarily made it for shits and giggles but
+it does have its uses. For instance, when a command cannot be achieved for 
+whatever reason, response mode will report an error instead of it's 
+normal phrase.

@@ -1,0 +1,2 @@
+; Wizard101 characters (CharID from the game's log) and the school AutoFarmer saw each fight with
+192247409141544743|balance

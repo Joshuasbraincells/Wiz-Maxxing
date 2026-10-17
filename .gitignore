@@ -1,0 +1,16 @@
+# Logs the bots write while running
+*.log
+*.log.old
+debug.log
+
+# Pictures AutoFarmer makes by itself for other UI sizes (rebuilt when needed)
+AutoFarmer/generated/
+
+# Old copies kept on disk (git history does this now)
+backups/
+*.bak
+*.tmp
+
+# Python
+__pycache__/
+*.pyc

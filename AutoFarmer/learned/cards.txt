@@ -1,0 +1,5 @@
+; Cards AutoFarmer learned by itself (CardLearn.ahk), one per line:
+; id|school it was learned for|type (damage = one enemy, aoe = all, heal, ward; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it
+; Pictures: <picture set>\learned\<id>.card.png (whole card) and .png (the picture cut from it).
+c261017102906_1004|balance|ward|0|0|50|0|resources\tower|1.144|ui1.144|20261017102906|-50% to avS.
+c261017102906_1474|balance|damage|2|0|160|1|balance\hit2|1.144|ui1.144|20261017102906|160-200 (Scorpion)
