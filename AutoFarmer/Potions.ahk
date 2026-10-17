@@ -68,6 +68,11 @@ PotionGlobes()
 	{
 	answer := VisionGet("/globes?left=" GameLeft "&bottom=" GameTop + GameH "&scale=" Round(UiScale, 3), 1500)
 	RegExMatch(answer, "health\|(\d*)", h), RegExMatch(answer, "mana\|(\d*)", m)
+	;(for the dashboard)
+	if (h1 != "")
+		DashSee("hp", h1 (PotionMost() ? "/" PotionMost() " (" Round(100 * h1 / PotionMost()) "%)" : ""))
+	if (m1 != "")
+		DashSee("mana", m1)
 	return {hp: h1, mana: m1}
 	}
 

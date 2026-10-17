@@ -56,6 +56,8 @@ LearnCards()
 	answer := VisionGet("/hand?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList() learnedPics "&learned=" LearnUri(learnedList) "&here=" LearnUri(hereRel), 3000)
 	if (answer = "")
 		return false
+	;(what's in hand, for the dashboard)
+	DashHandSeen(answer)
 	;(a card learned at another UI size was cut into a new folder for this size: a picture set from now on)
 	if (InStr(FileExist(here), "D"))
 		LearnSetDir(true)

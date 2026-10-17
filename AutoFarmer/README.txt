@@ -11,6 +11,14 @@ walks your wizard towards the quest goal by following the yellow quest arrow
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
+cast per card, passes, discards, kill-check hits, potions, cards learned),
+what the bot sees right now (your health/mana/pips, the hand card by card - ?
+for a card it doesn't know, * for a greyed-out one - enemies' health, zone,
+the walker) and the log as it's written. Windows+2 or the tray menu shows /
+hides it; it opens on a monitor the game isn't on and remembers where you put
+it (dashboard.ini). It never takes the focus by itself.
+
 Executables: Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
 ..\AutoQuester) do the same as the .ahk scripts without AutoHotkey installed.
 Keep each exe in its folder - it reads the pictures, PlayerStats.txt and

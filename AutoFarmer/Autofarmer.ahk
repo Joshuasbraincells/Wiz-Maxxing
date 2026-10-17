@@ -23,6 +23,7 @@ Menu, Tray, NoStandard
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
+Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion route..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now (along the route), MenuPotionRun
@@ -44,6 +45,10 @@ return
 MenuStats:
 StatsWanted := 1
 TrayTip, Wizard101 bot, Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s)., 5, 1
+return
+
+MenuDash:
+DashToggle()
 return
 
 MenuPotionRoute:
@@ -143,6 +148,8 @@ UpdateGameRect()
 
 ;debug.log: what the script sees and decides each round (starts fresh every start / restart)
 FileDelete, %A_ScriptDir%\debug.log
+;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
+DashInit()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
 LoadPicSets()
 if (!DetectPicSet())
@@ -1599,6 +1606,12 @@ GuiClose:
 Gui, Destroy
 	
 #2::
+;Windows+2: the dashboard (Dashboard.ahk) - in dev mode, the info box below
+if (devmode != 1)
+	{
+	DashToggle()
+	return
+	}
 if (devmode == 1)
 {
 HealthInfo := HealthText()
@@ -2127,6 +2140,7 @@ CastResult(title, ByRef hit, dir, enchanted)
 		{
 		EnchantedHits.Delete(title)
 		ConsumeBoosts()
+		DashCast(title)
 		return true
 		}
 	DebugLog("  " title " didn't cast (not enough pips?)")
@@ -2286,6 +2300,9 @@ DebugLog(msg)
 	{
 	FormatTime, now,, HH:mm:ss
 	FileAppend, % now " " msg "`r`n", %A_ScriptDir%\debug.log
+	;(and onto the dashboard's log)
+	if (DashHwnd)
+		DashLog(now " " msg)
 	}
 
 #Include %A_ScriptDir%\Ocr.ahk
@@ -2296,5 +2313,6 @@ DebugLog(msg)
 #Include %A_ScriptDir%\Vision.ahk
 #Include %A_ScriptDir%\CardLearn.ahk
 #Include %A_ScriptDir%\Potions.ahk
+#Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

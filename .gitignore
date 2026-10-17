@@ -17,3 +17,6 @@ __pycache__/
 
 # Built executables (build.ps1) - published as GitHub release assets instead
 *.exe
+
+# Per-computer settings
+AutoFarmer/dashboard.ini
