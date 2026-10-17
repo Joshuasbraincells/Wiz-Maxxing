@@ -5,6 +5,10 @@
 ;All the pictures are found relative to this folder, however the script was started (shortcut, editor, ...)
 SetWorkingDir, %A_ScriptDir%
 
+;The wizard icon in the tray and on the dashboard (built into the exe; run as a script, set here)
+if (!A_IsCompiled && FileExist(A_ScriptDir "\..\assets\wizard.ico"))
+	Menu, Tray, Icon, %A_ScriptDir%\..\assets\wizard.ico
+
 ;All ImageSearch/Mouse coordinates are absolute screen coordinates, offset from the game's client area (see UpdateGameRect)
 CoordMode, Pixel, Screen
 CoordMode, Mouse, Screen

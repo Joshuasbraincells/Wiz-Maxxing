@@ -39,6 +39,9 @@ if (-not $base) {
 }
 "Compiler: $compiler"
 "Base:     $base"
+# (the wizard face, assets\wizard.ico: the exes' icon - also their tray icon and the dashboard's)
+$icon = Join-Path $PSScriptRoot 'assets\wizard.ico'
+$iconArg = if (Test-Path $icon) { " /icon `"$icon`"" } else { '' }
 
 # ---- build (a running exe can't be replaced)
 foreach ($script in 'Setup.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
@@ -48,7 +51,7 @@ foreach ($script in 'Setup.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsR
     $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($out)) -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $out }
     if ($running) { throw "$(Split-Path $out -Leaf) is running - close it first (its tray icon > Exit, or Windows+Esc), then build again." }
     if (Test-Path $out) { Remove-Item $out -Force }
-    $p = Start-Process -FilePath $compiler -ArgumentList "/in `"$in`" /out `"$out`" /base `"$base`" /silent" -Wait -PassThru -NoNewWindow
+    $p = Start-Process -FilePath $compiler -ArgumentList "/in `"$in`" /out `"$out`" /base `"$base`"$iconArg /silent" -Wait -PassThru -NoNewWindow
     if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { throw "Compiling $script failed (Ahk2Exe exit $($p.ExitCode))." }
     '{0} -> {1} ({2:N0} KB)' -f $script, (Split-Path $out -Leaf), ((Get-Item $out).Length / 1KB)
 }
