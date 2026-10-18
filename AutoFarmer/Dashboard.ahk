@@ -13,7 +13,7 @@ global DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld :=
 global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
 global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
-global DashHandHead, DashCardPic1, DashCardPic2, DashCardPic3, DashCardPic4, DashCardPic5, DashCardPic6, DashCardPic7
+global DashLearnBtn, DashHandHead, DashCardPic1, DashCardPic2, DashCardPic3, DashCardPic4, DashCardPic5, DashCardPic6, DashCardPic7
 global DashCardTxt1, DashCardTxt2, DashCardTxt3, DashCardTxt4, DashCardTxt5, DashCardTxt6, DashCardTxt7
 
 ;Makes the window (shown unless dashboard.ini says it was hidden). Called once at start
@@ -33,7 +33,9 @@ DashInit()
 	Gui, Dash:Add, Text, x372 y60 w400 h190 vDashSeeText
 	;The hand: each card as the bot saw it this round, and what it took it for (DashHandSeen)
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y258 w760 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Add, Text, x12 y258 w630 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x646 y252 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
 	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
 	Loop, 7
 		{
@@ -61,6 +63,13 @@ DashInit()
 		DashShow()
 	SetTimer, DashRefresh, 1000
 	OnExit("DashOnExit")
+	}
+
+;The "Learn every card" button's label
+DashLearnShow(learnOn)
+	{
+	if (DashHwnd)
+		GuiControl, Dash:, DashLearnBtn, % learnOn ? "Learning... (stop)" : "Learn every card"
 	}
 
 ;The "Wait while I play" button's label
@@ -295,7 +304,7 @@ DashHandSeen(answer)
 		GuiControl, Dash:Hide, DashCardTxt%slot%
 		}
 	FormatTime, now, , HH:mm:ss
-	GuiControl, Dash:, DashHandHead, % "HAND - what it saw at " now " (" n " card" (n = 1 ? "" : "s") ")   white: known   yellow: one it doesn't know   grey: can't cast now"
+	GuiControl, Dash:, DashHandHead, % "HAND " now " (" n " card" (n = 1 ? "" : "s") ")   white known   yellow new to it   grey can't cast"
 	DashSee("hand", text)
 	}
 
@@ -370,6 +379,8 @@ DashRefresh()
 	;What it's doing
 	if (PotionRecording)
 		doing := "Recording potion buying"
+	else if (LearnAll)
+		doing := "Learning every card (" (IsObject(LearnedCards) ? LearnedCards.Length() - LearnAllFrom : 0) " new so far)"
 	else if (WkNoteKind != "")
 		doing := "Needs you: " WkNoteTitle
 	else if (PlayerActive)
@@ -466,6 +477,12 @@ DashWalkToggle:
 
 DashFolder:
 	Run, %A_ScriptDir%
+	return
+
+;"Learn every card" on/off (CardLearn.ahk)
+DashLearnAll:
+	if (IsFunc("LearnAllToggle"))
+		Func("LearnAllToggle").Call()
 	return
 
 ;"Wait while I play" on/off (HandsOffToggle in Autofarmer.ahk)

@@ -228,6 +228,15 @@ themselves. A pip cost that couldn't be read is guessed as the pips you had
 (the card was castable), and brought down whenever it shows up castable with
 fewer. learned\cards.txt lists everything learned; debug.log: "learned a new
 card ...".
+Learn every card (dashboard button, or the tray menu): for a deck you made
+to be learned - one of every card. Switch it on and start a battle (an easy
+one). Each round the bot learns what's in hand, right-clicks away every card
+it knows so the next round draws new ones, keeps greyed-out cards it doesn't
+know until there are pips to show them in colour, heals if your health is
+low, and passes - it casts nothing else. It stops by itself when the deck is
+used up (two rounds with an empty hand) or nothing new has come for three
+rounds, and says how many it learned; then finish or flee that battle
+yourself. debug.log: "learn every card: ...".
 
 Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %

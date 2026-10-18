@@ -33,6 +33,7 @@ Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now, MenuPotionRun
+Menu, Tray, Add, Learn every card (a deck of one of each), MenuLearnAll
 Menu, Tray, Add, Restart (Windows+1), MenuRestart
 Menu, Tray, Add, Exit (Windows+Esc), MenuExit
 Menu, Tray, Default, Walking on/off (F8)
@@ -50,6 +51,10 @@ return
 
 MenuHandsOff:
 HandsOffToggle()
+return
+
+MenuLearnAll:
+LearnAllToggle()
 return
 
 MenuStats:
@@ -368,7 +373,7 @@ if (BossChoosen == 1)
 	BossX := GameLeft + Round(BossRelX * UiScale), BossY := GameTop + Round(BossRelY * UiScale)
 
 global inbattle = 1
-LearnedThisRound := 0
+LearnedThisRound := 0, LastHandAnswer := ""
 
 ;Both windows share one record of blades/traps in dual mode, so the kill check is off for that whole battle
 if (dualmode == 1)
@@ -584,8 +589,9 @@ if (Manual != 1) && (!LearnedThisRound)
 		Goto, FindCards
 	}
 
-;Discard (right-click) cards that can't help this battle, then look at the hand again
-if (Discards < 3) && DiscardSpare()
+;Discard (right-click) cards that can't help this battle, then look at the hand again (not while learning
+;every card: that discards everything it knows)
+if (!LearnAll) && (Discards < 3) && DiscardSpare()
 	{
 	Discards++
 	s(700)
@@ -607,6 +613,22 @@ if (PlayerActing())
 	RoundLeft := 1
 	if (!PlayerTookRound)
 		PlayerTookRound := 1, DebugLog("  (no kill check till this battle ends - the bot can't know which blades and traps you use)")
+	Goto, EndRound
+	}
+
+;Learning every card (dashboard button / tray menu): no casting but a heal when low - learn, discard what
+;it knows so the next round draws new cards, pass (CardLearn.ahk LearnAllRound)
+if (LearnAll)
+	{
+	if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
+		{
+		if (heal1 == 1) && UseHeal("heal1", heal1, hitschool)
+			Goto, EndRound
+		if (heal2 == 1) && UseHeal("heal2", heal2, hitschool)
+			Goto, EndRound
+		}
+	LearnAllRound()
+	Click("pass", pass, "resources")
 	Goto, EndRound
 	}
 

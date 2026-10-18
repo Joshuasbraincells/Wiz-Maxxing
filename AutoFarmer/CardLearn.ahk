@@ -29,6 +29,107 @@ global LearnedThisRound := 0
 global LearnedCards := ""
 ;Whether each slot is free (LearnFree), asked once a round
 global LearnFreeCache := ""
+;The hand as the helper read it this round (/hand's answer; "" till it's read - RoundStart clears it), and
+;"Learn every card" (LearnAllToggle): on, the learned count when it started, rounds, rounds with nothing
+;new, rounds with an empty hand
+global LastHandAnswer, LearnAll, LearnAllFrom, LearnAllRounds, LearnAllIdle, LearnAllEmpty, LearnAllSeen
+
+;---- Learn every card (dashboard button / tray menu) ----
+;For a deck made to be learned (one of every card): in a battle, every round it learns what's in hand (in
+;colour) as usual, then right-clicks away every card it knows - so the next round draws new ones - keeping
+;greyed-out ones it doesn't know (their colours can't be read) till there are pips to show them in colour.
+;It casts nothing but a heal when your health is low, and passes. It stops by itself once the deck is used
+;up (two rounds with an empty hand) or nothing new has come for three rounds.
+
+;On / off
+LearnAllToggle()
+	{
+	if (!IsObject(LearnedCards))
+		LearnLoad()
+	LearnAll := !LearnAll
+	if (LearnAll)
+		{
+		LearnAllFrom := LearnedCards.Length(), LearnAllSeen := LearnAllFrom, LearnAllRounds := 0, LearnAllIdle := 0, LearnAllEmpty := 0
+		DebugLog("Learn every card: on - in a battle it casts nothing (a heal when low), learns the hand, discards what it knows and passes, till the deck is used up")
+		TrayTip, Wizard101 bot, Learn every card: ON. Start a battle (an easy one) with the deck - it casts nothing`, learns each hand`, discards what it knows to draw new cards`, and passes., 10, 1
+		}
+	else
+		LearnAllDone("switched off")
+	if (IsFunc("DashLearnShow"))
+		Func("DashLearnShow").Call(LearnAll)
+	}
+
+;The mode ends: says how many it learned
+LearnAllDone(why)
+	{
+	LearnAll := 0
+	got := (IsObject(LearnedCards) ? LearnedCards.Length() : 0) - LearnAllFrom
+	DebugLog("Learn every card: off (" why ") - " got " new card" (got = 1 ? "" : "s") " learned in " LearnAllRounds " round" (LearnAllRounds = 1 ? "" : "s"))
+	if (why != "switched off")
+		{
+		SoundPlay, *64
+		TrayTip, Wizard101 bot, % "Learn every card: done (" why ") - " got " new card" (got = 1 ? "" : "s") " learned. The bot plays normally again; with the deck used up, finish or flee this battle yourself.", 15, 1
+		}
+	if (IsFunc("DashLearnShow"))
+		Func("DashLearnShow").Call(0)
+	}
+
+;One round of it, after the hand's been read and learned (LastHandAnswer): right-clicks every card it knows
+;(in colour - learned by now if it could be - or greyed out but known) from the left, following the hand as
+;it re-centres (a card gone: those left of it slide right half a card, those right of it slide left)
+LearnAllRound()
+	{
+	global
+	local cards, f, c, i, k, o, did, kept, before
+	LearnAllRounds += 1
+	if (LastHandAnswer = "")
+		{
+		DebugLog("  learn every card: the hand wasn't read this round (vision helper?) - just passing")
+		return
+		}
+	cards := []
+	Loop, Parse, LastHandAnswer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f.Length() < 12 || f[1] != "card")
+			continue
+		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0})
+		}
+	if (!cards.Length())
+		{
+		LearnAllEmpty += 1
+		DebugLog("  learn every card: no cards in hand (" LearnAllEmpty " round" (LearnAllEmpty = 1 ? "" : "s") ")")
+		if (LearnAllEmpty >= 2)
+			LearnAllDone("the deck is used up")
+		return
+		}
+	LearnAllEmpty := 0, did := 0, kept := 0, i := 1
+	while (i <= cards.Length())
+		{
+		c := cards[i]
+		if (c.grey && c.known = "")
+			{
+			kept += 1, i += 1
+			continue
+			}
+		MouseMove, % Round(c.x), % Round(c.y), MouseSpeedNow()
+		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
+		Click, right
+		did += 1
+		cards.RemoveAt(i)
+		for k, o in cards
+			o.x += (k < i ? HalfPitch : -HalfPitch)
+		s(400)
+		}
+	CenterMouse()
+	;(nothing learned or discarded: the greyed-out ones it keeps aren't coming into colour)
+	before := LearnAllIdle
+	LearnAllIdle := (did = 0 && LearnedCards.Length() = LearnAllSeen) ? LearnAllIdle + 1 : 0
+	LearnAllSeen := LearnedCards.Length()
+	DebugLog("  learn every card: discarded " did ", kept " kept " greyed-out unknown" (kept = 1 ? "" : "s") " - " LearnedCards.Length() - LearnAllFrom " new so far")
+	if (LearnAllIdle >= 3)
+		LearnAllDone("nothing new for 3 rounds")
+	}
 
 ;Called once a round after the hand's been looked at (FindCards). True if a card went into a slot (or a
 ;slot's learned picture was just made to fit a copy that differs a little): look at the hand again, so
@@ -56,6 +157,7 @@ LearnCards()
 	answer := VisionGet("/hand?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList() learnedPics "&learned=" LearnUri(learnedList) "&here=" LearnUri(hereRel) "&thumbs=" LearnUri(A_ScriptDir "\generated\hand"), 3000)
 	if (answer = "")
 		return false
+	LastHandAnswer := answer
 	;(what's in hand, for the dashboard)
 	DashHandSeen(answer)
 	;(a card learned at another UI size was cut into a new folder for this size: a picture set from now on)
