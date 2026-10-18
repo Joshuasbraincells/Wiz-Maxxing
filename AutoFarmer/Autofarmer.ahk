@@ -25,13 +25,14 @@ OnExit("WalkerQuit")
 ;No standard tray menu: its "Pause Script" would freeze the walker with a key held down
 Menu, Tray, NoStandard
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
+Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Read wizard stats now, MenuStats
-Menu, Tray, Add, Record potion route..., MenuPotionRoute
-Menu, Tray, Add, Buy potions now (along the route), MenuPotionRun
+Menu, Tray, Add, Record potion buying..., MenuPotionRoute
+Menu, Tray, Add, Buy potions now, MenuPotionRun
 Menu, Tray, Add, Restart (Windows+1), MenuRestart
 Menu, Tray, Add, Exit (Windows+Esc), MenuExit
 Menu, Tray, Default, Walking on/off (F8)
@@ -45,6 +46,10 @@ return
 
 MenuReconnect:
 ReconnectToggle()
+return
+
+MenuHandsOff:
+HandsOffToggle()
 return
 
 MenuStats:
@@ -174,6 +179,7 @@ UpdateGameRect()
 FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 ;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
 DashInit()
+HandsOffShow()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
 LoadPicSets()
 if (!DetectPicSet())
@@ -710,13 +716,13 @@ Goto, TestRound
 	
 ;Functions
 ;You're playing: a key, a click or a mouse move of yours (not the bot's own: A_TimeIdlePhysical leaves those
-;out) in the last handsoff seconds (PlayerStats.txt, default 10; 0 = never wait for you). Logged when it
-;starts and ends; PlayerActive tells the dashboard
+;out) in the last handsoff seconds (PlayerStats.txt, default 10; 0 = never wait for you), while "Wait while
+;I play" is on (HandsOffOn). Logged when it starts and ends; PlayerActive tells the dashboard
 PlayerActing()
 	{
 	static logged := 0
 	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 10
-	acting := (secs > 0 && A_TimeIdlePhysical < secs * 1000)
+	acting := (HandsOffOn() && secs > 0 && A_TimeIdlePhysical < secs * 1000)
 	;(the bot's own hotkeys aren't you playing: the key itself, and for Alt+1 / Alt+2 / Windows+3 the click
 	;on the boss / player that follows within 10 s)
 	if (acting && A_ThisHotkey != "")
@@ -737,6 +743,35 @@ PlayerActing()
 		}
 	PlayerActive := acting
 	return acting
+	}
+
+;"Wait while I play" (tray menu, dashboard button): handsoffon in PlayerStats.txt, on unless it's 0
+HandsOffOn()
+	{
+	return !(Stats.HasKey("handsoffon") && !Stats["handsoffon"])
+	}
+
+;Turns "Wait while I play" on/off and keeps it in PlayerStats.txt (handsoffon)
+HandsOffToggle()
+	{
+	waitOn := !HandsOffOn()
+	if (!StatsSet([["handsoffon", waitOn ? 1 : 0]]))
+		Stats["handsoffon"] := waitOn ? 1 : 0
+	HandsOffShow()
+	DebugLog("Wait while I play: " (waitOn ? "on - the bot waits while you use the keyboard or mouse" : "off - the bot carries on while you play"))
+	TrayTip, Wizard101 bot, % "Wait while I play: " (waitOn ? "ON - the bot waits while you use the keyboard or mouse." : "OFF - the bot carries on even while you play."), 4, 1
+	}
+
+;The tray menu's tick and the dashboard button's label
+HandsOffShow()
+	{
+	waitOn := HandsOffOn()
+	if (waitOn)
+		Menu, Tray, Check, Wait while I play
+	else
+		Menu, Tray, Uncheck, Wait while I play
+	if (IsFunc("DashHandsShow"))
+		Func("DashHandsShow").Call(waitOn)
 	}
 
 ;Moves the mouse to x, y and clicks, quickly: mousespeed (0 = jump there, 1 = fastest glide; it used to

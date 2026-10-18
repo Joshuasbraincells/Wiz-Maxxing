@@ -38,6 +38,7 @@ DashInit()
 	Gui, Dash:Add, Button, x218 y588 w120 h26 gDashOpenLog, Open debug.log
 	Gui, Dash:Add, Button, x346 y588 w150 h26 gDashWalkToggle, Walking on/off (F8)
 	Gui, Dash:Add, Button, x504 y588 w140 h26 gDashFolder, Open bot folder
+	Gui, Dash:Add, Button, x652 y588 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
 	if (earlier != "")
@@ -47,6 +48,13 @@ DashInit()
 		DashShow()
 	SetTimer, DashRefresh, 1000
 	OnExit("DashOnExit")
+	}
+
+;The "Wait while I play" button's label
+DashHandsShow(waitOn)
+	{
+	if (DashHwnd)
+		GuiControl, Dash:, DashHandsBtn, % "Wait for me: " (waitOn ? "on" : "off")
 	}
 
 ;Shows the window where it was (else on a monitor the game isn't on), without taking the focus
@@ -303,7 +311,7 @@ DashRefresh()
 	upText := Format("{:02}:{:02}:{:02}", up // 3600, Mod(up // 60, 60), Mod(up, 60))
 	;What it's doing
 	if (PotionRecording)
-		doing := "Recording a potion route"
+		doing := "Recording potion buying"
 	else if (PlayerActive)
 		doing := "You're playing - the bot waits"
 	else if (DashSees.mode = "battle" && A_TickCount - DashSees.roundAt < 120000)
@@ -400,6 +408,12 @@ DashFolder:
 	Run, %A_ScriptDir%
 	return
 
+;"Wait while I play" on/off (HandsOffToggle in Autofarmer.ahk)
+DashHandsToggle:
+	if (IsFunc("HandsOffToggle"))
+		Func("HandsOffToggle").Call()
+	return
+
 DashGuiClose:
 	DashToggle()
 	return
@@ -413,6 +427,7 @@ DashGuiSize:
 	for each, b in [["Pause log", 12], ["Clear", 130], ["Open debug.log", 218], ["Walking on/off (F8)", 346], ["Open bot folder", 504]]
 		GuiControl, Dash:Move, % b[1], % "y" A_GuiHeight - 36
 	GuiControl, Dash:Move, DashPauseBtn, % "y" A_GuiHeight - 36
+	GuiControl, Dash:Move, DashHandsBtn, % "y" A_GuiHeight - 36
 	return
 
 ;(Windows+2 is in Autofarmer.ahk: it shows the dev-mode info box in dev mode)

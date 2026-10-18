@@ -15,6 +15,8 @@ You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.
 It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never
 waits). If you take over during its turn, it leaves that round to you.
+Switch it on/off with the tray menu "Wait while I play" (ticked = on) or the
+dashboard's "Wait for me" button; it's kept in PlayerStats.txt (handsoffon).
 
 Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
@@ -231,21 +233,31 @@ Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %
 (PlayerStats.txt, default 40) of your most health (read off your name plate in
 battle) it drinks a potion (Ctrl+O). If health doesn't go up, you're out, and
-it goes to buy more WITH GOLD (never Crowns) along a route you record once:
-	- Tray menu "Record potion route...": the bot marks your spot (Page
-	  Down) and takes you Home (the Home key: you land in the same spot every
-	  time, and one route works from any world; potionfromhome:0 in
-	  PlayerStats.txt starts from the world's Commons instead). Walk to the potion
-	  seller (Hilda Brewer, Wizard City Fairegrounds) with the KEYBOARD only,
-	  press X to talk, click Fill All (and close the window), press F9. The
-	  route is saved for the zone it starts in (routes\<zone>.txt - your
-	  house, so one route covers every world) and you're recalled back (Page
-	  Up). Use the mount you'll farm with, since a route is a timing.
-	- When out of potions: Mark (Page Down), Home (End with potionfromhome:0),
-	  the route, drink, Recall (Page Up) back to the mark. Before each click it
-	  reads the screen round it - any "Crown" stops the run. A battle, you
-	  touching the mouse or keyboard, or a missing loading screen stops it too.
-	- Tray menu "Buy potions now (along the route)" does a run straight away.
+it goes to buy more WITH GOLD (never Crowns) at your Mark:
+	- Once: leave a Mark (Page Down) right next to the potion seller
+	  (Hilda Brewer, Wizard City Fairegrounds) and keep it there - don't
+	  Page Down anywhere else. Then tray menu "Record potion buying...": the
+	  bot recalls you to the Mark (Page Up); press X to talk, click Fill All
+	  (and close the window), press F9. It's saved as routes\mark_<wizard>.txt
+	  with the name on the seller's "Press X" prompt. Each wizard has its own
+	  Mark, so do this once for each.
+	- When out of potions: Recall (Page Up) to the Mark (none if you're at the
+	  seller already), and once her prompt shows the buying, drink,
+	  then walking follows the quest arrow on from the seller. Mob-loop, lore
+	  and afk farming can't get back to their spot yet - it tells you. Before
+	  each click it reads the screen round it - any "Crown" stops the run. A
+	  battle, you touching the mouse or keyboard, or a missing loading screen
+	  stops it too. Nothing recorded yet: no recall, a tray message says how
+	  to set it up. No Mark or too little mana for the Recall: a tray message,
+	  another try in 10 minutes. The Mark somewhere else (another zone, or no
+	  seller's prompt there): nothing clicked, no more recalls for that wizard
+	  till you Mark by the seller again and restart the bot (Windows+1). Not right by the seller when recording?
+	  Walk there and press Page Down: the recording starts over from there.
+	- Tray menu "Buy potions now" does a run straight away.
+	- potionmark:0 in PlayerStats.txt: the old way instead - the bot marks your
+	  spot (Page Down), goes Home (End with potionfromhome:0: the Commons),
+	  walks a route you recorded with the KEYBOARD only (routes\<zone>.txt -
+	  use the mount you'll farm with, a route is a timing) and recalls back.
 Mark & Recall: since Nov 2024 they cost 1-10 mana and recalling keeps the
 mark. Some places (dorms, houses, some dungeons) can't be marked.
 
