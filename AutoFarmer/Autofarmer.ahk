@@ -795,7 +795,13 @@ ClickAt(x, y, after := 0)
 	Sleep, % Stats.HasKey("clickwait") ? Stats["clickwait"] : 40
 	Click
 	if (after)
-		Sleep, % Round(after * (Stats.HasKey("clickafter") ? Stats["clickafter"] : 50) / 100)
+		AfterClick(after)
+	}
+
+;A wait after a click: ms times clickafter % (PlayerStats.txt; lower is faster)
+AfterClick(ms)
+	{
+	Sleep, % Round(ms * (Stats.HasKey("clickafter") ? Stats["clickafter"] : 50) / 100)
 	}
 
 MouseSpeedNow()
@@ -1034,15 +1040,13 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 		ClickAt(SharpX, SharpY, 150)
 		ClickAt(foundX, foundY, 150)
 		CenterMouse()	
-		s(1000)
 		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centred, so the card has moved
-		RefindAfterBoost(n, foundX, foundY, boostX)
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
+		BoostSettle(n, foundX, foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
 			ErrorBox("UseBlade", dir, title)
 			}
-		s(500)
 			ClickAt(foundX, foundY, 150)
 		if (title != "blade4")
 			{
@@ -1099,15 +1103,13 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 		ClickAt(potentX, potentY, 150)
 		ClickAt(foundX, foundY, 150)
 		CenterMouse()	
-		s(1000)
 		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centred, so the card has moved
-		RefindAfterBoost(n, foundX, foundY, boostX)
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
+		BoostSettle(n, foundX, foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
 			ErrorBox("UseTrap", dir, title)
 			}
-		s(500)
 		ClickAt(foundX, foundY, 150)
 		ClickAt(bossX, bossY, 200)
 		boosts++
@@ -1180,17 +1182,15 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 		ClickAt(enchantX, enchantY, 150)
 		ClickAt(foundX, foundY, 150)
 		CenterMouse()	
-		s(1000)
+		n := PicPath(dir "\" title ".png")
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
+		BoostSettle(n, foundX, foundY, boostX)
 		;The enchant card is used up and the hand has shifted
 		FindEnchant()
-		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centred, so the card has moved
-		RefindAfterBoost(n, foundX, foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
 			ErrorBox("UseHit", dir, title)
 			}
-		s(500)
 		ClickAt(foundX, foundY)
 		HitTarget(title, dir)
 		return CastResult(title, hit, dir, 1)
@@ -1307,7 +1307,7 @@ HitTarget(title, dir)
 		DebugLog("  " title " needs a target, but no enemy nameplate was found to click")
 		return
 		}
-	s(300)
+	AfterClick(300)
 	ClickAt(tx, ty)
 	DebugLog("  " title ": clicked " pick " as the target at " tx - GameLeft "," ty - GameTop)
 	}
@@ -2280,19 +2280,28 @@ FindEnchant()
 CastResult(title, ByRef hit, dir, enchanted)
 	{
 	global
-	local passX, passY, stillThere
-	;The Pass button has to stay gone (it can blink out for a moment while the hand updates)
-	stillThere := false
-	Loop, 3
+	local passX, passY, stillThere, t0, goneFrom
+	;The Pass button has to stay gone for 1 s (it can blink out for a moment while the hand updates) - looked
+	;at every 100 ms; still there 0.7 s after the click = the card didn't cast
+	stillThere := false, goneFrom := 0, t0 := A_TickCount
+	while (A_TickCount - t0 < 2500)
 		{
-		s(A_Index = 1 ? 700 : 800)
+		Sleep, 100
 		UpdateGameRect()
 		ImageSearch, passX, passY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
 		if (ErrorLevel = 0)
 			{
-			stillThere := true
-			break
+			goneFrom := 0
+			if (A_TickCount - t0 >= 700)
+				{
+				stillThere := true
+				break
+				}
 			}
+		else if (!goneFrom)
+			goneFrom := A_TickCount
+		else if (A_TickCount - goneFrom >= 1000)
+			break
 		}
 	if (!stillThere)
 		{
@@ -2345,6 +2354,33 @@ DiscardCard(title, dir)
 	s(400)
 	DebugLog("  Discarded " title " (right-click at " cardX - GameLeft "," cardY - GameTop ")")
 	return 1
+	}
+
+;A boost card was just put on the card at fx,fy: the hand re-centres. Looks for the card where it slides
+;to every 100 ms (from 250 ms on) and goes once it's in the same spot twice running - the slide is over -
+;instead of a fixed 1.5 s; not seen by then: RefindAfterBoost's guess
+BoostSettle(n, ByRef fx, ByRef fy, boostX)
+	{
+	global
+	local expX, nx, ny, lastX := "", lastY := "", t0 := A_TickCount
+	expX := fx + (fx < boostX ? HalfPitch : -HalfPitch)
+	Sleep, 250
+	while (A_TickCount - t0 < 1500)
+		{
+		ImageSearch, nx, ny, expX - Px(30), fy - Px(25), expX + Px(50), fy + Px(40), % PicOptFile(n, CardTol)
+		if (ErrorLevel = 0)
+			{
+			if (nx = lastX && ny = lastY)
+				{
+				DebugLog("    card moved from " fx - GameLeft "," fy - GameTop " to " nx - GameLeft "," ny - GameTop " (settled in " A_TickCount - t0 " ms)")
+				fx := nx, fy := ny
+				return
+				}
+			lastX := nx, lastY := ny
+			}
+		Sleep, 100
+		}
+	RefindAfterBoost(n, fx, fy, boostX)
 	}
 
 ;A boost card (enchant, Sharpen or Potent) was just put on the card at fx,fy and left the hand.

@@ -90,11 +90,14 @@ UpCompare(a, b)
 	{
 	if (b = "")
 		return a = "" ? 0 : 1
-	if (!RegExMatch(a, "(\d+)\.(\d+)", x) || !RegExMatch(b, "(\d+)\.(\d+)", y))
+	;(vMAJOR.MAIN.BUG - v0.14 is v0.14.0)
+	if (!RegExMatch(a, "(\d+)\.(\d+)(?:\.(\d+))?", x) || !RegExMatch(b, "(\d+)\.(\d+)(?:\.(\d+))?", y))
 		return a = b ? 0 : 1
-	if (x1 + 0 != y1 + 0)
-		return x1 + 0 > y1 + 0 ? 1 : -1
-	return x2 + 0 > y2 + 0 ? 1 : x2 + 0 < y2 + 0 ? -1 : 0
+	pa := [x1 + 0, x2 + 0, x3 = "" ? 0 : x3 + 0], pb := [y1 + 0, y2 + 0, y3 = "" ? 0 : y3 + 0]
+	Loop, 3
+		if (pa[A_Index] != pb[A_Index])
+			return pa[A_Index] > pb[A_Index] ? 1 : -1
+	return 0
 	}
 
 ;This folder's version (version.txt), "" if none

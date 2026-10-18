@@ -44,8 +44,8 @@ handsoffon:1
 mousespeed:1
 ; clickwait: ms between the mouse arriving and the click (was 150)
 clickwait:40
-; clickafter: % of the old wait after each click (a card, then its target) - lower is faster; raise it if
-; a target click gets missed after a card
+; clickafter: % of the old wait after each click (a card, then its target: 300 ms at 100) - lower is faster;
+; raise it if a target click gets missed after a card
 clickafter:50
 
 ; ---- Health reading ----
