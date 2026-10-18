@@ -238,13 +238,13 @@ it goes to buy more WITH GOLD (never Crowns) along a route you record once:
 	  PlayerStats.txt starts from the world's Commons instead). Walk to the potion
 	  seller (Hilda Brewer, Wizard City Fairegrounds) with the KEYBOARD only,
 	  press X to talk, click Fill All (and close the window), press F9. The
-	  route is saved for that Commons (routes\<zone>.txt) and you're recalled
-	  back (Page Up). One route per world you farm in; use the mount you'll
-	  farm with, since a route is a timing.
-	- When out of potions: Mark (Page Down), Commons (End), the route,
-	  drink, Recall (Page Up) back to the mark. Before each click it reads the
-	  screen round it - any "Crown" stops the run. A battle, you touching the
-	  mouse or keyboard, or a missing loading screen stops it too.
+	  route is saved for the zone it starts in (routes\<zone>.txt - your
+	  house, so one route covers every world) and you're recalled back (Page
+	  Up). Use the mount you'll farm with, since a route is a timing.
+	- When out of potions: Mark (Page Down), Home (End with potionfromhome:0),
+	  the route, drink, Recall (Page Up) back to the mark. Before each click it
+	  reads the screen round it - any "Crown" stops the run. A battle, you
+	  touching the mouse or keyboard, or a missing loading screen stops it too.
 	- Tray menu "Buy potions now (along the route)" does a run straight away.
 Mark & Recall: since Nov 2024 they cost 1-10 mana and recalling keeps the
 mark. Some places (dorms, houses, some dungeons) can't be marked.

@@ -9,9 +9,11 @@
 ;
 ; Updating: the release zip is downloaded, the bot is closed if it's running, and the zip's files are
 ; copied over this folder - except your own: PlayerStats.txt (only settings it doesn't have yet are added),
-; learned cards, potion routes, the walker's memory, window positions, logs; and pictures that are here
-; already (cards the bot learned live in the picture folders) are kept - new ones are added. Wiz-Maxxing.exe
-; itself is in use, so it's renamed out of the way and the new one put in its place. Log: updater.log.
+; learned cards (learned\ folders, and the slot pictures learned\cards.txt says they went into), potion
+; routes, the walker's memory, window positions, logs. A program that's in use (Wiz-Maxxing.exe, Setup.exe)
+; is renamed out of the way and the new one put in its place. It's all or nothing: every file it replaces
+; is copied aside first, and if any file can't be written the folder is put back as it was, version.txt
+; and all. Only then is version.txt set to the release's tag. Log: updater.log.
 
 ;(tests only: another address for GitHub's API, a token, and yes to the question)
 global UpTestApi, UpTestToken, UpTestYes
@@ -47,15 +49,20 @@ UpCheck(quiet := true)
 			MsgBox, 48, Wiz-Maxxing updates, % "There's no GitHub token on this PC, so updates can't be checked.`n`nRun Setup.exe and tick ""GitHub updates"" to add one."
 		return false
 		}
-	rel := UpLatest(token, err)
+	rel := UpLatest(token, err, status)
 	token := ""
 	if (!IsObject(rel))
 		{
 		UpLog("check failed: " err)
-		if (!quiet)
+		;(an expired or revoked token: said once even when opening the bot, else updates stop unnoticed)
+		IniRead, warned, %A_ScriptDir%\updater.ini, token, warned, 0
+		if (!UpTestYes && (!quiet || ((status = 401 || status = 403) && !warned)))
 			MsgBox, 48, Wiz-Maxxing updates, % "Couldn't check for updates:`n" err
+		if ((status = 401 || status = 403) && quiet)
+			IniWrite, 1, %A_ScriptDir%\updater.ini, token, warned
 		return false
 		}
+	IniWrite, 0, %A_ScriptDir%\updater.ini, token, warned
 	have := UpVersion()
 	UpLog("installed " (have = "" ? "(no version.txt)" : have) ", latest " rel.tag)
 	if (UpCompare(rel.tag, have) <= 0)
@@ -98,7 +105,7 @@ UpVersion()
 	}
 
 ;The latest release: {tag, name, body, zipUrl, zipName}; "" and err on a problem
-UpLatest(token, ByRef err)
+UpLatest(token, ByRef err, ByRef status := 0)
 	{
 	err := ""
 	resp := UpHttp(UpApi() "/repos/" UpRepo() "/releases/latest", token, "application/vnd.github+json", status, 8000)
@@ -119,8 +126,8 @@ UpLatest(token, ByRef err)
 		}
 	rel := {}
 	RegExMatch(resp, """tag_name"":\s*""([^""]+)""", m), rel.tag := m1
-	RegExMatch(resp, """tag_name"":.*?""name"":\s*""((?:[^""\\]|\\.)*)""", m), rel.name := UpUnescape(m1)
-	RegExMatch(resp, """body"":\s*""((?:[^""\\]|\\.)*)""", m), rel.body := UpUnescape(m1)
+	RegExMatch(resp, """tag_name"":.*?""name"":\s*""((?:[^""\\]++|\\.)*+)""", m), rel.name := UpUnescape(m1)
+	RegExMatch(resp, """body"":\s*""((?:[^""\\]++|\\.)*+)""", m), rel.body := UpUnescape(m1)
 	;(the zip among the assets: its API url downloads it)
 	if (RegExMatch(resp, """url"":\s*""([^""]+/releases/assets/\d+)"",\s*""id"":\s*\d+,\s*""node_id"":\s*""[^""]*"",\s*""name"":\s*""([^""]+\.zip)""", m))
 		rel.zipUrl := m1, rel.zipName := m2
@@ -159,41 +166,67 @@ UpInstall(rel)
 		return false
 		}
 	Progress, , Unpacking...
-	RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command ""Expand-Archive -LiteralPath '" zip "' -DestinationPath '" tmp "\unzipped' -Force""", , Hide UseErrorLevel
+	RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command ""try { Expand-Archive -LiteralPath '" zip "' -DestinationPath '" tmp "\unzipped' -Force -ErrorAction Stop } catch { exit 1 }""", , Hide UseErrorLevel
+	unzipped := (ErrorLevel = 0)
 	src := ""
 	Loop, Files, %tmp%\unzipped\*, D
 		src := A_LoopFileFullPath
-	if (src = "" || !FileExist(src "\AutoFarmer\Autofarmer.ahk"))
+	if (!unzipped || src = "" || !FileExist(src "\AutoFarmer\Autofarmer.ahk"))
 		{
 		Progress, Off
-		UpLog("the zip didn't unpack as expected (" zip ")")
-		MsgBox, 48, Wiz-Maxxing update, The downloaded zip didn't unpack as expected - nothing was changed.
+		UpLog("the zip didn't unpack (" zip ")")
+		MsgBox, 48, Wiz-Maxxing update, The downloaded zip didn't unpack - nothing was changed.
+		FileRemoveDir, %tmp%, 1
 		return false
 		}
 	Progress, , Closing the bot...
 	UpCloseBots()
 	Progress, , Copying the new files...
-	n := UpCopy(src, A_ScriptDir, kept, added)
+	res := UpCopy(src, A_ScriptDir, tmp "\rollback")
+	if (res.failed.Length())
+		{
+		UpRollback(res)
+		Progress, Off
+		list := ""
+		for i, f in res.failed
+			list .= "`n   " f
+		UpLog("update to " rel.tag " failed - put back as it was; couldn't write: " SubStr(StrReplace(list, "`n   ", " | "), 4))
+		MsgBox, 48, Wiz-Maxxing update, % "The update couldn't replace these files, so everything was put back as it was:" list "`n`nClose anything that has them open (Setup, an editor, the bot) and try again - the update is offered again next time."
+		FileRemoveDir, %tmp%, 1
+		return false
+		}
 	UpMergeStats(src "\AutoFarmer\PlayerStats.txt", A_ScriptDir "\AutoFarmer\PlayerStats.txt", rel.tag)
+	;(the version is the release's tag - only now, with every file in place)
+	FileDelete, %A_ScriptDir%\version.txt
+	FileAppend, % rel.tag "`r`n", %A_ScriptDir%\version.txt
 	FileRemoveDir, %tmp%, 1
 	Progress, Off
-	UpLog("updated to " rel.tag ": " n " file(s) replaced or added, " kept " of yours kept (" added " new picture(s) added)")
+	UpLog("updated to " rel.tag ": " res.copied " file(s) replaced or added, " res.kept " of yours kept")
 	TrayTip, Wiz-Maxxing, % "Updated to " rel.tag ".", 5, 1
 	return true
 	}
 
-;Closes the bot's programs running from this folder (exes, or scripts run by AutoHotkey), politely first
+;Closes the bot's programs running from this folder: its exes, or its scripts run by AutoHotkey - nothing else
+;(an editor that has a script open is left alone). Politely first; forced only if it's an AutoHotkey program
 UpCloseBots()
 	{
 	DetectHiddenWindows, On
 	pids := []
+	bots := "i)^(AutoFarmer\\Autofarmer|AutoFarmer\\StatsReader|AutoQuester\\AutoQuester)\."
 	for p in ComObjGet("winmgmts:").ExecQuery("SELECT ProcessId, ExecutablePath, CommandLine FROM Win32_Process")
 		{
 		path := p.ExecutablePath, cmd := p.CommandLine
-		if (p.ProcessId = DllCall("GetCurrentProcessId"))
+		if (p.ProcessId = DllCall("GetCurrentProcessId") || path = "")
 			continue
-		if ((path != "" && InStr(path, A_ScriptDir "\") = 1 && RegExMatch(path, "i)\\(Autofarmer|AutoQuester|StatsReader)\.exe$"))
-			|| (InStr(cmd, A_ScriptDir "\") && RegExMatch(cmd, "i)\\(Autofarmer|AutoQuester|StatsReader)\.ahk")))
+		mine := false
+		;(an exe of the bot, in this folder)
+		if (InStr(path, A_ScriptDir "\") = 1 && RegExMatch(SubStr(path, StrLen(A_ScriptDir) + 2), bots "exe$"))
+			mine := true
+		;(AutoHotkey running one of the bot's scripts from this folder: the script is its first argument)
+		else if (RegExMatch(path, "i)\\AutoHotkey[^\\]*\.exe$") && RegExMatch(cmd, "i)""?([A-Z]:\\[^""]+?\.ahk)""?", m)
+			&& InStr(m1, A_ScriptDir "\") = 1 && RegExMatch(SubStr(m1, StrLen(A_ScriptDir) + 2), bots "ahk$"))
+			mine := true
+		if (mine && WinExist("ahk_pid " p.ProcessId " ahk_class AutoHotkey"))
 			pids.Push(p.ProcessId)
 		}
 	for i, pid in pids
@@ -208,41 +241,96 @@ UpCloseBots()
 	Sleep, % pids.Length() ? 1500 : 0
 	}
 
-;Copies the new release's files over the folder, keeping yours (see the top). Returns how many were copied
-UpCopy(src, dest, ByRef kept, ByRef added)
+;Copies the new release's files over the folder, keeping yours (UpIsMine) - every file it replaces copied to
+;rollback first, a file in use renamed out of the way. Returns {copied, kept, failed: [], backups: [],
+;created: [], renamed: []} for UpRollback
+UpCopy(src, dest, rollback)
 	{
-	n := 0, kept := 0, added := 0
+	res := {copied: 0, kept: 0, failed: [], backups: [], created: [], renamed: []}
+	slots := UpLearnedSlots(dest "\AutoFarmer\learned\cards.txt", src "\AutoFarmer\learned\cards.txt")
 	Loop, Files, %src%\*, FR
 		{
 		rel := SubStr(A_LoopFileFullPath, StrLen(src) + 2)
+		;(set from the release's tag once everything is in place)
+		if (rel = "version.txt")
+			continue
 		target := dest "\" rel
-		mine := UpIsMine(rel)
 		exists := FileExist(target) != ""
-		if (exists && mine)
+		if (exists && UpIsMine(rel, slots))
 			{
-			kept++
+			res.kept++
 			continue
 			}
 		SplitPath, target,, targetDir
 		FileCreateDir, %targetDir%
-		;(this program: in use, so moved out of the way - deleted next time)
-		if (exists && rel = "Wiz-Maxxing.exe" && A_IsCompiled)
-			FileMove, %target%, %target%.old, 1
-		FileCopy, %A_LoopFileFullPath%, %target%, 1
-		if (ErrorLevel)
-			UpLog("couldn't replace " rel)
-		else
+		if (exists)
 			{
-			n++
-			if (mine)
-				added++
+			FileCreateDir, % RegExReplace(rollback "\" rel, "\\[^\\]*$")
+			FileCopy, %target%, %rollback%\%rel%, 1
+			if (ErrorLevel)
+				{
+				res.failed.Push(rel)
+				continue
+				}
+			res.backups.Push(rel)
 			}
+		FileCopy, %A_LoopFileFullPath%, %target%, 1
+		;(in use - a running program: moved aside, deleted next time)
+		if (ErrorLevel && exists)
+			{
+			FileMove, %target%, %target%.old, 1
+			if (!ErrorLevel)
+				{
+				res.renamed.Push(rel)
+				FileCopy, %A_LoopFileFullPath%, %target%, 1
+				}
+			}
+		if (ErrorLevel)
+			{
+			res.failed.Push(rel)
+			continue
+			}
+		if (!exists)
+			res.created.Push(rel)
+		res.copied++
 		}
-	return n
+	return res
+	}
+
+;Puts the folder back as it was before UpCopy
+UpRollback(res)
+	{
+	for i, rel in res.created
+		FileDelete, %A_ScriptDir%\%rel%
+	for i, rel in res.renamed
+		{
+		FileDelete, %A_ScriptDir%\%rel%
+		FileMove, %A_ScriptDir%\%rel%.old, %A_ScriptDir%\%rel%, 1
+		}
+	rollback := A_Temp "\wiz-maxxing-update\rollback"
+	for i, rel in res.backups
+		FileCopy, %rollback%\%rel%, %A_ScriptDir%\%rel%, 1
+	UpLog("put back: " res.backups.Length() " file(s) restored, " res.created.Length() " new one(s) removed")
+	}
+
+;The slots learned cards went into ("balance\hit2", ...), from this folder's and the release's catalog
+UpLearnedSlots(files*)
+	{
+	slots := {}
+	for i, f in files
+		Loop, Read, %f%
+			{
+			if (SubStr(A_LoopReadLine, 1, 1) = ";")
+				continue
+			fld := StrSplit(A_LoopReadLine, "|")
+			if (fld.Length() >= 8 && fld[8] != "")
+				slots[Format("{:L}", fld[8])] := 1
+			}
+	return slots
 	}
 
 ;Files that are yours: kept when they're here already
-UpIsMine(rel)
+UpIsMine(rel, slots)
 	{
 	if (RegExMatch(rel, "i)^AutoFarmer\\(PlayerStats\.txt|dashboard\.ini|resources\\characters\.txt)$"))
 		return true
@@ -252,8 +340,8 @@ UpIsMine(rel)
 		return true
 	if (RegExMatch(rel, "i)\.(log|ini)$"))
 		return true
-	;(pictures: the bot learns cards into the picture folders, so one that's here stays)
-	if (RegExMatch(rel, "i)^AutoFarmer\\.*\.(png|bmp)$"))
+	;(a slot picture a card was learned into - in any picture set - and its solid copy)
+	if (RegExMatch(rel, "i)^AutoFarmer\\(?:ui[\d.]+\\)?(\w+\\\w+?)(?:\.raw)?\.png$", m) && slots.HasKey(Format("{:L}", m1)))
 		return true
 	return false
 	}
@@ -288,10 +376,11 @@ UpMergeStats(newFile, myFile, tag)
 	UpLog("added new settings to PlayerStats.txt")
 	}
 
-;The old Wiz-Maxxing.exe a past update moved aside
+;What a past update moved aside (programs that were in use)
 UpCleanup()
 	{
-	FileDelete, %A_ScriptDir%\Wiz-Maxxing.exe.old
+	Loop, Files, %A_ScriptDir%\*.old, FR
+		FileDelete, %A_LoopFileFullPath%
 	}
 
 ;---- GitHub and the token ----

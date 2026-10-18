@@ -107,8 +107,10 @@ global EnchantedHits := {}
 ;saved; PipOrbs: pip orb slots filled, from PipValue)
 global PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, OwnHpPct := 0, OwnHpRound := -1
 global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStall := 0, PipOrbs := 0
-;You're at the keyboard and mouse right now (PlayerActing): the bot waits
-global PlayerActive := 0
+;You're at the keyboard and mouse right now (PlayerActing): the bot waits. PlayerTookRound: you played (part
+;of) a round of this battle - the bot's record of blades/traps may be wrong, so no kill check till it ends.
+;RoundLeft: the bot left the round that's up to you (seeing it again isn't a new round)
+global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 global BossMax := 0
@@ -240,6 +242,17 @@ loop,
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
+		;(never your mouse frozen while you play - Alt+1/Alt+2/Windows+3 turn the block back on)
+		BlockInput, MouseMoveOff
+		if (inbattle == 1 && !PlayerTookRound)
+			PlayerTookRound := 1, DebugLog("  (you're playing in this battle: no kill check till it ends - the bot can't know which blades and traps are left)")
+		;(the round left to you is over once its Pass button goes)
+		if (RoundLeft)
+			{
+			ImageSearch, gx, gy, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+			if (ErrorLevel)
+				RoundLeft := 0
+			}
 		Sleep, 200
 		continue
 		}
@@ -293,6 +306,13 @@ loop,
 		;A battle round is up: stop walking first (a key could still be held from the last step)
 		if (KeysDown || HeldW)
 			ReleaseKeys()
+		RoundAgain := RoundLeft, RoundLeft := 0
+		if (RoundAgain)
+			{
+			;(the round the bot left to you, still up: not a new round)
+			DebugLog("Round start again (the round left to you is still up): Pass button at " startX - GameLeft "," startY - GameTop)
+			Goto, RoundStart
+			}
 		DebugLog("Round start: Pass button at " startX - GameLeft "," startY - GameTop)
 		SeenOut := 0
 		if (dualmode == 1)
@@ -455,7 +475,8 @@ if (Manual = 1)
 	}
 	
 ;Looks at the hand (and again after discarding, since the cards shift)
-Discards := 0
+if (!RoundAgain)
+	Discards := 0
 FindCards:
 
 ;Enchants (and a fresh look at the hand for the vision helper)
@@ -562,7 +583,7 @@ if (Discards < 3) && DiscardSpare()
 CenterMouse()
 
 ;Our aura only lasts a few rounds
-if (AuraRounds > 0)
+if (AuraRounds > 0 && !RoundAgain)
 	{
 	AuraRounds--
 	}
@@ -571,6 +592,9 @@ if (AuraRounds > 0)
 if (PlayerActing())
 	{
 	DebugLog("  you're playing - leaving this round to you")
+	RoundLeft := 1
+	if (!PlayerTookRound)
+		PlayerTookRound := 1, DebugLog("  (no kill check till this battle ends - the bot can't know which blades and traps you use)")
 	Goto, EndRound
 	}
 
@@ -578,7 +602,7 @@ if (PlayerActing())
 global KillHit := ""
 global KillEnchant := 0
 PipSaveFor := ""
-if (hitter != 0) && (DualBattle != 1) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1))
+if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1))
 	{
 	if (ReadEnemyHealth())
 		{
@@ -693,10 +717,24 @@ PlayerActing()
 	static logged := 0
 	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 10
 	acting := (secs > 0 && A_TimeIdlePhysical < secs * 1000)
+	;(the bot's own hotkeys aren't you playing: the key itself, and for Alt+1 / Alt+2 / Windows+3 the click
+	;on the boss / player that follows within 10 s)
+	if (acting && A_ThisHotkey != "")
+		{
+		lastInput := A_TickCount - A_TimeIdlePhysical, keyAt := A_TickCount - A_TimeSinceThisHotkey
+		if (lastInput >= keyAt - 50 && lastInput <= keyAt + (RegExMatch(A_ThisHotkey, "^(!1|!2|#3)$") ? 11000 : 600))
+			acting := false
+		}
 	if (acting && !logged)
 		DebugLog("You're playing - the bot waits until you've left the keyboard and mouse alone for " secs " s"), logged := 1
 	else if (!acting && logged)
-		DebugLog("You've stopped - the bot carries on"), logged := 0
+		{
+		DebugLog("You've stopped - the bot carries on")
+		logged := 0
+		;(the walker starts its watch afresh: you may have moved, and the time you played isn't it being stuck)
+		if (IsFunc("WalkReset"))
+			Func("WalkReset").Call()
+		}
 	PlayerActive := acting
 	return acting
 	}
@@ -1304,6 +1342,7 @@ ResetVariables()
 	hit4 := 0
 	EnchantedHits := {}
 	PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, PipSaveTarget := "", PipSaveStall := 0, PipSaveLastPips := -1
+	PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 	OwnHpPct := 0, OwnHpRound := -1
 	tower := 0  
 	hitter := 0
