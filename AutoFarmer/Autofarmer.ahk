@@ -92,6 +92,12 @@ global BossTraps := {}
 global AuraRounds := 0
 ;Hits we put an enchant on that haven't been cast yet (they keep the enchant): title -> enchant level
 global EnchantedHits := {}
+;Saving pips for a hit that ends the battle (KillCalc.ahk PlanPips): the hit ("" none), rounds saved so far,
+;given up this battle; and your health % off your name plate, and the round it was read in
+;(PipSaveBare: the wand's free hit is fine meanwhile; PipSaveTarget/LastPips/Stall: counting the rounds
+;saved; PipOrbs: pip orb slots filled, from PipValue)
+global PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, OwnHpPct := 0, OwnHpRound := -1
+global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStall := 0, PipOrbs := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 global BossMax := 0
@@ -543,11 +549,14 @@ if (AuraRounds > 0)
 ;Kill check: read every enemy's health and, if a hit in hand already kills them all, cast it now instead of boosting more
 global KillHit := ""
 global KillEnchant := 0
+PipSaveFor := ""
 if (hitter != 0) && (DualBattle != 1) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1))
 	{
 	if (ReadEnemyHealth())
 		{
-		FindLethalHit(KillHit, KillEnchant)
+		;(nothing ends it now: is a hit that would worth saving pips for? KillCalc.ahk PlanPips)
+		if (!FindLethalHit(KillHit, KillEnchant))
+			PlanPips()
 		}
 	ShowKillInfo()
 	DebugLog("  kill check: " HealthText() " -> " (KillHit = "" ? "no lethal hit" : KillHit (KillEnchant ? " with enchant" : "")))
@@ -556,6 +565,8 @@ if (hitter != 0) && (DualBattle != 1) && (Stat("healthocr") == 1) && ((hit1 == 1
 		{
 		if UseHit(KillHit, %KillHit%, hitschool, KillEnchant)
 			{
+			;(a saved-for hit went out: the next save counts afresh)
+			PipSaveRounds := 0, PipSaveTarget := "", PipSaveStall := 0
 			Goto, EndRound
 			}
 		}
@@ -1011,6 +1022,15 @@ UseConvert(ByRef title, ByRef convert, ByRef dir)
 UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 	{
 	global
+	;Saving pips for a hit that ends the battle (PlanPips): no other hit spends them. The wand's card is free,
+	;but it uses up blades, traps and an enchant: only when the saved hit kills without them, unenchanted
+	if (PipSaveFor != "" && title != PipSaveFor && (title != "wand" || !PipSaveBare))
+		{
+		DebugLog("  " title ": not cast - saving pips for " PipSaveFor)
+		return false
+		}
+	if (PipSaveFor != "" && title = "wand")
+		useEnchant := 0
 	Find(title, hit, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" hit " at " foundX - GameLeft "," foundY - GameTop)
 
@@ -1099,6 +1119,8 @@ OwnHealthLow()
 	PotionNoteMax(a[1].max)
 	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
 	pct := Round(100 * a[1].cur / a[1].max)
+	;(for saving pips: not while your health is low)
+	OwnHpPct := pct, OwnHpRound := roundnumber
 	;(healing on a misread wastes the card - e.g. 775 read as 75 by two sizes - so a low reading needs
 	;three of the four sizes to agree)
 	if (pct < limit && bestN < 3)
@@ -1237,6 +1259,8 @@ ResetVariables()
 	hit3 := 0
 	hit4 := 0
 	EnchantedHits := {}
+	PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, PipSaveTarget := "", PipSaveStall := 0, PipSaveLastPips := -1
+	OwnHpPct := 0, OwnHpRound := -1
 	tower := 0  
 	hitter := 0
 	hitschool := ""

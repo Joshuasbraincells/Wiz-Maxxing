@@ -98,6 +98,12 @@ balance.heal1pips:2   ; Pixie: heals you 400 (balance\heal1.png)
 ; healat: cast a healing card (heal1.png / heal2.png in the school's folder) on yourself when your health
 ; is under this % (read off your name plate). Set <school>.heal1pips for its cost.
 healat:40
+; pipsave: save pips (up to this many rounds; 0 = never) for a hit in hand that ends the battle once it's
+; affordable - an AoE that kills every enemy, or a hit that kills the last one. Meanwhile no other hit spends
+; pips (the wand's free hit, blades/traps, healing and Pass still go)
+pipsave:3
+; pipsavehealth: don't save pips while your health is under this %
+pipsavehealth:50
 ; potionat: out of battle, drink a potion (Ctrl+O) when your health is under this % - out of potions, the
 ; bot buys more with gold along the route you recorded (tray menu "Record potion route...", Potions.ahk)
 potionat:40

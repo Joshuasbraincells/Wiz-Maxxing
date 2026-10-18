@@ -118,12 +118,24 @@ solve this issue as well. Use the key combo Alt+2 to
 manually set the "Hammers" location. Works exactly like the 
 boss location.
 
+Saving pips (pipsave, pipsavehealth in PlayerStats.txt):
+When nothing in hand ends the battle this round, but a hit that would end it
+- an AoE that kills every enemy, or a hit that kills the last one - costs
+more pips than you have, the bot saves up for it (up to pipsave rounds,
+default 3): no other hit spends pips meanwhile (the wand's free hit, blades,
+traps, healing and Pass still go), and the kill check casts it the round it's
+affordable. Not while your health is under pipsavehealth % (default 50); it
+gives up for the battle if the pips don't come. debug.log and the dashboard
+say "saving pips for ...".
+
 Kill check:
 At the start of every round the program reads each enemy's health off the
 nameplates at the top of the screen and works out how much damage each hit
 in your hand would do. If one of them kills every enemy it casts it right
-away (the cheapest one that works, and without the enchant if it doesn't
-need it) instead of putting up more blades and traps. If it can't read the
+away (the cheapest one that works - the wand's free hit first - and without
+the enchant if it doesn't need it) instead of putting up more blades and
+traps. A hit on one enemy (<school>.hitNtarget:1) only counts when one enemy
+is left. If it can't read the
 health, or no hit is enough yet, it plays exactly like before.
 	- Turn on Options > Gameplay Options > "2D Combat Display" in Wizard101,
 	  that's what shows the enemy nameplates.

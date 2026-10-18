@@ -13,7 +13,7 @@ LoadStats(quiet := false)
 	defaults := "damage:130,pierce:0,enemyresist:15,killmargin:15,solotraps:0,reboost:0,discardunaffordable:0,healthocr:1,ocrscale:2,platestrip:110"
 		. ",blade:35,elementalblade:35,spiritblade:35,blade3:25,blade4:20,sharpen:10"
 		. ",trap:40,elementaltrap:30,spirittrap:30,trap3:30,trap4:0,feint:70,potent:10"
-		. ",aura:25,enchant1:100,enchant2:225,enchant3:275,enchant4:300"
+		. ",aura:25,enchant1:100,enchant2:225,enchant3:275,enchant4:300,pipsave:3,pipsavehealth:50"
 		. ",storm.hit1:80,storm.hit2:520,storm.hit3:690,storm.hit4:805"
 		. ",fire.hit1:305,fire.hit2:430,fire.hit3:540,fire.hit4:1265"
 		. ",myth.hit1:275,myth.hit2:370,myth.hit3:700,myth.hit4:790"
@@ -363,8 +363,9 @@ HitDamage(hitName, useEnchant, toBoss)
 	base := Stat(hitschool . "." . hitName)
 	if (base <= 0)
 		return 0
-	;X-pip spells (pip cost 0) are stored as damage per pip: they spend all your pips
-	if (Stat(hitschool . "." . hitName . "pips") = 0)
+	;X-pip spells (pip cost 0) are stored as damage per pip: they spend all your pips (not the wand's card:
+	;it costs nothing)
+	if (hitName != "wand" && Stat(hitschool . "." . hitName . "pips") = 0)
 		base *= (PipsNow > 0 ? PipsNow : 1)
 	if (EnchantedHits[hitName])
 		base += Stat("enchant" . EnchantedHits[hitName])
@@ -388,6 +389,9 @@ IsLethal(hitName, useEnchant)
 		return false
 	;Boss fight: the boss's plate must be among the ones read, or a missed plate could hide it
 	if (BossChoosen == 1) && (BossSlot < 1)
+		return false
+	;A hit on one enemy (<school>.<hit>target:1, e.g. Scarab) only ends the battle when one enemy is left
+	if (Stat(hitschool "." hitName "target") = 1 && EnemyHP.Length() > 1)
 		return false
 	margin := 1 + Stat("killmargin") / 100
 	for i, e in EnemyHP
@@ -482,6 +486,8 @@ PipValue()
 	global playerX, playerY
 	if (playerX = "" || playerY = "" || (playerX = 0 && playerY = 0))
 		return -1
+	;(and how many of the 7 orb slots are filled, for saving pips: PipOrbs)
+	PipOrbs := 0
 	orb := Px(11), w := Round(20 * UiScale * 6) + orb, h := orb
 	px := CaptureRGB(playerX - Px(6), playerY + Px(50), w, h)
 	if (!IsObject(px))
@@ -515,6 +521,7 @@ PipValue()
 			total += 1
 		else
 			break
+		PipOrbs := A_Index
 		}
 	return total
 	}
@@ -545,12 +552,18 @@ CaptureRGB(x, y, w, h)
 	return out
 	}
 
-;Cheapest hit in hand that kills every enemy, trying without the enchant first
+;Cheapest hit in hand that kills every enemy, trying without the enchant first: the wand's card first (it
+;costs nothing; never enchanted), then hit1-4
 FindLethalHit(ByRef hitName, ByRef withEnchant)
 	{
-	global enchant
+	global enchant, wand
 	inHand := [hit1, hit2, hit3, hit4]
 	hitName := "", withEnchant := 0
+	if (wand == 1 && IsLethal("wand", 0))
+		{
+		hitName := "wand"
+		return true
+		}
 	Loop, % (enchant >= 1) ? 2 : 1
 		{
 		useEnchant := A_Index - 1
@@ -567,3 +580,102 @@ FindLethalHit(ByRef hitName, ByRef withEnchant)
 		}
 	return false
 	}
+
+;---- Saving pips for a hit that ends the battle ----
+;
+;Called by the kill check when nothing in hand ends the battle this round. A hit in hand that would end it
+;- an AoE that kills every enemy, a single-target hit that kills the last one - but costs more pips than
+;you have, is worth saving for: pips come at 1 or more a round, so it's castable in (cost - pips) rounds
+;at most. Within pipsave rounds (PlayerStats.txt, default 3; 0 = never save), PipSaveFor names it and
+;UseHit casts no other hit meanwhile (the wand's free hit, boosts, healing and Pass still go). Not while
+;your health is under pipsavehealth % (default 50), and given up for the battle if the pips don't come.
+;The round it's affordable the kill check casts it.
+PlanPips()
+	{
+	global hit1, hit2, hit3, hit4, BossChoosen, enchant, roundnumber, OwnHpPct, OwnHpRound, player
+	PipSaveFor := "", PipSaveBare := 0
+	maxWait := Stat("pipsave")
+	if (maxWait <= 0 || PipSaveGaveUp || PipsNow < 0 || !IsObject(EnemyHP) || !EnemyHP.Length())
+		return
+	inHand := [hit1, hit2, hit3, hit4]
+	;(the most pips you can still reach: 7 orb slots, each new one worth at least 1)
+	reach := PipsNow + Max(0, 7 - PipOrbs)
+	best := "", bestWait := 99, bestCost := 0
+	Loop, 4
+		{
+		name := "hit" A_Index
+		;(hit4 is only cast on bosses, as in the battle code)
+		if (inHand[A_Index] != 1 || (A_Index = 4 && BossChoosen != 1))
+			continue
+		cost := Stat(hitschool "." name "pips")
+		;(an X-pip spell, one you can pay for now, or one too far off: nothing to save for)
+		if (cost <= 0 || cost <= PipsNow || cost - PipsNow > maxWait || cost > reach)
+			continue
+		;(lethal as it'll be when it's castable: the aura may have run out by then)
+		wait := cost - PipsNow
+		if (!PipLethalLater(name, wait))
+			continue
+		if (wait < bestWait)
+			best := name, bestWait := wait, bestCost := cost
+		}
+	if (best = "")
+		{
+		PipSaveRounds := 0, PipSaveTarget := "", PipSaveStall := 0
+		return
+		}
+	;Your health, off your name plate, read this round: no saving when it's low - or can't be read
+	if (OwnHpRound != roundnumber && player == 1 && IsFunc("OwnHealthLow"))
+		Func("OwnHealthLow").Call()
+	if (OwnHpRound != roundnumber)
+		{
+		DebugLog("  not saving pips for " best ": your health couldn't be read")
+		return
+		}
+	if (OwnHpPct < Stat("pipsavehealth"))
+		{
+		DebugLog("  not saving pips for " best ": your health is " OwnHpPct "% (under pipsavehealth " Stat("pipsavehealth") "%)")
+		return
+		}
+	;Rounds saved for this hit: a new game round shows as more pips (the bot can look at one round twice);
+	;the same pips three looks running means they've stopped coming
+	if (best != PipSaveTarget)
+		PipSaveTarget := best, PipSaveRounds := 0, PipSaveStall := 0, PipSaveLastPips := -1
+	if (PipsNow != PipSaveLastPips)
+		PipSaveRounds++, PipSaveStall := 0, PipSaveLastPips := PipsNow
+	else
+		PipSaveStall++
+	if (PipSaveRounds > maxWait + 1 || PipSaveStall >= 3)
+		{
+		PipSaveGaveUp := 1
+		DebugLog("  saved pips for " best " " PipSaveRounds " round(s) and still can't cast it - spending them again this battle")
+		return
+		}
+	PipSaveFor := best
+	;(the wand's free hit meanwhile only if the saved hit kills without the blades, traps, aura and enchant
+	;it would use up - and never with the enchant)
+	PipSaveBare := PipLethalBare(best)
+	DebugLog("  saving pips for " best " (" bestCost " pips, you have " PipsNow "): it ends the battle - no other hit spends pips for up to " bestWait " round" (bestWait = 1 ? "" : "s") (PipSaveBare ? "" : "; no wand hit meanwhile (it would use up the boosts the kill needs)"))
+	}
+
+;Whether hit name is lethal once castable in wait rounds: the aura counted only if it lasts that long;
+;the enchant in hand may be used on it
+PipLethalLater(name, wait)
+	{
+	global enchant
+	keep := AuraRounds
+	AuraRounds := Max(0, AuraRounds - wait)
+	lethal := IsLethal(name, 0) || (enchant >= 1 && IsLethal(name, 1))
+	AuraRounds := keep
+	return lethal
+	}
+
+;Whether hit name is lethal with none of the boosts a wand hit would use up (blades, traps, aura, enchant)
+PipLethalBare(name)
+	{
+	keepBlades := AppliedBlades, keepTraps := BossTraps, keepAura := AuraRounds
+	AppliedBlades := {}, BossTraps := {}, AuraRounds := 0
+	lethal := IsLethal(name, 0)
+	AppliedBlades := keepBlades, BossTraps := keepTraps, AuraRounds := keepAura
+	return lethal
+	}
+

@@ -173,11 +173,15 @@ DashParse(line)
 	{
 	msg := SubStr(line, 10)
 	if (InStr(msg, "Round start:") = 1)
-		DashAdd("rounds"), DashSees.mode := "battle", DashSees.roundAt := A_TickCount
+		DashAdd("rounds"), DashSees.mode := "battle", DashSees.roundAt := A_TickCount, DashSees.plan := ""
 	else if (msg = "Round done")
 		DashSees.mode := "battle"
 	else if (InStr(msg, "Out of battle") = 1)
-		DashSees.mode := "out"
+		DashSees.mode := "out", DashSees.plan := ""
+	else if (RegExMatch(msg, "^  saving pips for (\w+) \((\d+) pips, you have (\d+)\).*up to (\d+) round", m))
+		DashAdd("pipsaves"), DashSees.plan := "saving pips for " DashShortName(m1) " (" m3 "/" m2 " pips)"
+	else if (RegExMatch(msg, "^  (not saving pips|saved pips) .*", m))
+		DashSees.plan := Trim(m)
 	else if (RegExMatch(msg, "^  Click pass: found=1"))
 		DashAdd("passes")
 	else if (InStr(msg, "  Discarded ") = 1)
@@ -320,6 +324,7 @@ DashRefresh()
 		. "Passed           " DashNum(n.passes) "`n"
 		. "Discarded        " DashNum(n.discards) "`n"
 		. "Kill-check hits  " DashNum(n.lethal) "`n"
+		. "Rounds saving pips" SubStr(DashNum(n.pipsaves), 2) "`n"
 		. "Potions drunk    " DashNum(n.potions) "   (buying runs: " (n.potionRuns = "" ? 0 : n.potionRuns) ")`n"
 		. "Cards learned    " DashNum(n.learned)
 	DashSet("DashStatText", s)
@@ -330,6 +335,7 @@ DashRefresh()
 		. "School       " (see.school != "" ? see.school : "?") "  (hitting with " (see.hitter != "" ? see.hitter : "?") ")`n"
 		. "Hand         " DashCut(see.hand != "" ? see.hand : "-") "`n"
 		. "Enemies      " DashCut(see.enemies != "" ? see.enemies : "-") "`n"
+		. "Plan         " DashCut(see.plan != "" ? see.plan : "-") "`n"
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"
 		. "Walker       " DashCut(StatusText != "" ? StatusText : "-") "`n"
