@@ -5,7 +5,9 @@
 ; ones, in order, writing what happens in the log below:
 ;   Python 3          the vision helper (card and badge matching) runs on it. winget installs it for you
 ;                     only (no admin); without winget, the installer from python.org
-;   numpy and Pillow  the Python packages the vision helper uses (pip), then checked by importing them
+;   numpy and Pillow  the Python packages the vision helper uses (pip), then checked by importing them;
+;                     katsuba too, as a spare reader of the game's zone files for the zone map (optional:
+;                     the helper reads them itself)
 ;   Unblock files     Windows marks files that came from the internet and warns about every exe; this
 ;                     takes the mark off the bot's files
 ;   Start menu        a Wiz-Maxxing folder: Wiz-Maxxing (the bot), Wiz-Maxxing Setup, Stats reader, Quest walker only
@@ -36,7 +38,7 @@ Gui, Su:Margin, 14, 12
 Gui, Su:Font, s11 w600, Segoe UI
 Gui, Su:Add, Text, w620, Get this PC ready to run the Wizard101 bot
 Gui, Su:Font, s9 w400, Segoe UI
-Gui, Su:Add, Text, w620 y+4, The ticked parts get installed. Python and its packages are needed for the card matching; the last two are only for changing the bot.
+Gui, Su:Add, Text, w620 y+4, The ticked parts get installed. Python and its packages are needed for the card matching and the zone map; the last two are only for changing the bot.
 Gui, Su:Add, Checkbox, xm y+14 w260 vSuPy, Python 3
 Gui, Su:Add, Text, x+8 w350 vSuPyS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuPk, numpy and Pillow (Python packages)
@@ -183,13 +185,18 @@ SuInstallPython()
 
 SuInstallPackages()
 	{
-	SuLogLine("== numpy and Pillow")
+	SuLogLine("== numpy and Pillow (and katsuba, optional)")
+	SuLogLine("numpy and Pillow: the card matching and the zone map. katsuba: a spare reader of the game's zone files")
 	py := SuPython()
 	if (py = "")
 		return SuLogLine("needs Python first")
 	SuRun("""" py """ -m pip install --user --upgrade numpy pillow")
 	ok := SuRun("""" py """ -c ""import numpy, PIL; print('numpy', numpy.__version__, '- Pillow', PIL.__version__)""") = 0
 	SuLogLine(ok ? "the vision helper's packages load" : "they don't load - see the messages above")
+	;(on its own and optional: the helper reads the zone files itself; katsuba is only its spare)
+	SuRun("""" py """ -m pip install --user --upgrade katsuba")
+	kt := SuRun("""" py """ -c ""import katsuba""") = 0
+	SuLogLine(kt ? "katsuba loads" : "katsuba didn't install - that's fine, it's only a spare (nothing needs it)")
 	}
 
 SuUnblock()

@@ -29,6 +29,7 @@ Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
+Menu, Tray, Add, Map of the zone, MenuMap
 Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
@@ -64,6 +65,11 @@ return
 
 MenuDash:
 DashToggle()
+return
+
+;The map window (Dashboard.ahk): a top-down picture of the zone, the wizard and the quest goal
+MenuMap:
+DashMapToggle()
 return
 
 ;(Wiz-Maxxing.exe /check: asks GitHub; if you update, it closes this and starts the new one)

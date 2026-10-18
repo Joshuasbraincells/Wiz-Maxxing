@@ -20,3 +20,5 @@ __pycache__/
 
 # Per-computer settings
 AutoFarmer/dashboard.ini
+# What the walker learned about the game's memory (made by itself)
+AutoQuester/resources/nav_calibration.txt

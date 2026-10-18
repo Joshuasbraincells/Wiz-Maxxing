@@ -35,14 +35,42 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /forget                                 -> reads the picture folders again (after pictures were added)
   /globes?left=&bottom=&scale=            -> "health|<n>" and "mana|<n>" off the globes at the game's bottom
                                              left (n "" if it can't be read for sure)
+  /nav[?path=1]                           -> where the wizard and its quest goal are, read from the game's memory
+                                             (read-only, see vision\navmem.py), one line each:
+                                               ok|1
+                                               zone|<zone path, e.g. WizardCity/WC_Ravenwood>
+                                               pos|x|y|z|yaw        (z up; yaw radians, forward = (-sin yaw, -cos yaw))
+                                               target|x|y|z         (the node the on-screen arrow points at)
+                                               goal|x|y|z|hops      (hops 0: the goal is in this zone; N: N zone changes
+                                                                     away, and x|y|z is the teleporter to take here)
+                                               dist|d               (the arrow's distance, along the path)
+                                               quest|enabled|questid|goalid
+                                               path|x,y,z;x,y,z;... (only with path=1: the game's own path over the
+                                                                     zone's nav graph, from the wizard to the goal)
+                                             A field that can't be read for sure is left empty (target|||): goal, target,
+                                             dist and path while the quest helper is still on the last zone, target and
+                                             dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
+                                             game can't be read: not running, being attached to (its code is looked through
+                                             once per game process, under a second), or a signature isn't in this build
+  /navmap?w=&h=&out=<png path in the AutoFarmer folder>[&span=6000]
+                                          -> "ok|<out>": a w x h top-down picture of the zone round the wizard, span game
+                                             units across its shorter side (+X right, +Y up): the walkable floor, obstacles
+                                             and the faint nav graph (the zone's .wad, decoded once per zone - see
+                                             vision\navgeo.py - and drawn in tiles that are kept), then, drawn each time,
+                                             the game's path, the wizard as an arrow showing its facing, the arrow's target
+                                             (a ring) and the goal (a diamond; a door with the number of zone changes when
+                                             it's in another zone; on the edge, pointing, when off the picture). No zone
+                                             file: the overlay on a blank background. "ERR <why>" as /nav, or when the
+                                             wizard's position can't be read
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand or /cut to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
 
-Only numpy and Pillow. Stops by itself when the AutoFarmer process (--parent <pid>) is gone.
+Only numpy and Pillow (katsuba is used for a zone .wad only if installed and the built-in reader can't read
+it). Stops by itself when the AutoFarmer process (--parent <pid>) is gone.
 """
 import argparse
-import collections, ctypes, glob, json, os, re, sys, threading, time
+import collections, ctypes, glob, json, math, os, re, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -877,6 +905,356 @@ def read_globes(left, bottom, scale, file=None):
     return out
 
 
+# ---------------------------------------------------------------- walking: the game's memory and the zone map
+
+# Where the wizard and the quest goal are comes from the game's memory, read-only (vision\navmem.py: it opens
+# the game with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION and only ever calls ReadProcessMemory on it); the
+# zone's floor, obstacles and nav graph from its .wad (vision\navgeo.py). Both are imported on the first
+# /nav or /navmap, so nothing else here depends on them
+NAV = None
+NAV_LOCK = threading.Lock()
+NAV_SPAN = 6000.0           # /navmap: game units across the picture's shorter side
+NAV_TILE = 256              # the static layers are drawn in tiles this many pixels square, kept per zone and scale
+NAV_SS = 2                  # drawn this many times bigger, then shrunk (smooth edges)
+NAV_TILES_KEPT = 64         # tiles kept, all zones (64 x 192 KB)
+NAV_ZONES_KEPT = 3
+# colours, to sit on the dashboard (1B1D22 / 111317, accent 8AB4F8)
+MAP_BG = (17, 19, 23)
+MAP_FLOOR = (44, 48, 56)
+MAP_RIM = (72, 78, 90)
+MAP_WATER = (28, 52, 74)
+MAP_OBST = (204, 112, 74)
+MAP_NAV = (138, 180, 248)
+MAP_PATH = (138, 180, 248)
+MAP_TARGET = (242, 193, 78)
+MAP_GOAL = (123, 216, 143)
+MAP_DOOR = (197, 138, 249)
+MAP_ME = (242, 242, 242)
+MAP_TEXT = (154, 160, 166)
+
+
+def nav_reader():
+    global NAV
+    with NAV_LOCK:
+        if NAV is None:
+            import navmem
+            NAV = navmem.NavMem(log=log)
+        return NAV
+
+
+def nav_lines(r, with_path):
+    """/nav's answer from a navmem reading (fields that can't be read for sure left empty)"""
+    def xyz(v):
+        return '|'.join(f'{c:.2f}' for c in v) if v is not None else '||'
+    have_pos = r['pos'] is not None and r['yaw'] is not None
+    have_goal = r['goal'] is not None and r['hops'] is not None
+    lines = ['ok|1',
+             'zone|' + (r['zone'] or ''),
+             'pos|' + (xyz(r['pos']) + f"|{r['yaw']:.4f}" if have_pos else '|||'),
+             'target|' + xyz(r['target']),
+             'goal|' + (xyz(r['goal']) + f"|{r['hops']}" if have_goal else '|||'),
+             'dist|' + ('' if r['dist'] is None else f"{r['dist']:.1f}"),
+             'quest|' + '|'.join('' if r[k] is None else str(r[k]) for k in ('enabled', 'quest', 'goalid'))]
+    if with_path:
+        lines.append('path|' + ';'.join(f'{x:.1f},{y:.1f},{z:.1f}' for x, y, z in (r['path'] or ())))
+    return lines
+
+
+NAV_RETRY = 30
+
+
+class ZoneLayers:
+    """One zone's static map layers - walkable floor, water, obstacles, the nav graph - decoded once, drawn
+    in NAV_TILE tiles on first use at a scale (upp: game units per pixel). Pixel (px, py) of the zone's
+    picture at a scale is world (px * upp, -py * upp): +X to the right, +Y up. No zone file: no layers
+    (why says why), the map is the overlay on a blank background"""
+
+    def __init__(self, zone, game_dir=''):
+        self.zone, self.why = zone, ''
+        self.tris = {}          # 'floor' / 'water': (F, 3, 2) world XY triangles, with (F, 4) bounds
+        self.polys = {}         # 'floor' / 'obst': [(k, 2) polygon], with (n, 4) bounds
+        self.segs = np.zeros((0, 2, 2))
+        self.nodes = np.zeros((0, 2))
+        self.bounds = None      # x1, y1, x2, y2 of everything
+        try:
+            import navgeo
+            d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR)
+        except Exception as e:  # noqa: BLE001 - no map, just the overlay
+            self.why = str(e) if isinstance(e, FileNotFoundError) else f"the zone file can't be read ({e!r})"
+            return
+        nav, bcd = d['nav'], d['bcd'] or []
+        P = nav['positions'].astype(np.float64) if nav is not None and len(nav['positions']) else np.zeros((0, 3))
+        if nav is not None and len(nav['edges']):
+            self.segs = P[nav['edges']][:, :, :2]
+        self.nodes = P[:, :2]
+        tris = {'floor': [], 'water': []}
+        polys = {'floor': [], 'obst': []}
+        for s in bcd:
+            cat = s['category_flags']
+            if s['type'] == 'mesh':
+                kind = 'floor' if cat & 0x2 else 'water' if cat & 0x40 else None
+                if kind and len(s['mesh']['faces']):
+                    v, f = navgeo.mesh_world(s)
+                    tris[kind].append(v[f][:, :, :2])
+            elif cat & 0x2:                                          # a walkable box (a platform)
+                polys['floor'] += [p for p in navgeo.footprint(s, 24) if len(p) >= 3]
+            elif cat & 0x81 and s['type'] in ('box', 'cylinder', 'sphere', 'tube'):
+                # an obstacle - unless it hangs over the floor (an arch's top, a roof): its bottom higher
+                # than a wizard over every nav node round it
+                ab = navgeo.aabb(s)
+                if ab is not None and len(P):
+                    lo, hi = ab
+                    near = (P[:, 0] > lo[0] - 300) & (P[:, 0] < hi[0] + 300) & (P[:, 1] > lo[1] - 300) & (P[:, 1] < hi[1] + 300)
+                    if near.any() and lo[2] > P[near, 2].max() + 180:
+                        continue
+                polys['obst'] += [p for p in navgeo.footprint(s, 28) if len(p) >= 3]
+        allb = []
+        for k, t in tris.items():
+            t = np.concatenate(t) if t else np.zeros((0, 3, 2))
+            b = np.concatenate([t.min(1), t.max(1)], 1) if len(t) else np.zeros((0, 4))
+            self.tris[k] = (t, b)
+            allb.append(b)
+        for k, ps in polys.items():
+            b = np.array([[*p.min(0), *p.max(0)] for p in ps]) if ps else np.zeros((0, 4))
+            self.polys[k] = (ps, b)
+            allb.append(b)
+        if len(self.nodes):
+            allb.append(np.concatenate([self.nodes, self.nodes], 1))
+        allb = np.concatenate(allb) if allb else np.zeros((0, 4))
+        if len(allb):
+            self.bounds = (allb[:, 0].min(), allb[:, 1].min(), allb[:, 2].max(), allb[:, 3].max())
+        else:
+            self.why = 'the zone file has no floor or nav graph'
+
+    def tile(self, upp, i, j):
+        """tile (i, j) at upp as an RGB picture, or None if nothing is in it"""
+        T, S = NAV_TILE, NAV_SS
+        pad = 3                                                  # (for the floor's rim, then cut off)
+        wx1, wx2 = (i * T - pad) * upp, ((i + 1) * T + pad) * upp
+        wy1, wy2 = -((j + 1) * T + pad) * upp, -(j * T - pad) * upp
+        if self.bounds is None or wx2 < self.bounds[0] or wx1 > self.bounds[2] or wy2 < self.bounds[1] or wy1 > self.bounds[3]:
+            return None
+        size = (T + 2 * pad) * S
+
+        def px(a):
+            """world XY (..., 2) -> this tile's big pixels, as a flat list for ImageDraw"""
+            a = np.asarray(a, dtype=np.float64)
+            return np.stack([(a[..., 0] / upp - i * T + pad) * S, (-a[..., 1] / upp - j * T + pad) * S], -1)
+
+        def inside(b):
+            return (b[:, 2] >= wx1) & (b[:, 0] <= wx2) & (b[:, 3] >= wy1) & (b[:, 1] <= wy2)
+
+        from PIL import ImageDraw, ImageFilter
+        ground = Image.new('L', (size, size), 0)                  # 0 nothing, 1 floor, 2 water
+        dg = ImageDraw.Draw(ground)
+        for kind, val in (('floor', 1), ('water', 2)):
+            t, b = self.tris[kind]
+            for tri in px(t[inside(b)]).tolist():
+                dg.polygon([tuple(q) for q in tri], fill=val, outline=val)
+            if kind == 'floor':
+                ps, b = self.polys['floor']
+                for k in np.nonzero(inside(b))[0] if len(b) else ():
+                    dg.polygon([tuple(q) for q in px(ps[k]).tolist()], fill=val, outline=val)
+        g = np.asarray(ground)
+        solid = Image.fromarray(((g > 0) * 255).astype(np.uint8))
+        rim = (np.asarray(solid.filter(ImageFilter.MaxFilter(2 * S + 1))) > 0) & (g == 0)
+        rgb = np.empty((size, size, 3), np.uint8)
+        rgb[:] = MAP_BG
+        rgb[g == 1] = MAP_FLOOR
+        rgb[g == 2] = MAP_WATER
+        rgb[rim] = MAP_RIM
+        img = Image.fromarray(rgb).convert('RGBA')
+        layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        dl = ImageDraw.Draw(layer)
+        segs = self.segs
+        if len(segs):
+            b = np.concatenate([segs.min(1), segs.max(1)], 1)
+            for (x1, y1), (x2, y2) in px(segs[inside(b)]).tolist():
+                dl.line([(x1, y1), (x2, y2)], fill=MAP_NAV + (46,), width=S)
+        nb = np.concatenate([self.nodes, self.nodes], 1) if len(self.nodes) else np.zeros((0, 4))
+        r = 1.2 * S
+        for x, y in px(self.nodes[inside(nb)]).tolist() if len(nb) else ():
+            dl.ellipse([x - r, y - r, x + r, y + r], fill=MAP_NAV + (70,))
+        img.alpha_composite(layer)
+        layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
+        dl = ImageDraw.Draw(layer)
+        ps, b = self.polys['obst']
+        for k in np.nonzero(inside(b))[0] if len(b) else ():
+            dl.polygon([tuple(q) for q in px(ps[k]).tolist()], fill=MAP_OBST + (105,), outline=MAP_OBST + (215,), width=S)
+        img.alpha_composite(layer)
+        img = img.convert('RGB').resize((T + 2 * pad, T + 2 * pad), Image.BOX)
+        return img.crop((pad, pad, pad + T, pad + T))
+
+
+NAV_ZONES = collections.OrderedDict()       # zone -> ZoneLayers
+NAV_TILES = collections.OrderedDict()       # (zone, upp, i, j) -> picture or None
+MAP_LOCK = threading.Lock()
+MAP_FONTS = {}
+
+
+def zone_layers(zone, game_dir):
+    z = NAV_ZONES.get(zone)
+    # (a zone whose file couldn't be read - still downloading or being written while it loads - is tried
+    # again after NAV_RETRY seconds rather than kept as 'no map' for the whole visit)
+    if z is not None and z.why and time.time() - getattr(z, 'made', 0) > NAV_RETRY:
+        NAV_ZONES.pop(zone, None)
+        for k in [k for k in NAV_TILES if k[0] == zone]:
+            del NAV_TILES[k]
+        z = None
+    if z is None:
+        t0 = time.perf_counter()
+        z = NAV_ZONES[zone] = ZoneLayers(zone, game_dir)
+        z.made = time.time()
+        log(f'/navmap: zone {zone} read in {(time.perf_counter() - t0) * 1000:.0f} ms' + (f' - {z.why}' if z.why else ''))
+        while len(NAV_ZONES) > NAV_ZONES_KEPT:
+            old, _ = NAV_ZONES.popitem(last=False)
+            for k in [k for k in NAV_TILES if k[0] == old]:
+                del NAV_TILES[k]
+    NAV_ZONES.move_to_end(zone)
+    return z
+
+
+def map_font(size):
+    from PIL import ImageFont
+    if size not in MAP_FONTS:
+        for name in ('segoeuib.ttf', 'segoeui.ttf', 'arialbd.ttf', 'arial.ttf'):
+            try:
+                MAP_FONTS[size] = ImageFont.truetype(name, size)
+                break
+            except OSError:
+                pass
+        else:
+            MAP_FONTS[size] = ImageFont.load_default()
+    return MAP_FONTS[size]
+
+
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN):
+    """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known)"""
+    from PIL import ImageDraw
+    upp = span / min(w, h)
+    ukey = round(upp, 4)
+    x0, y0 = r['pos'][0], r['pos'][1]
+    ox, oy = int(math.floor(x0 / upp - w / 2)), int(math.floor(-y0 / upp - h / 2))
+    img = Image.new('RGB', (w, h), MAP_BG)
+    zone = r['zone'] or ''
+    layers = zone_layers(zone, game_dir) if zone else None
+    T = NAV_TILE
+    if layers is not None and not layers.why:
+        for j in range(oy // T, (oy + h - 1) // T + 1):
+            for i in range(ox // T, (ox + w - 1) // T + 1):
+                key = (zone, ukey, i, j)
+                if key in NAV_TILES:
+                    NAV_TILES.move_to_end(key)
+                else:
+                    NAV_TILES[key] = layers.tile(upp, i, j)
+                    while len(NAV_TILES) > NAV_TILES_KEPT:
+                        NAV_TILES.popitem(last=False)
+                if NAV_TILES[key] is not None:
+                    img.paste(NAV_TILES[key], (i * T - ox, j * T - oy))
+    # the overlay, drawn big and shrunk
+    S = NAV_SS
+    ov = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+    d = ImageDraw.Draw(ov)
+    unit = max(1.0, min(w, h) / 240) * S                     # line width / marker size unit (big pixels)
+
+    def at(p):
+        return ((p[0] / upp - ox) * S, (-p[1] / upp - oy) * S)
+
+    def on_pic(q, m=0):
+        return m <= q[0] <= w * S - m and m <= q[1] <= h * S - m
+
+    def edge_pointer(q, col):
+        """a point off the picture: a small triangle on its edge pointing at it"""
+        cx, cy = w * S / 2, h * S / 2
+        dx, dy = q[0] - cx, q[1] - cy
+        n = math.hypot(dx, dy) or 1.0
+        dx, dy = dx / n, dy / n
+        m = 7 * unit
+        k = min((cx - m) / abs(dx) if dx else 1e9, (cy - m) / abs(dy) if dy else 1e9)
+        tx, ty = cx + dx * k, cy + dy * k
+        L = 6 * unit
+        d.polygon([(tx + dx * L, ty + dy * L), (tx - dy * L * 0.7, ty + dx * L * 0.7), (tx + dy * L * 0.7, ty - dx * L * 0.7)],
+                  fill=col + (235,), outline=MAP_BG + (255,))
+
+    me = at(r['pos'])
+    path = r.get('path') or []
+    if path:
+        pts = [me] + [at(p) for p in path]
+        if r['goal'] is not None and r['hops'] == 0:
+            d.line([pts[-1], at(r['goal'])], fill=MAP_PATH + (120,), width=int(unit))
+        d.line(pts, fill=MAP_PATH + (230,), width=int(2 * unit), joint='curve')
+        for q in pts[1:]:
+            d.ellipse([q[0] - 1.6 * unit, q[1] - 1.6 * unit, q[0] + 1.6 * unit, q[1] + 1.6 * unit], fill=MAP_PATH + (255,))
+    if r['goal'] is not None:
+        q = at(r['goal'])
+        door = (r['hops'] or 0) > 0
+        col = MAP_DOOR if door else MAP_GOAL
+        if on_pic(q, 4 * unit):
+            s = 5 * unit
+            if door:
+                d.rectangle([q[0] - s, q[1] - s * 1.2, q[0] + s, q[1] + s * 1.2], fill=col + (255,), outline=MAP_BG + (255,), width=int(unit))
+                f = map_font(int(7 * unit))
+                d.text((q[0] + s * 1.5, q[1]), str(r['hops']), fill=col + (255,), font=f, anchor='lm', stroke_width=int(unit), stroke_fill=MAP_BG + (255,))
+            else:
+                d.polygon([(q[0], q[1] - s * 1.3), (q[0] + s * 1.3, q[1]), (q[0], q[1] + s * 1.3), (q[0] - s * 1.3, q[1])],
+                          fill=col + (255,), outline=MAP_BG + (255,))
+        else:
+            edge_pointer(q, col)
+    if r['target'] is not None:
+        q = at(r['target'])
+        if on_pic(q, 4 * unit):
+            s = 4.5 * unit
+            d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], outline=MAP_TARGET + (255,), width=int(1.6 * unit))
+            d.ellipse([q[0] - unit, q[1] - unit, q[0] + unit, q[1] + unit], fill=MAP_TARGET + (255,))
+        else:
+            edge_pointer(q, MAP_TARGET)
+    # the wizard: an arrow pointing where it faces (forward = (-sin yaw, -cos yaw); picture y is -Y)
+    fx, fy = -math.sin(r['yaw']), math.cos(r['yaw'])
+    nx, ny = -fy, fx
+    L = 8 * unit
+    d.polygon([(me[0] + fx * L, me[1] + fy * L),
+               (me[0] - fx * L * 0.7 + nx * L * 0.62, me[1] - fy * L * 0.7 + ny * L * 0.62),
+               (me[0] - fx * L * 0.3, me[1] - fy * L * 0.3),
+               (me[0] - fx * L * 0.7 - nx * L * 0.62, me[1] - fy * L * 0.7 - ny * L * 0.62)],
+              fill=MAP_ME + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.8)))
+    # a scale bar, bottom left
+    bar = 1000 if 1000 / upp <= w * 0.4 else 500
+    bx, by, bl = 6 * unit, h * S - 6 * unit, bar / upp * S
+    d.line([(bx, by), (bx + bl, by)], fill=MAP_TEXT + (200,), width=int(unit))
+    d.line([(bx, by - 2.5 * unit), (bx, by)], fill=MAP_TEXT + (200,), width=int(unit))
+    d.line([(bx + bl, by - 2.5 * unit), (bx + bl, by)], fill=MAP_TEXT + (200,), width=int(unit))
+    f = map_font(int(6 * unit))
+    d.text((bx + bl + 2.5 * unit, by), str(bar), fill=MAP_TEXT + (220,), font=f, anchor='lm')
+    if layers is None or layers.why:
+        d.text((w * S - 4 * unit, h * S - 4 * unit), 'no map for this zone', fill=MAP_TEXT + (200,), font=f, anchor='rs')
+    out = img.convert('RGBA')
+    out.alpha_composite(ov.resize((w, h), Image.BOX))
+    return out.convert('RGB')
+
+
+def save_png(img, out):
+    """written whole, then put in place (the dashboard may be reading the last one)"""
+    os.makedirs(os.path.dirname(out) or '.', exist_ok=True)
+    tmp = out + '.tmp'
+    img.save(tmp, 'PNG', compress_level=1)
+    for _ in range(10):
+        try:
+            os.replace(tmp, out)
+            return
+        except PermissionError:
+            time.sleep(0.02)
+    img.save(out, 'PNG', compress_level=1)
+    try:
+        os.remove(tmp)
+    except OSError:
+        pass
+
+
+def inside_root(path):
+    p = os.path.normcase(os.path.abspath(path))
+    return p.startswith(os.path.normcase(ROOT) + os.sep)
+
+
 # ---------------------------------------------------------------- the server
 
 class Handler(BaseHTTPRequestHandler):
@@ -925,11 +1303,33 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(lines))
             if u.path == '/cut':
                 out = q['out']
-                if not os.path.abspath(out).lower().startswith(ROOT.lower()):
-                    return self.reply('ERR out must be in ' + ROOT, 400)
+                if not any(os.path.abspath(out).lower().startswith(d.lower()) for d in (ROOT, os.path.abspath(tempfile.gettempdir()))):
+                    return self.reply('ERR out must be in ' + ROOT + ' or the temp folder', 400)
                 cut_card(float(q['left']), float(q['top']), float(q['scale']), out, q.get('file'))
                 log(f'/cut {out}')
                 return self.reply('OK')
+            if u.path == '/nav':
+                with_path = q.get('path', '0') not in ('', '0')
+                r, why = nav_reader().read(path=with_path)
+                return self.reply('\n'.join(nav_lines(r, with_path)) if r is not None else 'ERR ' + why)
+            if u.path == '/navmap':
+                w, h = int(q['w']), int(q['h'])
+                out = q['out']
+                if not (16 <= w <= 4000 and 16 <= h <= 4000):
+                    return self.reply('ERR w and h must be 16-4000', 400)
+                if not out.lower().endswith('.png') or not inside_root(out):
+                    return self.reply('ERR out must be a .png in ' + ROOT, 400)
+                span = min(100000.0, max(500.0, float(q.get('span', NAV_SPAN))))
+                nm = nav_reader()
+                r, why = nm.read(path=True)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                if r['pos'] is None or r['yaw'] is None:
+                    return self.reply("ERR the wizard's position can't be read (" + (r.get('why_player') or '?') + ')')
+                with MAP_LOCK:
+                    img = render_navmap(r, w, h, nm.game_dir, span)
+                save_png(img, os.path.abspath(out))
+                return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':
                 self.reply('OK bye')
                 threading.Thread(target=self.server.shutdown, daemon=True).start()

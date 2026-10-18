@@ -39,6 +39,14 @@ handsoff:10
 ; I play" or the dashboard's "Wait for me" button switches it)
 handsoffon:1
 
+; ---- Walking ----
+; navmem: 1 = walk by the game's memory when it can be read: where the wizard is, which way it faces and
+; where the quest arrow points, read straight out of the game - READ-ONLY, nothing in the game is changed.
+; It can't be hidden by scenery or misread like the arrow on screen, and turns are measured, not guessed.
+; It's only trusted once it agrees with the arrow, and whenever it can't be read the bot follows the
+; on-screen arrow as before (debug.log: "the game's memory ..."). 0 = only the on-screen arrow
+navmem:1
+
 ; ---- Clicking ----
 ; mousespeed: how the mouse moves to what it clicks: 0 = jumps there, 1 = fastest glide (was 5, slow)
 mousespeed:1

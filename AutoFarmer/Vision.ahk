@@ -9,12 +9,15 @@
 ; the helper's own log: vision\vision.log.
 ;
 ; Needs from the including script: GameLeft/GameTop/GameW/GameH, ScreenX/ScreenY, UiScale, HandHalf,
-; Px(), hitschool, DebugLog().
+; Px(), hitschool, DebugLog(), Stat() (KillCalc.ahk).
+;
+; NavRead (at the bottom) asks the helper where the wizard is and where the quest arrow points, read from the
+; game's memory - for the walker (Walker.ahk). Only ever read: see "The game's memory" below.
 
 global VisionOn := 0, VisionPid := 0, VisionFails := 0, VisionCards := "", VisionCardsAt := 0, VisionCardsKey := "", VisionMissing := ","
 ;The helper's folder ("" = vision\ next to the script) and port (tests use another one, so they don't stop
-;the bot's own helper)
-global VisionDir := "", VisionPort := 47128
+;the bot's own helper); why the last VisionGet got nothing
+global VisionDir := "", VisionPort := 47128, VisionErr
 
 ;Starts the helper (after stopping one left over from before) and waits up to 8 s for it to answer
 VisionStart()
@@ -92,16 +95,18 @@ VisionPython()
 	}
 
 ;One request to the helper. Returns its answer, "" if it couldn't be asked (3 of those in a row and
-;the helper is left alone - ImageSearch from then on)
-VisionGet(path, timeoutMs := 1500)
+;the helper is left alone - ImageSearch from then on; VisionErr says why). noCount: an ERR or no answer
+;doesn't count towards that (/nav: the game not running is no reason to stop asking about cards)
+VisionGet(path, timeoutMs := 1500, noCount := false)
 	{
+	VisionErr := ""
 	;(the helper's gone: no point asking - a closed port costs 2 s)
 	if (VisionOn && VisionPid)
 		{
 		Process, Exist, %VisionPid%
 		if (!ErrorLevel)
 			{
-			VisionOn := 0
+			VisionOn := 0, VisionErr := "the helper has stopped"
 			DebugLog("Vision: the helper has stopped - cards are found with ImageSearch from now on")
 			return ""
 			}
@@ -119,7 +124,8 @@ VisionGet(path, timeoutMs := 1500)
 				{
 				req.Abort()
 				;(a timeout counts double: the second one turns the helper off)
-				VisionFails++
+				if (!noCount)
+					VisionFails++
 				throw "no answer in " timeoutMs " ms"
 				}
 			Sleep, 10
@@ -127,12 +133,14 @@ VisionGet(path, timeoutMs := 1500)
 		text := req.ResponseText
 		if (req.Status != 200 || SubStr(text, 1, 3) = "ERR")
 			throw text
-		VisionFails := 0
+		if (!noCount)
+			VisionFails := 0
 		return text = "" ? " " : text
 		}
 	catch e
 		{
-		if (VisionOn && ++VisionFails >= 3)
+		VisionErr := Trim(IsObject(e) ? e.Message : e, " `t`r`n")
+		if (VisionOn && !noCount && ++VisionFails >= 3)
 			{
 			VisionOn := 0
 			DebugLog("Vision: the helper stopped answering (" (IsObject(e) ? e.Message : e) ") - cards are found with ImageSearch from now on")
@@ -215,4 +223,97 @@ VisionBadge(x1, y1, x2, y2, ByRef bx, ByRef by, nearX := 0, nearY := 0)
 			sch := p[1], bx := p[2] + 0, by := p[3] + 0, bestFar := far
 		}
 	return sch
+	}
+
+;---- The game's memory: where the wizard is and where the quest arrow points (for Walker.ahk) ----
+;
+;The helper's /nav reads them straight out of the game's memory, READ-ONLY: the game is opened for reading
+;only - nothing in it is ever written, nothing is injected or hooked, no keys are sent and its window isn't
+;touched. navmem:0 in PlayerStats.txt switches it off (the walker then only reads the arrow off the screen).
+;Why the last NavRead got nothing; when it may ask again, and how long it waited last time
+global NavWhy, NavWaitUntil, NavWait
+
+;The wizard and the quest goal from the game's memory, as an object:
+;  ok        1
+;  zone      the zone, e.g. WizardCity/WC_Ravenwood (as the game's log names it)
+;  x, y, z   the wizard (z is up), yaw its facing in radians: forward = (-sin yaw, -cos yaw)
+;  tx, ty, tz  where the quest arrow points (a node on the game's own path to the goal)
+;  gx, gy, gz  the goal (hops 0), or the way out of this zone to take (hops = zone changes to go)
+;  dist      the arrow's distance along the game's path (game units, not the number printed on the arrow)
+;  enabled   1 while the game's quest helper is on; questid, goalid the quest and goal (as text)
+;  path      (withPath only) the game's path, [{x, y, z}, ...] in order
+;A value that couldn't be read for sure is "". Returns "" when it can't be asked: navmem:0, the helper not
+;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
+;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
+;1-4 s; the helper may be busy finding its way into a game it hasn't read yet)
+NavRead(timeoutMs := 150, withPath := false)
+	{
+	if (!Stat("navmem"))
+		{
+		NavWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (A_TickCount < NavWaitUntil)
+		return ""
+	answer := VisionGet("/nav" (withPath ? "?path=1" : ""), timeoutMs, true)
+	if (answer = "")
+		{
+		NavWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavWait := NavWait >= 1000 ? Min(NavWait * 2, InStr(VisionErr, "no answer") ? 4000 : 30000) : 1000
+		NavWaitUntil := A_TickCount + NavWait
+		return ""
+		}
+	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
+		, hops: "", dist: "", enabled: "", questid: "", goalid: ""}
+	Loop, Parse, answer, `n, `r
+		{
+		navLine := A_LoopField
+		f := StrSplit(navLine, "|")
+		if (f[1] = "ok")
+			nav.ok := NavNum(f[2])
+		else if (f[1] = "zone")
+			nav.zone := Trim(SubStr(navLine, 6))
+		else if (f[1] = "pos")
+			nav.x := NavNum(f[2]), nav.y := NavNum(f[3]), nav.z := NavNum(f[4]), nav.yaw := NavNum(f[5])
+		else if (f[1] = "target")
+			nav.tx := NavNum(f[2]), nav.ty := NavNum(f[3]), nav.tz := NavNum(f[4])
+		else if (f[1] = "goal")
+			nav.gx := NavNum(f[2]), nav.gy := NavNum(f[3]), nav.gz := NavNum(f[4]), nav.hops := NavNum(f[5])
+		else if (f[1] = "dist")
+			nav.dist := NavNum(f[2])
+		else if (f[1] = "quest")
+			nav.enabled := NavNum(f[2]), nav.questid := Trim(f[3]), nav.goalid := Trim(f[4])
+		else if (f[1] = "path" && withPath)
+			{
+			nav.path := [], nodes := SubStr(navLine, 6)
+			Loop, Parse, nodes, `;
+				{
+				xyz := StrSplit(A_LoopField, ",")
+				if (xyz.Length() = 3 && NavNum(xyz[1]) != "" && NavNum(xyz[2]) != "" && NavNum(xyz[3]) != "")
+					nav.path.Push({x: NavNum(xyz[1]), y: NavNum(xyz[2]), z: NavNum(xyz[3])})
+				}
+			}
+		}
+	if (nav.ok != 1)
+		{
+		NavWhy := "an odd answer: " SubStr(RegExReplace(answer, "\s+", " "), 1, 60)
+		NavWait := 1000, NavWaitUntil := A_TickCount + NavWait
+		return ""
+		}
+	NavWhy := "", NavWait := 0, NavWaitUntil := 0
+	return nav
+	}
+
+;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08
+NavNum(v)
+	{
+	v := Trim(v)
+	if (RegExMatch(v, "i)^([-+]?\d+(?:\.\d*)?|[-+]?\.\d+)(?:e([-+]?\d+))?$", num))
+		return num2 = "" ? num1 + 0 : (num1 + 0.0) * (10.0 ** num2)
+	return ""
 	}

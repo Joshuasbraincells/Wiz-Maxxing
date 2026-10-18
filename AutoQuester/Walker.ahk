@@ -5,6 +5,12 @@
 ; Needs, from the script that includes it: the super-globals GameLeft, GameTop, GameW, GameH (the
 ; game's client area, kept up to date by its UpdateGameRect()), GameExe and GameClass, and an
 ; #Include of ArrowReader.ahk. Call WalkerInit() once at start.
+;
+; In AutoFarmer the game's memory is a better source for the same decisions (NavRead in Vision.ahk: the
+; vision helper reads where the wizard is and where the quest arrow points - READ-ONLY, navmem in
+; PlayerStats.txt): its heading once it has agreed with the arrow's, its distance instead of the OCR'd
+; number, steering on while scenery hides the arrow, and turns measured as they go. Whenever it can't be
+; used the arrow on screen decides, as before. See "The game's memory" near the bottom.
 
 global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
@@ -31,6 +37,19 @@ global WkGateAt, WkGateClicks, WkGateX, WkGateLook, WkSigilUntil, WkFarAt, WkSig
 global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkMemFile, WkEsc
 ;AutoFarmer's "a battle is on" flag (blank in AutoQuester on its own): never talk or push on during a battle
 global inbattle
+;The game's memory (AutoFarmer's NavRead, read-only; AutoQuester on its own has none): settings; this step's
+;reading - usable, its heading in use, the heading (degrees, + = right, like ReadArrow's), the distance in the
+;arrow's own units ("" until known), zone changes to go, the reading itself; its heading's sign (the game's
+;world could be either way round) and whether it's trusted yet (readings that agree with the arrow / are its
+;mirror image / match neither); the arrow's distance per game unit (the readings it's from; readings far off
+;it in a row); on or off (logged when that changes); steering by it with the arrow hidden (since when); the
+;last position (how fast it's moving); closed-loop turns so far, the last odd one logged; the file it's kept
+;in, and the sign saved there; why the last NavRead got nothing (Vision.ahk)
+global NavTurnTol, NavTurnCap, NavHiddenMax, NavAgreeNeed
+global WkNavOk, WkNavUse, WkNavH, WkNavD, WkNavHops, WkNavObj, WkNavSign, WkNavTrusted, WkNavAgree, WkNavMirror, WkNavOdd
+global WkNavScale, WkNavScales, WkNavScaleBad, WkNavState, WkNavHidden, WkNavPrev, WkNavTurns, WkNavTurnLog, WkNavFile, WkNavSignSaved, NavWhy
+;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
+global WkNavDoor
 
 ;Settings and starting state. Returns false if the arrow shapes (resources\arrow_refs.txt) are missing
 WalkerInit(prefix := "AutoQuester")
@@ -80,6 +99,11 @@ WalkerInit(prefix := "AutoQuester")
 	WaitNotify := 180000  ;at a goal, waiting this long for the next one: a notice for you
 	OnTopDist := 20       ;the arrow gone (or stuck) this close to the goal: it's on top of it / the thing itself
 	                      ;is in the way - arrived (X), not backing up and turning, not going round it
+	;The game's memory (AutoFarmer, navmem:1 in PlayerStats.txt - read-only):
+	NavAgreeNeed := 3     ;its heading is steered by once this many readings agree with the arrow on screen
+	NavTurnTol := 5       ;a turn holds A / D until the wizard's facing is within this many degrees...
+	NavTurnCap := 2500    ;...for at most this long (ms)
+	NavHiddenMax := 12000 ;arrow hidden by scenery: steer by the memory for up to this long (ms) after it last showed
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
@@ -87,6 +111,10 @@ WalkerInit(prefix := "AutoQuester")
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
 	WkCollect := "", WkGoalReadAt := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
+	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
+	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
+	WkNavHidden := 0, WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0
+	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
 	StatusText := "", StatusKind := "", StatusPrefix := prefix
@@ -108,6 +136,7 @@ WalkReset()
 	WkArr1At := 0, WkFoesAt := 0, WkChaseFrom := 0, WkChaseSkipUntil := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkRoamSide := 1
 	WkNoArrowFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
+	WkNavHidden := 0, WkNavDoor := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -208,10 +237,26 @@ WalkStep()
 			WalkLog("arrow " (moved ? "pushed up " boxOff " px (talk prompt?)" : "in its usual spot") (info.mode = 1 ? ", dark (shadow test)" : info.mode = 2 ? ", under water" : "") " - heading " Round(h) ", distance " (dist = "" ? "?" : dist) ", match " Round(score, 2))
 		WkLastBoxOff := moved ? boxOff : 0, WkLastMode := info.mode
 		}
-	;The last distance read (on top of the goal, below). No arrow out of battle with no loading screen: how
-	;long - Escape once if an X of the bot's may have opened something Space doesn't close (a shop), then
-	;a notice for you; it's closed once the arrow is back
-	if (seen && dist != "")
+	;The game's memory (AutoFarmer's vision helper, read-only), when it can be used: its heading instead of
+	;the arrow's once the two have agreed, its distance instead of the OCR'd number (which misses lone digits)
+	;once it's known how the two compare. Compared with the arrow only when it reads well (in its usual spot,
+	;matching well) - the heading only once the camera has settled after the last turn. Anything wrong with
+	;it: the arrow, as before
+	fair := seen && !moved && score >= 0.8
+	WalkNav(fair && A_TickCount - WkTurnAt > TurnSettle + 150 ? h : "", fair ? dist : "")
+	if (WkNavUse)
+		h := WkNavH
+	if (WkNavD != "")
+		dist := WkNavD
+	if (seen && WkNavHidden)
+		{
+		WalkLog("arrow back after " Round((A_TickCount - WkNavHidden) / 1000, 1) " s of steering by the game's memory")
+		WkNavHidden := 0
+		}
+	;The last distance read (on top of the goal, below) - the arrow's, or the memory's even while the arrow is
+	;hidden. No arrow out of battle with no loading screen: how long - Escape once if an X of the bot's may have
+	;opened something Space doesn't close (a shop), then a notice for you; it's closed once the arrow is back
+	if ((seen || WkNavD != "") && dist != "")
 		WkLastDist := dist, WkLastDistAt := A_TickCount
 	if (seen || inbattle || WkLoading || inbattle = "")
 		{
@@ -259,10 +304,11 @@ WalkStep()
 
 	;The arrow led to a World Gate (the goal is in another world) or a sigil (a dungeon entrance):
 	;close to it, its prompt pushes the arrow up or covers it. Only when the arrow was last this close,
-	;so walking past a World Gate or a sigil on the way somewhere else doesn't count
-	if (seen && dist != "" && dist > GateDist)
+	;so walking past a World Gate or a sigil on the way somewhere else doesn't count (the game's memory knows
+	;the distance even while the prompt covers the arrow)
+	if ((seen || WkNavD != "") && dist != "" && dist > GateDist)
 		WkFarAt := A_TickCount
-	near := (WkBestDist != "" && WkBestDist <= GateDist) || (seen && dist != "" && dist <= GateDist)
+	near := (WkBestDist != "" && WkBestDist <= GateDist) || ((seen || WkNavD != "") && dist != "" && dist <= GateDist)
 	;Standing on a sigil (or started there) its prompt covers the arrow and no distance reads at all.
 	;If the arrow hasn't shown a far-off goal lately, the sigil is where it led - checked a few times
 	;over a second or two first, so a passing frame without the arrow doesn't count
@@ -451,7 +497,11 @@ WalkStep()
 		return true
 		}
 
-	if (!seen)
+	;Arrow hidden by scenery (an arch, a pillar, the mount) while the game's memory says where it points: steer
+	;by that (below) instead of walking on blind, or backing up and turning to find it (WalkNavHidden: not on
+	;top of the goal, in a battle, at a loading screen or with a dialogue open)
+	navWalk := !seen && WalkNavHidden(dist)
+	if (!seen && !navWalk)
 		{
 		;Pushing into a doorway and the arrow went: the door frame between the camera and the wizard,
 		;or the loading screen starting. Stopping would leave a door frame hiding it for good, so walk
@@ -566,6 +616,15 @@ WalkStep()
 		if (A_TickCount > WkPushUntil || (WkStraight && A_TickCount - WkStraightAt > PushStraightTime))
 			{
 			HoldW(0)
+			;(walked into the way out without an X - the game's memory said so - and nothing loaded: X after
+			;all, in case it's something to use, like a World Gate whose prompt didn't read)
+			if (WkNavDoor)
+				{
+				WkNavDoor := 0
+				WalkLog("push: the way out didn't load after " Round((A_TickCount - WkPushStart) / 1000, 1) " s - pressing X after all")
+				StartTalk(dist = "" ? "?" : dist, false)
+				return true
+				}
 			WkArrived := 1, WkFar := 0, WkArrDist := dist
 			WalkLog("push: no loading screen after " Round((A_TickCount - WkPushStart) / 1000, 1) " s (distance " (dist = "" ? "?" : dist) ") - waiting for the next goal")
 			SetStatus("arrived" (dist = "" ? "" : " (distance " dist ")") " - waiting for the next goal")
@@ -585,8 +644,8 @@ WalkStep()
 			WkStraight := 1, WkStraightAt := A_TickCount
 			WalkLog("push: at the goal (distance " (dist = "" ? "?" : dist) ") - walking straight on through it")
 			}
-		;(right after a turn the arrow doesn't show it yet: see TurnSettle)
-		if (!WkStraight && A_TickCount - WkTurnAt < TurnSettle)
+		;(right after a turn the arrow doesn't show it yet: see TurnSettle. The game's memory does)
+		if (!WkStraight && !WkNavUse && A_TickCount - WkTurnAt < TurnSettle)
 			{
 			Sleep, 50
 			return true
@@ -606,7 +665,7 @@ WalkStep()
 			}
 		if (!Walking)
 			return false
-		SetStatus("pushing on " (WkStraight ? "straight" : "- arrow " Round(h) " degrees") ", distance " (dist = "" ? "?" : dist))
+		SetStatus("pushing on " (WkStraight ? "straight" : "- " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees") ", distance " (dist = "" ? "?" : dist) (WkNavUse ? " (game's memory)" : ""))
 		Sleep, 50
 		return true
 		}
@@ -706,8 +765,8 @@ WalkStep()
 	;The camera swings round after the wizard about half a second late (measured 2026-10-16: a 62
 	;degree turn showed on screen 0.35-0.47 s after the key came up), so right after a turn the arrow
 	;still shows part of it. Steering on that turns too far again - the zig-zags and circles. Wait for
-	;it, walking on (or standing) as before
-	if (A_TickCount - WkTurnAt < TurnSettle)
+	;it, walking on (or standing) as before. (Steering by the game's memory: it knows the facing at once)
+	if (!WkNavUse && A_TickCount - WkTurnAt < TurnSettle)
 		{
 		Sleep, 50
 		return true
@@ -755,7 +814,8 @@ WalkStep()
 		Turn(steer)
 	if (!Walking)
 		return false
-	SetStatus("walking - arrow " Round(h) " degrees, distance " (dist = "" ? "?" : dist) (steer != h ? " (keeping clear of the obstacle)" : "") (fine ? "" : " (talk prompt showing)"))
+	SetStatus("walking - " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees, distance " (dist = "" ? "?" : dist) (steer != h ? " (keeping clear of the obstacle)" : "") (fine ? "" : " (talk prompt showing)")
+		. (navWalk ? " (arrow hidden - by the game's memory)" : WkNavUse ? " (game's memory)" : ""))
 	;Is the wizard actually moving? With W held, the picture moves along. Two looks in a row where it
 	;has hardly changed = walking into something, so don't wait the full StuckTime
 	still := WalkStill()
@@ -781,7 +841,7 @@ WalkStep()
 			{
 			WkStuckNearDone := 1
 			WalkLog("stuck " stuckAt " from the goal - the goal itself in the way? Arrived: X")
-			StartTalk(stuckAt)
+			StartTalk(stuckAt, false)
 			if (WkArrived = 2)
 				WkStuckTalk := 1
 			return true
@@ -826,8 +886,9 @@ DistChanged(dist, was)
 	return Abs(dist - was) > 3 && (dist >= 10 || was >= 10)
 	}
 
-;At the goal: stop, press X (talk / use), then WalkStep presses Space through the dialogue
-StartTalk(d)
+;At the goal: stop, press X (talk / use), then WalkStep presses Space through the dialogue. door: at the
+;way out of this zone (the game's memory says so) walk on into it instead (not when stuck by the goal)
+StartTalk(d, door := true)
 	{
 	if (KeysDown || HeldW)
 		ReleaseKeys()
@@ -843,6 +904,15 @@ StartTalk(d)
 		StartSigil("at the goal (distance " d ") and it's a sigil")
 		return
 		}
+	;The game's memory says the goal is in another zone: this is the way out of this one (a door, a loading
+	;point) - nobody to talk to, walk on into it straight away (no prompt showing: one asking for X gets X)
+	if (door && prompt = "" && WkNavOk && WkNavHops > 0)
+		{
+		WalkLog("talk: at the goal (distance " d ") - the game's memory says it's the way out of this zone (" WkNavHops " zone change" (WkNavHops = 1 ? "" : "s") " to the goal): no X")
+		StartPush("the way out of this zone (the game's memory)", d)
+		WkNavDoor := WkArrived = 3
+		return
+		}
 	WkArrived := 2, WkTalk := 0, WkFar := 0, WkNear := 0, WkDialog := 0, WkTalkDist := d, WkTalkAt := A_TickCount
 	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("talk: at the goal (distance " d "), pressed X")
@@ -853,6 +923,7 @@ StartTalk(d)
 ;Walk on into the goal (doorway / loading point), at most twice for the same goal
 StartPush(why, d)
 	{
+	WkNavDoor := 0
 	if (WkPushes >= 2)
 		{
 		WalkLog("push: " why " - already pushed twice here, waiting for the next goal")
@@ -1242,9 +1313,13 @@ WalkerRefocusWatch()
 		}
 	}
 
-;Holds A (goal to the left) or D (goal to the right) long enough to turn h degrees
+;Holds A (goal to the left) or D (goal to the right) long enough to turn h degrees. Steering by the game's
+;memory (its heading agreed with the arrow's): held until the wizard's own facing, re-read as it turns, has
+;turned that far (NavTurn) - else for as long as TurnRate says
 Turn(h)
 	{
+	if (WkNavUse && NavTurn(h))
+		return
 	Critical
 	if (!Walking || !GameActive())
 		{
@@ -1534,8 +1609,9 @@ CollectStep(seen, h, dist)
 		Sleep, 50
 		return true
 		}
-	;Roaming. Too far from the spot: back towards it (the arrow), then a new square
-	if (seen && dist != "" && dist > RoamRadius)
+	;Roaming. Too far from the spot: back towards it (the arrow, or the game's memory while it's hidden), then
+	;a new square
+	if ((seen || WkNavUse) && dist != "" && dist > RoamRadius)
 		{
 		if (WkRoamLeg)
 			WalkLog("collect: " dist " away from the spot - heading back"), WkRoamLeg := 0
@@ -2143,6 +2219,363 @@ WalkMemLearn(zone, d, side, walkMs, worked)
 		WalkLog("forgot the obstacle at distance " spot.dist " in " zone " (its way round stopped working)")
 		}
 	WalkMemSave()
+	}
+
+;---- The game's memory: a better source for the same decisions ----
+;
+;In AutoFarmer, NavRead (Vision.ahk) asks the vision helper where the wizard is (x, y and its facing, yaw)
+;and where the quest arrow points (the node on the game's own path it points at, the distance along that
+;path, the zone changes to go), read straight out of the game's memory - READ-ONLY: nothing in the game is
+;written, no keys or clicks (navmem:0 in PlayerStats.txt switches it off). The walker uses it for the
+;decisions it makes anyway:
+;  - heading: from the wizard's facing to where the arrow points (+ = right, like ReadArrow's). Which way
+;    round the game's world is isn't known for sure, so it's only used once NavAgreeNeed fair readings agree
+;    with the arrow on screen; mirror images and its sign is turned round (both logged)
+;  - distance: the memory's / how it compares with the number printed on the arrow (worked out from fair
+;    readings, kept in resources\nav_calibration.txt) - instead of the OCR'd number, which misses lone digits
+;  - the arrow hidden by scenery: steer on by the memory (WalkNavHidden), not back up and turn to find it
+;  - turns: until the wizard's facing has turned that far (NavTurn), not TurnRate's guess
+;  - the goal in another zone (hops > 0): this is the way out - walk on into it, no X (StartTalk)
+;Anything wrong with it (no answer, an ERR, the quest helper off, a zone that isn't the one in the game's log,
+;nothing to steer at): the arrow on screen, at once - logged when it comes and goes ("the game's memory ...")
+
+;This step's reading of the game's memory (see above). Sets WkNavOk (usable), WkNavH, WkNavD ("" until it's
+;known how its distance compares with the arrow's), WkNavHops and WkNavUse (its heading is steered by).
+;hScr, dScr: the arrow's heading and distance off the screen this step, to check the memory's against - ""
+;when they aren't fair to (the arrow hidden or pushed up, a poor match; the heading also right after a turn,
+;the camera still swinging round)
+WalkNav(hScr, dScr)
+	{
+	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := ""
+	;(AutoQuester on its own has no vision helper. In a battle there's nothing to steer, and the battle
+	;shouldn't wait for it)
+	if (!IsFunc("NavRead") || inbattle)
+		return
+	nav := Func("NavRead").Call()
+	why := WalkNavProblem(nav)
+	if (why = "")
+		{
+		WkNavOk := 1, WkNavObj := nav, WkNavHops := nav.hops
+		WkNavH := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.tx, nav.ty)
+		;How fast the wizard is moving (game units per ms): the number on screen and the memory's are read a
+		;moment apart (up to ~150 ms with the OCR), so a pair only says how the two compare when that moment's
+		;walking is small next to the distance. (Lone digits misread: 20 or more only)
+		navSpeed := ""
+		if (IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500 && A_TickCount > WkNavPrev.at)
+			navSpeed := Sqrt((nav.x - WkNavPrev.x) ** 2 + (nav.y - WkNavPrev.y) ** 2) / (A_TickCount - WkNavPrev.at)
+		WkNavPrev := {x: nav.x, y: nav.y, at: A_TickCount}
+		if (dScr != "" && dScr >= 20 && nav.dist > 0 && navSpeed != "" && navSpeed * 150 <= nav.dist * 0.04)
+			WalkNavLearnScale(nav.dist / dScr, nav.hops)
+		if (nav.dist != "" && WkNavScale > 0 && WkNavScaleBad < 2)
+			WkNavD := Round(nav.dist / WkNavScale)
+		if (hScr != "" && WkNavH != "")
+			WalkNavVote(hScr, WkNavH)
+		WkNavUse := WkNavTrusted && WkNavH != ""
+		}
+	WalkNavSay(why, nav)
+	}
+
+;Why this reading of the game's memory can't be used ("" it can)
+WalkNavProblem(nav)
+	{
+	if (!IsObject(nav))
+		return InStr(NavWhy, "navmem:0") ? "is switched off (" NavWhy ")" : "can't be read (" (NavWhy != "" ? NavWhy : "no answer") ")"
+	if (nav.x = "" || nav.y = "" || nav.yaw = "")
+		return "can't say where the wizard is (loading?)"
+	if (nav.enabled = "")
+		return "can't say if the game's quest helper is on"
+	if (!nav.enabled)
+		return "says the game's quest helper is off (no quest tracked?)"
+	if (nav.tx = "" || nav.ty = "")
+		return "can't say where the arrow points (the quest catching up after a zone change?)"
+	if (nav.zone = "")
+		return "can't say which zone it is"
+	;(the game's log is looked at every few seconds: after a zone change, look again before calling it wrong)
+	logZone := WalkZone()
+	if (logZone != "" && !WalkSameZone(logZone, nav.zone))
+		{
+		logZone := WalkZone(true)
+		if (logZone != "" && !WalkSameZone(logZone, nav.zone))
+			return "says the zone is " nav.zone ", the game's log " logZone
+		}
+	return ""
+	}
+
+WalkSameZone(a, b)
+	{
+	return StrReplace(a, "\", "/") = StrReplace(b, "\", "/")
+	}
+
+;Degrees from where the wizard faces (yaw: forward = (-sin yaw, -cos yaw), z up) to (tx, ty), + = to the
+;right like ReadArrow's - if the game's world is right-handed; WkNavSign turns it round when the arrow on
+;screen says otherwise. "" if the target is right where the wizard is
+WalkNavHeading(x, y, yaw, tx, ty)
+	{
+	dx := tx - x, dy := ty - y
+	if (dx * dx + dy * dy < 4)
+		return ""
+	;(the yaw a wizard facing the target would have, less the one it has)
+	return WkNavSign * ArrowWrap((ArrowAtan2(-dx, -dy) - yaw) * 57.29578)
+	}
+
+;Checks the memory's heading against the arrow's on screen. NavAgreeNeed readings that agree (the same side,
+;within 35 degrees) and it's steered by; that many mirror images in a row (the other side) and its sign is
+;turned round; five that match neither while it's trusted and it isn't till they agree again. Only clear
+;readings count: 20-160 degrees off straight ahead both (near 0 or 180 a few degrees decide the side)
+WalkNavVote(hScr, hMem)
+	{
+	if (Abs(hScr) < 20 || Abs(hScr) > 160 || Abs(hMem) < 20 || Abs(hMem) > 160)
+		return
+	if (hScr * hMem > 0 && Abs(ArrowWrap(hScr - hMem)) <= 35)
+		{
+		WkNavAgree += 1, WkNavMirror := 0, WkNavOdd := 0
+		if (!WkNavTrusted && WkNavAgree >= NavAgreeNeed)
+			{
+			WkNavTrusted := 1
+			WalkLog("the game's memory: its heading agrees with the arrow's (" WkNavAgree " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - steering by it")
+			if (WkNavSign != WkNavSignSaved)
+				WalkNavSave()
+			}
+		}
+	else if (hScr * hMem < 0 && Abs(ArrowWrap(hScr + hMem)) <= 35)
+		{
+		WkNavMirror += 1, WkNavAgree := 0, WkNavOdd := 0
+		if (WkNavMirror >= NavAgreeNeed)
+			{
+			WkNavSign := -WkNavSign, WkNavMirror := 0, WkNavTrusted := 0
+			WalkLog("the game's memory: its heading is the arrow's mirror image (" NavAgreeNeed " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - turned it round, checking again")
+			}
+		}
+	else
+		{
+		WkNavOdd += 1
+		if (WkNavOdd >= 5 && WkNavTrusted)
+			{
+			WkNavTrusted := 0, WkNavAgree := 0
+			WalkLog("the game's memory: its heading doesn't match the arrow's (" WkNavOdd " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - following the arrow till they agree again")
+			}
+		}
+	}
+
+;One reading of how the memory's distance compares with the number on the arrow (game units per arrow unit).
+;The last nine are kept; once five are within 12% of their middle one, that's it (kept in the file; the
+;memory's distance is used from then on). Two in a row 25% off the one in use and it isn't used till it's
+;worked out again
+WalkNavLearnScale(ratio, hops)
+	{
+	WkNavScales.Push(ratio)
+	if (WkNavScales.Length() > 9)
+		WkNavScales.RemoveAt(1)
+	if (WkNavScale > 0)
+		{
+		if (Abs(ratio / WkNavScale - 1) <= 0.25)
+			WkNavScaleBad := 0
+		else if (++WkNavScaleBad = 2)
+			WalkLog("the game's memory: its distance doesn't match the arrow's any more (" Round(ratio, 2) " game units per arrow unit, not " Round(WkNavScale, 2) ") - the OCR'd number till it's worked out again")
+		}
+	if (WkNavScales.Length() < 5)
+		return
+	mid := WalkMedian(WkNavScales), close := 0
+	for i, r in WkNavScales
+		if (Abs(r / mid - 1) <= 0.12)
+			close += 1
+	if (close < 5 || (WkNavScale > 0 && Abs(mid / WkNavScale - 1) <= 0.03))
+		return
+	was := WkNavScale
+	WkNavScale := mid, WkNavScaleBad := 0
+	WalkLog("the game's memory: the arrow's distance is its distance / " Round(mid, 2) " (" close " readings agree" (hops = "" ? "" : ", " hops " zone changes to go") (was = "" ? "" : "; it was " Round(was, 2)) ") - its distance used from now on, not the OCR'd number")
+	WalkNavSave()
+	}
+
+;The middle value of a list of numbers
+WalkMedian(list)
+	{
+	sorted := []
+	for i, v in list
+		{
+		at := 1
+		while (at <= sorted.Length() && sorted[at] < v)
+			at++
+		sorted.InsertAt(at, v)
+		}
+	n := sorted.Length()
+	return Mod(n, 2) ? sorted[(n + 1) // 2] : (sorted[n // 2] + sorted[n // 2 + 1]) / 2
+	}
+
+;Logs the game's memory coming and going: once each way, not every step
+WalkNavSay(why, nav)
+	{
+	state := why = "" ? "on" : "off"
+	if (state = WkNavState)
+		return
+	if (state = "on")
+		WalkLog("the game's memory (read-only) can be used: " nav.zone (nav.hops = "" ? "" : nav.hops > 0 ? ", the goal " nav.hops " zone change" (nav.hops = 1 ? "" : "s") " away" : ", the goal in this zone")
+			. " - " (WkNavTrusted ? "steering by it" : "steering by it once its heading agrees with the arrow's")
+			. (WkNavScale > 0 ? "" : "; its distance once it's known how it compares with the arrow's"))
+	else
+		WalkLog("the game's memory " why " - following the on-screen arrow")
+	WkNavState := state
+	}
+
+;True if the arrow is hidden and the walker steers by the game's memory meanwhile: its heading in use and its
+;distance known, walking towards the goal (not arrived, pushing or talking), further than OnTopDist (on top of
+;the goal the arrow isn't drawn: arrived - WalkStep's own branch), the arrow seen within NavHiddenMax (or not
+;at all yet), no battle (AutoFarmer saw the spellbook a moment ago), no loading screen since it was last seen,
+;no dialogue open (looked at when it starts). Logged once per time the arrow is hidden (WkNavHidden: since when)
+WalkNavHidden(dist)
+	{
+	if (!WkNavUse || WkNavD = "" || WkArrived != 0 || inbattle || dist = "" || dist <= OnTopDist
+		|| (WkSeenAt && A_TickCount - WkSeenAt > NavHiddenMax) || WkLoadAt || !WalkSureNoBattle() || WalkLoadingScreen())
+		{
+		if (WkNavHidden)
+			WalkLog("arrow still hidden - not steering by the game's memory any more"), WkNavHidden := 0
+		return false
+		}
+	if (!WkNavHidden)
+		{
+		;(a dialogue that's just opened covers the arrow too: WalkStep's own check, next step)
+		if (WalkDialogOpen())
+			{
+			WkDlgLook := 0
+			return false
+			}
+		WkNavHidden := A_TickCount
+		WalkLog("arrow hidden - steering by the game's memory (heading " Round(WkNavH) " degrees, distance " dist ")")
+		}
+	return true
+	}
+
+;Holds A (h < 0) or D until the wizard's facing, re-read from the game's memory as it turns, has turned h
+;degrees (+ = right): within NavTurnTol - let go a little early for the bit it turns on after the key is up
+;- at most NavTurnCap ms; it doesn't turn back if it went past. The memory lost on the way: the rest by TurnRate, like
+;Turn. Turned the other way than the memory's heading said: its sign was wrong - turned round, and checked
+;against the arrow again. Not turning at all (the keys not taken: a window open?): let go - twice in a row and
+;its heading isn't trusted till it agrees with the arrow again. False if the facing can't be read to start
+;with (Turn then turns by TurnRate)
+NavTurn(h)
+	{
+	static stillTurns := 0
+	if (!IsFunc("NavRead") || Abs(h) < 1)
+		return false
+	first := Func("NavRead").Call(120)
+	if (!IsObject(first) || first.yaw = "")
+		return false
+	Critical
+	if (!Walking || !GameActive())
+		{
+		Critical, Off
+		return true
+		}
+	key := h < 0 ? "a" : "d"
+	KeysDown := 1
+	Send, {Blind}{%key% down}
+	Critical, Off
+	downAt := A_TickCount, lookAt := A_TickCount, prevYaw := first.yaw, turned := 0, looks := 0, ending := ""
+	capMs := Round(Abs(h) / TurnRate * 1.6) + 300
+	capMs := capMs > NavTurnCap ? NavTurnCap : capMs
+	loop
+		{
+		Sleep, 10
+		if (!Walking)
+			{
+			ending := "walking off"
+			break
+			}
+		if (!GameActive())
+			{
+			ReleaseKeys(), Refocus := 1, ending := "focus lost"
+			break
+			}
+		lookMs := A_TickCount - lookAt, lookAt := A_TickCount
+		nav := Func("NavRead").Call(120)
+		took := A_TickCount - downAt
+		if (!IsObject(nav) || nav.yaw = "")
+			{
+			;(the rest by TurnRate, as Turn would)
+			rest := Round((Abs(h) - Abs(turned)) / TurnRate)
+			if (rest > 0 && turned * h >= 0)
+				HoldFor(rest > 800 ? 800 : rest)
+			ending := "the memory lost"
+			break
+			}
+		looks += 1
+		turned += WkNavSign * ArrowWrap((nav.yaw - prevYaw) * 57.29578), prevYaw := nav.yaw
+		left := h - turned
+		;Let go now or after one more look, whichever lands nearer (within NavTurnTol): it turns on a little
+		;after the key comes up, and this look is a moment old (coast: that much more, at the rate so far)
+		rate := (took > 60 && Abs(turned) > 1) ? Abs(turned) / took : TurnRate
+		coast := rate * (lookMs / 2 + 16), shortNow := Abs(left) - coast
+		if (left * h <= 0 || shortNow <= 0 || (shortNow <= NavTurnTol && shortNow <= Abs(shortNow - rate * lookMs)))
+			break
+		if (turned * h < 0 && Abs(turned) > 10)
+			{
+			ending := "wrong way"
+			break
+			}
+		if (took > 500 && Abs(turned) < 2)
+			{
+			ending := "not turning"
+			break
+			}
+		if (took > capMs)
+			{
+			ending := "time limit"
+			break
+			}
+		}
+	Send, {Blind}{%key% up}
+	WkTurnAt := A_TickCount
+	took := A_TickCount - downAt
+	stillTurns := ending = "not turning" ? stillTurns + 1 : 0
+	if (ending = "wrong way")
+		{
+		WkNavSign := -WkNavSign, WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0
+		WalkLog("memory turn: holding " key " turned the wizard " Round(Abs(turned)) " degrees the other way than the game's memory said - turned its sign round, checking it against the arrow again")
+		}
+	else if (ending = "not turning" && stillTurns >= 2)
+		{
+		WkNavTrusted := 0, WkNavAgree := 0
+		WalkLog("memory turn: the wizard's facing didn't change with " key " held, twice - not steering by the game's memory till it agrees with the arrow again")
+		}
+	else if (!WkNavTurns || (ending != "" && ending != "walking off" && ending != "focus lost" && A_TickCount - WkNavTurnLog > 60000))
+		{
+		if (ending != "")
+			WkNavTurnLog := A_TickCount
+		WalkLog("memory turn" (WkNavTurns ? "" : " (the first)") ": " Round(h) " degrees asked, " Round(turned) " turned in " took " ms, " looks " looks at the game's memory" (ending = "" ? "" : " - stopped: " ending))
+		}
+	WkNavTurns += 1
+	return true
+	}
+
+;What was learned about the game's memory: WkNavSign (which way round its heading is) and WkNavScale (the
+;arrow's distance per game unit), from resources\nav_calibration.txt (the sign only a first guess: it's
+;checked against the arrow every run)
+WalkNavLoad()
+	{
+	WkNavSign := 1, WkNavScale := ""
+	dir := AqDir()
+	WkNavFile := dir "\resources\nav_calibration.txt"
+	Loop, Read, %WkNavFile%
+		{
+		if (RegExMatch(A_LoopReadLine, "^\s*sign\s*:\s*(-?1)\s*(;.*)?$", m))
+			WkNavSign := m1 + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*scale\s*:\s*(\d+(?:\.\d+)?)\s*(;.*)?$", m) && m1 > 0)
+			WkNavScale := m1 + 0
+		}
+	WkNavSignSaved := WkNavSign
+	}
+
+WalkNavSave()
+	{
+	text := "; What Walker.ahk has learned about the game's memory (read-only). Delete this file to make it learn again.`n"
+		. "; scale: the game's distance per unit of the distance printed on the quest arrow`n"
+		. "; sign: 1 or -1, which way round the memory's heading is compared with the arrow's`n"
+		. (WkNavScale > 0 ? "scale:" Round(WkNavScale, 4) "`n" : "")
+		. "sign:" WkNavSign "`n"
+	FileDelete, %WkNavFile%.tmp
+	FileAppend, %text%, %WkNavFile%.tmp
+	FileMove, %WkNavFile%.tmp, %WkNavFile%, 1
+	WkNavSignSaved := WkNavSign
 	}
 
 ;OnExit handler: never leave a movement key held down

@@ -11,6 +11,16 @@ walks your wizard towards the quest goal by following the yellow quest arrow
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+Walking by the game's memory (navmem:1 in PlayerStats.txt, the default): the
+vision helper also reads where the wizard is, which way it faces and where the
+quest arrow points straight out of the game's memory - READ-ONLY: nothing in
+the game is written or changed, and it sends no keys of its own. The walker
+steers by it once it agrees with the arrow on screen, uses its distance instead
+of the OCR'd number, keeps going when scenery hides the arrow and measures its
+turns. Whenever it can't be used it follows the arrow on screen as before
+(debug.log: "the game's memory ..."). navmem:0 = only the arrow on screen.
+More in ..\AutoQuester\README.txt.
+
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.
 It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never
@@ -37,8 +47,10 @@ and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe i
 ..\AutoQuester) do the same as the .ahk scripts without AutoHotkey installed.
 Keep each exe in its folder - it reads the pictures, PlayerStats.txt and
 vision\ from there (and AutoQuester\resources\). The vision helper still needs
-Python 3 with numpy and Pillow (pip install numpy pillow); without it cards are
-found the old way (ImageSearch). Rebuild after changing a script:
+Python 3 with numpy and Pillow (pip install numpy pillow katsuba - katsuba only
+draws the zone's walls on the zone map; Setup.exe installs all three); without
+it cards are found the old way (ImageSearch) and the walker follows the arrow on
+screen. Rebuild after changing a script:
 double-click ..\build.cmd (needs AutoHotkey v1.1 with its compiler; close the bot first).
 Ready-built: the Releases page of the GitHub repo (a zip with everything). Hover the wizard icon in the tray to see what
 the walker is doing; debug.log has the battle and walking decisions in order.

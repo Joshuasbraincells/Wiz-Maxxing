@@ -160,12 +160,50 @@ What it does
 	- It only presses keys while Wizard101 is the active window. Click away
 	  and it pauses and lets go of every key; F8 stops it straight away.
 
+Walking by the game's memory (AutoFarmer only, read-only)
+	AutoFarmer's vision helper also reads, straight out of the game's
+	memory, where the wizard is, which way it faces and where the quest
+	arrow points (the game's own path to the goal, how far along it, and how
+	many zone changes are left). It only ever READS the game's memory:
+	nothing in the game is written or changed, nothing is injected, and it
+	sends no keys or clicks of its own. The walker uses it for the same
+	decisions it makes off the arrow, with better inputs:
+	  - steering: the heading from the wizard's facing to where the arrow
+	    points - only once it agrees with the arrow on screen (3 clear
+	    readings; if it's the arrow's mirror image its sign is turned round
+	    and checked again). debug.log: "the game's memory: its heading
+	    agrees with the arrow's".
+	  - distance: the memory's instead of the OCR'd number (which misses
+	    lone digits like "9"). How the two compare is worked out from a few
+	    readings and kept in resources\nav_calibration.txt (delete it to make
+	    it learn again).
+	  - the arrow hidden by scenery (an arch, a pillar, the mount): it steers
+	    on by the memory, for up to 12 s, instead of backing up and turning
+	    to find it - not in a battle, after a loading screen, with a dialogue
+	    open, or right on top of the goal.
+	  - turns: it holds A / D until the wizard's facing has really turned
+	    that far (within about 5 degrees), instead of guessing from the time.
+	  - a goal in another zone: the arrow leads to the way out (a door, a
+	    loading point), so it walks straight into it instead of pressing X
+	    (unless a prompt asks for X).
+	Talking, pushing into doorways, World Gates, sigils, prompts, collect
+	goals and notices work as before.
+	It falls back to the arrow on screen at once whenever the memory can't
+	be used - the helper not running, an error or no answer, the game's
+	quest helper off, a zone that isn't the one in the game's log - and
+	comes back by itself; debug.log says so once each way ("the game's
+	memory ... - following the on-screen arrow" / "... can be used").
+	navmem:0 in AutoFarmer\PlayerStats.txt switches it off. AutoQuester.ahk
+	on its own has no vision helper, so it always follows the arrow.
+
 Settings are at the top of Walker.ahk (arrival distance, turn speed,
 how long before it counts as stuck, how many Space presses at the goal,
 how long it walks on into a doorway, how far it backs up and turns when
-stuck, how close the arrow must be for a World Gate to count, and for
+stuck, how close the arrow must be for a World Gate to count, for
 collecting: how long before it starts, how far it roams, how long it chases
-one monster, when it gives up).
+one monster, when it gives up, and for the game's memory: how many readings
+must agree with the arrow, how close a turn must get, how long it steers
+with the arrow hidden).
 
 Window size and UI size
 	The arrow was captured at a 1920x1080 window with UI Size: Small. A
@@ -182,6 +220,8 @@ Files
 	                          the screen (uses ..\AutoFarmer\Ocr.ahk)
 	resources\arrow_refs.txt  the 16 captured arrow shapes (bright yellow)
 	resources\arrow_refs_hue.txt  the same shapes for the shadow colour test
+	resources\nav_calibration.txt  what it learned about the game's memory
+	                          (made by itself; delete it to learn again)
 	resources\testframes\     captured arrows for testing ArrowReader
 	backups\                  the old 2018 AutoQuester, and copies from before
 	                          each round of changes

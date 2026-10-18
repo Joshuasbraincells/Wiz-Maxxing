@@ -13,7 +13,7 @@ LoadStats(quiet := false)
 	defaults := "damage:130,pierce:0,enemyresist:15,killmargin:15,solotraps:0,reboost:0,discardunaffordable:0,healthocr:1,ocrscale:2,platestrip:110"
 		. ",blade:35,elementalblade:35,spiritblade:35,blade3:25,blade4:20,sharpen:10"
 		. ",trap:40,elementaltrap:30,spirittrap:30,trap3:30,trap4:0,feint:70,potent:10"
-		. ",aura:25,enchant1:100,enchant2:225,enchant3:275,enchant4:300,pipsave:3,pipsavehealth:50,handsoff:10,handsoffon:1,potionmark:1,potionfromhome:1"
+		. ",aura:25,enchant1:100,enchant2:225,enchant3:275,enchant4:300,pipsave:3,pipsavehealth:50,handsoff:10,handsoffon:1,potionmark:1,potionfromhome:1,navmem:1"
 		. ",storm.hit1:80,storm.hit2:520,storm.hit3:690,storm.hit4:805"
 		. ",fire.hit1:305,fire.hit2:430,fire.hit3:540,fire.hit4:1265"
 		. ",myth.hit1:275,myth.hit2:370,myth.hit3:700,myth.hit4:790"
