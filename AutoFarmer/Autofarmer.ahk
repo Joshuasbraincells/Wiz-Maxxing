@@ -156,8 +156,9 @@ global ScreenX := A_ScreenWidth / 2
 global ScreenY := A_ScreenHeight / 2
 UpdateGameRect()
 
-;debug.log: what the script sees and decides each round (starts fresh every start / restart)
-FileDelete, %A_ScriptDir%\debug.log
+;debug.log: what the script sees and decides each round (starts fresh every start / restart; the last
+;run's is kept as debug.previous.log - e.g. to see why a wizard died before you restarted)
+FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 ;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
 DashInit()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
