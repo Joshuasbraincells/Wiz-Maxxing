@@ -1250,6 +1250,13 @@ def save_png(img, out):
         pass
 
 
+def inside_temp(path):
+    """whether path is inside the temp folder"""
+    tmp = os.path.normcase(os.path.abspath(tempfile.gettempdir()))
+    p = os.path.normcase(os.path.abspath(path))
+    return p.startswith(tmp + os.sep)
+
+
 def inside_root(path):
     p = os.path.normcase(os.path.abspath(path))
     return p.startswith(os.path.normcase(ROOT) + os.sep)
@@ -1303,8 +1310,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(lines))
             if u.path == '/cut':
                 out = q['out']
-                if not any(os.path.abspath(out).lower().startswith(d.lower()) for d in (ROOT, os.path.abspath(tempfile.gettempdir()))):
-                    return self.reply('ERR out must be in ' + ROOT + ' or the temp folder', 400)
+                if not os.path.abspath(out).lower().startswith(ROOT.lower()):
+                    return self.reply('ERR out must be in ' + ROOT, 400)
                 cut_card(float(q['left']), float(q['top']), float(q['scale']), out, q.get('file'))
                 log(f'/cut {out}')
                 return self.reply('OK')
@@ -1317,8 +1324,10 @@ class Handler(BaseHTTPRequestHandler):
                 out = q['out']
                 if not (16 <= w <= 4000 and 16 <= h <= 4000):
                     return self.reply('ERR w and h must be 16-4000', 400)
-                if not out.lower().endswith('.png') or not inside_root(out):
-                    return self.reply('ERR out must be a .png in ' + ROOT, 400)
+                # (the temp folder too: the dashboard's map is rewritten every second, which OneDrive would
+                # keep uploading if it were in the bot's folder)
+                if not out.lower().endswith('.png') or not (inside_root(out) or inside_temp(out)):
+                    return self.reply('ERR out must be a .png in ' + ROOT + ' or the temp folder', 400)
                 span = min(100000.0, max(500.0, float(q.get('span', NAV_SPAN))))
                 nm = nav_reader()
                 r, why = nm.read(path=True)
