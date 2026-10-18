@@ -11,6 +11,17 @@ walks your wizard towards the quest goal by following the yellow quest arrow
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+You playing: while you use the keyboard or mouse yourself, the bot waits - no
+battle rounds, no walking, no potions; a walking key it held is let go at once.
+It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never
+waits). If you take over during its turn, it leaves that round to you.
+
+Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
+GitHub for a newer release and asks before installing it; tray menu "Check for
+updates" does it any time. Needs a GitHub token once per PC (Setup.exe, "GitHub
+updates"). Your settings, learned cards, potion routes and pictures are kept.
+updater.log (next to Wiz-Maxxing.exe) says what it did.
+
 Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
 cast per card, passes, discards, kill-check hits, potions, cards learned),
 what the bot sees right now (your health/mana/pips, the hand card by card - ?
@@ -222,7 +233,9 @@ Out of battle the bot reads your health off the red globe. Under potionat %
 battle) it drinks a potion (Ctrl+O). If health doesn't go up, you're out, and
 it goes to buy more WITH GOLD (never Crowns) along a route you record once:
 	- Tray menu "Record potion route...": the bot marks your spot (Page
-	  Down) and takes you to this world's Commons (End). Walk to the potion
+	  Down) and takes you Home (the Home key: you land in the same spot every
+	  time, and one route works from any world; potionfromhome:0 in
+	  PlayerStats.txt starts from the world's Commons instead). Walk to the potion
 	  seller (Hilda Brewer, Wizard City Fairegrounds) with the KEYBOARD only,
 	  press X to talk, click Fill All (and close the window), press F9. The
 	  route is saved for that Commons (routes\<zone>.txt) and you're recalled

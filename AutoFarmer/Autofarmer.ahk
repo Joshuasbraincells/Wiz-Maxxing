@@ -28,6 +28,7 @@ Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
+Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion route..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now (along the route), MenuPotionRun
@@ -53,6 +54,14 @@ return
 
 MenuDash:
 DashToggle()
+return
+
+;(Wiz-Maxxing.exe /check: asks GitHub; if you update, it closes this and starts the new one)
+MenuUpdates:
+if (FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
+	Run, "%A_ScriptDir%\..\Wiz-Maxxing.exe" /check, %A_ScriptDir%\..
+else if (FileExist(A_ScriptDir "\..\Wiz-Maxxing.ahk"))
+	Run, "%A_ScriptDir%\..\Wiz-Maxxing.ahk" /check, %A_ScriptDir%\..
 return
 
 MenuPotionRoute:
@@ -98,6 +107,8 @@ global EnchantedHits := {}
 ;saved; PipOrbs: pip orb slots filled, from PipValue)
 global PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, OwnHpPct := 0, OwnHpRound := -1
 global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStall := 0, PipOrbs := 0
+;You're at the keyboard and mouse right now (PlayerActing): the bot waits
+global PlayerActive := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 global BossMax := 0
@@ -222,6 +233,15 @@ loop,
 		LastBeat := A_TickCount
 		WinGetTitle, activeTitle, A
 		DebugLog("Watching for a round. Active window: " activeTitle " | game area " GameLeft "," GameTop " " GameW "x" GameH)
+		}
+	;You're playing (a key, click or mouse move of yours in the last handsoff seconds): the bot waits - no
+	;battle rounds, no walking, no potions; it lets go of any walking key at once
+	if (PlayerActing())
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		Sleep, 200
+		continue
 		}
 	;Disconnected, or the game closed: get back online first (no battles or walking meanwhile)
 	if (ReconnectCheck())
@@ -547,6 +567,13 @@ if (AuraRounds > 0)
 	AuraRounds--
 	}
 
+;You started playing while the bot looked at the hand: the round is yours
+if (PlayerActing())
+	{
+	DebugLog("  you're playing - leaving this round to you")
+	Goto, EndRound
+	}
+
 ;Kill check: read every enemy's health and, if a hit in hand already kills them all, cast it now instead of boosting more
 global KillHit := ""
 global KillEnchant := 0
@@ -658,6 +685,22 @@ Switch()
 Goto, TestRound
 	
 ;Functions
+;You're playing: a key, a click or a mouse move of yours (not the bot's own: A_TimeIdlePhysical leaves those
+;out) in the last handsoff seconds (PlayerStats.txt, default 10; 0 = never wait for you). Logged when it
+;starts and ends; PlayerActive tells the dashboard
+PlayerActing()
+	{
+	static logged := 0
+	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 10
+	acting := (secs > 0 && A_TimeIdlePhysical < secs * 1000)
+	if (acting && !logged)
+		DebugLog("You're playing - the bot waits until you've left the keyboard and mouse alone for " secs " s"), logged := 1
+	else if (!acting && logged)
+		DebugLog("You've stopped - the bot carries on"), logged := 0
+	PlayerActive := acting
+	return acting
+	}
+
 ;Moves the mouse to x, y and clicks, quickly: mousespeed (0 = jump there, 1 = fastest glide; it used to
 ;be 5), clickwait ms before the click (used to be 150), and after it `after` ms times clickafter %
 ;(PlayerStats.txt; it used to wait the whole of it)

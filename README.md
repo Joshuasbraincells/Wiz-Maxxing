@@ -10,11 +10,18 @@ AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card lear
 1. Download the newest **Wiz-Maxxing-v0.##.zip** (versions go v0.01, v0.02, ... v0.99, v1.00, v1.01) from the [Releases](../../releases) page and unzip it anywhere.
 2. Double-click **Setup.exe**. It shows what's there already and installs what's missing:
    Python 3 and its numpy and Pillow packages (for the card matching), unblocks the downloaded files,
-   and adds **Wiz-Maxxing** to the Start menu and the desktop. AutoHotkey v1.1 and Git are optional (only
+   and adds **Wiz-Maxxing** to the Start menu, the desktop, the Run box (Win+R) and your PATH. AutoHotkey v1.1 and Git are optional (only
    to change the bot or get updates with `git pull`).
 3. Start the bot from the Start menu (search "Wiz-Maxxing") or with **Wiz-Maxxing.exe** in the folder.
    Keep the folder where it is - the shortcuts point into it.
    If Windows says "Windows protected your PC", click **More info**, then **Run anyway**.
+
+## Updates
+
+Tick **GitHub updates** in Setup once per PC: it opens GitHub's token page (make a fine-grained token with
+read-only **Contents** access to this repository) and keeps the token in Windows Credential Manager. From then
+on, opening **Wiz-Maxxing** checks for a newer release and asks before installing it - your PlayerStats.txt,
+learned cards, potion routes and the bot's memory are kept. The bot's tray menu has **Check for updates** too.
 
 ## Change the bot
 

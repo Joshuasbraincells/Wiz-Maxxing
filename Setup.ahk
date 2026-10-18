@@ -10,14 +10,19 @@
 ;                     takes the mark off the bot's files
 ;   Start menu        a Wiz-Maxxing folder: Wiz-Maxxing (the bot), Wiz-Maxxing Setup, Stats reader, Quest walker only
 ;   Desktop shortcut  "Wiz-Maxxing" -> Wiz-Maxxing.exe (it starts AutoFarmer\Autofarmer.exe)
+;   Run box and PATH  this folder on your PATH (type Wiz-Maxxing in a terminal) and Wiz-Maxxing.exe in "App
+;                     Paths" (type Wiz-Maxxing in Win+R) - yours only, no admin
 ;   AutoHotkey v1.1   only to change the scripts and rebuild the exes (build.cmd); asks for admin
 ;   Git               only to get updates with git pull; asks for admin
+;   GitHub updates    a read-only GitHub token, so Wiz-Maxxing can check for and download new versions when you
+;                     open it (the repo is private): the token page opens, you paste the token, it's tested and
+;                     kept in Windows Credential Manager (Updater.ahk)
 #NoEnv
 #SingleInstance force
 SetWorkingDir, %A_ScriptDir%
 SetBatchLines, -1
 
-global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS
+global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS, SuUp, SuUpS, SuPa, SuPaS
 global SuLogHwnd := 0, SuBusy := 0
 
 if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
@@ -38,10 +43,14 @@ Gui, Su:Add, Checkbox, xm y+8 w260 vSuPk, numpy and Pillow (Python packages)
 Gui, Su:Add, Text, x+8 w350 vSuPkS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuUn, Unblock the bot's files
 Gui, Su:Add, Text, x+8 w350 vSuUnS, ...
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuUp, GitHub updates (a token, once)
+Gui, Su:Add, Text, x+8 w350 vSuUpS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuSm, Start menu (Wiz-Maxxing)
 Gui, Su:Add, Text, x+8 w350 vSuSmS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuSh, Desktop shortcut "Wiz-Maxxing"
 Gui, Su:Add, Text, x+8 w350 vSuShS, ...
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuPa, Run box and PATH (Win+R: Wiz-Maxxing)
+Gui, Su:Add, Text, x+8 w350 vSuPaS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuAh, AutoHotkey v1.1 (to rebuild the exes)
 Gui, Su:Add, Text, x+8 w350 vSuAhS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuGi, Git (to get updates with git pull)
@@ -64,10 +73,14 @@ SuCheck(tick := false)
 	SuShow("SuPk", "SuPkS", pk, pk ? "installed" : (py = "" ? "needs Python first" : "not installed"), tick)
 	marked := SuMarkedCount()
 	SuShow("SuUn", "SuUnS", marked = 0, marked = 0 ? "nothing blocked" : marked " file(s) marked as downloaded", tick)
+	up := UpToken() != ""
+	SuShow("SuUp", "SuUpS", up, up ? "token saved - Wiz-Maxxing checks for updates when you open it" : "no token yet", tick)
 	sm := FileExist(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk") != ""
 	SuShow("SuSm", "SuSmS", sm, sm ? "in the Start menu" : "not there", tick)
 	sc := FileExist(A_Desktop "\Wiz-Maxxing.lnk") != ""
 	SuShow("SuSh", "SuShS", sc, sc ? "on the desktop" : "not there", tick)
+	pa := SuPathOk()
+	SuShow("SuPa", "SuPaS", pa, pa ? "Win+R or a terminal: Wiz-Maxxing" : "not set up", tick)
 	ahk := SuAhk()
 	SuShow("SuAh", "SuAhS", ahk != "", ahk != "" ? "found: " SuShort(ahk) : "not installed (only needed to rebuild)", tick, false)
 	git := SuWhere("git.exe")
@@ -94,10 +107,14 @@ SuInstall:
 		SuInstallPackages()
 	if (SuUn)
 		SuUnblock()
+	if (SuUp)
+		SuToken()
 	if (SuSm)
 		SuStartMenu()
 	if (SuSh)
 		SuShortcut()
+	if (SuPa)
+		SuAddPath()
 	if (SuAh)
 		SuInstallAhk()
 	if (SuGi)
@@ -219,6 +236,74 @@ SuStartMenu(menuDir := "")
 			made++, SuLogLine("made: " e[1] " -> " e[2])
 		}
 	SuLogLine(made ? made " shortcut(s) in " menuDir " - search the Start menu for Wiz-Maxxing" : "couldn't make any")
+	}
+
+;The GitHub token for updates: the page to make one opens, you paste it (hidden), it's tried, then kept in
+;Windows Credential Manager. It's never shown or logged
+SuToken()
+	{
+	SuLogLine("== GitHub updates")
+	if (UpToken() != "" && UpTokenTest(UpToken()) = "")
+		return SuLogLine("the saved token works")
+	Run, https://github.com/settings/personal-access-tokens/new
+	MsgBox, 64, GitHub updates, % "A GitHub page opened (sign in if it asks). Make a token there:`n`n1. Token name: Wiz-Maxxing updates`n2. Expiration: the longest it offers (or No expiration)`n3. Repository access: Only select repositories -> Wiz-Maxxing`n4. Permissions -> Repository permissions -> Contents: Read-only`n5. Generate token, then copy it`n`nClick OK, then paste it into the next box."
+	InputBox, token, GitHub updates, Paste the token (it's kept in Windows Credential Manager on this PC only):, HIDE, 560, 150
+	if (ErrorLevel || Trim(token) = "")
+		return SuLogLine("no token entered")
+	token := Trim(token)
+	why := UpTokenTest(token)
+	if (why != "")
+		{
+		token := ""
+		return SuLogLine("not saved: " why)
+		}
+	saved := UpTokenSave(token)
+	token := ""
+	SuLogLine(saved ? "saved - Wiz-Maxxing now checks for updates whenever you open it" : "couldn't save it in Credential Manager")
+	}
+
+;---- PATH and App Paths (envKey / appKey: other keys for tests) ----
+
+;Whether this folder is on your PATH and Wiz-Maxxing.exe is in App Paths
+SuPathOk(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\Wiz-Maxxing.exe")
+	{
+	RegRead, path, %envKey%, Path
+	RegRead, app, %appKey%
+	return SuInPath(path, A_ScriptDir) && app = A_ScriptDir "\Wiz-Maxxing.exe"
+	}
+
+;Whether dir is one of path's folders (any case, with or without a trailing \)
+SuInPath(path, dir)
+	{
+	dir := RTrim(dir, "\")
+	Loop, Parse, path, `;
+		if (RTrim(Trim(A_LoopField), "\") = dir)
+			return true
+	return false
+	}
+
+;Adds this folder to your PATH (your own, kept as it is otherwise) and Wiz-Maxxing.exe to App Paths, then
+;tells Windows (new terminals and the Run box see it; already open ones don't)
+SuAddPath(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\Wiz-Maxxing.exe")
+	{
+	SuLogLine("== Run box and PATH")
+	RegRead, path, %envKey%, Path
+	if (SuInPath(path, A_ScriptDir))
+		SuLogLine("this folder is on your PATH already")
+	else
+		{
+		newPath := (Trim(path) = "" ? "" : RTrim(path, "; ") ";") A_ScriptDir
+		RegWrite, REG_EXPAND_SZ, %envKey%, Path, %newPath%
+		SuLogLine(ErrorLevel ? "couldn't add it to your PATH" : "added to your PATH: " A_ScriptDir)
+		}
+	exe := A_ScriptDir "\Wiz-Maxxing.exe"
+	if (!FileExist(exe))
+		return SuLogLine("no Wiz-Maxxing.exe here - the Run box entry is skipped")
+	RegWrite, REG_SZ, %appKey%, , %exe%
+	RegWrite, REG_SZ, %appKey%, Path, %A_ScriptDir%
+	SuLogLine(ErrorLevel ? "couldn't add it to App Paths" : "Win+R: type Wiz-Maxxing")
+	;(WM_SETTINGCHANGE "Environment" to every window)
+	DllCall("SendMessageTimeout", "Ptr", 0xFFFF, "UInt", 0x1A, "Ptr", 0, "Str", "Environment", "UInt", 2, "UInt", 3000, "Ptr*", result)
 	}
 
 ;What starts the bot: Wiz-Maxxing.exe, else AutoFarmer\Autofarmer.exe, else the script
@@ -383,3 +468,5 @@ SuShort(path)
 	{
 	return StrLen(path) > 48 ? "..." SubStr(path, -44) : path
 	}
+
+#Include %A_ScriptDir%\Updater.ahk

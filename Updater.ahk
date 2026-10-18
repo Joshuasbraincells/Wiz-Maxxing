@@ -1,0 +1,458 @@
+; Updater.ahk - checks GitHub for a newer Wiz-Maxxing release and, if you say so, installs it. AHK v1.1,
+; functions only; #Included by Wiz-Maxxing.ahk (it checks every time you open the bot) and Setup.ahk (which
+; stores the token). The tray menu's "Check for updates" runs Wiz-Maxxing.exe /check.
+;
+; The repo is private, so it reads it with a GitHub token (fine-grained, read-only Contents on the repo),
+; kept in Windows Credential Manager as "Wiz-Maxxing GitHub" - never in a file, never in the log.
+; This folder's version is version.txt (e.g. v0.10; none = older than any release). Releases are numbered
+; v0.01, v0.02, ... v0.99, v1.00, v1.01.
+;
+; Updating: the release zip is downloaded, the bot is closed if it's running, and the zip's files are
+; copied over this folder - except your own: PlayerStats.txt (only settings it doesn't have yet are added),
+; learned cards, potion routes, the walker's memory, window positions, logs; and pictures that are here
+; already (cards the bot learned live in the picture folders) are kept - new ones are added. Wiz-Maxxing.exe
+; itself is in use, so it's renamed out of the way and the new one put in its place. Log: updater.log.
+
+;(tests only: another address for GitHub's API, a token, and yes to the question)
+global UpTestApi, UpTestToken, UpTestYes
+
+;(the repo, and the token's name in Credential Manager - functions, since a global's starting value in an
+;#Included file never runs)
+UpRepo()
+	{
+	return "Joshuasbraincells/Wiz-Maxxing"
+	}
+
+UpApi()
+	{
+	return UpTestApi != "" ? UpTestApi : "https://api.github.com"
+	}
+
+UpCredTarget()
+	{
+	return "Wiz-Maxxing GitHub"
+	}
+
+;---- the check ----
+
+;Looks for a newer release and asks to install it. quiet: no message when there's nothing to do or it can't
+;check (opening the bot). True if it updated (the bot's files were replaced)
+UpCheck(quiet := true)
+	{
+	UpCleanup()
+	token := UpToken()
+	if (token = "")
+		{
+		if (!quiet)
+			MsgBox, 48, Wiz-Maxxing updates, % "There's no GitHub token on this PC, so updates can't be checked.`n`nRun Setup.exe and tick ""GitHub updates"" to add one."
+		return false
+		}
+	rel := UpLatest(token, err)
+	token := ""
+	if (!IsObject(rel))
+		{
+		UpLog("check failed: " err)
+		if (!quiet)
+			MsgBox, 48, Wiz-Maxxing updates, % "Couldn't check for updates:`n" err
+		return false
+		}
+	have := UpVersion()
+	UpLog("installed " (have = "" ? "(no version.txt)" : have) ", latest " rel.tag)
+	if (UpCompare(rel.tag, have) <= 0)
+		{
+		if (!quiet)
+			MsgBox, 64, Wiz-Maxxing updates, % "You're up to date (" (have = "" ? rel.tag : have) ")."
+		return false
+		}
+	notes := rel.body
+	notes := RegExReplace(notes, "\*\*|__|``", "")
+	if (StrLen(notes) > 700)
+		notes := SubStr(notes, 1, 700) "..."
+	if (!UpTestYes)
+		MsgBox, 36, Wiz-Maxxing update, % "A new version is out: " rel.name "`n(you have " (have = "" ? "an older one" : have) ")`n`n" notes "`n`nUpdate now? Your settings, learned cards and potion routes are kept."
+	IfMsgBox, No
+		{
+		UpLog("you chose not to update to " rel.tag " now")
+		return false
+		}
+	return UpInstall(rel)
+	}
+
+;"v0.10" vs "v0.09": 1 newer, 0 same, -1 older ("" counts as older than any)
+UpCompare(a, b)
+	{
+	if (b = "")
+		return a = "" ? 0 : 1
+	if (!RegExMatch(a, "(\d+)\.(\d+)", x) || !RegExMatch(b, "(\d+)\.(\d+)", y))
+		return a = b ? 0 : 1
+	if (x1 + 0 != y1 + 0)
+		return x1 + 0 > y1 + 0 ? 1 : -1
+	return x2 + 0 > y2 + 0 ? 1 : x2 + 0 < y2 + 0 ? -1 : 0
+	}
+
+;This folder's version (version.txt), "" if none
+UpVersion()
+	{
+	FileRead, v, %A_ScriptDir%\version.txt
+	return Trim(v, " `t`r`n")
+	}
+
+;The latest release: {tag, name, body, zipUrl, zipName}; "" and err on a problem
+UpLatest(token, ByRef err)
+	{
+	err := ""
+	resp := UpHttp(UpApi() "/repos/" UpRepo() "/releases/latest", token, "application/vnd.github+json", status, 8000)
+	if (status = 401 || status = 403)
+		{
+		err := "GitHub refused the token (" status ") - it may have expired. Make a new one and add it with Setup.exe."
+		return ""
+		}
+	if (status = 404)
+		{
+		err := "GitHub says there's no release - or the token can't see the repo (404)."
+		return ""
+		}
+	if (status != 200)
+		{
+		err := (status = 0 ? "no answer from GitHub (offline?)" : "GitHub answered " status)
+		return ""
+		}
+	rel := {}
+	RegExMatch(resp, """tag_name"":\s*""([^""]+)""", m), rel.tag := m1
+	RegExMatch(resp, """tag_name"":.*?""name"":\s*""((?:[^""\\]|\\.)*)""", m), rel.name := UpUnescape(m1)
+	RegExMatch(resp, """body"":\s*""((?:[^""\\]|\\.)*)""", m), rel.body := UpUnescape(m1)
+	;(the zip among the assets: its API url downloads it)
+	if (RegExMatch(resp, """url"":\s*""([^""]+/releases/assets/\d+)"",\s*""id"":\s*\d+,\s*""node_id"":\s*""[^""]*"",\s*""name"":\s*""([^""]+\.zip)""", m))
+		rel.zipUrl := m1, rel.zipName := m2
+	if (rel.tag = "")
+		{
+		err := "couldn't read GitHub's answer"
+		return ""
+		}
+	if (rel.name = "")
+		rel.name := rel.tag
+	return rel
+	}
+
+;---- installing ----
+
+UpInstall(rel)
+	{
+	if (rel.zipUrl = "")
+		{
+		MsgBox, 48, Wiz-Maxxing update, % rel.tag " has no zip to download - get it from the GitHub Releases page."
+		return false
+		}
+	Progress, b w360 zh0 fs10, % "Downloading " rel.zipName "...", Wiz-Maxxing update
+	tmp := A_Temp "\wiz-maxxing-update"
+	FileRemoveDir, %tmp%, 1
+	FileCreateDir, %tmp%
+	zip := tmp "\" rel.zipName
+	token := UpToken()
+	ok := UpDownload(rel.zipUrl, token, zip, err)
+	token := ""
+	if (!ok)
+		{
+		Progress, Off
+		UpLog("download failed: " err)
+		MsgBox, 48, Wiz-Maxxing update, % "The download failed: " err "`n`nNothing was changed."
+		return false
+		}
+	Progress, , Unpacking...
+	RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command ""Expand-Archive -LiteralPath '" zip "' -DestinationPath '" tmp "\unzipped' -Force""", , Hide UseErrorLevel
+	src := ""
+	Loop, Files, %tmp%\unzipped\*, D
+		src := A_LoopFileFullPath
+	if (src = "" || !FileExist(src "\AutoFarmer\Autofarmer.ahk"))
+		{
+		Progress, Off
+		UpLog("the zip didn't unpack as expected (" zip ")")
+		MsgBox, 48, Wiz-Maxxing update, The downloaded zip didn't unpack as expected - nothing was changed.
+		return false
+		}
+	Progress, , Closing the bot...
+	UpCloseBots()
+	Progress, , Copying the new files...
+	n := UpCopy(src, A_ScriptDir, kept, added)
+	UpMergeStats(src "\AutoFarmer\PlayerStats.txt", A_ScriptDir "\AutoFarmer\PlayerStats.txt", rel.tag)
+	FileRemoveDir, %tmp%, 1
+	Progress, Off
+	UpLog("updated to " rel.tag ": " n " file(s) replaced or added, " kept " of yours kept (" added " new picture(s) added)")
+	TrayTip, Wiz-Maxxing, % "Updated to " rel.tag ".", 5, 1
+	return true
+	}
+
+;Closes the bot's programs running from this folder (exes, or scripts run by AutoHotkey), politely first
+UpCloseBots()
+	{
+	DetectHiddenWindows, On
+	pids := []
+	for p in ComObjGet("winmgmts:").ExecQuery("SELECT ProcessId, ExecutablePath, CommandLine FROM Win32_Process")
+		{
+		path := p.ExecutablePath, cmd := p.CommandLine
+		if (p.ProcessId = DllCall("GetCurrentProcessId"))
+			continue
+		if ((path != "" && InStr(path, A_ScriptDir "\") = 1 && RegExMatch(path, "i)\\(Autofarmer|AutoQuester|StatsReader)\.exe$"))
+			|| (InStr(cmd, A_ScriptDir "\") && RegExMatch(cmd, "i)\\(Autofarmer|AutoQuester|StatsReader)\.ahk")))
+			pids.Push(p.ProcessId)
+		}
+	for i, pid in pids
+		WinClose, ahk_pid %pid% ahk_class AutoHotkey
+	for i, pid in pids
+		{
+		Process, WaitClose, %pid%, 10
+		if (ErrorLevel)
+			Process, Close, %pid%
+		UpLog("closed the running bot (pid " pid ")")
+		}
+	Sleep, % pids.Length() ? 1500 : 0
+	}
+
+;Copies the new release's files over the folder, keeping yours (see the top). Returns how many were copied
+UpCopy(src, dest, ByRef kept, ByRef added)
+	{
+	n := 0, kept := 0, added := 0
+	Loop, Files, %src%\*, FR
+		{
+		rel := SubStr(A_LoopFileFullPath, StrLen(src) + 2)
+		target := dest "\" rel
+		mine := UpIsMine(rel)
+		exists := FileExist(target) != ""
+		if (exists && mine)
+			{
+			kept++
+			continue
+			}
+		SplitPath, target,, targetDir
+		FileCreateDir, %targetDir%
+		;(this program: in use, so moved out of the way - deleted next time)
+		if (exists && rel = "Wiz-Maxxing.exe" && A_IsCompiled)
+			FileMove, %target%, %target%.old, 1
+		FileCopy, %A_LoopFileFullPath%, %target%, 1
+		if (ErrorLevel)
+			UpLog("couldn't replace " rel)
+		else
+			{
+			n++
+			if (mine)
+				added++
+			}
+		}
+	return n
+	}
+
+;Files that are yours: kept when they're here already
+UpIsMine(rel)
+	{
+	if (RegExMatch(rel, "i)^AutoFarmer\\(PlayerStats\.txt|dashboard\.ini|resources\\characters\.txt)$"))
+		return true
+	if (RegExMatch(rel, "i)(^|\\)(learned|routes|backups|generated)\\"))
+		return true
+	if (RegExMatch(rel, "i)^AutoQuester\\resources\\(walk_memory|known_zones)\.txt$"))
+		return true
+	if (RegExMatch(rel, "i)\.(log|ini)$"))
+		return true
+	;(pictures: the bot learns cards into the picture folders, so one that's here stays)
+	if (RegExMatch(rel, "i)^AutoFarmer\\.*\.(png|bmp)$"))
+		return true
+	return false
+	}
+
+;The new release's PlayerStats.txt settings this one doesn't have yet are added at the end (with their
+;comment); yours are left as they are
+UpMergeStats(newFile, myFile, tag)
+	{
+	if (!FileExist(myFile) || !FileExist(newFile))
+		return
+	FileRead, mine, %myFile%
+	have := {}
+	Loop, Parse, mine, `n, `r
+		if (RegExMatch(A_LoopField, "^\s*([\w.]+)\s*:", m))
+			have[Format("{:L}", m1)] := 1
+	add := "", comment := ""
+	Loop, Read, %newFile%
+		{
+		line := A_LoopReadLine
+		if (RegExMatch(line, "^\s*;"))
+			{
+			comment .= line "`r`n"
+			continue
+			}
+		if (RegExMatch(line, "^\s*([\w.]+)\s*:", m) && !have.HasKey(Format("{:L}", m1)))
+			add .= comment line "`r`n"
+		comment := ""
+		}
+	if (add = "")
+		return
+	FileAppend, % "`r`n; ---- Added by the update to " tag " (new settings; yours above are kept) ----`r`n" add, %myFile%
+	UpLog("added new settings to PlayerStats.txt")
+	}
+
+;The old Wiz-Maxxing.exe a past update moved aside
+UpCleanup()
+	{
+	FileDelete, %A_ScriptDir%\Wiz-Maxxing.exe.old
+	}
+
+;---- GitHub and the token ----
+
+;GET url with the token; the answer's text, status in status (0 = no answer). Sent without waiting and
+;polled, so the time limit holds
+UpHttp(url, token, accept, ByRef status, timeoutMs := 8000)
+	{
+	status := 0
+	try
+		{
+		req := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+		req.Open("GET", url, true)
+		req.SetRequestHeader("User-Agent", "Wiz-Maxxing-updater")
+		req.SetRequestHeader("Accept", accept)
+		req.SetRequestHeader("X-GitHub-Api-Version", "2022-11-28")
+		if (token != "")
+			req.SetRequestHeader("Authorization", "Bearer " token)
+		req.Send()
+		t0 := A_TickCount
+		while (!req.WaitForResponse(0))
+			{
+			if (A_TickCount - t0 > timeoutMs)
+				{
+				req.Abort()
+				return ""
+				}
+			Sleep, 20
+			}
+		status := req.Status
+		return req.ResponseText
+		}
+	catch e
+		return ""
+	}
+
+;Downloads a release asset (the API sends it on to a storage address, which mustn't get the token)
+UpDownload(assetUrl, token, file, ByRef err)
+	{
+	err := ""
+	try
+		{
+		req := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+		req.Option(6) := false
+		req.Open("GET", assetUrl, true)
+		req.SetRequestHeader("User-Agent", "Wiz-Maxxing-updater")
+		req.SetRequestHeader("Accept", "application/octet-stream")
+		if (token != "")
+			req.SetRequestHeader("Authorization", "Bearer " token)
+		req.Send()
+		if (!UpWait(req, 20000))
+			{
+			err := "no answer from GitHub"
+			return false
+			}
+		url := assetUrl
+		if (req.Status = 302 || req.Status = 301 || req.Status = 307)
+			{
+			url := req.GetResponseHeader("Location")
+			req := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+			req.Open("GET", url, true)
+			req.SetRequestHeader("User-Agent", "Wiz-Maxxing-updater")
+			req.Send()
+			if (!UpWait(req, 180000))
+				{
+				err := "the download took too long"
+				return false
+				}
+			}
+		if (req.Status != 200)
+			{
+			err := "GitHub answered " req.Status
+			return false
+			}
+		stream := ComObjCreate("ADODB.Stream")
+		stream.Type := 1
+		stream.Open()
+		stream.Write(req.ResponseBody)
+		stream.SaveToFile(file, 2)
+		stream.Close()
+		}
+	catch e
+		{
+		err := IsObject(e) ? e.Message : e
+		return false
+		}
+	FileGetSize, size, %file%
+	err := (size > 100000 ? "" : "the file came down empty")
+	return size > 100000
+	}
+
+UpWait(req, timeoutMs)
+	{
+	t0 := A_TickCount
+	while (!req.WaitForResponse(0))
+		{
+		if (A_TickCount - t0 > timeoutMs)
+			{
+			req.Abort()
+			return false
+			}
+		Sleep, 30
+		}
+	return true
+	}
+
+;The token from Windows Credential Manager ("" none)
+UpToken()
+	{
+	if (UpTestToken != "")
+		return UpTestToken
+	credPtr := 0, token := ""
+	is64 := (A_PtrSize = 8)
+	VarSetCapacity(targetW, (StrLen(UpCredTarget()) + 1) * 2, 0), StrPut(UpCredTarget(), &targetW, "UTF-16")
+	if (!DllCall("Advapi32\CredReadW", "Ptr", &targetW, "UInt", 1, "UInt", 0, "Ptr*", credPtr) || !credPtr)
+		return ""
+	blobSize := NumGet(credPtr + 0, is64 ? 32 : 24, "UInt")
+	blobPtr := NumGet(credPtr + 0, is64 ? 40 : 28, "Ptr")
+	if (blobPtr && blobSize)
+		token := StrGet(blobPtr, blobSize // 2, "UTF-16")
+	DllCall("Advapi32\CredFree", "Ptr", credPtr)
+	return Trim(token)
+	}
+
+;Stores the token in Windows Credential Manager. True if it did
+UpTokenSave(token)
+	{
+	is64 := (A_PtrSize = 8)
+	user := "github-token"
+	VarSetCapacity(targetW, (StrLen(UpCredTarget()) + 1) * 2, 0), StrPut(UpCredTarget(), &targetW, "UTF-16")
+	VarSetCapacity(userW, (StrLen(user) + 1) * 2, 0), StrPut(user, &userW, "UTF-16")
+	blobSize := StrLen(token) * 2
+	VarSetCapacity(blob, blobSize + 2, 0), StrPut(token, &blob, "UTF-16")
+	VarSetCapacity(cred, is64 ? 80 : 52, 0)
+	NumPut(1, cred, 4, "UInt")                          ;Type: CRED_TYPE_GENERIC
+	NumPut(&targetW, cred, 8, "Ptr")                    ;TargetName
+	NumPut(blobSize, cred, is64 ? 32 : 24, "UInt")      ;CredentialBlobSize
+	NumPut(&blob, cred, is64 ? 40 : 28, "Ptr")          ;CredentialBlob
+	NumPut(2, cred, is64 ? 48 : 32, "UInt")             ;Persist: CRED_PERSIST_LOCAL_MACHINE
+	NumPut(&userW, cred, is64 ? 72 : 48, "Ptr")         ;UserName
+	saved := DllCall("Advapi32\CredWriteW", "Ptr", &cred, "UInt", 0)
+	DllCall("RtlZeroMemory", "Ptr", &blob, "Ptr", blobSize + 2)
+	return saved
+	}
+
+;Whether a token works: it can see the repo's releases ("" yes, else why not)
+UpTokenTest(token)
+	{
+	UpHttp(UpApi() "/repos/" UpRepo() "/releases/latest", token, "application/vnd.github+json", status, 8000)
+	return status = 200 ? "" : status = 401 ? "GitHub doesn't accept that token (401)" : status = 404 ? "the token can't see the Wiz-Maxxing repo (404) - give it access to that repository" : status = 403 ? "GitHub refused it (403)" : status = 0 ? "no answer from GitHub (offline?)" : "GitHub answered " status
+	}
+
+UpUnescape(s)
+	{
+	s := StrReplace(s, "\r\n", "`n"), s := StrReplace(s, "\n", "`n"), s := StrReplace(s, "\r", "")
+	s := StrReplace(s, "\""", """"), s := StrReplace(s, "\/", "/"), s := StrReplace(s, "\t", "`t")
+	return StrReplace(s, "\\", "\")
+	}
+
+UpLog(text)
+	{
+	FormatTime, now,, yyyy-MM-dd HH:mm:ss
+	FileAppend, % now " " text "`r`n", %A_ScriptDir%\updater.log
+	}

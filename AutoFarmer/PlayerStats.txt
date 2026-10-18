@@ -31,6 +31,11 @@ reboost:0
 discardunaffordable:0
 ; (Values may be written with or without a %. A line that can't be read pops up a warning at start.)
 
+; ---- You playing ----
+; handsoff: while you use the keyboard or mouse yourself, the bot waits - no battle rounds, no walking, no
+; potions - and carries on this many seconds after you stop (0 = it never waits for you)
+handsoff:10
+
 ; ---- Clicking ----
 ; mousespeed: how the mouse moves to what it clicks: 0 = jumps there, 1 = fastest glide (was 5, slow)
 mousespeed:1
@@ -107,6 +112,9 @@ pipsavehealth:50
 ; potionat: out of battle, drink a potion (Ctrl+O) when your health is under this % - out of potions, the
 ; bot buys more with gold along the route you recorded (tray menu "Record potion route...", Potions.ahk)
 potionat:40
+; potionfromhome: 1 = potion routes start from your house (Home key: you land in the same spot every time,
+; so one route works from any world); 0 = from the world's Commons (End)
+potionfromhome:1
 
 ; ---- Blades on your hitter (%) ----
 blade:35

@@ -9,18 +9,20 @@
 ;
 ; Out of potions: a refill run along a route (routes\<zone>.txt):
 ;   1. Mark Location (Page Down) where you are
-;   2. Go to the Commons (End) of this world - the game's log says which Commons it is
-;   3. the route recorded from that Commons: your keys (walking, X to talk) and left clicks (Hilda
+;   2. Go Home (the Home key) - you always land in the same spot there, and it's the same house from any
+;      world, so one route does for all (potionfromhome:0 in PlayerStats.txt: the world's Commons (End)
+;      instead - but you land somewhere different there each time); the game's log says which zone it is
+;   3. the route recorded from there: your keys (walking, X to talk) and left clicks (Hilda
 ;      Brewer's "Fill All" etc.), replayed with the same timing; loading screens on the way are waited for
 ;   4. drink (now there are potions), then Recall (Page Up) back to the mark
 ; Before every click it reads the screen round it: any "Crown" there stops the run (it buys with gold
 ; only). A battle, you touching the mouse or keyboard, or a loading screen that doesn't come stops it too.
-; No route from that Commons: it recalls back and tells you to record one.
+; No route from there: it recalls back and tells you to record one.
 ;
-; Recording (tray menu "Record potion route..."): the bot marks your spot and takes you to the Commons;
+; Recording (tray menu "Record potion route..."): the bot marks your spot and takes you Home (or to the Commons);
 ; walk to the potion seller with the keyboard (W A S D / arrows - not the mouse, a camera turn isn't
 ; recorded), press X to talk, click Fill All (and whatever closes the window), then press F9. It saves
-; the route for that Commons and recalls you back. Record on the same mount you'll farm with: a route is
+; the route for that start and recalls you back. Record on the same mount you'll farm with: a route is
 ; a timing.
 
 global PotionNextCheck := 0, PotionMaxHp := 0, PotionFailUntil := 0, PotionRecording := 0
@@ -126,8 +128,8 @@ PotionRun()
 		DebugLog("Potions: marked this spot (Page Down) in " startZone)
 		Sleep, 1500
 		}
-	;2. To this world's Commons
-	if (!PotionTeleport("{End}", "the Commons"))
+	;2. Home (or this world's Commons)
+	if (!PotionTeleport(PotionStartKey(), PotionStartName()))
 		return false
 	commons := WalkZone(true)
 	route := PotionRouteFile(commons)
@@ -184,7 +186,18 @@ PotionTeleport(key, what)
 	return false
 	}
 
-;routes\<zone>.txt for a Commons zone
+;Where routes start: Home (the Home key; potionfromhome:1, the default) or the world's Commons (End)
+PotionStartKey()
+	{
+	return (Stats.HasKey("potionfromhome") && !Stats["potionfromhome"]) ? "{End}" : "{Home}"
+	}
+
+PotionStartName()
+	{
+	return PotionStartKey() = "{Home}" ? "your house (Home)" : "the Commons (End)"
+	}
+
+;routes\<zone>.txt for the zone a route starts in
 PotionRouteFile(zone)
 	{
 	return A_WorkingDir "\routes\" RegExReplace(zone, "[^\w-]", "_") ".txt"
@@ -306,7 +319,7 @@ PotionRecordStart()
 		MsgBox, 48, Record potion route, % "The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (Windows+1) and try again."
 		return
 		}
-	MsgBox, 65, Record potion route, % "The bot will mark your spot (Page Down) and take you to this world's Commons (End).`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press F9.`n`nUse the mount you'll farm with. The bot recalls you back afterwards."
+	MsgBox, 65, Record potion route, % "The bot will mark your spot (Page Down) and take you to " PotionStartName() ".`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press F9.`n`nUse the mount you'll farm with. The bot recalls you back afterwards."
 	IfMsgBox, Cancel
 		return
 	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
@@ -317,10 +330,10 @@ PotionRecordStart()
 	Send, {Blind}{PgDn}
 	PotionMarkZone := startZone, PotionMarkAt := A_TickCount
 	Sleep, 1500
-	if (!PotionTeleport("{End}", "the Commons"))
+	if (!PotionTeleport(PotionStartKey(), PotionStartName()))
 		{
 		PotionRecording := 0
-		MsgBox, 48, Record potion route, The teleport to the Commons didn't happen (no loading screen) - nothing recorded.
+		MsgBox, 48, Record potion route, % "The teleport to " PotionStartName() " didn't happen (no loading screen) - nothing recorded."
 		return
 		}
 	commons := WalkZone(true)

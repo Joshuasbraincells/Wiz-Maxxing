@@ -304,6 +304,8 @@ DashRefresh()
 	;What it's doing
 	if (PotionRecording)
 		doing := "Recording a potion route"
+	else if (PlayerActive)
+		doing := "You're playing - the bot waits"
 	else if (DashSees.mode = "battle" && A_TickCount - DashSees.roundAt < 120000)
 		doing := "In battle (round " DashN.rounds ")"
 	else if (!Walking)
