@@ -26,6 +26,8 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              was just written - made see-through where this copy
                                              differs, or cut at this UI size into here=<set folder> -
                                              so the plain search finds it if it looks again)
+                                             &thumbs=<folder> also saves each card as it looks:
+                                             <folder>\hand1.png, hand2.png... left to right (for the dashboard)
   /cut?left=&top=&scale=&out=<path>       -> saves the card at left, top: <out>.png (its picture, cut like
                                              hit1.png etc.) and .raw.png, .card.png (the whole card), .icon.png
                                              (its type icon), .pips.png (its pip cost)
@@ -568,7 +570,7 @@ def is_grey(img, sc, left, top):
     return float(((p.max(axis=2) - p.min(axis=2)) <= 6).mean()) > 0.85
 
 
-def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here=''):
+def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thumbs=''):
     """the cards in hand, left to right (see /hand). learned: the learned cards ("<id>:<picture set
     folder>:<slot>"), each also recognised as a copy that differs a little. here: the picture set folder
     for this UI size (a card learned at another size is cut into it)"""
@@ -659,6 +661,15 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here=''):
             if like(around, o['art'], np.ones(o['art'].shape[:2], bool))[0] < LIKE_DIST:
                 c['same'] = o['same'] or j + 1
                 break
+    # each card as it looks, for the dashboard (thumbs: a folder)
+    if thumbs:
+        os.makedirs(thumbs, exist_ok=True)
+        cw_i, ch_i = int(round(cw)), int(round(ch))
+        for i, c in enumerate(cards, 1):
+            L, T = c['left'] - x1, c['top'] - y1
+            whole = img[max(0, T):T + ch_i, max(0, L):L + cw_i]
+            if whole.size:
+                Image.fromarray(np.clip(whole, 0, 255).astype(np.uint8)).save(os.path.join(thumbs, f'hand{i}.png'))
     return cards
 
 
@@ -903,8 +914,11 @@ class Handler(BaseHTTPRequestHandler):
                 x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))
                 scale = float(q['scale'])
                 t0 = time.perf_counter()
+                thumbs = q.get('thumbs', '')
+                if thumbs and not os.path.abspath(thumbs).lower().startswith(ROOT.lower()):
+                    return self.reply('ERR thumbs must be in ' + ROOT, 400)
                 cards = read_hand(x1, y1, x2, y2, scale, [p for p in q.get('pics', '').split(',') if p], q.get('file'),
-                                  [e for e in q.get('learned', '').split(',') if e], q.get('here', ''))
+                                  [e for e in q.get('learned', '').split(',') if e], q.get('here', ''), thumbs)
                 lines = ['card|{left}|{top}|{w}|{h}|{known}|{kdist:.1f}|{g}|{kind}|{kinddist:.1f}|{pips}|{pipscore:.2f}|{same}|{liked}'.format(g=int(c['grey']), **c) for c in cards]
                 log(f'/hand scale {scale} {(time.perf_counter() - t0) * 1000:.0f} ms: ' + ', '.join(
                     (c['known'].split('/')[-1] or f"?{c['kind'] or 'type?'}") + ('(grey)' if c['grey'] else '') for c in cards))

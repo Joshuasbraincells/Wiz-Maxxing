@@ -12,12 +12,15 @@ global DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld :=
 ;Counts (rounds, passes, ...) and casts per card; what it sees ({key: text}); card names off PlayerStats.txt
 global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
 global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
+;The Hand section: its heading, and a picture and a label for each of up to 7 cards
+global DashHandHead, DashCardPic1, DashCardPic2, DashCardPic3, DashCardPic4, DashCardPic5, DashCardPic6, DashCardPic7
+global DashCardTxt1, DashCardTxt2, DashCardTxt3, DashCardTxt4, DashCardTxt5, DashCardTxt6, DashCardTxt7
 
 ;Makes the window (shown unless dashboard.ini says it was hidden). Called once at start
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
-	Gui, Dash:New, +Resize +MinSize620x460 +HwndDashHwnd, Wizard101 bot
+	Gui, Dash:New, +Resize +MinSize620x610 +HwndDashHwnd, Wizard101 bot
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
@@ -28,17 +31,27 @@ DashInit()
 	Gui, Dash:Font, s9 w400 cDADADA, Consolas
 	Gui, Dash:Add, Text, x12 y60 w350 h190 vDashStatText
 	Gui, Dash:Add, Text, x372 y60 w400 h190 vDashSeeText
+	;The hand: each card as the bot saw it this round, and what it took it for (DashHandSeen)
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y258 w200 h16, LOG
+	Gui, Dash:Add, Text, x12 y258 w760 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
+	Loop, 7
+		{
+		cx := 12 + (A_Index - 1) * 72
+		Gui, Dash:Add, Picture, x%cx% y278 w58 h97 Hidden vDashCardPic%A_Index%
+		Gui, Dash:Add, Text, x%cx% y377 w66 h28 Hidden vDashCardTxt%A_Index%
+		}
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y410 w200 h16, LOG
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
-	Gui, Dash:Add, Edit, x12 y278 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
+	Gui, Dash:Add, Edit, x12 y430 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x12 y588 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
-	Gui, Dash:Add, Button, x130 y588 w80 h26 gDashClearLog, Clear
-	Gui, Dash:Add, Button, x218 y588 w120 h26 gDashOpenLog, Open debug.log
-	Gui, Dash:Add, Button, x346 y588 w150 h26 gDashWalkToggle, Walking on/off (F8)
-	Gui, Dash:Add, Button, x504 y588 w140 h26 gDashFolder, Open bot folder
-	Gui, Dash:Add, Button, x652 y588 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
+	Gui, Dash:Add, Button, x12 y740 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
+	Gui, Dash:Add, Button, x130 y740 w80 h26 gDashClearLog, Clear
+	Gui, Dash:Add, Button, x218 y740 w120 h26 gDashOpenLog, Open debug.log
+	Gui, Dash:Add, Button, x346 y740 w150 h26 gDashWalkToggle, Walking on/off (F8)
+	Gui, Dash:Add, Button, x504 y740 w140 h26 gDashFolder, Open bot folder
+	Gui, Dash:Add, Button, x652 y740 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
 	if (earlier != "")
@@ -63,7 +76,10 @@ DashShow()
 	IniRead, x, %A_ScriptDir%\dashboard.ini, window, x, %A_Space%
 	IniRead, y, %A_ScriptDir%\dashboard.ini, window, y, %A_Space%
 	IniRead, w, %A_ScriptDir%\dashboard.ini, window, w, 784
-	IniRead, h, %A_ScriptDir%\dashboard.ini, window, h, 624
+	IniRead, h, %A_ScriptDir%\dashboard.ini, window, h, %A_Space%
+	IniRead, layout, %A_ScriptDir%\dashboard.ini, window, layout, 1
+	;(the Hand section came in above the log: a window saved before that is that much taller now)
+	h := (h = "") ? 776 : (layout < 2 ? h + 152 : h)
 	;(w and h are at 100% display scaling; Windows' scaling makes the window that much bigger)
 	dpi := A_ScreenDPI / 96
 	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
@@ -86,6 +102,14 @@ DashShow()
 		w := Min(w, Floor((mRight - mLeft - 40) / dpi) - 16), h := Min(h, Floor((mBottom - mTop - 40) / dpi) - 40)
 		if (x = "")
 			x := mRight - Round((w + 16) * dpi) - 20, y := mBottom - Round((h + 40) * dpi) - 20
+		}
+	;(no taller than the monitor it's on)
+	SysGet, count, MonitorCount
+	Loop, %count%
+		{
+		SysGet, m, MonitorWorkArea, %A_Index%
+		if (x + 40 >= mLeft && x + 40 < mRight && y + 20 >= mTop && y + 20 < mBottom)
+			h := Min(h, Floor((mBottom - y - 20) / dpi) - 40)
 		}
 	Gui, Dash:Show, x%x% y%y% w%w% h%h% NoActivate
 	DashShown := 1
@@ -137,6 +161,7 @@ DashSavePlace()
 	;(at 100% display scaling, as Gui Show takes them)
 	IniWrite, % Round(NumGet(rc, 8, "Int") * 96 / A_ScreenDPI), %A_ScriptDir%\dashboard.ini, window, w
 	IniWrite, % Round(NumGet(rc, 12, "Int") * 96 / A_ScreenDPI), %A_ScriptDir%\dashboard.ini, window, h
+	IniWrite, 2, %A_ScriptDir%\dashboard.ini, window, layout
 	}
 
 DashOnExit(reason, code)
@@ -249,7 +274,7 @@ DashSee(key, text)
 ;the bot doesn't know, * for a greyed-out one (not enough pips)
 DashHandSeen(answer)
 	{
-	text := ""
+	text := "", n := 0
 	Loop, Parse, answer, `n, `r
 		{
 		f := StrSplit(A_LoopField, "|")
@@ -258,8 +283,41 @@ DashHandSeen(answer)
 		known := f[6]
 		name := known = "" ? "?" (f[9] = "" ? "card" : f[9]) : InStr(known, "learned/") = 1 ? "learned" : DashShortName(SubStr(known, InStr(known, "/") + 1), SubStr(known, 1, InStr(known, "/") - 1))
 		text .= (text = "" ? "" : ", ") name (f[8] = 1 ? "*" : "")
+		n += 1
+		if (n <= 7)
+			DashHandCard(n, name, known, f[8] = 1, f[11])
 		}
+	;(the slots past the hand: empty)
+	Loop, % 7 - Min(n, 7)
+		{
+		slot := n + A_Index
+		GuiControl, Dash:Hide, DashCardPic%slot%
+		GuiControl, Dash:Hide, DashCardTxt%slot%
+		}
+	FormatTime, now, , HH:mm:ss
+	GuiControl, Dash:, DashHandHead, % "HAND - what it saw at " now " (" n " card" (n = 1 ? "" : "s") ")   white: known   yellow: one it doesn't know   grey: can't cast now"
 	DashSee("hand", text)
+	}
+
+;One card of the Hand section: its picture as the bot saw it (generated\hand\hand<n>.png, saved by the vision
+;helper) and under it what it took it for and the pips it read - white known, yellow unknown, grey greyed out
+DashHandCard(n, name, known, grey, pips)
+	{
+	if (!DashHwnd)
+		return
+	pic := A_ScriptDir "\generated\hand\hand" n ".png"
+	if (FileExist(pic))
+		{
+		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
+		GuiControl, Dash:, DashCardPic%n%, % "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
+		GuiControl, Dash:Show, DashCardPic%n%
+		}
+	else
+		GuiControl, Dash:Hide, DashCardPic%n%
+	colour := grey ? "8A8A8A" : known = "" ? "F2C14E" : "E8E8E8"
+	GuiControl, Dash:+c%colour%, DashCardTxt%n%
+	GuiControl, Dash:, DashCardTxt%n%, % SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "")
+	GuiControl, Dash:Show, DashCardTxt%n%
 	}
 
 ;A slot's card name alone (e.g. "Scarab"), else the slot
@@ -425,7 +483,7 @@ DashGuiSize:
 		return
 	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384
-	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 324
+	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 476
 	for each, b in [["Pause log", 12], ["Clear", 130], ["Open debug.log", 218], ["Walking on/off (F8)", 346], ["Open bot folder", 504]]
 		GuiControl, Dash:Move, % b[1], % "y" A_GuiHeight - 36
 	GuiControl, Dash:Move, DashPauseBtn, % "y" A_GuiHeight - 36
