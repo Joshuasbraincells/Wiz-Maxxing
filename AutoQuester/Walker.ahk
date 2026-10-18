@@ -25,6 +25,9 @@ global CollectWait, RoamRadius, ChaseTime, CollectMax
 ;shown now, OK'd - not shown again till it's sorted); how long without an arrow / waiting at a goal; the
 ;last X of the bot's and its one Escape; the last distance read; on top of the goal / stuck by it
 global NoArrowNotify, WaitNotify, CollectStall, OnTopDist
+;Badly stuck: teleport to the Commons and start over (WalkCommonsReset) - settings; when it last did; the
+;watch on getting closer to the goal (best distance, since when, the last step it looked)
+global ResetTeleport, ResetEvery, StuckForever, WkResetAt, WkProgBest, WkProgAt, WkProgStep
 global WkNoteKind, WkNoteTitle, WkNoteHwnd, WkNoteShown, WkNoteOff, WkNoArrowFrom, WkWaitFrom, WkLastX, WkEscTried
 global WkLastDist, WkLastDistAt, WkOnTop, WkOnTopAt, WkOnTopBacked, WkOnTopDone, WkStuckNearDone, WkStuckTalk, WkTalkAt
 global WkCollect, WkGoalReadAt, WkArr1At, WkFoesAt, WkChaseFrom, WkChaseSkipUntil, WkRoamLeg, WkRoamLegAt, WkRoamSide
@@ -97,6 +100,10 @@ WalkerInit(prefix := "AutoQuester")
 	                      ;stop, wait there, and show you a notice (Keep trying / Stop walking)
 	NoArrowNotify := 45000 ;no quest arrow this long out of battle (no loading screen): a notice for you
 	WaitNotify := 180000  ;at a goal, waiting this long for the next one: a notice for you
+	ResetTeleport := 1    ;badly stuck (gave up going round an obstacle, or no closer to the goal for StuckForever of
+	                      ;walking): teleport to the world's Commons (End) and walk on from there; 0 = just stop
+	ResetEvery := 600000  ;...at most once every this long (ms); stuck again sooner: it stops and tells you
+	StuckForever := 180000 ;walking (battles, talks, collecting left out) this long without getting closer = badly stuck
 	OnTopDist := 20       ;the arrow gone (or stuck) this close to the goal: it's on top of it / the thing itself
 	                      ;is in the way - arrived (X), not backing up and turning, not going round it
 	;The game's memory (AutoFarmer, navmem:1 in PlayerStats.txt - read-only):
@@ -111,6 +118,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
 	WkCollect := "", WkGoalReadAt := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
+	WkResetAt := 0
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
 	WkNavHidden := 0, WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0
@@ -136,6 +144,7 @@ WalkReset()
 	WkArr1At := 0, WkFoesAt := 0, WkChaseFrom := 0, WkChaseSkipUntil := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkRoamSide := 1
 	WkNoArrowFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
+	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
 	WkNavHidden := 0, WkNavDoor := 0
 	}
 
@@ -707,6 +716,16 @@ WalkStep()
 		;Progress = closer than ever before, or a new goal further away
 		if (WkBestDist = "" || dist < WkBestDist - 1 || dist > WkBestDist + 50)
 			WkBestDist := dist, WkBestTime := A_TickCount, WkTries := 0
+		;Badly stuck: walking on and on without getting any closer to the goal for StuckForever (the clock only
+		;runs while it walks here - a gap of over 5 s since it last looked, a battle or a talk, is left out):
+		;the Commons, and start over from there
+		if (A_TickCount - WkProgStep > 5000)
+			WkProgAt += A_TickCount - WkProgStep
+		WkProgStep := A_TickCount
+		if (WkProgBest = "" || dist < WkProgBest - 30 || dist > WkProgBest + 300)
+			WkProgBest := dist, WkProgAt := A_TickCount
+		else if (A_TickCount - WkProgAt > StuckForever && WalkCommonsReset("no closer to the goal in " Round(StuckForever / 60000) " minutes of walking"))
+			return true
 		;Got round an obstacle: clearly closer than where it got stuck. Remember which way worked there
 		if (IsObject(WkEsc))
 			{
@@ -849,10 +868,12 @@ WalkStep()
 		if (WkTries >= UnstickTries)
 			{
 			WalkLog("stuck: gave up after " UnstickTries " tries")
+			if (WalkCommonsReset("couldn't get round an obstacle in " UnstickTries " tries"))
+				return true
 			Walking := 0
 			ReleaseKeys()
 			SetStatus("stuck - couldn't get around the obstacle. Move the wizard a bit and press F8")
-			WalkNotify("stuck", "Stuck", "The wizard couldn't get round an obstacle (" (stuckAt = "" ? "?" : stuckAt) " from the goal), so walking is off. Move it a bit and press F8 to walk again.")
+			WalkNotify("stuck", "Stuck", "The wizard couldn't get round an obstacle (" (stuckAt = "" ? "?" : stuckAt) " from the goal) and the teleport to the Commons didn't help (used in the last " Round(ResetEvery / 60000) " minutes, or not possible here), so walking is off. Move it a bit and press F8 to walk again.")
 			return false
 			}
 		SetStatus("stuck - backing up and going around (try " WkTries + 1 " of " UnstickTries ")")
@@ -1764,6 +1785,44 @@ WalkFoes()
 			}
 		}
 	return foes
+	}
+
+;---- Badly stuck: the Commons, and start over ----
+
+;Teleports to the world's Commons (End) and starts the walk over from there (the quest arrow leads on from
+;wherever it lands). At most once every ResetEvery. False if it didn't: too soon, in a battle, or no
+;loading screen came within 10 s (a dungeon, say)
+WalkCommonsReset(why)
+	{
+	if (!ResetTeleport || (WkResetAt && A_TickCount - WkResetAt < ResetEvery) || inbattle || !Walking || !GameActive())
+		return false
+	WkResetAt := A_TickCount
+	ReleaseKeys()
+	WalkLog("badly stuck (" why ") - teleporting to the Commons (End) to start over")
+	SetStatus("badly stuck - teleporting to the Commons to start over")
+	t0 := A_TickCount, started := false
+	PressKey("End")
+	while (A_TickCount - t0 < 40000)
+		{
+		Sleep, 250
+		if (!Walking)
+			return false
+		WalkZone(true)
+		if (WkLoading)
+			started := true
+		if (!WkLoading && WkLoadedAt > t0 + 500)
+			{
+			WalkLog("at the Commons (" WalkZone(true) ") - walking on from here")
+			TrayTip, Wizard101 bot, % "The wizard was badly stuck (" why ") - it went to the Commons and walks on from there.", 10, 1
+			WalkReset()
+			WkLoadAt := A_TickCount
+			return true
+			}
+		if (!started && A_TickCount - t0 > 10000)
+			break
+		}
+	WalkLog("the teleport to the Commons didn't happen (no loading screen) - " why)
+	return false
 	}
 
 ;---- Telling you when it needs you ----

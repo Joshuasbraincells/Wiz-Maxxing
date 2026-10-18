@@ -40,7 +40,8 @@ what the bot sees right now (your health/mana/pips, the hand card by card - ?
 for a card it doesn't know, * for a greyed-out one - enemies' health, zone,
 the walker) and the log as it's written. Windows+2 or the tray menu shows /
 hides it; it opens on a monitor the game isn't on and remembers where you put
-it (dashboard.ini). It never takes the focus by itself.
+it (dashboard.ini). It never takes the focus by itself. Its X (close) stops
+the bot; minimise it (or Windows+2) to just put it away.
 
 Executables: ..\Wiz-Maxxing.exe starts the bot (Setup.exe puts it in the Start menu
 and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in

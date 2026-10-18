@@ -135,6 +135,13 @@ What it does
 	  once so the arrow shows again.
 	  Stuck by something that isn't the goal (X opened nothing): it goes
 	  round it as before.
+	- Badly stuck - it gave up going round an obstacle after 5 tries, or
+	  has walked 3 minutes (battles, talks, collecting left out) without
+	  getting any closer to the goal: it teleports to the world's Commons
+	  (End) and walks on from there - at most once every 10 minutes. Stuck
+	  again sooner, or the teleport can't happen (a dungeon): it stops and
+	  shows the Stuck notice. ResetTeleport := 0 at the top of Walker.ahk
+	  switches the teleport off.
 	- Notices (a small window that doesn't take the focus from the game, a
 	  sound and a tray tip; on another monitor if there is one, else beside
 	  or at the top of the game; hidden during battles): stuck for good

@@ -842,8 +842,10 @@ DashHandsToggle:
 		Func("HandsOffToggle").Call()
 	return
 
+;(the window's X stops the bot - minimise it, or Windows+2, to just put it away)
 DashGuiClose:
-	DashToggle()
+	DebugLog("Dashboard closed - the bot stops")
+	ExitApp
 	return
 
 DashGuiSize:
