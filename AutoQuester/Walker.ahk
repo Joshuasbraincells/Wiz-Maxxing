@@ -29,6 +29,8 @@ global NoArrowNotify, WaitNotify, CollectStall, OnTopDist
 ;watch on getting closer to the goal (best distance, since when, the last step it looked)
 global ResetTeleport, ResetEvery, StuckForever, WkResetAt, WkProgBest, WkProgAt, WkProgStep
 global WkNoteKind, WkNoteTitle, WkNoteHwnd, WkNoteShown, WkNoteOff, WkNoArrowFrom, WkWaitFrom, WkLastX, WkEscTried
+;(no arrow and the game's memory not standing in for it either: since when - the "No quest arrow" notice)
+global WkNoGuideFrom
 global WkLastDist, WkLastDistAt, WkOnTop, WkOnTopAt, WkOnTopBacked, WkOnTopDone, WkStuckNearDone, WkStuckTalk, WkTalkAt
 global WkCollect, WkGoalReadAt, WkArr1At, WkFoesAt, WkChaseFrom, WkChaseSkipUntil, WkRoamLeg, WkRoamLegAt, WkRoamSide
 global Walking, HeldW, KeysDown, Refocus, StatusText, StatusKind, StatusPrefix
@@ -45,12 +47,16 @@ global inbattle
 ;arrow's own units ("" until known), zone changes to go, the reading itself; its heading's sign (the game's
 ;world could be either way round) and whether it's trusted yet (readings that agree with the arrow / are its
 ;mirror image / match neither); the arrow's distance per game unit (the readings it's from; readings far off
-;it in a row); on or off (logged when that changes); steering by it with the arrow hidden (since when); the
+;it in a row); on or off (logged when that changes); the
 ;last position (how fast it's moving); closed-loop turns so far, the last odd one logged; the file it's kept
 ;in, and the sign saved there; why the last NavRead got nothing (Vision.ahk)
-global NavTurnTol, NavTurnCap, NavHiddenMax, NavAgreeNeed
+global NavTurnTol, NavTurnCap, NavAgreeNeed
 global WkNavOk, WkNavUse, WkNavH, WkNavD, WkNavHops, WkNavObj, WkNavSign, WkNavTrusted, WkNavAgree, WkNavMirror, WkNavOdd
-global WkNavScale, WkNavScales, WkNavScaleBad, WkNavState, WkNavHidden, WkNavPrev, WkNavTurns, WkNavTurnLog, WkNavFile, WkNavSignSaved, NavWhy
+global WkNavScale, WkNavScales, WkNavScaleBad, WkNavState, WkNavPrev, WkNavTurns, WkNavTurnLog, WkNavFile, WkNavSignSaved, NavWhy
+;Its heading's sign checked (by the arrow agreeing, or a turn - kept in the file); the arrow's distance per game
+;unit for each zone it's been worked out in, the zone the readings so far are from, and the middle of all the
+;zones' (for a zone not worked out yet); the memory standing in for an arrow it can't see (since when)
+global WkNavChecked, WkNavZScales, WkNavScaleZone, WkNavScaleAll, WkStandIn
 ;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
 global WkNavDoor
 
@@ -110,7 +116,6 @@ WalkerInit(prefix := "AutoQuester")
 	NavAgreeNeed := 3     ;its heading is steered by once this many readings agree with the arrow on screen
 	NavTurnTol := 5       ;a turn holds A / D until the wizard's facing is within this many degrees...
 	NavTurnCap := 2500    ;...for at most this long (ms)
-	NavHiddenMax := 12000 ;arrow hidden by scenery: steer by the memory for up to this long (ms) after it last showed
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
@@ -121,7 +126,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkResetAt := 0
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
-	WkNavHidden := 0, WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0
+	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0
 	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
@@ -142,10 +147,10 @@ WalkReset()
 	WkSeenAt := 0, WkHidden := 0, WkHiddenAt := 0, WkBias := 0, WkBiasUntil := 0, WkPrevMovedH := "", WkLastBoxOff := 0, WkLastMode := 0
 	WkSnapPrev := "", WkSnapAt := 0, WkStill := 0, WkMotion := "", WkEsc := ""
 	WkArr1At := 0, WkFoesAt := 0, WkChaseFrom := 0, WkChaseSkipUntil := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkRoamSide := 1
-	WkNoArrowFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
+	WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
-	WkNavHidden := 0, WkNavDoor := 0
+	WkNavDoor := 0, WkStandIn := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -178,7 +183,7 @@ WalkStep()
 		if (KeysDown)
 			ReleaseKeys(), Refocus := 1
 		SetStatus("paused - click into Wizard101 to carry on")
-		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkNoArrowFrom := 0, WkWaitFrom := 0
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkWaitFrom := 0
 		Sleep, 300
 		return true
 		}
@@ -257,26 +262,53 @@ WalkStep()
 		h := WkNavH
 	if (WkNavD != "")
 		dist := WkNavD
-	if (seen && WkNavHidden)
+	;No arrow on screen while the game's memory can be used: it stands in for the arrow - its heading and
+	;distance, as if the arrow were seen (WalkNavStandIn: not in a battle or at a loading screen). A see-through
+	;arrow on a floor its own colour (the gold carpet in Pigswick Academy) can't be picked out, and scenery hides
+	;it. Dialogues and prompts are still looked for meanwhile (standIn, below), as when there's no arrow
+	arrowSeen := seen
+	standIn := seen ? 0 : WalkNavStandIn()
+	;(it turned to check the memory's heading: look again)
+	if (standIn < 0)
+		return Walking ? true : false
+	if (standIn)
 		{
-		WalkLog("arrow back after " Round((A_TickCount - WkNavHidden) / 1000, 1) " s of steering by the game's memory")
-		WkNavHidden := 0
+		seen := 1, WkSeenAt := A_TickCount, WkLoadAt := 0, WkHidden := 0
+		if (IsObject(WkTransSeen))
+			WkTransSeen.seenAfter := 1
+		if (!WkStandIn)
+			{
+			;(a dialogue that's just opened covers the arrow too: looked for now, below)
+			WkStandIn := A_TickCount, WkDlgLook := 0
+			WalkLog("no arrow on screen - the game's memory stands in for it (heading " Round(h) " degrees, distance " dist ")")
+			}
+		}
+	else if (WkStandIn)
+		{
+		WalkLog((seen ? "arrow back" : "no arrow, and the game's memory can't stand in for it now") " - it stood in for " Round((A_TickCount - WkStandIn) / 1000, 1) " s")
+		WkStandIn := 0
 		}
 	;The last distance read (on top of the goal, below) - the arrow's, or the memory's even while the arrow is
 	;hidden. No arrow out of battle with no loading screen: how long - Escape once if an X of the bot's may have
-	;opened something Space doesn't close (a shop), then a notice for you; it's closed once the arrow is back
+	;opened something Space doesn't close (a shop), then a notice for you; it's closed once the arrow is back.
+	;(The Escape goes by the arrow on screen even while the game's memory stands in for it - a window X opened
+	;covers the arrow, not the memory; the notice only when nothing stands in for it either)
 	if ((seen || WkNavD != "") && dist != "")
 		WkLastDist := dist, WkLastDistAt := A_TickCount
-	if (seen || inbattle || WkLoading || inbattle = "")
+	if (arrowSeen || inbattle || WkLoading || inbattle = "")
 		{
-		WkNoArrowFrom := 0
-		if (seen)
+		WkNoArrowFrom := 0, WkNoGuideFrom := 0
+		if (arrowSeen)
 			WkEscTried := 0, WalkNotifyClose("arrow")
 		}
-	else if (!WkNoArrowFrom)
-		WkNoArrowFrom := A_TickCount
 	else
 		{
+		if (!WkNoArrowFrom)
+			WkNoArrowFrom := A_TickCount
+		if (standIn)
+			WkNoGuideFrom := 0, WalkNotifyClose("arrow")
+		else if (!WkNoGuideFrom)
+			WkNoGuideFrom := A_TickCount
 		gone := A_TickCount - WkNoArrowFrom
 		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !WalkDialogOpen())
 			{
@@ -284,8 +316,8 @@ WalkStep()
 			WalkEscape()
 			return Walking ? true : false
 			}
-		if (gone > NoArrowNotify)
-			WalkNotify("arrow", "No quest arrow", "No quest arrow for " Round(gone / 1000) " s, out of battle. Is a quest tracked? Is a window open over the game? It walks on by itself once the arrow is back.")
+		if (WkNoGuideFrom && A_TickCount - WkNoGuideFrom > NoArrowNotify)
+			WalkNotify("arrow", "No quest arrow", "No quest arrow for " Round((A_TickCount - WkNoGuideFrom) / 1000) " s, out of battle. Is a quest tracked? Is a window open over the game? It walks on by itself once the arrow is back.")
 		}
 	;Waiting at a goal for the next one for WaitNotify, out of battle: tell you (only while the arrow shows -
 	;no arrow has its own notice)
@@ -304,7 +336,7 @@ WalkStep()
 
 	;A dialogue box (its NEXT / DONE / MORE / BACK button showing - it covers or pushes up the arrow):
 	;Space through it as fast as the game takes it, whatever the walker was doing
-	if ((!seen || moved) && !inbattle && A_TickCount > WkDlgLook)
+	if ((!seen || moved || standIn) && !inbattle && A_TickCount > WkDlgLook)
 		{
 		WkDlgLook := A_TickCount + 400
 		if (WalkDialogOpen())
@@ -324,9 +356,9 @@ WalkStep()
 	hiddenHere := !seen && A_TickCount - WkFarAt > 10000
 	if (!hiddenHere)
 		WkSigilSeen := 0
-	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved) && A_TickCount > WkGateLook)
+	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved || standIn) && A_TickCount > WkGateLook)
 		{
-		WkGateLook := A_TickCount + ((seen && !near) ? 1500 : 700)
+		WkGateLook := A_TickCount + ((seen && !near && !standIn) ? 1500 : 700)
 		prompt := InteractPrompt()
 		if (prompt = "gate" && near)
 			{
@@ -477,6 +509,13 @@ WalkStep()
 				}
 			return true
 			}
+		;(the game's memory standing in for an arrow the Spiral Map covers: X at a World Gate all the same)
+		if (standIn && WkTalk < 3 && IsObject(SpiralMapButton()))
+			{
+			WalkLog("talk: the Spiral Map opened - it's a World Gate")
+			WkArrived := 4, WkGateAt := A_TickCount, WkGateClicks := 0, WkGateX := 1
+			return true
+			}
 		;Arrow visible: give a slow dialogue two Space presses to show up first (not after X on top of the
 		;goal opened nothing: it's been waited for)
 		if (!WkDialog && WkTalk < 2 && !WkOnTop && !WkStuckTalk)
@@ -506,11 +545,8 @@ WalkStep()
 		return true
 		}
 
-	;Arrow hidden by scenery (an arch, a pillar, the mount) while the game's memory says where it points: steer
-	;by that (below) instead of walking on blind, or backing up and turning to find it (WalkNavHidden: not on
-	;top of the goal, in a battle, at a loading screen or with a dialogue open)
-	navWalk := !seen && WalkNavHidden(dist)
-	if (!seen && !navWalk)
+	;No arrow (and the game's memory not standing in for it, above)
+	if (!seen)
 		{
 		;Pushing into a doorway and the arrow went: the door frame between the camera and the wizard,
 		;or the loading screen starting. Stopping would leave a door frame hiding it for good, so walk
@@ -834,7 +870,7 @@ WalkStep()
 	if (!Walking)
 		return false
 	SetStatus("walking - " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees, distance " (dist = "" ? "?" : dist) (steer != h ? " (keeping clear of the obstacle)" : "") (fine ? "" : " (talk prompt showing)")
-		. (navWalk ? " (arrow hidden - by the game's memory)" : WkNavUse ? " (game's memory)" : ""))
+		. (standIn ? " (no arrow on screen - by the game's memory)" : WkNavUse ? " (game's memory)" : ""))
 	;Is the wizard actually moving? With W held, the picture moves along. Two looks in a row where it
 	;has hardly changed = walking into something, so don't wait the full StuckTime
 	still := WalkStill()
@@ -2288,11 +2324,14 @@ WalkMemLearn(zone, d, side, walkMs, worked)
 ;written, no keys or clicks (navmem:0 in PlayerStats.txt switches it off). The walker uses it for the
 ;decisions it makes anyway:
 ;  - heading: from the wizard's facing to where the arrow points (+ = right, like ReadArrow's). Which way
-;    round the game's world is isn't known for sure, so it's only used once NavAgreeNeed fair readings agree
-;    with the arrow on screen; mirror images and its sign is turned round (both logged)
+;    round the game's world is isn't known for sure, so it's only used once it's been checked: NavAgreeNeed
+;    fair readings agree with the arrow on screen (mirror images and its sign is turned round), or a turn
+;    went the way it said - then kept (resources\nav_calibration.txt, checked:1) and used from the start
 ;  - distance: the memory's / how it compares with the number printed on the arrow (worked out from fair
-;    readings, kept in resources\nav_calibration.txt) - instead of the OCR'd number, which misses lone digits
-;  - the arrow hidden by scenery: steer on by the memory (WalkNavHidden), not back up and turn to find it
+;    readings for each zone - it differs - kept in resources\nav_calibration.txt) - instead of the OCR'd
+;    number, which misses lone digits
+;  - no arrow on screen (scenery hides it, or a see-through arrow on a floor its own colour can't be picked
+;    out): the memory stands in for it (WalkNavStandIn), not back up and turn to find it, or wait
 ;  - turns: until the wizard's facing has turned that far (NavTurn), not TurnRate's guess
 ;  - the goal in another zone (hops > 0): this is the way out - walk on into it, no X (StartTalk)
 ;Anything wrong with it (no answer, an ERR, the quest helper off, a zone that isn't the one in the game's log,
@@ -2323,6 +2362,10 @@ WalkNav(hScr, dScr)
 		if (IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500 && A_TickCount > WkNavPrev.at)
 			navSpeed := Sqrt((nav.x - WkNavPrev.x) ** 2 + (nav.y - WkNavPrev.y) ** 2) / (A_TickCount - WkNavPrev.at)
 		WkNavPrev := {x: nav.x, y: nav.y, at: A_TickCount}
+		;(how the arrow's distance compares with the memory's differs from zone to zone - 41 in one, about 100
+		;in Pigswick Academy: each zone's own once worked out there)
+		if (nav.zone != WkNavScaleZone)
+			WalkNavZoneScale(nav.zone)
 		if (dScr != "" && dScr >= 20 && nav.dist > 0 && navSpeed != "" && navSpeed * 150 <= nav.dist * 0.04)
 			WalkNavLearnScale(nav.dist / dScr, nav.hops)
 		if (nav.dist != "" && WkNavScale > 0 && WkNavScaleBad < 2)
@@ -2388,13 +2431,8 @@ WalkNavVote(hScr, hMem)
 	if (hScr * hMem > 0 && Abs(ArrowWrap(hScr - hMem)) <= 35)
 		{
 		WkNavAgree += 1, WkNavMirror := 0, WkNavOdd := 0
-		if (!WkNavTrusted && WkNavAgree >= NavAgreeNeed)
-			{
-			WkNavTrusted := 1
-			WalkLog("the game's memory: its heading agrees with the arrow's (" WkNavAgree " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - steering by it")
-			if (WkNavSign != WkNavSignSaved)
-				WalkNavSave()
-			}
+		if ((!WkNavTrusted || !WkNavChecked) && WkNavAgree >= NavAgreeNeed)
+			WalkNavConfirm("its heading agrees with the arrow's (" WkNavAgree " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees)")
 		}
 	else if (hScr * hMem < 0 && Abs(ArrowWrap(hScr + hMem)) <= 35)
 		{
@@ -2403,6 +2441,7 @@ WalkNavVote(hScr, hMem)
 			{
 			WkNavSign := -WkNavSign, WkNavMirror := 0, WkNavTrusted := 0
 			WalkLog("the game's memory: its heading is the arrow's mirror image (" NavAgreeNeed " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - turned it round, checking again")
+			WalkNavUncheck()
 			}
 		}
 	else
@@ -2429,7 +2468,13 @@ WalkNavLearnScale(ratio, hops)
 		{
 		if (Abs(ratio / WkNavScale - 1) <= 0.25)
 			WkNavScaleBad := 0
-		else if (++WkNavScaleBad = 2)
+		;(only a guess borrowed from other zones: this zone's own readings so far, till it's worked out)
+		else if (++WkNavScaleBad >= 2 && !WkNavZScales.HasKey(WkNavScaleZone))
+			{
+			WkNavScale := WalkMedian(WkNavScales), WkNavScaleBad := 0
+			WalkLog("the game's memory: other zones' distance scale doesn't fit " WkNavScaleZone " - " Round(WkNavScale, 2) " from its readings so far, till it's worked out")
+			}
+		else if (WkNavScaleBad = 2)
 			WalkLog("the game's memory: its distance doesn't match the arrow's any more (" Round(ratio, 2) " game units per arrow unit, not " Round(WkNavScale, 2) ") - the OCR'd number till it's worked out again")
 		}
 	if (WkNavScales.Length() < 5)
@@ -2438,11 +2483,13 @@ WalkNavLearnScale(ratio, hops)
 	for i, r in WkNavScales
 		if (Abs(r / mid - 1) <= 0.12)
 			close += 1
-	if (close < 5 || (WkNavScale > 0 && Abs(mid / WkNavScale - 1) <= 0.03))
+	own := WkNavZScales.HasKey(WkNavScaleZone)
+	if (close < 5 || (own && Abs(mid / WkNavScale - 1) <= 0.03))
 		return
 	was := WkNavScale
-	WkNavScale := mid, WkNavScaleBad := 0
-	WalkLog("the game's memory: the arrow's distance is its distance / " Round(mid, 2) " (" close " readings agree" (hops = "" ? "" : ", " hops " zone changes to go") (was = "" ? "" : "; it was " Round(was, 2)) ") - its distance used from now on, not the OCR'd number")
+	WkNavScale := mid, WkNavScaleBad := 0, WkNavZScales[WkNavScaleZone] := mid
+	WkNavScaleAll := WalkNavMiddleScale()
+	WalkLog("the game's memory: in " WkNavScaleZone " the arrow's distance is its distance / " Round(mid, 2) " (" close " readings agree" (hops = "" ? "" : ", " hops " zone changes to go") (was = "" ? "" : "; " (own ? "it was " : "other zones' ") Round(was, 2)) ") - its distance used from now on, not the OCR'd number")
 	WalkNavSave()
 	}
 
@@ -2474,34 +2521,6 @@ WalkNavSay(why, nav)
 	else
 		WalkLog("the game's memory " why " - following the on-screen arrow")
 	WkNavState := state
-	}
-
-;True if the arrow is hidden and the walker steers by the game's memory meanwhile: its heading in use and its
-;distance known, walking towards the goal (not arrived, pushing or talking), further than OnTopDist (on top of
-;the goal the arrow isn't drawn: arrived - WalkStep's own branch), the arrow seen within NavHiddenMax (or not
-;at all yet), no battle (AutoFarmer saw the spellbook a moment ago), no loading screen since it was last seen,
-;no dialogue open (looked at when it starts). Logged once per time the arrow is hidden (WkNavHidden: since when)
-WalkNavHidden(dist)
-	{
-	if (!WkNavUse || WkNavD = "" || WkArrived != 0 || inbattle || dist = "" || dist <= OnTopDist
-		|| (WkSeenAt && A_TickCount - WkSeenAt > NavHiddenMax) || WkLoadAt || !WalkSureNoBattle() || WalkLoadingScreen())
-		{
-		if (WkNavHidden)
-			WalkLog("arrow still hidden - not steering by the game's memory any more"), WkNavHidden := 0
-		return false
-		}
-	if (!WkNavHidden)
-		{
-		;(a dialogue that's just opened covers the arrow too: WalkStep's own check, next step)
-		if (WalkDialogOpen())
-			{
-			WkDlgLook := 0
-			return false
-			}
-		WkNavHidden := A_TickCount
-		WalkLog("arrow hidden - steering by the game's memory (heading " Round(WkNavH) " degrees, distance " dist ")")
-		}
-	return true
 	}
 
 ;Holds A (h < 0) or D until the wizard's facing, re-read from the game's memory as it turns, has turned h
@@ -2589,7 +2608,8 @@ NavTurn(h)
 	if (ending = "wrong way")
 		{
 		WkNavSign := -WkNavSign, WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0
-		WalkLog("memory turn: holding " key " turned the wizard " Round(Abs(turned)) " degrees the other way than the game's memory said - turned its sign round, checking it against the arrow again")
+		WalkLog("memory turn: holding " key " turned the wizard " Round(Abs(turned)) " degrees the other way than the game's memory said - turned its sign round, checking it again")
+		WalkNavUncheck()
 		}
 	else if (ending = "not turning" && stillTurns >= 2)
 		{
@@ -2602,35 +2622,136 @@ NavTurn(h)
 			WkNavTurnLog := A_TickCount
 		WalkLog("memory turn" (WkNavTurns ? "" : " (the first)") ": " Round(h) " degrees asked, " Round(turned) " turned in " took " ms, " looks " looks at the game's memory" (ending = "" ? "" : " - stopped: " ending))
 		}
+	;(turned a fair way, the way its heading said: which way round that is, is right)
+	if (ending != "wrong way" && ending != "not turning" && turned * h > 0 && Abs(turned) >= 15 && !WkNavChecked)
+		WalkNavConfirm("holding " key " turned the wizard " Round(Abs(turned)) " degrees the way its heading said")
 	WkNavTurns += 1
 	return true
 	}
 
-;What was learned about the game's memory: WkNavSign (which way round its heading is) and WkNavScale (the
-;arrow's distance per game unit), from resources\nav_calibration.txt (the sign only a first guess: it's
-;checked against the arrow every run)
+;The memory's heading is right way round (the arrow agreed, or a turn went the way it said): steered by from now
+;on, and kept in resources\nav_calibration.txt (checked:1), so the next run steers by it from the start
+WalkNavConfirm(how)
+	{
+	was := WkNavTrusted
+	WkNavTrusted := 1, WkNavAgree := NavAgreeNeed, WkNavMirror := 0, WkNavOdd := 0
+	if (!was)
+		WalkLog("the game's memory: " how " - steering by it")
+	if (!WkNavChecked || WkNavSign != WkNavSignSaved)
+		WkNavChecked := 1, WalkNavSave()
+	}
+
+;Its sign was turned round: not checked any more (in the file too) till the arrow or a turn checks it again
+WalkNavUncheck()
+	{
+	if (WkNavChecked)
+		WkNavChecked := 0, WalkNavSave()
+	}
+
+;No arrow on screen: can the game's memory stand in for it? Its heading in use and its distance known, no
+;battle (AutoFarmer saw the spellbook a moment ago), no loading screen (the game's log) and not the first
+;moment after one. Its heading not checked yet (WkNavTrusted): a turn checks it - towards the goal when that's
+;well off to one side, else 45 degrees right (walking turns back) - when the arrow's been gone a moment, no
+;dialogue's open and it's walking (not at a goal), at most once every 10 s (straight away again after one that
+;turned its sign round); NavTurn trusts it if the wizard turned the way it said. True if it stands in, -1 if it turned to check
+WalkNavStandIn()
+	{
+	static checkAt := 0, checkSign := 0
+	if (!WkNavOk || WkNavH = "" || WkNavD = "" || inbattle || !WalkSureNoBattle())
+		return false
+	WalkZone(true)
+	if (WkLoading || (WkLoadedAt && A_TickCount - WkLoadedAt < 1500))
+		return false
+	if (WkNavTrusted)
+		return WkNavUse
+	;(its sign is checked - distrusted for not matching the arrow, or the keys not being taken: a turn can't
+	;settle that - the arrow agreeing again, or the next zone)
+	if (WkNavChecked)
+		return false
+	;(just turned round by the last check: the next one straight away, to confirm it)
+	if (WkArrived != 0 || (WkSeenAt && A_TickCount - WkSeenAt < 1500) || A_TickCount - checkAt < (WkNavSign != checkSign ? 1500 : 10000) || WalkDialogOpen())
+		return false
+	checkAt := A_TickCount, checkSign := WkNavSign
+	turnBy := Abs(WkNavH) >= 25 ? WkNavH : 45
+	WalkLog("no arrow on screen, and the game's memory's heading isn't checked yet - turning " Round(turnBy) " degrees to check it (it's right if the wizard turns the way it says)")
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	if (!NavTurn(turnBy))
+		{
+		WalkLog("the game's memory: the wizard's facing can't be read - no check")
+		return false
+		}
+	return -1
+	}
+
+;The arrow's distance per game unit for this zone: its own once worked out there, else the middle of the same
+;world's zones (it seems to go by world: Wysteria's about 100, Wizard City's about 41), else of all of them (or
+;the one kept from before zones were told apart); readings start over
+WalkNavZoneScale(zone)
+	{
+	WkNavScaleZone := zone, WkNavScales := [], WkNavScaleBad := 0
+	WkNavScale := WkNavZScales.HasKey(zone) ? WkNavZScales[zone] : WalkNavMiddleScale(StrSplit(zone, "/")[1])
+	;(nothing worked out anywhere yet - a new install: a first guess, Wizard City's; two fair readings that
+	;disagree put this zone's own in its place, WalkNavLearnScale)
+	if (WkNavScale = "")
+		WkNavScale := 41
+	;(a heading that's checked but was distrusted in the last zone - not matching the arrow, the keys not taken:
+	;another go here, as a fresh run would)
+	if (WkNavChecked && !WkNavTrusted)
+		WkNavTrusted := 1, WkNavAgree := NavAgreeNeed, WkNavOdd := 0
+	}
+
+;The middle of the zones' distance per game unit: those in world (the zone's first part, e.g. "Wysteria") if
+;any are known, else all of them; the one kept from before zones were told apart if none
+WalkNavMiddleScale(world := "")
+	{
+	vals := [], inWorld := []
+	for zoneName, sc in WkNavZScales
+		{
+		vals.Push(sc)
+		if (world != "" && StrSplit(zoneName, "/")[1] = world)
+			inWorld.Push(sc)
+		}
+	return inWorld.Length() ? WalkMedian(inWorld) : vals.Length() ? WalkMedian(vals) : WkNavScaleAll
+	}
+
+;What was learned about the game's memory, from resources\nav_calibration.txt: WkNavSign (which way round its
+;heading is - a first guess till it's checked; once it has been, it's steered by from the start) and the arrow's
+;distance per game unit, for each zone and all of them (WkNavScale is the one in use)
 WalkNavLoad()
 	{
-	WkNavSign := 1, WkNavScale := ""
+	WkNavSign := 1, WkNavChecked := 0, WkNavZScales := {}, WkNavScaleAll := "", WkNavScaleZone := ""
 	dir := AqDir()
 	WkNavFile := dir "\resources\nav_calibration.txt"
 	Loop, Read, %WkNavFile%
 		{
 		if (RegExMatch(A_LoopReadLine, "^\s*sign\s*:\s*(-?1)\s*(;.*)?$", m))
 			WkNavSign := m1 + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*checked\s*:\s*([01])\s*(;.*)?$", m))
+			WkNavChecked := m1 + 0
 		else if (RegExMatch(A_LoopReadLine, "^\s*scale\s*:\s*(\d+(?:\.\d+)?)\s*(;.*)?$", m) && m1 > 0)
-			WkNavScale := m1 + 0
+			WkNavScaleAll := m1 + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*zone\s*:\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)\s*$", m) && m2 > 0)
+			WkNavZScales[m1] := m2 + 0
 		}
+	WkNavScale := WkNavScaleAll
 	WkNavSignSaved := WkNavSign
+	if (WkNavChecked)
+		WkNavTrusted := 1, WkNavAgree := NavAgreeNeed
 	}
 
 WalkNavSave()
 	{
 	text := "; What Walker.ahk has learned about the game's memory (read-only). Delete this file to make it learn again.`n"
-		. "; scale: the game's distance per unit of the distance printed on the quest arrow`n"
+		. "; scale: the game's distance per unit of the distance printed on the quest arrow (the middle of the zones')`n"
 		. "; sign: 1 or -1, which way round the memory's heading is compared with the arrow's`n"
-		. (WkNavScale > 0 ? "scale:" Round(WkNavScale, 4) "`n" : "")
+		. "; checked: 1 once the sign has been checked (the arrow agreed, or a turn went the way it said)`n"
+		. "; zone: a zone's own scale (zone|scale) - it differs from zone to zone`n"
+		. (WkNavScaleAll > 0 ? "scale:" Round(WkNavScaleAll, 4) "`n" : "")
 		. "sign:" WkNavSign "`n"
+		. "checked:" (WkNavChecked ? 1 : 0) "`n"
+	for zone, sc in WkNavZScales
+		text .= "zone:" zone "|" Round(sc, 4) "`n"
 	FileDelete, %WkNavFile%.tmp
 	FileAppend, %text%, %WkNavFile%.tmp
 	FileMove, %WkNavFile%.tmp, %WkNavFile%, 1

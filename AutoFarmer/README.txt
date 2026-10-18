@@ -15,9 +15,10 @@ Walking by the game's memory (navmem:1 in PlayerStats.txt, the default): the
 vision helper also reads where the wizard is, which way it faces and where the
 quest arrow points straight out of the game's memory - READ-ONLY: nothing in
 the game is written or changed, and it sends no keys of its own. The walker
-steers by it once it agrees with the arrow on screen, uses its distance instead
-of the OCR'd number, keeps going when scenery hides the arrow and measures its
-turns. Whenever it can't be used it follows the arrow on screen as before
+steers by it once it's checked (it agrees with the arrow on screen, or a turn
+goes the way it says), uses its distance instead of the OCR'd number, walks on
+by it when the arrow can't be seen (scenery, or Pigswick Academy's gold carpet,
+which the see-through arrow can't be picked out from) and measures its turns. Whenever it can't be used it follows the arrow on screen as before
 (debug.log: "the game's memory ..."). navmem:0 = only the arrow on screen.
 More in ..\AutoQuester\README.txt.
 

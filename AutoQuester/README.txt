@@ -176,18 +176,28 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	sends no keys or clicks of its own. The walker uses it for the same
 	decisions it makes off the arrow, with better inputs:
 	  - steering: the heading from the wizard's facing to where the arrow
-	    points - only once it agrees with the arrow on screen (3 clear
-	    readings; if it's the arrow's mirror image its sign is turned round
-	    and checked again). debug.log: "the game's memory: its heading
-	    agrees with the arrow's".
+	    points - once it's been checked: it agrees with the arrow on screen
+	    (3 clear readings; if it's the arrow's mirror image its sign is
+	    turned round and checked again), or, with no arrow to check it by,
+	    a turn goes the way it says. Once checked it's kept (checked:1 in
+	    resources\nav_calibration.txt) and used from the start next time.
+	    debug.log: "the game's memory: its heading agrees with the arrow's"
+	    / "holding d turned the wizard ... the way its heading said".
 	  - distance: the memory's instead of the OCR'd number (which misses
-	    lone digits like "9"). How the two compare is worked out from a few
-	    readings and kept in resources\nav_calibration.txt (delete it to make
-	    it learn again).
-	  - the arrow hidden by scenery (an arch, a pillar, the mount): it steers
-	    on by the memory, for up to 12 s, instead of backing up and turning
-	    to find it - not in a battle, after a loading screen, with a dialogue
-	    open, or right on top of the goal.
+	    lone digits like "9"). How the two compare differs from zone to zone
+	    (about 41 game units per arrow unit in one, about 100 in Pigswick
+	    Academy), so it's worked out in each zone from a few readings and
+	    kept in resources\nav_calibration.txt (delete it to make it learn
+	    again); a zone not worked out yet uses its world's other zones
+	    (it seems to go by world), else all of them.
+	  - no arrow on screen (scenery hides it, or a see-through arrow on a
+	    floor its own colour - the gold carpet in Pigswick Academy - can't be
+	    picked out): the memory stands in for the arrow, so it walks to the
+	    goal, presses X there and carries on as usual, instead of backing up
+	    and turning, or waiting with a "No quest arrow" notice. Dialogues and
+	    prompts are still looked for meanwhile; not in a battle or at a
+	    loading screen. debug.log: "no arrow on screen - the game's memory
+	    stands in for it".
 	  - turns: it holds A / D until the wizard's facing has really turned
 	    that far (within about 5 degrees), instead of guessing from the time.
 	  - a goal in another zone: the arrow leads to the way out (a door, a
@@ -209,8 +219,7 @@ how long it walks on into a doorway, how far it backs up and turns when
 stuck, how close the arrow must be for a World Gate to count, for
 collecting: how long before it starts, how far it roams, how long it chases
 one monster, when it gives up, and for the game's memory: how many readings
-must agree with the arrow, how close a turn must get, how long it steers
-with the arrow hidden).
+must agree with the arrow, how close a turn must get).
 
 Window size and UI size
 	The arrow was captured at a 1920x1080 window with UI Size: Small. A
