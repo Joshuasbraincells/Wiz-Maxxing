@@ -312,6 +312,8 @@ DashRefresh()
 	;What it's doing
 	if (PotionRecording)
 		doing := "Recording potion buying"
+	else if (WkNoteKind != "")
+		doing := "Needs you: " WkNoteTitle
 	else if (PlayerActive)
 		doing := "You're playing - the bot waits"
 	else if (DashSees.mode = "battle" && A_TickCount - DashSees.roundAt < 120000)

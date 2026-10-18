@@ -15,6 +15,12 @@ global WkPromptUsed, WkZoneFrom, WkZoneAt, WkPressAt, DialogQuiet, WkQuietUntil,
 ;A loading screen per the game's log: a zone transfer under way (WkLoading), when the last one finished
 global WkLoading, WkLoadedAt, SkipGap, WkDlgLook
 global CollectWait, RoamRadius, ChaseTime, CollectMax
+;Telling you when it needs you (WalkNotify): settings; the notice up now ("" none: its kind, title, window,
+;shown now, OK'd - not shown again till it's sorted); how long without an arrow / waiting at a goal; the
+;last X of the bot's and its one Escape; the last distance read; on top of the goal / stuck by it
+global NoArrowNotify, WaitNotify, CollectStall, OnTopDist
+global WkNoteKind, WkNoteTitle, WkNoteHwnd, WkNoteShown, WkNoteOff, WkNoArrowFrom, WkWaitFrom, WkLastX, WkEscTried
+global WkLastDist, WkLastDistAt, WkOnTop, WkOnTopAt, WkOnTopBacked, WkOnTopDone, WkStuckNearDone, WkStuckTalk, WkTalkAt
 global WkCollect, WkGoalReadAt, WkArr1At, WkFoesAt, WkChaseFrom, WkChaseSkipUntil, WkRoamLeg, WkRoamLegAt, WkRoamSide
 global Walking, HeldW, KeysDown, Refocus, StatusText, StatusKind, StatusPrefix
 global WkBestDist, WkBestTime, WkLastRead, WkSide, WkTries, WkNear, WkFar, WkArrived, WkTalk, WkPushUntil
@@ -68,12 +74,19 @@ WalkerInit(prefix := "AutoQuester")
 	RoamRadius := 70      ;collecting: stay within this distance of where the arrow leads
 	ChaseTime := 12000    ;collecting: walk towards a monster's name label at most this long, then look elsewhere
 	CollectMax := 900000  ;collecting: give up on a goal after this long (ms) and just wait
+	CollectStall := 180000 ;collecting: the count ("2 of 5") hasn't gone up for this long (battles left out):
+	                      ;stop, wait there, and show you a notice (Keep trying / Stop walking)
+	NoArrowNotify := 45000 ;no quest arrow this long out of battle (no loading screen): a notice for you
+	WaitNotify := 180000  ;at a goal, waiting this long for the next one: a notice for you
+	OnTopDist := 20       ;the arrow gone (or stuck) this close to the goal: it's on top of it / the thing itself
+	                      ;is in the way - arrived (X), not backing up and turning, not going round it
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
 	WkCollect := "", WkGoalReadAt := 0
+	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
 	WalkMemLoad()
 	WalkZonesLoad()
 	StatusText := "", StatusKind := "", StatusPrefix := prefix
@@ -93,6 +106,8 @@ WalkReset()
 	WkSeenAt := 0, WkHidden := 0, WkHiddenAt := 0, WkBias := 0, WkBiasUntil := 0, WkPrevMovedH := "", WkLastBoxOff := 0, WkLastMode := 0
 	WkSnapPrev := "", WkSnapAt := 0, WkStill := 0, WkMotion := "", WkEsc := ""
 	WkArr1At := 0, WkFoesAt := 0, WkChaseFrom := 0, WkChaseSkipUntil := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkRoamSide := 1
+	WkNoArrowFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
+	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -112,6 +127,12 @@ WalkLog(text)
 ;1 = done, waiting for the next goal to show up
 WalkStep()
 	{
+	;A notice for you: hidden in a battle (it mustn't cover what the battle reads), shown again after - also
+	;while walking is off (the "stuck" one)
+	if (inbattle && WkNoteShown)
+		WalkNoteHide()
+	else if (!inbattle && WkNoteKind != "" && !WkNoteShown && !WkNoteOff)
+		WalkNoteShow()
 	if (!Walking)
 		return false
 	if (!GameActive())
@@ -119,7 +140,7 @@ WalkStep()
 		if (KeysDown)
 			ReleaseKeys(), Refocus := 1
 		SetStatus("paused - click into Wizard101 to carry on")
-		WkBestTime := A_TickCount, WkLastRead := A_TickCount
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkNoArrowFrom := 0, WkWaitFrom := 0
 		Sleep, 300
 		return true
 		}
@@ -129,11 +150,15 @@ WalkStep()
 		WalkReset()
 	;At a World Gate: the Spiral Map covers the arrow, so no reading it
 	if (WkArrived = 4)
+		{
+		WkNoArrowFrom := 0
 		return GateStep()
+		}
 	;Entering a sigil (X pressed): stand still while it counts down and the dungeon loads, then carry
 	;on like after a loading screen. Short steps, so AutoFarmer still notices a battle meanwhile
 	if (WkArrived = 5)
 		{
+		WkNoArrowFrom := 0
 		if (A_TickCount < WkSigilUntil)
 			{
 			if (KeysDown || HeldW)
@@ -182,6 +207,45 @@ WalkStep()
 		if (moved != (WkLastBoxOff != 0) || info.mode != WkLastMode)
 			WalkLog("arrow " (moved ? "pushed up " boxOff " px (talk prompt?)" : "in its usual spot") (info.mode = 1 ? ", dark (shadow test)" : info.mode = 2 ? ", under water" : "") " - heading " Round(h) ", distance " (dist = "" ? "?" : dist) ", match " Round(score, 2))
 		WkLastBoxOff := moved ? boxOff : 0, WkLastMode := info.mode
+		}
+	;The last distance read (on top of the goal, below). No arrow out of battle with no loading screen: how
+	;long - Escape once if an X of the bot's may have opened something Space doesn't close (a shop), then
+	;a notice for you; it's closed once the arrow is back
+	if (seen && dist != "")
+		WkLastDist := dist, WkLastDistAt := A_TickCount
+	if (seen || inbattle || WkLoading || inbattle = "")
+		{
+		WkNoArrowFrom := 0
+		if (seen)
+			WkEscTried := 0, WalkNotifyClose("arrow")
+		}
+	else if (!WkNoArrowFrom)
+		WkNoArrowFrom := A_TickCount
+	else
+		{
+		gone := A_TickCount - WkNoArrowFrom
+		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !WalkDialogOpen())
+			{
+			WkEscTried := 1
+			WalkEscape()
+			return Walking ? true : false
+			}
+		if (gone > NoArrowNotify)
+			WalkNotify("arrow", "No quest arrow", "No quest arrow for " Round(gone / 1000) " s, out of battle. Is a quest tracked? Is a window open over the game? It walks on by itself once the arrow is back.")
+		}
+	;Waiting at a goal for the next one for WaitNotify, out of battle: tell you (only while the arrow shows -
+	;no arrow has its own notice)
+	if (WkArrived = 1 && !inbattle)
+		{
+		if (!WkWaitFrom)
+			WkWaitFrom := A_TickCount
+		else if (seen && A_TickCount - WkWaitFrom > WaitNotify)
+			WalkNotify("wait", "Waiting at the quest goal", "The wizard has been at the quest goal for " Round((A_TickCount - WkWaitFrom) / 60000) " minutes and the quest hasn't moved on - it may need something the bot can't do. It walks on by itself once there's a new goal.")
+		}
+	else if (WkArrived != 1)
+		{
+		WkWaitFrom := 0
+		WalkNotifyClose("wait")
 		}
 
 	;A dialogue box (its NEXT / DONE / MORE / BACK button showing - it covers or pushes up the arrow):
@@ -282,7 +346,7 @@ WalkStep()
 	;nothing. Walk into the monsters there, or roam about the spot (CollectStep)
 	if (WkArrived = 7)
 		return CollectStep(seen, h, dist)
-	if ((WkArrived = 0 || WkArrived = 1) && !inbattle && seen && dist != "" && dist <= RoamRadius && CollectCheck(dist))
+	if ((WkArrived = 0 || WkArrived = 1) && !inbattle && seen && dist != "" && (dist <= RoamRadius || (IsObject(WkCollect) && WkCollect.gaveUp)) && CollectCheck(dist))
 		return true
 
 	;Talking (after X). The dialogue box covers the arrow, so: no arrow = dialogue open, press Space to
@@ -309,6 +373,28 @@ WalkStep()
 			}
 		if (!seen)
 			{
+			;On top of the goal and X opened no dialogue (one would have been Spaced through above, setting
+			;WkDialog): no Space (it jumps) - after 2.5 s step back once so the arrow shows again
+			if (WkOnTop && !WkDialog)
+				{
+				if (!WkOnTopBacked && A_TickCount - WkOnTopAt > 2500)
+					{
+					WkOnTopBacked := A_TickCount
+					WalkLog("talk: X on top of the goal opened nothing - stepping back so the arrow shows")
+					BackUp(600)
+					return Walking ? true : false
+					}
+				;(stepped back and still no arrow: something hides it after all - the usual search)
+				if (WkOnTopBacked && A_TickCount - WkOnTopBacked > 2000)
+					{
+					WalkLog("talk: still no arrow after stepping back - looking for it (backing up, turning)")
+					WkArrived := 0, WkOnTop := 0, WkSeenAt := A_TickCount - 1100, WkHidden := 0, WkHiddenAt := 0
+					return true
+					}
+				SetStatus("at the goal - waiting for what X opened")
+				Sleep, 300
+				return true
+				}
 			;X at a World Gate opens the Spiral Map (it covers the arrow too): Go To World, not Space
 			if (WkTalk < 3 && IsObject(SpiralMapButton()))
 				{
@@ -336,13 +422,27 @@ WalkStep()
 				}
 			return true
 			}
-		;Arrow visible: give a slow dialogue two Space presses to show up first
-		if (!WkDialog && WkTalk < 2)
+		;Arrow visible: give a slow dialogue two Space presses to show up first (not after X on top of the
+		;goal opened nothing: it's been waited for)
+		if (!WkDialog && WkTalk < 2 && !WkOnTop && !WkStuckTalk)
 			{
 			PressKey("Space")
 			WkTalk += 1
 			SetStatus("talking - Space (" WkTalk ")")
 			Sleep, %TalkGap%
+			return true
+			}
+		;X by the obstacle near the goal opened nothing: it wasn't the thing (a fence, a wall) - go round it
+		;after all, as before (the next stuck tries Unstick; WkStuckNearDone keeps the X to once)
+		if (WkStuckTalk && !WkDialog)
+			{
+			if (A_TickCount - WkTalkAt < 1500)
+				{
+				Sleep, 100
+				return true
+				}
+			WalkLog("talk: X by the obstacle opened nothing - going round it after all")
+			WkArrived := 0, WkStuckTalk := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
 			return true
 			}
 		if (WkDialog)
@@ -372,7 +472,7 @@ WalkStep()
 			}
 		;Walking and the arrow went: an arch, door frame or pillar between the camera and the wizard.
 		;Stopping would freeze the view with it still hidden, so keep walking for a moment
-		if (WkArrived = 0 && HeldW && !inbattle && A_TickCount - WkSeenAt < HiddenWalkTime)
+		if (WkArrived = 0 && HeldW && !inbattle && A_TickCount - WkSeenAt < HiddenWalkTime && !(WkLastDist != "" && WkLastDist <= OnTopDist))
 			{
 			SetStatus("walking on - arrow hidden (behind something?)")
 			Sleep, 100
@@ -384,8 +484,21 @@ WalkStep()
 		if (WkArrived = 3)
 			{
 			WalkLog("push: arrow gone - loading screen?")
-			WkArrived := 0, WkSeenAt := 0, WkPushes := 0
+			WkArrived := 0, WkSeenAt := 0, WkPushes := 0, WkLastDist := ""
 			WkLoadAt := A_TickCount, WkGoneSpaces := 0, WkSpaceAt := 0
+			}
+		;Right at the goal and the arrow went: on top of it (it isn't drawn there). Backing up and turning would
+		;only walk away from the thing: it's arrived - X (talk / use / collect), once per goal
+		;(not a loading screen, and in AutoFarmer not a battle starting - the arrow goes then too)
+		else if (WkArrived = 0 && !inbattle && !WkOnTopDone && WkLastDist != "" && WkLastDist <= OnTopDist && A_TickCount - WkLastDistAt < 4000 && A_TickCount - WkSeenAt > 700
+			&& !WkLoadAt && !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle()))
+			{
+			WkOnTopDone := 1
+			WalkLog("arrow gone right at the goal (last distance " WkLastDist ") - on top of it: arrived")
+			StartTalk("?")
+			if (WkArrived = 2)
+				WkOnTop := 1, WkOnTopAt := A_TickCount, WkOnTopBacked := 0
+			return true
 			}
 		;Lost it while walking: the arrow is drawn at the wizard's feet, so a pillar or wall between the
 		;camera and the wizard hides it - or the wizard's own mount, when it points back towards the
@@ -510,7 +623,9 @@ WalkStep()
 			if (WkArrDist = "")
 				WkArrDist := dist
 			changed := DistChanged(dist, WkArrDist)
-			WkFar := (changed || dist > ArriveDist + (WkPushes >= 2 ? 60 : 5)) ? WkFar + 1 : 0
+			;(waiting on a collect goal it gave up on - it stopped wherever it was: only a new goal moves it on)
+			gaveUpWait := IsObject(WkCollect) && WkCollect.gaveUp
+			WkFar := (!gaveUpWait && (changed || dist > ArriveDist + (WkPushes >= 2 ? 60 : 5))) ? WkFar + 1 : 0
 			if (WkFar < 2)
 				{
 				SetStatus("arrived (distance " dist ") - waiting for the next goal")
@@ -660,12 +775,24 @@ WalkStep()
 				WalkMemLearn(WkEsc.zone, WkEsc.dist, WkEsc.side, WkEsc.walkMs, false), memFailed := true
 			WkEsc := ""
 			}
+		;Stuck right by the goal: the thing itself is in the way (an item on a table, someone behind a
+		;counter) - going round it only walks away. It's arrived: X, once per goal
+		if (stuckAt != "" && stuckAt <= OnTopDist && !WkStuckNearDone)
+			{
+			WkStuckNearDone := 1
+			WalkLog("stuck " stuckAt " from the goal - the goal itself in the way? Arrived: X")
+			StartTalk(stuckAt)
+			if (WkArrived = 2)
+				WkStuckTalk := 1
+			return true
+			}
 		if (WkTries >= UnstickTries)
 			{
 			WalkLog("stuck: gave up after " UnstickTries " tries")
 			Walking := 0
 			ReleaseKeys()
 			SetStatus("stuck - couldn't get around the obstacle. Move the wizard a bit and press F8")
+			WalkNotify("stuck", "Stuck", "The wizard couldn't get round an obstacle (" (stuckAt = "" ? "?" : stuckAt) " from the goal), so walking is off. Move it a bit and press F8 to walk again.")
 			return false
 			}
 		SetStatus("stuck - backing up and going around (try " WkTries + 1 " of " UnstickTries ")")
@@ -716,8 +843,8 @@ StartTalk(d)
 		StartSigil("at the goal (distance " d ") and it's a sigil")
 		return
 		}
-	WkArrived := 2, WkTalk := 0, WkFar := 0, WkNear := 0, WkDialog := 0, WkTalkDist := d
-	PressKey("x")
+	WkArrived := 2, WkTalk := 0, WkFar := 0, WkNear := 0, WkDialog := 0, WkTalkDist := d, WkTalkAt := A_TickCount
+	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("talk: at the goal (distance " d "), pressed X")
 	SetStatus("talking - pressed X at the goal (distance " d ")")
 	Sleep, 600
@@ -760,7 +887,7 @@ StartPressX(key)
 		ReleaseKeys()
 	WkPromptUsed[key = "" ? "?" : key] := A_TickCount
 	WkArrived := 6, WkPressAt := A_TickCount, WkTalk := 0, WkDialog := 0, WkSpaceAt := 0
-	PressKey("x")
+	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("prompt '" SubStr(key, 1, 40) "' - pressed X")
 	SetStatus("pressed X at a prompt")
 	Sleep, 400
@@ -1075,9 +1202,13 @@ PressKey(key)
 ;Switches walking on or off (F8). Off lets go of every key straight away
 WalkToggle()
 	{
+	WalkNotifyClose()
 	Walking := !Walking
 	if (Walking)
 		{
+		;(a collect goal given up on gets another go)
+		if (IsObject(WkCollect) && WkCollect.gaveUp)
+			WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
 		WalkReset()
 		SetStatus("walking on")
 		}
@@ -1252,7 +1383,16 @@ CollectCheck(dist)
 	text := WalkGoalText()
 	if (text = "")
 		return false
-	;(a goal it collected at for CollectMax without it changing: leave it be)
+	;(the goal it gave up on has changed: the quest moved on - walk on)
+	if (IsObject(WkCollect) && WkCollect.gaveUp && !CollectSameGoal(text, WkCollect.text))
+		{
+		WalkLog("collect: the goal is now '" text "' (was '" WkCollect.text "') - walking on")
+		WkCollect := ""
+		WalkNotifyClose("collect")
+		if (WkArrived = 1)
+			WkArrived := 0, WkFar := 0, WkArrDist := "", WkBestDist := "", WkBestTime := A_TickCount, WkTries := 0
+		}
+	;(a goal it gave up on - no progress for CollectStall, or CollectMax in all - without it changing: leave it be)
 	if (IsObject(WkCollect) && WkCollect.gaveUp && CollectSameGoal(text, WkCollect.text))
 		return false
 	if (IsObject(WkCollect) && CollectSameGoal(text, WkCollect.text))
@@ -1263,9 +1403,22 @@ CollectCheck(dist)
 		}
 	if (!CollectGoal(text))
 		return false
-	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0}
+	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0
+		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount}
+	WalkNotifyClose("collect")
 	StartCollect(text, "a goal to collect / defeat things")
 	return true
+	}
+
+;Stops collecting a goal (no progress / too long): waits where it is (battles still get fought) and
+;shows the collect notice. Only the goal line changing (CollectCheck), Keep trying or F8 off and on end it
+CollectGiveUp(dist, why)
+	{
+	WkCollect.gaveUp := 1
+	ReleaseKeys()
+	WkArrived := 1, WkArrDist := dist, WkFar := 0
+	mins := Round(CollectStall / 60000)
+	WalkNotify("collect", "Collect quest needs you", "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: collect again (" mins " minutes without progress). Stop walking: walking off (F8 turns it back on).", true)
 	}
 
 StartCollect(text, why)
@@ -1283,6 +1436,10 @@ StartCollect(text, why)
 ;the goal line under the arrow changes (done, or the next goal), or after CollectMax
 CollectStep(seen, h, dist)
 	{
+	;(time away from collecting - a battle, a prompt - doesn't count as no progress)
+	if (A_TickCount - WkCollect.stepAt > 5000)
+		WkCollect.progressAt += A_TickCount - WkCollect.stepAt, WkCollect.from += A_TickCount - WkCollect.stepAt
+	WkCollect.stepAt := A_TickCount
 	;Is it still the same goal? (every 4 s, when the arrow and so its line are showing)
 	if (seen && A_TickCount - WkGoalReadAt > 4000)
 		{
@@ -1292,6 +1449,7 @@ CollectStep(seen, h, dist)
 			{
 			WalkLog("collect: the goal is now '" text "' (was '" WkCollect.text "') - following the arrow again")
 			WkCollect := ""
+			WalkNotifyClose("collect")
 			ReleaseKeys()
 			WalkReset()
 			return true
@@ -1301,14 +1459,28 @@ CollectStep(seen, h, dist)
 			WkCollect.sureAt := A_TickCount
 			if (text != WkCollect.last)
 				WkCollect.last := text, WalkLog("collect: " text)
+			;(progress: the count going up)
+			n := CollectCount(text)
+			if (n != "" && n != WkCollect.count)
+				{
+				if (WkCollect.count != "")
+					WalkLog("collect: the count is now " n " (was " WkCollect.count ")")
+				WkCollect.count := n, WkCollect.progressAt := A_TickCount
+				}
 			}
 		}
 	if (A_TickCount - WkCollect.from > CollectMax)
 		{
 		WalkLog("collect: still '" WkCollect.text "' after " Round(CollectMax / 60000) " minutes - giving up, waiting here")
-		WkCollect.gaveUp := 1
-		ReleaseKeys()
-		WkArrived := 1, WkArrDist := dist, WkFar := 0
+		CollectGiveUp(dist, Round(CollectMax / 60000) " minutes of collecting and it's still not done")
+		return true
+		}
+	;No progress for CollectStall: an odd one (items it can't find, monsters elsewhere...) - stop, wait here
+	;(battles still get fought) and tell you. It carries on once the goal changes, or on Keep trying
+	if (seen && A_TickCount - WkCollect.progressAt > CollectStall)
+		{
+		WalkLog("collect: no progress on '" WkCollect.text "' in " Round(CollectStall / 60000) " minutes - stopping here, telling you")
+		CollectGiveUp(dist, "no progress in " Round(CollectStall / 60000) " minutes of roaming and fighting")
 		return true
 		}
 	;Right after a turn the picture is still swinging round: don't steer on it yet
@@ -1419,6 +1591,13 @@ CollectGoal(text)
 	return RegExMatch(text, "i)\(\s*\d+\s*(of|/)\s*\d+\s*\)|\b\d+\s*/\s*\d+\b|\b(collect|defeat|gather|recover|retrieve|obtain|destroy|hunt|catch|kill|harvest|loot|acquire)\b")
 	}
 
+;The count in a goal line ("(2 of 5)", "2/5"): the first number, "" if there's none
+CollectCount(text)
+	{
+	;(a number above the total is a misread)
+	return (RegExMatch(text, "i)(\d+)\s*(?:of|/)\s*(\d+)", cnt) && cnt1 + 0 <= cnt2 + 0) ? cnt1 + 0 : ""
+	}
+
 ;True if two goal lines are the same goal: the same letters (bar a few OCR slips), not counting the
 ;count, which goes up as things are collected
 CollectSameGoal(a, b)
@@ -1509,6 +1688,175 @@ WalkFoes()
 			}
 		}
 	return foes
+	}
+
+;---- Telling you when it needs you ----
+
+;Sure there's no battle on: AutoFarmer saw the spellbook (it only shows out of battle) a moment ago
+;(BotNoBattle). AutoQuester can't tell
+WalkSureNoBattle()
+	{
+	return IsFunc("BotNoBattle") ? Func("BotNoBattle").Call() : false
+	}
+
+;Escape, once: for a window an X of the bot's opened that Space doesn't close (a shop, say). If that opened
+;the game's own menu instead (nothing else was open), Escape again to close it
+WalkEscape()
+	{
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	WalkLog("no arrow for " Round((A_TickCount - WkNoArrowFrom) / 1000) " s since an X of the bot's - Escape, in case that opened a window Space doesn't close (a shop?)")
+	PressKey("Escape")
+	Sleep, 1200
+	sc := ArrowScale().scale
+	menuText := OcrRect(Round(GameLeft + GameW / 2 - 350 * sc), Round(GameTop + GameH / 2 - 300 * sc), Round(700 * sc), Round(600 * sc))
+	if (!ErrorLevel && RegExMatch(menuText, "i)\b(quit|log\s*out|settings|options|resume|return to game)\b"))
+		{
+		WalkLog("Escape opened the game's menu - Escape again to close it")
+		PressKey("Escape")
+		Sleep, 600
+		}
+	}
+
+;A notice for you: a small window on top (it doesn't take the focus from the game) with a sound, plus a
+;tray tip and a line in the log. One at a time; the same kind isn't shown twice till it's sorted
+;(WalkNotifyClose). withKeep: Keep trying / Stop walking buttons too (a collect goal)
+WalkNotify(kind, title, text, withKeep := false)
+	{
+	if (WkNoteKind = kind)
+		return
+	;(one at a time: one up for something as or more important stays - two causes can't take turns)
+	if (WkNoteKind != "" && WalkNoteRank(WkNoteKind) >= WalkNoteRank(kind))
+		return
+	WalkNotifyClose()
+	WkNoteKind := kind, WkNoteTitle := title, WkNoteShown := 0, WkNoteOff := 0
+	WalkLog("NEEDS YOU - " title ": " text)
+	;(+E0x08000000: clicking it never takes the focus from the game)
+	Gui, WkNote:New, +AlwaysOnTop +ToolWindow +E0x08000000 +HwndWkNoteHwnd, Wizard101 bot needs you
+	Gui, WkNote:Margin, 14, 12
+	Gui, WkNote:Font, s11 w700, Segoe UI
+	Gui, WkNote:Add, Text, w400, %title%
+	Gui, WkNote:Font, s9 w400, Segoe UI
+	Gui, WkNote:Add, Text, w400 y+6, %text%
+	if (withKeep)
+		{
+		Gui, WkNote:Add, Button, gWalkNoteKeep w120 y+12, Keep trying
+		Gui, WkNote:Add, Button, gWalkNoteStop w120 x+8, Stop walking
+		Gui, WkNote:Add, Button, gWalkNoteOk w80 x+8, OK
+		}
+	else
+		Gui, WkNote:Add, Button, gWalkNoteOk w80 y+12, OK
+	if (!inbattle)
+		WalkNoteShow()
+	SoundPlay, *48
+	TrayTip, Wizard101 bot needs you, % title ": " SubStr(text, 1, 200), 10, 2
+	}
+
+;How important a notice is: stuck > collect > no arrow > waiting at a goal
+WalkNoteRank(kind)
+	{
+	return kind = "stuck" ? 4 : kind = "collect" ? 3 : kind = "arrow" ? 2 : 1
+	}
+
+;The notice's title-bar X: the same as OK
+WkNoteGuiClose(args*)
+	{
+	WalkNoteOk()
+	}
+
+;Shows the notice (see WalkNotePlace), without taking the focus from the game
+WalkNoteShow()
+	{
+	if (WkNoteKind = "" || WkNoteOff)
+		return
+	Gui, WkNote:Show, Hide AutoSize
+	dhw := A_DetectHiddenWindows
+	DetectHiddenWindows, On
+	WinGetPos, , , noteW, noteH, ahk_id %WkNoteHwnd%
+	DetectHiddenWindows, %dhw%
+	at := WalkNotePlace(noteW, noteH)
+	noteX := at[1], noteY := at[2]
+	Gui, WkNote:Show, x%noteX% y%noteY% NoActivate
+	WkNoteShown := 1
+	}
+
+;Where the notice goes: on a monitor the game isn't on; else beside the game window if there's room; else
+;the top middle of the game (clear of the arrow, prompts, dialogues and globes - and it hides in a battle,
+;whose name plates are up there)
+WalkNotePlace(noteW, noteH)
+	{
+	gx := GameLeft + GameW // 2, gy := GameTop + GameH // 2
+	SysGet, monCount, MonitorCount
+	Loop, %monCount%
+		{
+		SysGet, wa, MonitorWorkArea, %A_Index%
+		if (gx >= waLeft && gx < waRight && gy >= waTop && gy < waBottom)
+			continue
+		return [waRight - noteW - 20, waTop + 20]
+		}
+	Loop, %monCount%
+		{
+		SysGet, wa, MonitorWorkArea, %A_Index%
+		if (gx >= waLeft && gx < waRight && gy >= waTop && gy < waBottom)
+			break
+		}
+	if (waRight - (GameLeft + GameW) >= noteW + 16)
+		return [GameLeft + GameW + 8, Max(waTop, GameTop)]
+	if (GameLeft - waLeft >= noteW + 16)
+		return [GameLeft - noteW - 8, Max(waTop, GameTop)]
+	return [gx - noteW // 2, Max(waTop, GameTop) + 4]
+	}
+
+WalkNoteHide()
+	{
+	if (WkNoteShown)
+		Gui, WkNote:Hide
+	WkNoteShown := 0
+	}
+
+;The notice is sorted (kind: only that kind; "": whatever is up) - gone
+WalkNotifyClose(kind := "")
+	{
+	if (WkNoteKind = "" || (kind != "" && WkNoteKind != kind))
+		return
+	WalkLog("notice '" WkNoteTitle "' closed")
+	Gui, WkNote:Destroy
+	WkNoteKind := "", WkNoteTitle := "", WkNoteShown := 0, WkNoteOff := 0
+	}
+
+;The notice's buttons. OK: put away (not shown again till it's sorted). Keep trying: collect again for
+;CollectStall. Stop walking: walking off. Each gives the game the focus back
+WalkNoteOk(args*)
+	{
+	Gui, WkNote:Hide
+	WkNoteShown := 0, WkNoteOff := 1
+	WalkGameFocus()
+	}
+
+WalkNoteKeep(args*)
+	{
+	if (IsObject(WkCollect))
+		{
+		WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
+		WalkNotifyClose()
+		StartCollect(WkCollect.text, "you said keep trying")
+		}
+	else
+		WalkNotifyClose()
+	WalkGameFocus()
+	}
+
+WalkNoteStop(args*)
+	{
+	WalkNotifyClose()
+	if (Walking)
+		WalkToggle()
+	WalkGameFocus()
+	}
+
+WalkGameFocus()
+	{
+	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
 	}
 
 ;---- Is the wizard moving? A tiny grey copy of the game compared with the one before ----

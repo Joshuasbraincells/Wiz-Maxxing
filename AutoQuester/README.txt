@@ -123,8 +123,29 @@ What it does
 	  None: it roams about the spot in a widening square (walking over things
 	  picks them up, "Press X" prompts get X), heading back when it's 70 away.
 	  After each battle it carries straight on. It stops when the goal line
-	  changes (done, or the next goal) and follows the arrow again; after 15
-	  minutes on one goal it gives up and waits. debug.log: "collect: ...".
+	  changes (done, or the next goal) and follows the arrow again. When the
+	  count ("2 of 5") hasn't gone up for 3 minutes (battles don't count) it's
+	  an odd one: it stops, waits there (battles still get fought) and shows a
+	  notice - Keep trying (3 more minutes) / Stop walking / OK. It closes by
+	  itself once the quest moves on. debug.log: "collect: ...".
+	- Right at the goal and the arrow vanishes (it isn't drawn on top of the
+	  goal), or stuck within 20 of it (the thing itself in the way): that's
+	  arrived - it presses X instead of backing up, turning or going round.
+	  X opened nothing: it waits 2.5 s (no Space jumping), then steps back
+	  once so the arrow shows again.
+	  Stuck by something that isn't the goal (X opened nothing): it goes
+	  round it as before.
+	- Notices (a small window that doesn't take the focus from the game, a
+	  sound and a tray tip; on another monitor if there is one, else beside
+	  or at the top of the game; hidden during battles): stuck for good
+	  (walking off); the collect goal above; no quest arrow for 45 s out of
+	  battle - AutoFarmer only, which can tell a battle (first, if an X of
+	  the bot's may have opened a window Space doesn't close, like a shop,
+	  it presses Escape once - and Escape again if that opened the game's
+	  menu); waiting at a goal for 3 minutes. One at a time, the most
+	  important. Each closes by itself once it's sorted; OK or its X puts it
+	  away. F8 off and on gives a collect goal another go. debug.log: "NEEDS
+	  YOU - ...".
 	- X at a "Press X to Enter" prompt that opens a dialogue (Back / Done /
 	  More) instead of a dungeon: it presses Space through it and walks on.
 	  The same prompt gets X once per 10 minutes even if OCR reads its text a

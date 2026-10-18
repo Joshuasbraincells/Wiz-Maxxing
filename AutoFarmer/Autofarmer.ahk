@@ -116,6 +116,8 @@ global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStal
 ;of) a round of this battle - the bot's record of blades/traps may be wrong, so no kill check till it ends.
 ;RoundLeft: the bot left the round that's up to you (seeing it again isn't a new round)
 global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
+;When the spellbook (out of battle only) was last seen - the walker's "no battle on" (BotNoBattle)
+global BookSeenAt := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 global BossMax := 0
@@ -272,6 +274,8 @@ loop,
 		}
 	ImageSearch, roundX, roundY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
 	bookSeen := (ErrorLevel = 0)
+	if (bookSeen)
+		BookSeenAt := A_TickCount
 	if (ErrorLevel = 0)
 		{
 		if (!SeenOut)
@@ -354,6 +358,8 @@ loop,
 
 RoundStart:
 
+;(a walker notice mustn't cover what the battle reads)
+WalkNoteHide()
 BlockInput, MouseMove
 CenterMouse()
 
@@ -743,6 +749,12 @@ PlayerActing()
 		}
 	PlayerActive := acting
 	return acting
+	}
+
+;For the walker: no battle on - the spellbook (it only shows out of battle) seen in the last 2 s
+BotNoBattle()
+	{
+	return A_TickCount - BookSeenAt < 2000
 	}
 
 ;"Wait while I play" (tray menu, dashboard button): handsoffon in PlayerStats.txt, on unless it's 0
