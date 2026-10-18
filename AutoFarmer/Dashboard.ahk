@@ -11,7 +11,7 @@
 global DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld := "", DashStart := 0
 ;Counts (rounds, passes, ...) and casts per card; what it sees ({key: text}); card names off PlayerStats.txt
 global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
-global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn
+global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
 
 ;Makes the window (shown unless dashboard.ini says it was hidden). Called once at start
 DashInit()
