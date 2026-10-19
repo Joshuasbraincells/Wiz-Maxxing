@@ -8,6 +8,27 @@
 ; standby (AutoFarmer\Autofarmer.exe /standby). A bot already running (from any folder) is left alone - never a
 ; second one. One watcher at a time. Its tray icon: stop watching, or don't open with Wizard101 any more.
 
+;How one of the bot's programs is started - rel: its path without .exe / .ahk (e.g. ...\AutoFarmer\Autofarmer):
+;{target, args}. Started as a script ourselves (AutoHotkey running a .ahk - Windows 11's Smart App Control blocks
+;the bot's unsigned exes, AutoHotkey itself it lets run): its script, by this same AutoHotkey. Else its exe - or
+;its script when there's no exe
+BotProgram(rel, args := "")
+	{
+	if (!A_IsCompiled && FileExist(rel ".ahk"))
+		return {target: A_AhkPath, args: """" rel ".ahk""" (args = "" ? "" : " " args)}
+	if (FileExist(rel ".exe"))
+		return {target: rel ".exe", args: args}
+	return {target: rel ".ahk", args: args}
+	}
+
+;Starts it (BotProgram) in dir. False if Windows wouldn't (A_LastError says why)
+BotRun(rel, args, dir)
+	{
+	p := BotProgram(rel, args)
+	Run, % """" p.target """" (p.args = "" ? "" : " " p.args), %dir%, UseErrorLevel
+	return !ErrorLevel
+	}
+
 ;The Startup folder's shortcut that starts the watcher with Windows
 WatchLink()
 	{
@@ -27,12 +48,12 @@ WatchSet(root, wantOn)
 	link := WatchLink()
 	if (wantOn)
 		{
-		target := FileExist(root "\Wiz-Maxxing.exe") ? root "\Wiz-Maxxing.exe" : root "\Wiz-Maxxing.ahk"
-		FileCreateShortcut, %target%, %link%, %root%, /watch, Opens the Wizard101 bot when Wizard101 starts (in standby - F6 starts it)
+		p := BotProgram(root "\Wiz-Maxxing", "/watch")
+		FileCreateShortcut, % p.target, %link%, %root%, % p.args, Opens the Wizard101 bot when Wizard101 starts (in standby - F6 starts it)
 		if (ErrorLevel)
 			return false
 		if (!WatchPids().Length())
-			Run, "%target%" /watch, %root%, UseErrorLevel
+			BotRun(root "\Wiz-Maxxing", "/watch", root)
 		return true
 		}
 	FileDelete, %link%
@@ -69,20 +90,14 @@ WatchBotRunning()
 ;After an update: a new watcher from the new Wiz-Maxxing.exe (it waits for this one's mutex), this one goes
 WatchRestart()
 	{
-	if (FileExist(A_ScriptDir "\Wiz-Maxxing.exe"))
-		Run, "%A_ScriptDir%\Wiz-Maxxing.exe" /watch, %A_ScriptDir%, UseErrorLevel
-	else
-		Run, "%A_AhkPath%" "%A_ScriptDir%\Wiz-Maxxing.ahk" /watch, %A_ScriptDir%, UseErrorLevel
+	BotRun(A_ScriptDir "\Wiz-Maxxing", "/watch", A_ScriptDir)
 	ExitApp
 	}
 
 ;Starts the bot from dir (the AutoFarmer folder) in standby
 WatchStartBot(dir)
 	{
-	if (FileExist(dir "\Autofarmer.exe"))
-		Run, "%dir%\Autofarmer.exe" /standby, %dir%, UseErrorLevel
-	else
-		Run, "%dir%\Autofarmer.ahk" /standby, %dir%, UseErrorLevel
+	BotRun(dir "\Autofarmer", "/standby", dir)
 	}
 
 ;The watcher (Wiz-Maxxing.exe /watch) - never returns, except when another watcher is running already (a named

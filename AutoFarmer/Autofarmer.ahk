@@ -102,12 +102,10 @@ MenuMap:
 DashMapToggle()
 return
 
-;(Wiz-Maxxing.exe /check: asks GitHub; if you update, it closes this and starts the new one)
+;(Wiz-Maxxing /check - the exe, or the script when this runs as one: asks GitHub; if you update, it closes this and
+;starts the new one)
 MenuUpdates:
-if (FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
-	Run, "%A_ScriptDir%\..\Wiz-Maxxing.exe" /check, %A_ScriptDir%\..
-else if (FileExist(A_ScriptDir "\..\Wiz-Maxxing.ahk"))
-	Run, "%A_ScriptDir%\..\Wiz-Maxxing.ahk" /check, %A_ScriptDir%\..
+BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check", A_ScriptDir "\..")
 return
 
 MenuPotionRoute:

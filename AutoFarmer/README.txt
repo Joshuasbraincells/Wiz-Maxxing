@@ -98,6 +98,17 @@ restart. Defaults fills in the defaults (Save to use them).
 	  on), boosting again after each hit, counting traps when you fight bosses
 	  alone, saving pips for a finishing hit, and discarding.
 
+Smart App Control (Windows 11 - "Smart App Control blocked"): it blocks the
+bot's exes (they aren't signed) and can't be told to allow them. Run the bot as
+scripts instead: install AutoHotkey v1.1 from autohotkey.com (Download > v1.1),
+then open ..\Wiz-Maxxing.ahk (not Wiz-Maxxing.exe) - and Setup.ahk for Setup.
+Started as a script, everything the bot starts is a script too, by the same
+AutoHotkey (the bot, the update check, "Open with Wizard101", Setup's
+shortcuts) - never one of the exes. If the vision helper (Python) can't start
+there either, cards are found the old way and walking follows the arrow on
+screen; the only other way is turning Smart App Control off (Windows Security
+> App & browser control - on most PCs it can't be turned back on).
+
 Executables: ..\Wiz-Maxxing.exe starts the bot (Setup.exe puts it in the Start menu
 and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
 ..\AutoQuester) do the same as the .ahk scripts without AutoHotkey installed.

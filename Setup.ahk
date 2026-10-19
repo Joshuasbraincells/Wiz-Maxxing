@@ -139,17 +139,14 @@ SuInstall:
 	return
 
 SuStartBot:
-	exe := A_ScriptDir "\Wiz-Maxxing.exe"
-	if (FileExist(exe))
+	;(the launcher - its exe, or its script when Setup runs as one: Watch.ahk BotProgram)
+	if (FileExist(A_ScriptDir "\Wiz-Maxxing.exe") || FileExist(A_ScriptDir "\Wiz-Maxxing.ahk"))
 		{
-		Run, "%exe%", %A_ScriptDir%
+		BotRun(A_ScriptDir "\Wiz-Maxxing", "", A_ScriptDir)
 		return
 		}
-	exe := A_ScriptDir "\AutoFarmer\Autofarmer.exe"
-	if (FileExist(exe))
-		Run, "%exe%", %A_ScriptDir%\AutoFarmer
-	else if (SuAhk() != "")
-		Run, "%A_ScriptDir%\AutoFarmer\Autofarmer.ahk", %A_ScriptDir%\AutoFarmer
+	if (FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.exe") || SuAhk() != "")
+		BotRun(A_ScriptDir "\AutoFarmer\Autofarmer", "", A_ScriptDir "\AutoFarmer")
 	else
 		MsgBox, 48, Wizard101 bot setup, % "There's no AutoFarmer\Autofarmer.exe here - download the zip from the GitHub Releases page (it has the exes), or install AutoHotkey v1.1 and run build.cmd."
 	return
@@ -220,9 +217,9 @@ SuUnblock()
 SuShortcut()
 	{
 	SuLogLine("== Desktop shortcut")
-	target := SuBotExe()
-	FileCreateShortcut, %target%, %A_Desktop%\Wiz-Maxxing.lnk, %A_ScriptDir%, , Wiz-Maxxing - the Wizard101 bot (battles and quest walking)
-	SuLogLine(ErrorLevel ? "couldn't make it" : "made: " A_Desktop "\Wiz-Maxxing.lnk -> " target)
+	p := SuBotProgram()
+	FileCreateShortcut, % p.target, %A_Desktop%\Wiz-Maxxing.lnk, %A_ScriptDir%, % p.args, Wiz-Maxxing - the Wizard101 bot (battles and quest walking)
+	SuLogLine(ErrorLevel ? "couldn't make it" : "made: " A_Desktop "\Wiz-Maxxing.lnk -> " p.target (p.args = "" ? "" : " " p.args))
 	;(the one an earlier Setup made, by its old name)
 	if (FileExist(A_Desktop "\Wizard101 bot.lnk"))
 		{
@@ -241,16 +238,18 @@ SuStartMenu(menuDir := "")
 		menuDir := A_Programs "\Wiz-Maxxing"
 	FileCreateDir, %menuDir%
 	made := 0
-	for each, e in [["Wiz-Maxxing", SuBotExe(), A_ScriptDir, "The Wizard101 bot: battles and quest walking"]
-		, ["Wiz-Maxxing Setup", A_ScriptDir "\Setup.exe", A_ScriptDir, "Installs what the bot needs"]
-		, ["Stats reader", A_ScriptDir "\AutoFarmer\StatsReader.exe", A_ScriptDir "\AutoFarmer", "Reads your wizard's stats for the kill check"]
-		, ["Quest walker only", A_ScriptDir "\AutoQuester\AutoQuester.exe", A_ScriptDir "\AutoQuester", "Walks to the quest goal, no battles"]]
+	;(each its exe - or its script when Setup runs as one: Watch.ahk BotProgram)
+	for each, e in [["Wiz-Maxxing", "", A_ScriptDir, "The Wizard101 bot: battles and quest walking"]
+		, ["Wiz-Maxxing Setup", A_ScriptDir "\Setup", A_ScriptDir, "Installs what the bot needs"]
+		, ["Stats reader", A_ScriptDir "\AutoFarmer\StatsReader", A_ScriptDir "\AutoFarmer", "Reads your wizard's stats for the kill check"]
+		, ["Quest walker only", A_ScriptDir "\AutoQuester\AutoQuester", A_ScriptDir "\AutoQuester", "Walks to the quest goal, no battles"]]
 		{
-		if (!FileExist(e[2]))
+		p := e[2] = "" ? SuBotProgram() : BotProgram(e[2])
+		if (!FileExist(p.target) || (e[2] != "" && !FileExist(e[2] ".exe") && !FileExist(e[2] ".ahk")))
 			continue
-		FileCreateShortcut, % e[2], % menuDir "\" e[1] ".lnk", % e[3], , % e[4]
+		FileCreateShortcut, % p.target, % menuDir "\" e[1] ".lnk", % e[3], % p.args, % e[4]
 		if (!ErrorLevel)
-			made++, SuLogLine("made: " e[1] " -> " e[2])
+			made++, SuLogLine("made: " e[1] " -> " p.target (p.args = "" ? "" : " " p.args))
 		}
 	SuLogLine(made ? made " shortcut(s) in " menuDir " - search the Start menu for Wiz-Maxxing" : "couldn't make any")
 	}
@@ -316,6 +315,9 @@ SuAddPath(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windo
 	exe := A_ScriptDir "\Wiz-Maxxing.exe"
 	if (!FileExist(exe))
 		return SuLogLine("no Wiz-Maxxing.exe here - the Run box entry is skipped")
+	;(Setup run as a script - Smart App Control: the exe would be blocked; the shortcuts start the scripts)
+	if (!A_IsCompiled)
+		return SuLogLine("Setup runs as a script (Smart App Control?) - the Run box entry is skipped: use the Start menu or desktop shortcut")
 	RegWrite, REG_SZ, %appKey%, , %exe%
 	RegWrite, REG_SZ, %appKey%, Path, %A_ScriptDir%
 	SuLogLine(ErrorLevel ? "couldn't add it to App Paths" : "Win+R: type Wiz-Maxxing")
@@ -323,13 +325,13 @@ SuAddPath(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windo
 	DllCall("SendMessageTimeout", "Ptr", 0xFFFF, "UInt", 0x1A, "Ptr", 0, "Str", "Environment", "UInt", 2, "UInt", 3000, "Ptr*", result)
 	}
 
-;What starts the bot: Wiz-Maxxing.exe, else AutoFarmer\Autofarmer.exe, else the script
-SuBotExe()
+;What starts the bot ({target, args}): the launcher (Wiz-Maxxing - its exe, or its script when Setup runs as one),
+;else AutoFarmer\Autofarmer
+SuBotProgram()
 	{
-	for each, f in [A_ScriptDir "\Wiz-Maxxing.exe", A_ScriptDir "\AutoFarmer\Autofarmer.exe"]
-		if (FileExist(f))
-			return f
-	return A_ScriptDir "\AutoFarmer\Autofarmer.ahk"
+	if (FileExist(A_ScriptDir "\Wiz-Maxxing.exe") || FileExist(A_ScriptDir "\Wiz-Maxxing.ahk"))
+		return BotProgram(A_ScriptDir "\Wiz-Maxxing")
+	return BotProgram(A_ScriptDir "\AutoFarmer\Autofarmer")
 	}
 
 SuInstallAhk()

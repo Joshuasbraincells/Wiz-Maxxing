@@ -24,12 +24,10 @@ if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
 updated := UpCheck(!checkOnly)
 if (checkOnly && !updated)
 	ExitApp
-hasExe := FileExist(dir "\Autofarmer.exe") != ""
-if (hasExe)
-	Run, "%dir%\Autofarmer.exe", %dir%, UseErrorLevel
-else
-	Run, "%dir%\Autofarmer.ahk", %dir%, UseErrorLevel
-if (ErrorLevel)
+;(started as a script - Wiz-Maxxing.ahk, e.g. with Smart App Control on: the bot as a script too, by this same
+;AutoHotkey - Watch.ahk BotProgram)
+hasExe := A_IsCompiled && FileExist(dir "\Autofarmer.exe") != ""
+if (!BotRun(dir "\Autofarmer", "", dir))
 	{
 	runErr := A_LastError
 	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ".`n`n" LaunchWhy(hasExe, runErr)
@@ -40,7 +38,7 @@ ExitApp
 ;common with AutoHotkey programs - pointed at Windows Security's Protection history), or not there at all
 LaunchWhy(hasExe, err)
 	{
-	security := "Windows Security often takes AutoHotkey programs for a virus (a false alarm): Windows Security > Virus & threat protection > Protection history > the Autofarmer.exe entry > Actions > Allow (or Restore). To keep it from happening again: Virus & threat protection > Manage settings > Exclusions > add the Wiz-Maxxing folder."
+	security := "Windows Security often takes AutoHotkey programs for a virus (a false alarm): Windows Security > Virus & threat protection > Protection history > the Autofarmer.exe entry > Actions > Allow (or Restore). To keep it from happening again: Virus & threat protection > Manage settings > Exclusions > add the Wiz-Maxxing folder.`n`n""Smart App Control blocked"" instead: it blocks the bot's exes (they aren't signed) and lets no exceptions be made - install AutoHotkey v1.1 (autohotkey.com) and open Wiz-Maxxing.ahk instead of Wiz-Maxxing.exe: the bot then runs as scripts."
 	if (hasExe)
 		{
 		VarSetCapacity(msg, 1024, 0)
