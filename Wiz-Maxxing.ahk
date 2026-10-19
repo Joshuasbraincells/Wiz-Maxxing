@@ -24,13 +24,32 @@ if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
 updated := UpCheck(!checkOnly)
 if (checkOnly && !updated)
 	ExitApp
-if (FileExist(dir "\Autofarmer.exe"))
+hasExe := FileExist(dir "\Autofarmer.exe") != ""
+if (hasExe)
 	Run, "%dir%\Autofarmer.exe", %dir%, UseErrorLevel
 else
 	Run, "%dir%\Autofarmer.ahk", %dir%, UseErrorLevel
 if (ErrorLevel)
-	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ". Without Autofarmer.exe there, AutoHotkey v1.1 is needed to run Autofarmer.ahk (Setup.exe can install it), or download the zip with the exes from the GitHub Releases page."
+	{
+	runErr := A_LastError
+	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ".`n`n" LaunchWhy(hasExe, runErr)
+	}
 ExitApp
+
+;Why the bot didn't start: Autofarmer.exe there but Windows wouldn't run it (its error; a virus alarm - a false one,
+;common with AutoHotkey programs - pointed at Windows Security's Protection history), or not there at all
+LaunchWhy(hasExe, err)
+	{
+	security := "Windows Security often takes AutoHotkey programs for a virus (a false alarm): Windows Security > Virus & threat protection > Protection history > the Autofarmer.exe entry > Actions > Allow (or Restore). To keep it from happening again: Virus & threat protection > Manage settings > Exclusions > add the Wiz-Maxxing folder."
+	if (hasExe)
+		{
+		VarSetCapacity(msg, 1024, 0)
+		n := DllCall("FormatMessage", "UInt", 0x1200, "Ptr", 0, "UInt", err, "UInt", 0, "Str", msg, "UInt", 512, "Ptr", 0)
+		text := n ? Trim(msg, " `r`n.") : "error " err
+		return "Windows wouldn't start AutoFarmer\Autofarmer.exe: " text " (" err ").`n`n" ((err = 225 || err = 1260 || err = 5) ? security : "Run Setup.exe and tick ""Unblock the bot's files"", then try again.")
+		}
+	return "AutoFarmer\Autofarmer.exe isn't there, and AutoHotkey v1.1 isn't installed to run Autofarmer.ahk instead.`n`n" security "`n`nOr run Setup.exe and tick ""AutoHotkey v1.1"" - then the bot runs as a script."
+	}
 
 #Include %A_ScriptDir%\Updater.ahk
 #Include %A_ScriptDir%\Watch.ahk
