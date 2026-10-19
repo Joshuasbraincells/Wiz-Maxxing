@@ -62,6 +62,8 @@ global PotionMarkZone := "", PotionMarkAt := 0
 ;it (start over)
 ;(PotionMarkOff: made by PotionOff - an initializer here never runs, as this file is #Included at the bottom)
 global PotionMarkOff, PotionRecAtMark := 0, PotionRecRestart := 0
+;(a potion shop that couldn't be closed: PotionCarryOn stops walking and says so)
+global PotionShopLeft
 
 ;Called out of battle from the main loop (every few seconds at most): low health -> drink, none -> run
 PotionCheck()
@@ -374,6 +376,25 @@ PotionAfterBuy()
 PotionCarryOn(bought)
 	{
 	PotionWalkFresh()
+	;(the shop's window couldn't be closed: walking would only be stuck behind it)
+	if (PotionShopLeft)
+		{
+		PotionShopLeft := 0
+		wasWalking := Walking
+		if (Walking)
+			{
+			Walking := 0
+			ReleaseKeys()
+			}
+		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - the shop's window is still open" (wasWalking ? ": walking stopped" : ""))
+		if (IsFunc("SetStatus"))
+			Func("SetStatus").Call("stopped - the potion shop's window is still open: close it" (wasWalking ? " and press F8" : ""))
+		if (IsFunc("WalkNotify"))
+			Func("WalkNotify").Call("shop", "Potion shop still open", "The potion shop's window couldn't be closed. Close it (its red X, bottom right)" (wasWalking ? " and press F8 to walk on." : "."))
+		else
+			TrayTip, Wizard101 bot, The potion shop's window couldn't be closed. Close it (its red X)., 10, 2
+		return
+		}
 	if (Walking && !afk && !loopmode && !loremode)
 		{
 		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - following the quest arrow on from your Mark")
@@ -814,38 +835,141 @@ PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false)
 	return ""
 	}
 
-;Closes the potion shop's window (Escape) - and Wizard101's own menu, if Escape opened that instead (the shop had
-;closed by itself): Walker.ahk WalkCloseGameMenu, by the menu's labels or buttons. Nothing pressed with Wizard101 not
-;in front, the bot off (F6; a run from the tray counts as on) or once you've touched the mouse or keyboard (since:
-;the run's start, else from now) - each checked right before it; it's left to you
-PotionCloseShop(since := 0)
+;Where the potion shop's Fill All button is, by its words - one look, Fill All, else Fill One just above it (+77 at
+;UI scale 1; Fill All is greyed once the potions are full) - or "" when neither is read. shopSeen: the shop's own
+;words read at all (its title, a Fill button)
+PotionShopAnchor(ByRef shopSeen := "")
+	{
+	shopText := OcrRect(Round(GameLeft + GameW * 0.12), Round(GameTop + GameH * 0.08), Round(GameW * 0.76), Round(GameH * 0.84), "en", 1, shopLines)
+	shopSeen := !ErrorLevel && RegExMatch(shopText, "i)mystical|mixtures|\bfill\b")
+	if (ErrorLevel || !IsObject(shopLines))
+		return ""
+	fillOne := ""
+	for i, line in shopLines
+		{
+		ws := line.words
+		if (!IsObject(ws))
+			continue
+		for j, w in ws
+			{
+			if (j >= ws.Length() || !RegExMatch(Trim(w.text), "i)^fill$"))
+				continue
+			v := ws[j + 1]
+			if (RegExMatch(Trim(v.text), "i)^all[.!]?$"))
+				return {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2)}
+			if (RegExMatch(Trim(v.text), "i)^one[.!]?$") && !IsObject(fillOne))
+				fillOne := {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2) + Round(77 * UiScale)}
+			}
+		}
+	return fillOne
+	}
+
+;The potion shop's close button - the red X at its bottom right corner, (235, 359) from Fill All at UI scale 1,
+;measured on the live game - found by its colour in a small box round there (nothing else in the shop is that red),
+;its middle checked to be that red too (not a red robe or mount passing the corner): true and its middle in x, y
+PotionShopXFind(anchor, ByRef x, ByRef y)
+	{
+	shopX := anchor.x + Round(235 * UiScale), shopY := anchor.y + Round(359 * UiScale), shopR := Round(32 * UiScale)
+	PixelSearch, x, y, Max(GameLeft, shopX - shopR), Max(GameTop, shopY - shopR), Min(GameLeft + GameW - 1, shopX + shopR), Min(GameTop + GameH - 1, shopY + shopR), 0xD20805, 40, Fast RGB
+	if (ErrorLevel)
+		return false
+	;(the first red pixel is near the top of its cross: its middle is a little right of and below that)
+	x += Round(5 * UiScale), y += Round(13 * UiScale)
+	PixelSearch, midX, midY, x - 4, y - 4, x + 4, y + 4, 0xD20805, 50, Fast RGB
+	return !ErrorLevel
+	}
+
+;Clicks the potion shop's close button (PotionShopXFind), hovered a moment first - with no Crown near and only while
+;the bot may act (WalkMenuMayAct, from). 1 if clicked, 0 if not, -1 if the bot mayn't act (you've taken over, it's
+;off, the game isn't in front)
+PotionShopX(anchor, from)
+	{
+	if (!PotionShopXFind(anchor, redX, redY))
+		{
+		DebugLog("Potions: the shop's close button (its red X) wasn't found by " anchor.x + Round(235 * UiScale) - GameLeft "," anchor.y + Round(359 * UiScale) - GameTop)
+		return false
+		}
+	if (!PotionNoCrowns(redX, redY))
+		return false
+	Critical
+	if (!WalkMenuMayAct(false, from))
+		{
+		Critical, Off
+		return -1
+		}
+	DebugLog("Potions: closing the shop with its X at " redX - GameLeft "," redY - GameTop)
+	TargetClick(redX, redY)
+	Critical, Off
+	return 1
+	}
+
+;The shop's up - by its own words (its X's red alone could be a robe or a mount): where its Fill All is, from those
+;words, else Fill All's place read before it was clicked (known) while some of the shop's words are read; or ""
+PotionShopUp(known := "")
+	{
+	shop := PotionShopAnchor(shopSeen)
+	if (IsObject(shop))
+		return shop
+	return (shopSeen && IsObject(known)) ? known : ""
+	}
+
+;Closes the potion shop's window with its own close button (PotionShopX - Escape doesn't close Hilda's shop, it opens
+;Wizard101's menu over it). Escape only when no shop was seen at all (X opened something else, or nothing), and the
+;game's menu closed again if that opened it (Walker.ahk WalkCloseGameMenu). known: Fill All's place, read before it
+;was clicked. Nothing pressed or clicked with Wizard101 not in front, the bot off (F6; a run from the tray counts as
+;on) or once you've touched the mouse or keyboard (since: the run's start, else from now) - each checked right before
+;it. False (and PotionShopLeft) when the shop's still up: it's left to you - PotionCarryOn stops walking and says so
+PotionCloseShop(since := 0, known := "")
 	{
 	from := since ? since : A_TickCount
-	Loop, 2
+	shop := PotionShopUp(known)
+	xClicks := 0, xGot := 0
+	while (IsObject(shop) && xClicks < 2)
 		{
-		;(the second time only if a box on top of it closed instead: the shop's still up)
-		if (A_Index = 2 && !IsObject(PotionFindWords("i)^fill$", "i)^all[.!]?$")))
+		xGot := PotionShopX(shop, from)
+		if (xGot != 1)
 			break
+		xClicks += 1
+		Sleep, 1000
+		shop := PotionShopUp(known)
+		}
+	if (IsObject(shop))
+		{
+		;(you've taken over, or the bot's off: it's yours - no notice)
+		if (xGot = -1)
+			{
+			DebugLog("Potions: the shop's window left to you (Wizard101 isn't in front, the bot is off or you've taken over)")
+			return false
+			}
+		PotionShopLeft := 1
+		DebugLog("Potions: the shop's window is still open - left to you (" (xClicks ? "its X clicked " xClicks " times" : "its X couldn't be clicked") ")")
+		return false
+		}
+	if (!xClicks)
+		{
+		;(no shop seen: X opened something else - a dialogue - or nothing: Escape, as ever)
 		Critical
 		if (!WalkMenuMayAct(false, from))
 			{
 			Critical, Off
-			DebugLog("Potions: the shop's window left to you (Wizard101 isn't in front, the bot is off or you've taken over)")
-			return
+			DebugLog("Potions: not closing what's open (Wizard101 isn't in front, the bot is off or you've taken over)")
+			return true
 			}
+		DebugLog("Potions: no shop's window seen - Escape")
 		Send, {Blind}{Escape}
 		Critical, Off
 		Sleep, 800
 		}
 	menuNow := WalkCloseGameMenu(false, menuSeen, from)
 	if (menuNow = 1)
-		DebugLog("Potions: Escape had opened the game's menu (the shop had closed by itself) - closed it")
+		DebugLog("Potions: Escape had opened the game's menu - closed it")
 	else if (menuNow = 2)
 		DebugLog("Potions: the game's menu is open and didn't close - left to you")
 	else if (menuNow = -1)
-		DebugLog("Potions: shop closed - not checked for the game's menu (Wizard101 isn't in front, the bot is off or you've taken over)")
+		DebugLog("Potions: closed - not checked for the game's menu (Wizard101 isn't in front, the bot is off or you've taken over)")
 	else
 		DebugLog("Potions: shop closed (read after: " (menuSeen = "" ? "nothing" : SubStr(menuSeen, 1, 160)) ")")
+	return true
 	}
 
 ;At the potion seller: X at her prompt, Fill All in her window (never with "Crown" round it), a box asking to
@@ -889,7 +1013,7 @@ PotionBuyHere(s, since := 0)
 		DebugLog("Potions: ""Crown"" in the shop's window - not clicking, stopping (gold only): " SubStr(RegExReplace(seen, "\s+", " "), 1, 160))
 		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
 		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
-		PotionCloseShop(since)
+		PotionCloseShop(since, w)
 		return false
 		}
 	if (!IsObject(w))
@@ -900,7 +1024,7 @@ PotionBuyHere(s, since := 0)
 		}
 	if (!PotionNoCrowns(w.x, w.y) || !PotionOk(true, since))
 		{
-		PotionCloseShop(since)
+		PotionCloseShop(since, w)
 		return false
 		}
 	DebugLog("Potions: Fill All at " w.x - GameLeft "," w.y - GameTop " - clicking")
@@ -916,7 +1040,7 @@ PotionBuyHere(s, since := 0)
 		ClickAt(c.x, c.y, 300)
 		Sleep, 1000
 		}
-	PotionCloseShop(since)
+	PotionCloseShop(since, w)
 	return true
 	}
 
@@ -929,6 +1053,7 @@ PotionRunWalk()
 	{
 	ReleaseKeys()
 	since := A_TickCount
+	PotionShopLeft := 0
 	who := PotionWho()
 	;(potionmark:0's route way is always there to try - it says so itself when there's no route)
 	recorded := PotionByMark() ? PotionMarkFile(who) != "" : true
@@ -984,8 +1109,9 @@ PotionRunWalk()
 	if (!PotionWalkTo(s, since) || !PotionBuyHere(s, since))
 		{
 		ReleaseKeys()
-		;(a recorded way to try, and nothing's said stop - a battle, your hands): that one
-		if (recorded && WalkZone(true) = s.zone && PotionOk(true, since))
+		;(a recorded way to try, and nothing's said stop - a battle, your hands): that one. Not behind a shop's window
+		;that couldn't be closed: that stops the run (PotionCarryOn says so)
+		if (recorded && !PotionShopLeft && WalkZone(true) = s.zone && PotionOk(true, since))
 			{
 			DebugLog("Potions: the walk to the potion seller didn't work - the recorded way instead")
 			return ""

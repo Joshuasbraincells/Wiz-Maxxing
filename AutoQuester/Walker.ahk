@@ -2359,7 +2359,7 @@ WalkNotify(kind, title, text, withKeep := false)
 ;How important a notice is: stuck > collect > no arrow > waiting at a goal
 WalkNoteRank(kind)
 	{
-	return kind = "stuck" ? 4 : kind = "collect" ? 3 : kind = "arrow" ? 2 : 1
+	return (kind = "stuck" || kind = "shop") ? 4 : kind = "collect" ? 3 : kind = "arrow" ? 2 : 1
 	}
 
 ;The notice's title-bar X: the same as OK

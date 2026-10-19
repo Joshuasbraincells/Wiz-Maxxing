@@ -1579,9 +1579,44 @@ HitTarget(title, dir)
 		DebugLog("  " title " needs a target, but no enemy nameplate was found to click")
 		return
 		}
-	AfterClick(300)
-	ClickAt(tx, ty)
+	;(the game asking for a target a moment after the card's clicked: then the plate hovered, then clicked)
+	AfterClick(600)
+	TargetClick(tx, ty)
 	DebugLog("  " title ": clicked " pick " as the target at " tx - GameLeft "," ty - GameTop)
+	;(a click on a nameplate doesn't always take: the round's still waiting - its Pass button there - 0.8 s later:
+	;once more, on the plate's health line just under the name)
+	if (TargetPending())
+		{
+		TargetClick(tx, ty + Px(20))
+		DebugLog("  " title ": the target click didn't take - clicked the plate again at " tx - GameLeft "," ty + Px(20) - GameTop)
+		}
+	}
+
+;A target clicked: the mouse there, a moment on it (the game takes a nameplate click better hovered), the click;
+;the mouse back where it was afterwards (MouseGrab: mousereturn)
+TargetClick(x, y)
+	{
+	ownGrab := MouseGrab()
+	MouseMove, x, y, MouseSpeedNow()
+	Sleep, % Max(150, Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
+	Click
+	if (ownGrab)
+		MouseLetGo()
+	}
+
+;True while the round still waits for us 0.8 s on: its Pass button is still there (a target click that took starts
+;the cast and the button goes)
+TargetPending()
+	{
+	t0 := A_TickCount
+	while (A_TickCount - t0 < 800)
+		{
+		Sleep, 100
+		ImageSearch, pendX, pendY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+		if (ErrorLevel)
+			return false
+		}
+	return true
 	}
 
 Switch()

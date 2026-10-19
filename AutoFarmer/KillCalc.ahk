@@ -144,6 +144,33 @@ ParseHealth(text)
 	return list
 	}
 
+;An OCR line on the enemy nameplates' row along the top, high in the strip: it starts at one of the four plates'
+;left edges (the first's 143 px, then every 511 px, at UI scale 1 - measured at 1440p, UI 1.144: "LOST SOUL" and its
+;"55/55" at 164, a second enemy's name at 749), or it's a plate's own pair - a name with a health line (cur/max)
+;starting at its left edge just under it, or that health line (rects: the strip's lines). A mob's floating name over
+;its head (RANK under it) can reach up into the strip, but it's neither (its RANK line never counts)
+OnPlateRow(r, rects := "")
+	{
+	if (r.y - GameTop > Px(75) || RegExMatch(r.text, "i)^\W*RANK\b"))
+		return false
+	Loop, 4
+		{
+		if (Abs(r.x - (GameLeft + Px(143.4 + 511.4 * (A_Index - 1)))) <= Px(30))
+			return true
+		}
+	for i, o in (IsObject(rects) ? rects : [])
+		{
+		if (o = r || Abs(o.x - r.x) > Px(10))
+			continue
+		;(a name with its health line just under it, or a health line with its name just over it)
+		if (IsNameLine(r.text) && IsHealthLine(o.text) && o.y > r.y && o.y - r.y <= r.h * 2.5)
+			return true
+		if (IsHealthLine(r.text) && IsNameLine(o.text) && r.y > o.y && r.y - o.y <= o.h * 2.5)
+			return true
+		}
+	return false
+	}
+
 ;OCR line kinds: a plate's name line (letters, no digits) or its health line ("current/max")
 IsNameLine(t)
 	{
@@ -204,9 +231,10 @@ ReadEnemyHealth()
 	MouseMove, GameRight - 20, ScreenY, 0
 
 	;1) Plates: name lines (deduped across both reads), each with the health line under it if one was seen
-	names := [], healths := [], seen := ""
+	names := [], healths := [], seen := "", offRow := ""
 	Loop, 2
 		{
+		stripRead := A_Index
 		seen := OcrRect(GameLeft, GameTop, GameW, stripH, "en", (A_Index == 1) ? scale1 : scale2, rects)
 		if (ErrorLevel)
 			{
@@ -218,6 +246,13 @@ ReadEnemyHealth()
 			;(not the Shop button in the top left corner - its "SHOP" reads like an enemy's name)
 			if (r.x + r.w / 2 < GameLeft + Px(85) || RegExMatch(r.text, "i)^\W*(SHOP|EARN\W*CROWNS|UPGRADE\W*NOW)\W*$"))
 				continue
+			;(only the plates' own row - not a mob's floating name over its head, which can reach into the strip)
+			if (!OnPlateRow(r, rects))
+				{
+				if (stripRead = 1 && IsNameLine(r.text))
+					offRow .= (offRow = "" ? "" : ", ") r.text " at " r.x - GameLeft "," r.y - GameTop
+				continue
+				}
 			if (IsHealthLine(r.text))
 				healths.Push(r)
 			else if (IsNameLine(r.text))
@@ -265,9 +300,15 @@ ReadEnemyHealth()
 				plates[A_Index] := b, plates[A_Index + 1] := a
 			}
 		}
+	if (offRow != "")
+		DebugLog("  nameplates: not on the plates' row, left out: " SubStr(offRow, 1, 160))
 	if (plates.Length() < 1 || plates.Length() > 4)
 		{
 		HealthStatus := "Couldn't find the enemy nameplates (" . plates.Length() . " found): " . SubStr(RegExReplace(seen, "\s+", " "), 1, 60)
+		;(none read: there's always a first plate - its box is where a single-target hit is clicked; not with the Crown
+		;shop's buttons read up there - its Earn Crowns / Upgrade Now)
+		if (plates.Length() < 1 && !RegExMatch(seen, "i)cr[o0]wn|upgrade|earn"))
+			EnemyPlates.Push({x: GameLeft + Px(205), y: GameTop + Px(36)})
 		return false
 		}
 	;Where each plate is (its name, else its health line), left to right: a single-target hit clicks one
