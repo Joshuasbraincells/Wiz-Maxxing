@@ -26,6 +26,10 @@ CoordMode, ToolTip, Screen
 OnExit("WalkerQuit")
 ;No standard tray menu: its "Pause Script" would freeze the walker with a key held down
 Menu, Tray, NoStandard
+;(the version, on top - not a command)
+Menu, Tray, Add, % "Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion()), MenuNothing
+Menu, Tray, Disable, % "Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion())
+Menu, Tray, Add
 Menu, Tray, Add, Bot on/off (F6), MenuBotToggle
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
@@ -105,7 +109,22 @@ return
 ;(Wiz-Maxxing /check - the exe, or the script when this runs as one: asks GitHub; if you update, it closes this and
 ;starts the new one)
 MenuUpdates:
-BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check", A_ScriptDir "\..")
+UpdCheckNow()
+return
+
+MenuNothing:
+return
+
+;The latest release looked up now and then, out of this process (Wiz-Maxxing /latest writes updater.ini): the
+;dashboard's Updates button and STATISTICS say from it whether a newer version is out. 45 s after start, then every
+;2 hours
+UpdPeekNow:
+;(only with a program that can run it: Wiz-Maxxing.exe - or, run as a script, Wiz-Maxxing.ahk by this AutoHotkey)
+if (!A_IsCompiled || FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
+	BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/latest", A_ScriptDir "\..")
+else
+	IniWrite, Wiz-Maxxing.exe is missing, %A_ScriptDir%\..\updater.ini, latest, err
+SetTimer, UpdPeekNow, -7200000
 return
 
 MenuPotionRoute:
@@ -246,6 +265,7 @@ UpdateGameRect()
 FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 ;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
 DashInit()
+SetTimer, UpdPeekNow, -45000
 HandsOffShow()
 BotOnShow()
 WatchShow()
@@ -257,7 +277,7 @@ LastBeat := 0
 SeenOut := 0
 
 ;Quest walking: on from the start (F8 switches it off and on)
-if (WalkerInit("Wizard101 bot"))
+if (WalkerInit("Wizard101 bot " BotVersion()))
 	{
 	Walking := 1
 	DebugLog("Walking on (F8 switches it off)")
@@ -1085,6 +1105,63 @@ CenterMouse()
 	{
 	UpdateGameRect()
 	Mousemove, ScreenX, ScreenY + Px(100), MouseSpeedNow()
+	}
+
+;This bot's version (version.txt in its folder: v0.25.1...), "" if there's none
+BotVersion()
+	{
+	static v := "-"
+	if (v = "-")
+		{
+		FileRead, v, %A_ScriptDir%\..\version.txt
+		v := Trim(v, " `t`r`n")
+		}
+	return v
+	}
+
+;The update check (Wiz-Maxxing /check): a newer version offered and installed if you say so, the bot then started
+;again as it is now (off: /off, in standby: /standby). False (and a tray tip) if Wiz-Maxxing can't be started
+UpdCheckNow()
+	{
+	updArg := (BotStandby && !BotEverOn) ? " /standby" : !BotOn ? " /off" : ""
+	if (BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check" updArg, A_ScriptDir "\.."))
+		return true
+	TrayTip, Wizard101 bot, % "Couldn't start Wiz-Maxxing for the update check (error " A_LastError ").", 8, 2
+	return false
+	}
+
+;"v0.25.2" vs "v0.25.1" (vMAJOR.MAIN.BUG): 1 newer, 0 the same, -1 older; "" is older than any
+VersionCompare(a, b)
+	{
+	if (a = b)
+		return 0
+	if (!RegExMatch(a, "(\d+)\.(\d+)(?:\.(\d+))?", x))
+		return -1
+	if (!RegExMatch(b, "(\d+)\.(\d+)(?:\.(\d+))?", y))
+		return 1
+	pa := [x1 + 0, x2 + 0, x3 = "" ? 0 : x3 + 0], pb := [y1 + 0, y2 + 0, y3 = "" ? 0 : y3 + 0]
+	Loop, 3
+		{
+		if (pa[A_Index] != pb[A_Index])
+			return pa[A_Index] > pb[A_Index] ? 1 : -1
+		}
+	return 0
+	}
+
+;What the last look-up of the latest release said (updater.ini [latest], read at most every 5 s): {latest: its
+;tag, err, newer: true when it's newer than this bot}
+UpdState()
+	{
+	static state := "", readAt := 0
+	if (!IsObject(state) || A_TickCount - readAt > 5000)
+		{
+		readAt := A_TickCount
+		ini := A_ScriptDir "\..\updater.ini"
+		IniRead, latest, %ini%, latest, tag, %A_Space%
+		IniRead, err, %ini%, latest, err, %A_Space%
+		state := {latest: Trim(latest), err: Trim(err), newer: Trim(latest) != "" && VersionCompare(Trim(latest), BotVersion()) > 0}
+		}
+	return state
 	}
 
 ;A pixel distance measured at UI scale 1 (a 1920x1080 window, UI Size Small), at the UI size in use

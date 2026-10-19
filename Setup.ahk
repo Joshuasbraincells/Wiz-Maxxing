@@ -34,7 +34,8 @@ if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
 	ExitApp
 	}
 
-Gui, Su:New, , Wizard101 bot setup
+FileRead, suVersion, %A_ScriptDir%\version.txt
+Gui, Su:New, , % "Wizard101 bot setup " Trim(suVersion, " `t`r`n")
 Gui, Su:Margin, 14, 12
 Gui, Su:Font, s11 w600, Segoe UI
 Gui, Su:Add, Text, w620, Get this PC ready to run the Wizard101 bot

@@ -19,6 +19,8 @@ global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHands
 global DashUsageText
 ;The Settings button (Settings.ahk), left of the Map button
 global DashCfgBtn
+;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState)
+global DashUpdBtn, DashUpdBusy
 ;The bottom row's other buttons (they share the window's width)
 global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn, DashBotBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
@@ -34,11 +36,15 @@ global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, Dash
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
-	Gui, Dash:New, +Resize +MinSize660x610 +HwndDashHwnd, Wizard101 bot
+	Gui, Dash:New, +Resize +MinSize660x610 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Text, x12 y10 w760 h22 vDashHead, Wizard101 bot
+	Gui, Dash:Add, Text, x12 y10 w620 h22 vDashHead, % "Wizard101 bot " BotVersion()
+	;(the Updates button: the heading row's right end - DashGuiSize keeps it there)
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x640 y7 w136 h24 gDashUpdButton vDashUpdBtn, Check for updates
+	;(the button says "Checking..." a while after a click: DashUpdBusy)
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y40 w86 h16, STATISTICS
 	Gui, Dash:Font, s8 w400 c9AA0A6, Segoe UI
@@ -462,21 +468,40 @@ DashRefresh()
 		doing := StatusText
 	else
 		doing := "Watching"
-	DashSet("DashHead", "Wizard101 bot  |  " SubStr(doing, 1, 70) "  |  up " upText "  |  vision " (VisionOn ? "on" : "off"))
+	DashSet("DashHead", "Wizard101 bot " BotVersion() "  |  up " upText "  |  vision " (VisionOn ? "on" : "off") "  |  " SubStr(doing, 1, 70))
+	;The version, and whether a newer one is out (the last look-up: UpdState) - on the Updates button too
+	upd := UpdState()
+	verNote := upd.newer ? upd.latest " is out" : upd.err != "" ? "can't check" : upd.latest != "" ? "up to date" : "not checked yet"
+	;(why it can't check: in the log, once each time it changes)
+	static updErrSaid := ""
+	if (upd.err != updErrSaid)
+		{
+		updErrSaid := upd.err
+		if (upd.err != "")
+			DebugLog("Updates: can't check for a newer version - " upd.err)
+		}
+	if (DashUpdBusy && A_TickCount - DashUpdBusy > 10000)
+		{
+		DashUpdBusy := 0
+		GuiControl, Dash:Enable, DashUpdBtn
+		}
+	DashSet("DashUpdBtn", DashUpdBusy ? "Checking..." : upd.newer ? "Update to " upd.latest : (upd.err = "" && upd.latest != "") ? "Up to date" : "Check for updates")
 	;Statistics
 	n := DashN
 	casts := ""
 	for title, count in DashCasts
 		casts .= "`n   " SubStr(DashCardName(title) "                              ", 1, 25) Format("{:6}", count)
-	s := "Battles          " DashNum(battles) "`n"
+	;(the cards cast one by one last: what the box's height cuts off)
+	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
+		. "Battles          " DashNum(battles) "`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
-		. "Cards cast       " DashNum(n.casts) casts "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
 		. "Kill-check hits  " DashNum(n.lethal) "`n"
 		. "Rounds saving pips" SubStr(DashNum(n.pipsaves), 2) "`n"
 		. "Potions drunk    " DashNum(n.potions) "   (buying runs: " (n.potionRuns = "" ? 0 : n.potionRuns) ")`n"
-		. "Cards learned    " DashNum(n.learned)
+		. "Cards learned    " DashNum(n.learned) "`n"
+		. "Cards cast       " DashNum(n.casts) casts
 	DashSet("DashStatText", s)
 	DashSet("DashUsageText", DashUsage())
 	;What it sees
@@ -570,7 +595,7 @@ DashMapShow()
 	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
 		DashMapPlace(x, y, w, h)
 	DashFitHeight(x, y, h)
-	Gui, Map:Show, x%x% y%y% w%w% h%h% NoActivate, Wizard101 bot - map
+	Gui, Map:Show, x%x% y%y% w%w% h%h% NoActivate, % "Wizard101 bot " BotVersion() " - map"
 	DashMapShown := 1, DashMapAt := 0
 	SetTimer, DashMapTick, 250
 	}
@@ -919,6 +944,18 @@ DashBytes(n)
 	return n >= 1073741824 ? Round(n / 1073741824, 1) "GB" : Round(n / 1048576) "MB"
 	}
 
+DashUpdButton:
+	;The Updates button: the usual check - a newer version offered (its notes), installed if you say so, the bot then
+	;started again as it is now - or "you're up to date" (UpdCheckNow, as the tray menu's Check for updates).
+	;"Checking..." and not clickable for 10 s
+	if (UpdCheckNow())
+		{
+		DashUpdBusy := A_TickCount
+		GuiControl, Dash:Disable, DashUpdBtn
+		DashRefresh()
+		}
+	return
+
 ;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
 DashSettingsButton:
 	if (IsFunc("CfgShow"))
@@ -952,7 +989,8 @@ DashGuiClose:
 DashGuiSize:
 	if (A_EventInfo = 1)
 		return
-	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 164
+	GuiControl, Dash:Move, DashUpdBtn, % "x" A_GuiWidth - 144
 	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84
 	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384

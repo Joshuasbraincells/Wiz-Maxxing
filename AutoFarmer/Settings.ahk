@@ -114,7 +114,7 @@ CfgShow()
 	if (!hooked)
 		OnMessage(0x200, Func("CfgHover")), hooked := 1
 	CfgCtls := {}, CfgShownVals := {}, CfgHelps := {}, CfgHelpShown := ""
-	Gui, Cfg:New, +HwndCfgHwnd -MaximizeBox, Wizard101 bot - settings
+	Gui, Cfg:New, +HwndCfgHwnd -MaximizeBox, % "Wizard101 bot " BotVersion() " - settings"
 	Gui, Cfg:Color, 1B1D22, 111317
 	Gui, Cfg:Margin, 12, 10
 	cfgX := 12, cfgY := 12, cfgBottom := 12
@@ -193,7 +193,7 @@ CfgShow()
 		if (cfgDx != "" && cfgMm != -1)
 			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " "
 		}
-	Gui, Cfg:Show, % cfgPos "AutoSize", Wizard101 bot - settings
+	Gui, Cfg:Show, % cfgPos "AutoSize", % "Wizard101 bot " BotVersion() " - settings"
 	}
 
 ;The help for what the mouse is over: a label (SS_NOTIFY) or a control in the window

@@ -46,29 +46,31 @@ UpCheck(quiet := true)
 	if (token = "")
 		{
 		if (!quiet)
-			MsgBox, 48, Wiz-Maxxing updates, % "There's no GitHub token on this PC, so updates can't be checked.`n`nRun Setup.exe and tick ""GitHub updates"" to add one."
+			MsgBox, 262192, Wiz-Maxxing updates, % "There's no GitHub token on this PC, so updates can't be checked.`n`nRun Setup.exe and tick ""GitHub updates"" to add one."
 		return false
 		}
 	rel := UpLatest(token, err, status)
 	token := ""
 	if (!IsObject(rel))
 		{
+		UpPeekSave("", err)
 		UpLog("check failed: " err)
 		;(an expired or revoked token: said once even when opening the bot, else updates stop unnoticed)
 		IniRead, warned, %A_ScriptDir%\updater.ini, token, warned, 0
 		if (!UpTestYes && (!quiet || ((status = 401 || status = 403) && !warned)))
-			MsgBox, 48, Wiz-Maxxing updates, % "Couldn't check for updates:`n" err
+			MsgBox, 262192, Wiz-Maxxing updates, % "Couldn't check for updates:`n" err
 		if ((status = 401 || status = 403) && quiet)
 			IniWrite, 1, %A_ScriptDir%\updater.ini, token, warned
 		return false
 		}
 	IniWrite, 0, %A_ScriptDir%\updater.ini, token, warned
+	UpPeekSave(rel.tag, "")
 	have := UpVersion()
 	UpLog("installed " (have = "" ? "(no version.txt)" : have) ", latest " rel.tag)
 	if (UpCompare(rel.tag, have) <= 0)
 		{
 		if (!quiet)
-			MsgBox, 64, Wiz-Maxxing updates, % "You're up to date (" (have = "" ? rel.tag : have) ")."
+			MsgBox, 262208, Wiz-Maxxing updates, % "You're up to date (" (have = "" ? rel.tag : have) ")."
 		return false
 		}
 	notes := rel.body
@@ -76,13 +78,58 @@ UpCheck(quiet := true)
 	if (StrLen(notes) > 700)
 		notes := SubStr(notes, 1, 700) "..."
 	if (!UpTestYes)
-		MsgBox, 36, Wiz-Maxxing update, % "A new version is out: " rel.name "`n(you have " (have = "" ? "an older one" : have) ")`n`n" notes "`n`nUpdate now? Your settings, learned cards and potion routes are kept."
+		MsgBox, 262180, Wiz-Maxxing update, % "A new version is out: " rel.name "`n(you have " (have = "" ? "an older one" : have) ")`n`n" notes "`n`nUpdate now? Your settings, learned cards and potion routes are kept."
 	IfMsgBox, No
 		{
 		UpLog("you chose not to update to " rel.tag " now")
 		return false
 		}
+	;(installed meanwhile - by another check: nothing to do)
+	if (UpCompare(rel.tag, UpVersion()) <= 0)
+		return false
 	return UpInstall(rel)
+	}
+
+;Only looks (Wiz-Maxxing /latest - the bot's dashboard runs it now and then): the latest release's tag, or why it
+;couldn't be looked up, into updater.ini [latest] - no question, no install, no message
+UpPeek()
+	{
+	token := UpToken()
+	if (token = "")
+		{
+		UpPeekSave("", "no GitHub token on this PC (Setup.exe: GitHub updates)")
+		return
+		}
+	rel := UpLatest(token, err, status)
+	token := ""
+	UpPeekSave(IsObject(rel) ? rel.tag : "", IsObject(rel) ? "" : err)
+	}
+
+;The latest release's tag (or why it couldn't be looked up) for the dashboard: updater.ini [latest]. A failed
+;look-up keeps the tag it last found (a newer version is still out) and says why it can't check
+UpPeekSave(tag, err)
+	{
+	if (tag != "")
+		IniWrite, %tag%, %A_ScriptDir%\updater.ini, latest, tag
+	IniWrite, % RegExReplace(err, "[\r\n]+", " "), %A_ScriptDir%\updater.ini, latest, err
+	IniWrite, %A_Now%, %A_ScriptDir%\updater.ini, latest, at
+	}
+
+;One update check / install at a time, across all the bot's processes (the dashboard's button clicked twice, the
+;watcher's check, the tray's): true when this one may go on - else the other one's question is brought forward
+UpOnlyOne()
+	{
+	static mutex := 0
+	if (mutex)
+		return true
+	mutex := DllCall("CreateMutex", "Ptr", 0, "Int", 0, "Str", "Wiz-Maxxing update", "Ptr")
+	if (A_LastError != 183)
+		return true
+	DllCall("CloseHandle", "Ptr", mutex)
+	mutex := 0
+	WinActivate, Wiz-Maxxing update ahk_class #32770
+	WinActivate, Wiz-Maxxing updates ahk_class #32770
+	return false
 	}
 
 ;"v0.10" vs "v0.09": 1 newer, 0 same, -1 older ("" counts as older than any)

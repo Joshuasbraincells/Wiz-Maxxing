@@ -915,7 +915,7 @@ RcStatus(text)
 	if (RcScanning || text = lastText)
 		return
 	lastText := text
-	Menu, Tray, Tip, % "Wizard101 bot: " SubStr(text, 1, 100)
+	Menu, Tray, Tip, % "Wizard101 bot " BotVersion() ": " SubStr(text, 1, 100)
 	}
 
 ;Tray menu: switches auto-reconnect on and off

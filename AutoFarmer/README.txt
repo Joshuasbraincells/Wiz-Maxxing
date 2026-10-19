@@ -69,8 +69,12 @@ dashboard's "Wait for me" button; it's kept in PlayerStats.txt (handsoffon).
 
 Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
-updates" does it any time. Needs a GitHub token once per PC (Setup.exe, "GitHub
-updates"). Your settings, learned cards, potion routes and pictures are kept.
+updates" does it any time - so does the dashboard's Updates button (top right),
+which says live whether a newer version is out ("Update to v..."; it looks it up
+45 s after the bot starts and every 2 hours, out of the bot's way). The version
+is in the windows' titles, the tray menu's first line and the dashboard's
+STATISTICS. Needs a GitHub token once per PC (Setup.exe, "GitHub updates").
+Your settings, learned cards, potion routes and pictures are kept.
 updater.log (next to Wiz-Maxxing.exe) says what it did.
 
 Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards

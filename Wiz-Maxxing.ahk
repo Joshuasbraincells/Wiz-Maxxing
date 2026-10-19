@@ -2,9 +2,12 @@
 ; then starts AutoFarmer\Autofarmer.exe (else AutoFarmer\Autofarmer.ahk, with AutoHotkey). Built to
 ; Wiz-Maxxing.exe by build.ps1, with the wizard icon; Setup puts it in the Start menu and on the desktop.
 ;   Wiz-Maxxing.exe /check   only the update check, with a message either way (the tray menu's "Check for
-;                            updates"); the bot is started again only if it was updated
+;                            updates", the dashboard's Updates button); the bot is started again only if it was
+;                            updated - /check /off or /check /standby: started again as it was (off, in standby)
 ;   Wiz-Maxxing.exe /watch   the watcher ("Open with Wizard101" - started with Windows): opens the bot in standby
 ;                            when Wizard101 starts (Watch.ahk); F6 then starts it
+;   Wiz-Maxxing.exe /latest  only looks up the latest release, into updater.ini (the dashboard's Updates button and
+;                            STATISTICS say from it whether a newer one is out) - nothing shown, nothing installed
 ; AutoHotkey v1.1.
 #NoEnv
 #NoTrayIcon
@@ -16,18 +19,33 @@ if (A_Args[1] = "/watch")
 	WatchGame(dir)
 	ExitApp
 	}
+if (A_Args[1] = "/latest")
+	{
+	UpPeek()
+	ExitApp
+	}
 if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
 	{
 	MsgBox, 48, Wiz-Maxxing, % "The bot isn't here: Wiz-Maxxing.exe has to stay in the bot's folder, next to AutoFarmer\ (it's in " A_ScriptDir ")."
 	ExitApp
 	}
-updated := UpCheck(!checkOnly)
+;(one check at a time: another running - its question brought forward - this one only starts the bot, or stops)
+if (!UpOnlyOne())
+	{
+	if (checkOnly)
+		ExitApp
+	updated := false
+	}
+else
+	updated := UpCheck(!checkOnly)
 if (checkOnly && !updated)
 	ExitApp
+;(after an update from /check: the bot back as it was - off or in standby)
+botArg := (checkOnly && (A_Args[2] = "/off" || A_Args[2] = "/standby")) ? A_Args[2] : ""
 ;(started as a script - Wiz-Maxxing.ahk, e.g. with Smart App Control on: the bot as a script too, by this same
 ;AutoHotkey - Watch.ahk BotProgram)
 hasExe := A_IsCompiled && FileExist(dir "\Autofarmer.exe") != ""
-if (!BotRun(dir "\Autofarmer", "", dir))
+if (!BotRun(dir "\Autofarmer", botArg, dir))
 	{
 	runErr := A_LastError
 	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ".`n`n" LaunchWhy(hasExe, runErr)

@@ -22,3 +22,6 @@ __pycache__/
 AutoFarmer/dashboard.ini
 # What the walker learned about the game's memory (made by itself)
 AutoQuester/resources/nav_calibration.txt
+# the updater's own state (token warning, the latest release looked up)
+updater.ini
+updater.log
