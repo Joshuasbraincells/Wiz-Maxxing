@@ -52,6 +52,18 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      map, vision\navroute.py - and how far is left to
                                                                      walk; route|||  with routewhy|<why> when there's
                                                                      none yet: the walker steers at the target then)
+                                                    |jump|jx|jy     (5-7: right at a teleport on the game's path: the
+                                                                     seconds waited there, where it is)
+                                                    |mob|mx|my|name (8-11: a mob on the way the route can't go round: the
+                                                                     seconds waited for it to move off, where, its name)
+                                             &avoid=1[&mobr=300][&goal=<the quest's goal line>] (with route=1): the route
+                                             kept mobr away from the zone's mobs (navmem, read-only) - not those named in
+                                             the goal line, nor (a fight goal) one by the goal
+  /navto?x=&y=&z=[&avoid=1&mobr=300]      -> where the wizard is and the route to a spot of the bot's own (the potion
+                                             seller): ok|1, zone|, pos|, route|x|y|left (all mobs kept away from with
+                                             avoid=1)
+  /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
+                                             mob|name|x|y|z|distance|quest (1: the quest's), or "none (<why>)"
                                              A field that can't be read for sure is left empty (target|||): goal, target,
                                              dist and path while the quest helper is still on the last zone, target and
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
@@ -65,7 +77,9 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              the game's path, the route planned round the walls (green, with the point
                                              it steers at), the wizard as an arrow showing its facing, the arrow's target
                                              (a ring) and the goal (a diamond; a door with the number of zone changes when
-                                             it's in another zone; on the edge, pointing, when off the picture). No zone
+                                             it's in another zone; on the edge, pointing, when off the picture), the mobs
+                                             (red dots, faint rings while the walker keeps away from them; the quest's
+                                             amber; the nearest named). No zone
                                              file: the overlay on a blank background. "ERR <why>" as /nav, or when the
                                              wizard's position can't be read
   /quit                                   -> stops
@@ -940,6 +954,10 @@ MAP_ROUTE = (110, 231, 183)
 MAP_DOOR = (197, 138, 249)
 MAP_ME = (242, 242, 242)
 MAP_TEXT = (154, 160, 166)
+MAP_MOB = (240, 82, 82)             # a mob kept away from
+MAP_MOB_QUEST = (245, 166, 35)      # ...one the quest is about (walked to)
+QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this zone) is what the goal is
+MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
 
 
 def nav_reader():
@@ -949,6 +967,61 @@ def nav_reader():
             import navmem
             NAV = navmem.NavMem(log=log)
         return NAV
+
+
+def word_forms(w):
+    """a word and its plurals: Soul / Souls, Fairy / Fairies, Wolf / Wolves, Axeman / Axemen"""
+    out = {w, w + 's', w + 'es'}
+    if w.endswith('y'):
+        out.add(w[:-1] + 'ies')
+    if w.endswith('f'):
+        out.add(w[:-1] + 'ves')
+    if w.endswith('man'):
+        out.add(w[:-3] + 'men')
+    return out
+
+
+def mob_name_re(name):
+    """a regex for a mob's name as a goal line writes it - any of its words plural (Lost Souls, Keepers of the Fang)"""
+    words = re.sub(r'[^a-z0-9 ]', ' ', name.lower()).split()
+    if not words:
+        return None
+    return re.compile(r'\b' + r'\s+'.join('(?:' + '|'.join(sorted(map(re.escape, word_forms(w)), key=len, reverse=True)) + ')'
+                                           for w in words) + r'\b')
+
+
+def mob_plural(name):
+    """(kept for the tests) the whole name and its plurals"""
+    return word_forms(name.lower())
+
+
+FIGHT_GOAL = re.compile(r'\b(defeat|destroy|kill|hunt|vanquish|beat|fight|battle|slay|collect|gather|obtain|retrieve|recover)\b'
+                        r'|\(\s*\d+\s*(of|/)\s*\d+\s*\)', re.I)
+
+
+def quest_mob(m, r, goal_line):
+    """the quest is about this mob: its name is in the goal line ("Defeat 3 Lost Souls ..."), or - the goal a fight
+    (or no goal line read) - it stands by the quest's goal in this zone (a boss the arrow leads to). Not a mob
+    wandering by a "Talk to ..." goal"""
+    line = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', (goal_line or '').lower()))
+    rx = mob_name_re(m['name'])
+    if rx is not None and line.strip() and rx.search(line):
+        return True
+    g = r.get('goal') if r else None
+    if goal_line and not FIGHT_GOAL.search(goal_line):
+        return False
+    return (g is not None and r.get('hops') == 0
+            and math.hypot(m['pos'][0] - g[0], m['pos'][1] - g[1]) <= QUEST_NEAR and abs(m['pos'][2] - g[2]) <= 260)
+
+
+def mobs_now(r, goal_line=''):
+    """(the zone's mobs [{name, pos, gid, template, quest}], why) - none ([], why) when they can't be read"""
+    mobs, why = nav_reader().mobs()
+    if mobs is None:
+        return [], why
+    for m in mobs:
+        m['quest'] = quest_mob(m, r, goal_line)
+    return mobs, ''
 
 
 ROUTER = None
@@ -1010,9 +1083,9 @@ def potion_sellers(zone, game_dir=''):
     return out
 
 
-def navto_lines(target, game_dir):
+def navto_lines(target, game_dir, avoid=False, mob_near=None):
     """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
-    bot's own - planned by router_to along the zone's nav graph"""
+    bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob"""
     nm = nav_reader()
     r, why = nm.read(path=False, wait=3.0)
     if r is None:
@@ -1030,7 +1103,11 @@ def navto_lines(target, game_dir):
             P, adj = geo.navgraph()
             jumps = {(a, b) for a in range(len(P)) for b, _, j in adj[a] if j}
             path = geo.nav_path(r['pos'], target, jumps)
-        res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False)
+        # (all the mobs kept away from - avoid: mobavoid - on the way to the potion seller none is the quest's)
+        import navroute
+        mobs = mobs_now(None)[0] if avoid else None
+        res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False, mobs=mobs or None,
+                      mob_near=mob_near or navroute.MOB_NEAR)
     except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot
         log(f'/navto: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -1039,18 +1116,22 @@ def navto_lines(target, game_dir):
     return lines + [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}"]
 
 
-def route_lines(r, game_dir):
-    """/nav's route lines for a reading r (made with path=True)"""
+def route_lines(r, game_dir, avoid=None, mob_near=None):
+    """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from"""
     try:
-        res = router(game_dir).route(r)
+        import navroute
+        res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR)
     except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
         log(f'route: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
     if res.get('aim') is None:
         return ['route|||', 'routewhy|' + (res.get('why') or '?')]
-    # (fields 5-7: right at a teleport on the game's path - the seconds waited there, and where it is)
+    # (fields 5-7: right at a teleport on the game's path - the seconds waited there, and where it is; 8-11: a mob
+    # on the way the route can't go round - the seconds waited for it to move off, where it is, its name)
     jump = res.get('jump')
     tail = '||' if jump is None else f"{jump:.0f}|{res['jump_at'][0]:.0f}|{res['jump_at'][1]:.0f}"
+    mob = res.get('mob')
+    tail += '||||' if mob is None else f"|{mob:.0f}|{res['mob_at'][0]:.0f}|{res['mob_at'][1]:.0f}|{res['mob_name'].replace('|', ' ')}"
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail]
 
 
@@ -1268,9 +1349,10 @@ def map_font(size):
     return MAP_FONTS[size]
 
 
-def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None):
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False):
     """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
-    planned route's answer (navroute) to draw, if any"""
+    planned route's answer (navroute) to draw, if any; mobs: the zone's mobs (mobs_now) - red dots, the quest's
+    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across"""
     from PIL import ImageDraw
     upp = span / min(w, h)
     ukey = round(upp, 4)
@@ -1347,6 +1429,26 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None):
                           fill=col + (255,), outline=MAP_BG + (255,))
         else:
             edge_pointer(q, col)
+    # the mobs: a red dot each (the quest's amber), a faint ring as far as they're kept away from (on a layer under
+    # everything else drawn - a see-through fill would wipe out what's under it here); names by the nearest few
+    near_r = (MOBS_SHOWN.get('near') or 300.0) / upp * S
+    by_dist = sorted(mobs or [], key=lambda m: math.hypot(m['pos'][0] - r['pos'][0], m['pos'][1] - r['pos'][1]))
+    fm = map_font(int(5.5 * unit))
+    rings = None
+    for k, m in enumerate(by_dist):
+        q = at(m['pos'])
+        if not on_pic(q, -near_r):
+            continue
+        col = MAP_MOB_QUEST if m.get('quest') else MAP_MOB
+        if not m.get('quest') and rings_on:
+            if rings is None:
+                rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+                dr = ImageDraw.Draw(rings)
+            dr.ellipse([q[0] - near_r, q[1] - near_r, q[0] + near_r, q[1] + near_r], fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
+        s = 2.8 * unit
+        d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=col + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.7)))
+        if k < 6 and on_pic(q, 4 * unit):
+            d.text((q[0] + s * 1.6, q[1]), m['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
     if r['target'] is not None:
         q = at(r['target'])
         if on_pic(q, 4 * unit):
@@ -1375,6 +1477,8 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None):
     if layers is None or layers.why:
         d.text((w * S - 4 * unit, h * S - 4 * unit), 'no map for this zone', fill=MAP_TEXT + (200,), font=f, anchor='rs')
     out = img.convert('RGBA')
+    if rings is not None:
+        out.alpha_composite(rings.resize((w, h), Image.BOX))
     out.alpha_composite(ov.resize((w, h), Image.BOX))
     return out.convert('RGB')
 
@@ -1478,7 +1582,25 @@ class Handler(BaseHTTPRequestHandler):
                     target = (float(q['x']), float(q['y']), float(q['z']))
                 except (KeyError, ValueError):
                     return self.reply('ERR x, y, z wanted', 400)
-                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir)))
+                avoid = q.get('avoid', '0') not in ('', '0')
+                try:
+                    near = min(1500.0, max(100.0, float(q.get('mobr') or 0) or 300.0))
+                except ValueError:
+                    near = 300.0
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near)))
+            if u.path == '/mobs':
+                nm = nav_reader()
+                r, why = nm.read(path=False)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                mobs, why = mobs_now(r, q.get('goal', ''))
+                if not mobs:
+                    return self.reply('none' + (' (' + why + ')' if why else ''))
+                me = r['pos'] or (0.0, 0.0, 0.0)
+                return self.reply('\n'.join(
+                    f"mob|{m['name'].replace('|', ' ')}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
+                    f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m['quest'] else 0}"
+                    for m in sorted(mobs, key=lambda m: math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]))))
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
                 with_route = q.get('route', '0') not in ('', '0')
@@ -1493,7 +1615,19 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + why)
                 lines = nav_lines(r, with_path)
                 if with_route:
-                    lines += route_lines(r, nm.game_dir)
+                    # (the mobs kept away from: all but the quest's - asked for with avoid=1)
+                    avoid, near = None, None
+                    if q.get('avoid', '0') not in ('', '0'):
+                        try:
+                            near = min(1500.0, max(100.0, float(q.get('mobr') or 0) or 300.0))
+                        except ValueError:
+                            near = 300.0
+                        mobs, _ = mobs_now(r, q.get('goal', ''))
+                        avoid = [m for m in mobs if not m['quest']]
+                        MOBS_SHOWN.update(quest={m['gid'] for m in mobs if m['quest']}, near=near, avoid=True, at=time.time())
+                    else:
+                        MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
+                    lines += route_lines(r, nm.game_dir, avoid, near)
                 return self.reply('\n'.join(lines))
             if u.path == '/navmap':
                 w, h = int(q['w']), int(q['h'])
@@ -1511,12 +1645,19 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + why)
                 if r['pos'] is None or r['yaw'] is None:
                     return self.reply("ERR the wizard's position can't be read (" + (r.get('why_player') or '?') + ')')
+                # (the mobs as the walker's last ask split them - the quest's, the ones kept away from)
+                mobs, _ = mobs_now(r)
+                fresh = time.time() - (MOBS_SHOWN.get('at') or 0) < 10
+                for m in mobs:
+                    m['quest'] = m['gid'] in MOBS_SHOWN.get('quest', ()) if fresh else False
                 try:
-                    route = router(nm.game_dir).route(r, wait=False)
+                    import navroute
+                    avoid = [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None
+                    route = router(nm.game_dir).route(r, wait=False, mobs=avoid, mob_near=MOBS_SHOWN.get('near') or navroute.MOB_NEAR)
                 except Exception:  # noqa: BLE001 - the map without it
                     route = None
                 with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span, route)
+                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')))
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':

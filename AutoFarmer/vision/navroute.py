@@ -41,6 +41,16 @@ How it plans
 Things the zone files don't have - NPCs, other players, doors that open - aren't avoided; the walker's own
 "stuck: back up and go round" handles those as before.
 
+Mobs (the game's memory: navmem's mobs, those the caller wants avoided - not the ones the quest is about)
+  * Each square within MOB_NEAR of a mob (on the wizard's storey) costs MOB_COST more, and up to MOB_SOFT away
+    less and less more: the route goes round them where there's room. Not a wall: with no other way it's still
+    a route. The field is worked out again when a mob near it has moved MOB_MOVED (at most every MOB_REPLAN s).
+  * The route on (MOB_AHEAD of it) still coming nearer a mob (on the wizard's storey) than the wizard is now, to
+    within MOB_NEAR: the answer says so ('mob': the seconds it's waited, 'mob_at', 'mob_name') - the walker stands
+    still till it moves off. A mob behind the wizard, or whose ring the route leads out of, doesn't count. One wait
+    however the mobs take turns blocking: after MOB_GIVEUP s those mobs aren't avoided for MOB_IGNORE s (walked
+    past - one may come for the wizard).
+
 Teleports
   * The zone's nav graph has links that aren't walked: a trolley, a portal, a hole down to the sewers - a link
     far longer than walking ones (JUMP_LEN), or between heights far apart and steeper than stairs (JUMP_DZ,
@@ -96,6 +106,15 @@ JUMP_RINGS = 30         # ...that free spot looked for this many squares round i
 JUMP_GIVEUP = 15.0      # ...given up after this many seconds there (counted only while it's asked about)
 BLOCK_FOR = 1800.0      # ...for this long (it may open once a quest is done)
 JUMP_COST = 500.0       # a teleport's cost when routing round one on the nav graph
+MOB_NEAR = 300.0        # a mob avoided: the wizard kept at least this far from it (they come for it nearer)
+MOB_SOFT = 520.0        # ...and dearer up to this far
+MOB_COST = 40.0         # extra cost of a square within MOB_NEAR (not a wall: with no other way, it's walked past)
+MOB_SOFT_COST = 4.0     # ...right outside it, fading to nothing at MOB_SOFT
+MOB_MOVED = 60.0        # a mob near the field this far from where the field has it: a new field...
+MOB_REPLAN = 0.7        # ...at most this often (s)
+MOB_AHEAD = 900.0       # the route this far on passing within MOB_NEAR of a mob: wait for it to move off...
+MOB_GIVEUP = 25.0       # ...for this long at most (s); then it isn't avoided...
+MOB_IGNORE = 60.0       # ...for this long (s)
 
 DIRS = [(-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
         (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)), (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2))]
@@ -538,10 +557,12 @@ def _sl(d, n):
 class Field:
     """The cost to the carrot from every square of a window"""
 
-    def __init__(self, geo, pos, carrot, goal, rest, via=(), carrot_z=None, carrot_goal=True, rings=GOAL_RINGS):
+    def __init__(self, geo, pos, carrot, goal, rest, via=(), carrot_z=None, carrot_goal=True, rings=GOAL_RINGS,
+                 mobs=(), mob_near=MOB_NEAR):
         t0 = time.perf_counter()
         self.zone, self.z, self.carrot, self.goal, self.rest = geo.zone, pos[2], carrot, goal, rest
         self.why, self.D = '', None
+        self.mobs, self.mob_near, self.mob_mask = (), mob_near, None
         # (round the wizard, the carrot and the game's path between them - a way round that strays further than
         # MARGIN from those isn't looked for)
         xs = [pos[0], carrot[0]] + [p[0] for p in via]
@@ -581,6 +602,21 @@ class Field:
             self.see_blocked |= ground == 0
         near = (dist > hard_cells) & (dist <= soft_cells)
         cost = cost + np.where(near, SOFT_COST * (soft_cells + 1 - dist) / (soft_cells + 1 - hard_cells), 0.0)
+        # the mobs avoided: dearer near them (on this storey; within the window or near enough to reach into it)
+        soft = max(MOB_SOFT, mob_near + 2 * CELL)
+        x1, y1 = self.x0 + self.nx * CELL, self.y0 + self.ny * CELL
+        kept = tuple((m[0], m[1], m[2]) for m in mobs
+                     if self.x0 - soft <= m[0] <= x1 + soft and self.y0 - soft <= m[1] <= y1 + soft
+                     and abs(m[2] - pos[2]) <= FLOOR_BAND)
+        self.mobs, self.mob_mask = kept, np.zeros((self.ny, self.nx), dtype=bool)
+        if kept:
+            cx = self.x0 + (np.arange(self.nx) + 0.5) * CELL
+            cy = self.y0 + (np.arange(self.ny) + 0.5) * CELL
+            for mx, my, _ in kept:
+                d = np.hypot(cx[None, :] - mx, cy[:, None] - my)
+                inner = d <= mob_near
+                self.mob_mask |= inner
+                cost = cost + np.where(inner, MOB_COST, np.where(d <= soft, MOB_SOFT_COST * (soft - d) / (soft - mob_near), 0.0))
         cost[self.blocked] = np.inf
         self.cost, self.ground, self.H = cost, ground, H
         g = self._free_near(*self.cell(carrot), rings)
@@ -716,6 +752,8 @@ class Planner:
         self.wrong_way = set()               # teleports the game's path took the wrong way (logged once each)
         self._round = None                   # the last _path_round: (key, answer)
         self.jwait = None                    # waiting at one: {'key', 'waited', 'last'}
+        self.mwait = None                    # waiting for mobs to move off the way: {'waited', 'last', 'gids'}
+        self.mob_ignored = {}                # mobs waited for too long: gid -> when (not avoided for MOB_IGNORE)
 
     # ---- the background thread
     def _geo(self, zone):
@@ -744,7 +782,7 @@ class Planner:
                     why = geo.why
                 else:
                     f = Field(geo, job['pos'], job['carrot'], job['goal'], job['rest'], job['via'], job['carrot_z'], job['carrot_goal'],
-                              job.get('rings', GOAL_RINGS))
+                              job.get('rings', GOAL_RINGS), job.get('mobs', ()), job.get('mob_near', MOB_NEAR))
                     why = f.why
             except Exception as e:  # noqa: BLE001 - logged; no route, the walker steers as before
                 why = f'the planner failed ({e!r})'
@@ -896,11 +934,30 @@ class Planner:
             math.hypot(G[q + 1][0] - G[q][0], G[q + 1][1] - G[q][1]) for q in range(k, len(G) - 1))
         return (G[k][0], G[k][1]), left
 
-    def route(self, r, wait=True):
-        """the answer (see the top); wait: count the time at a teleport (the walker's asks - not the map's)"""
+    @staticmethod
+    def _mobs_moved(f, mobs):
+        """the mobs near f's window aren't where f has them (moved MOB_MOVED, come or gone)"""
+        if f is None:
+            return False
+        soft = max(MOB_SOFT, f.mob_near + 2 * CELL)
+        x1, y1 = f.x0 + f.nx * CELL, f.y0 + f.ny * CELL
+        now = [m for m in mobs if f.x0 - soft <= m[0] <= x1 + soft and f.y0 - soft <= m[1] <= y1 + soft
+               and abs(m[2] - f.z) <= FLOOR_BAND]
+        if len(now) != len(f.mobs):
+            return True
+        return any(min((math.hypot(m[0] - q[0], m[1] - q[1]) for q in f.mobs), default=1e9) > MOB_MOVED for m in now)
+
+    def route(self, r, wait=True, mobs=None, mob_near=MOB_NEAR):
+        """the answer (see the top); wait: count the time at a teleport or a mob (the walker's asks - not the
+        map's); mobs: [{'pos': (x, y, z), 'gid', 'name'}] to keep away from"""
         if r is None or r.get('pos') is None or r.get('goal') is None or not r.get('zone'):
             return {'why': 'no position or goal'}
         pos, goal, zone = tuple(r['pos']), tuple(r['goal']), r['zone']
+        now = time.time()
+        for gid in [g for g, at in list(self.mob_ignored.items()) if now - at > MOB_IGNORE]:
+            self.mob_ignored.pop(gid, None)      # (the map's asks run alongside the walker's)
+        mobs = [m for m in (mobs or ()) if m.get('gid') not in self.mob_ignored]
+        mob_pts = [tuple(m['pos']) for m in mobs]
         # (the wait at a teleport is one visit's: forgotten once the wizard's well away from it, or elsewhere)
         w = self.jwait
         if w is not None and (w['key'][0] != zone or math.hypot(w['key'][1][0] - pos[0], w['key'][1][1] - pos[1]) > 1200
@@ -962,8 +1019,10 @@ class Planner:
         if carrot is None:
             return fail("the game's path is out of reach")
         j, i = f.cell(pos) if f is not None else (0, 0)
+        mobs_moved = self._mobs_moved(f, mob_pts)
         stale = (f is None or not f.inside(j, i, EDGE_CELLS) or abs(pos[2] - f.z) > REPLAN_Z
-                 or math.hypot(f.carrot[0] - carrot[0], f.carrot[1] - carrot[1]) > 2 * CELL)
+                 or math.hypot(f.carrot[0] - carrot[0], f.carrot[1] - carrot[1]) > 2 * CELL
+                 or (mobs_moved and time.time() - f.made >= MOB_REPLAN))
         failed = self.failed
         if stale and not self.busy and self.want is None:
             same_fail = (failed is not None and failed[0]['zone'] == zone
@@ -972,7 +1031,8 @@ class Planner:
                          and abs(failed[0]['pos'][2] - pos[2]) <= REPLAN_Z and time.time() - failed[0]['at'] < 5)
             if not same_fail:
                 self._ask({'zone': zone, 'pos': pos, 'carrot': carrot, 'carrot_z': cz, 'carrot_goal': cgoal, 'goal': goal,
-                           'rest': rest, 'via': via, 'at': time.time(), 'rings': JUMP_RINGS if jump is not None else GOAL_RINGS})
+                           'rest': rest, 'via': via, 'at': time.time(), 'rings': JUMP_RINGS if jump is not None else GOAL_RINGS,
+                           'mobs': mob_pts, 'mob_near': mob_near})
         # (the last job, for the carrot as it is now, found no plan: the old field leads only to the old carrot -
         # walked to it, it would hold the wizard there. No aim: the walker steers at the arrow meanwhile)
         if (f is not None and failed is not None and failed[0]['zone'] == zone
@@ -987,7 +1047,10 @@ class Planner:
         pts = [(pos[0], pos[1])] + [f.world(*c) for c in cells[1:]]
         aim = None
         j0, i0 = f.cell(pos)
-        for look, mask, margin in ((LOOK_FAR, f.see_blocked, CLEAR_SEE), (LOOK_NEAR, f.blocked, CLEAR)):
+        # (the aim isn't looked for across a mob's ring either - unless the wizard's in one: then out along the route)
+        mm = f.mob_mask if f.mob_mask is not None and f.mob_mask.any() and not f.mob_mask[j0, i0] else None
+        for look, mask, margin in ((LOOK_FAR, f.see_blocked if mm is None else f.see_blocked | mm, CLEAR_SEE),
+                                   (LOOK_NEAR, f.blocked if mm is None else f.blocked | mm, CLEAR)):
             skip = margin if mask[j0, i0] else 0.0
             run = 0.0
             for k in range(1, len(pts)):
@@ -1010,4 +1073,47 @@ class Planner:
         out = {'aim': aim, 'left': left, 'route': route, 'why': ''}
         if waited is not None:
             out['jump'], out['jump_at'] = waited, (jump[0][0], jump[0][1])
+        # a mob on the way the route can't go round: wait for it to move off - one wait however mobs take turns being
+        # the one in the way (asks less than 2 s apart), given up as a whole after MOB_GIVEUP. (Not cleared while a
+        # new field is being worked out for mobs that moved: only a field that knows where they are clears it)
+        blocker = self._mob_on_way(pts, mobs, mob_near, pos[2]) if mobs else None
+        if wait:
+            w = self.mwait
+            if blocker is None:
+                if not mobs_moved:
+                    self.mwait = None
+            else:
+                if w is None or now - w['last'] >= 2.0:
+                    w = self.mwait = {'waited': 0.0, 'last': now, 'gids': set()}
+                else:
+                    w['waited'] += now - w['last']
+                w['last'] = now
+                w['gids'].add(blocker.get('gid'))
+                if w['waited'] > MOB_GIVEUP:
+                    for gid in w['gids']:
+                        self.mob_ignored[gid] = now
+                    self.mwait = None
+                    self.log(f"route: {blocker.get('name') or 'a mob'} has stood on the way for {MOB_GIVEUP:.0f} s - walking on past it")
+                else:
+                    out['mob'], out['mob_at'], out['mob_name'] = w['waited'], tuple(blocker['pos'][:2]), blocker.get('name') or ''
         return out
+
+    @staticmethod
+    def _mob_on_way(pts, mobs, mob_near, z):
+        """the first mob along the route's first MOB_AHEAD that it comes within 0.85 mob_near of - and nearer than
+        the wizard is to it now (not one behind, nor one whose ring it leads out of) - on the wizard's storey; or
+        None"""
+        near = mob_near * 0.85
+        here = [(m, math.hypot(m['pos'][0] - pts[0][0], m['pos'][1] - pts[0][1])) for m in mobs
+                if abs(m['pos'][2] - z) <= FLOOR_BAND]
+        run, prev = 0.0, pts[0]
+        for q in pts[1:]:
+            run += math.hypot(q[0] - prev[0], q[1] - prev[1])
+            prev = q
+            if run > MOB_AHEAD:
+                break
+            for m, d0 in here:
+                d = math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1])
+                if d <= near and d < d0 - CELL:
+                    return m
+        return None

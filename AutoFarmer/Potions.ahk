@@ -630,7 +630,8 @@ PotionSellerIn(zone)
 ;route planner along the zone's map): {x, y, z, yaw, ax, ay, why} - ax/ay "" with no route - or ""
 PotionNavTo(s)
 	{
-	answer := VisionGet("/navto?x=" Round(s.x, 1) "&y=" Round(s.y, 1) "&z=" Round(s.z, 1), 2500, true)
+	;(kept away from the zone's mobs as the settings say: mobavoid, mobradius)
+	answer := VisionGet("/navto?x=" Round(s.x, 1) "&y=" Round(s.y, 1) "&z=" Round(s.z, 1) NavMobArgs(), 2500, true)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
 	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}

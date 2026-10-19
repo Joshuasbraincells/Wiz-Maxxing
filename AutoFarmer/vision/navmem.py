@@ -4,12 +4,16 @@
     nm = NavMem(log=print)
     r, why = nm.read(path=True)     # r: a dict (see NavMem.read), or None and why it can't be read
 
-    python navmem.py [-n 5] [-i 1] [--path]     readings from the command line (and how long each took)
+    mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), gid, template}], or None and why
+
+    python navmem.py [-n 5] [-i 1] [--path] [--mobs]   readings from the command line (and how long each took)
 
 SAFETY. The game is opened with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else. The only process APIs used are
-CreateToolhelp32Snapshot / Process32*W (finding the pid), OpenProcess, ReadProcessMemory,
-EnumProcessModulesEx, GetModuleBaseNameW, QueryFullProcessImageNameW and GetExitCodeProcess. Nothing is
+CreateToolhelp32Snapshot / Process32*W (finding the pid), OpenProcess, ReadProcessMemory, VirtualQueryEx and
+QueryWorkingSetEx (which of its memory is in use and in RAM - for the mobs; only that is read, nothing is paged
+in), EnumProcessModulesEx, GetModuleBaseNameW,
+QueryFullProcessImageNameW and GetExitCodeProcess. Nothing is
 ever written, allocated, injected, hooked, suspended or debugged; no window is touched and no input is
 sent. Signatures are looked for in a copy of the game's code read with ReadProcessMemory.
 
@@ -30,6 +34,9 @@ by a signature in its code, or checked by a type name / window name it carries):
                    +0x64 pitch, +0x68 roll, +0x6C yaw (radians)
                  ClientObject +0xA8 x, y, z, +0xB4 pitch, roll, yaw: its own copy, used while it has
                    no body (zoning)
+           The camera's object is checked to be a ClientObject by its type name (...ClientObject): a destroyed one's
+           reads as PropertyClass (its destructor leaves the base class's vtable) and isn't followed - logged out or
+           disconnected, the old world stays in memory a while.
            Z is up; yaw is measured from -Y: forward = (-sin yaw, -cos yaw).
 
   quest:   [exe + rva] WizardGUIManager*                    sig GUIMGR_HUD (candidates, voted), each
@@ -46,6 +53,20 @@ by a signature in its code, or checked by a type name / window name it carries):
                           +0xCFC is the teleporter to take in this zone        sig HOPS
                    +0xD10 Path*: +0 std::list head, +8 count; list node +0x10 NavNode*,
                           NavNode +0x30 x, y, z (a zone.nav node)              sig PATH
+           mobs:    every ClientObject of the zone holds the zone's ClientZone (GameClient +0x21368) at +0x130:
+             the game's heap (its committed private read-write memory) is looked through for that pointer by a
+             background thread - all of it (the pages in RAM) every OBJ_SETTLE_EVERY s for OBJ_SETTLE s in a new zone (its
+             mobs come after the loading screen) and while none is found, then every OBJ_FULL s, in between only
+             where objects were found, every OBJ_QUICK s (it stops when nobody has asked for OBJ_IDLE s - a long
+             battle - keeping what it found: each is checked again at every read, and it carries on from there).
+             ClientObject +0 vtable (a live one's type name ends ClientObject: a destroyed one's is its base class's,
+             PropertyClass), +0x48 global id, +0x58 template, +0xA8 x, y, z (its own copy - the body's,
+             as the wizard's, when it has one); template +0x60 its name, +0xA8 its display name's key, +0x1C8 its
+             school. A mob: a display name in one of the game's *Mobs name tables (Root.wad Locale/en-US/
+             WizardMobs.lang, Mobs.lang) that has a name - wisps and the like have none - and a school (a teleporter
+             can borrow a mob's name). An object is re-checked at each read
+             - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
+             position is used.
            The quest thread (it updates every 100 ms) keeps its own zone name: after a zone change its goal
            belongs to the old zone until it catches up, so goal, target, distance and path count only while
            the thread's zone is the game's zone (and target / distance only while the arrow's hops are the
@@ -133,6 +154,20 @@ def foreground_pid():
         return 0
 
 
+class MEMORY_BASIC_INFORMATION(C.Structure):
+    _fields_ = [("BaseAddress", C.c_void_p), ("AllocationBase", C.c_void_p), ("AllocationProtect", W.DWORD),
+                ("PartitionId", W.WORD), ("RegionSize", C.c_size_t), ("State", W.DWORD), ("Protect", W.DWORD),
+                ("Type", W.DWORD)]
+
+
+k32.VirtualQueryEx.argtypes = [W.HANDLE, C.c_void_p, C.POINTER(MEMORY_BASIC_INFORMATION), C.c_size_t]
+k32.VirtualQueryEx.restype = C.c_size_t
+psapi.QueryWorkingSetEx.argtypes = [W.HANDLE, C.c_void_p, W.DWORD]
+psapi.QueryWorkingSetEx.restype = W.BOOL
+MEM_COMMIT, MEM_PRIVATE, PAGE_READWRITE = 0x1000, 0x20000, 0x04
+PAGE = 0x1000
+
+
 class ReadError(Exception):
     pass
 
@@ -193,6 +228,52 @@ class Proc:
 
     def u64(self, a):
         return struct.unpack("<Q", self.read(a, 8))[0]
+
+    def regions(self):
+        """[(base, size)] of the game's committed private read-write memory - where its heap objects are"""
+        out, addr, m = [], 0x10000, MEMORY_BASIC_INFORMATION()
+        while addr < 0x7FFFFFFF0000:
+            if not k32.VirtualQueryEx(self.h, C.c_void_p(addr), C.byref(m), C.sizeof(m)):
+                if not out and addr == 0x10000:
+                    raise ReadError("VirtualQueryEx failed (%d) - the game was opened without "
+                                    "PROCESS_QUERY_INFORMATION" % C.get_last_error())
+                break
+            base, size = m.BaseAddress or 0, m.RegionSize
+            if size <= 0:
+                break
+            if m.State == MEM_COMMIT and m.Type == MEM_PRIVATE and m.Protect == PAGE_READWRITE:
+                out.append((base, size))
+            addr = base + size
+        return out
+
+    def resident(self, base, size):
+        """[(base, size)] runs of the pages of [base, base + size) that are in the game's working set (in RAM) -
+        reading only those pages nothing in; the whole range if that can't be asked"""
+        import numpy as np
+        n = size // PAGE
+        if n <= 0:
+            return []
+        runs = []
+        for b0 in range(0, n, 0x10000):
+            k = min(0x10000, n - b0)
+            info = np.zeros(2 * k, dtype=np.uint64)
+            info[0::2] = base + (b0 + np.arange(k, dtype=np.uint64)) * PAGE
+            if not psapi.QueryWorkingSetEx(self.h, info.ctypes.data, info.nbytes):
+                return [(base, size)]
+            valid = (info[1::2] & 1).astype(bool)
+            edges = np.flatnonzero(np.diff(np.concatenate(([False], valid, [False])).astype(np.int8)))
+            for s, e in zip(edges[0::2], edges[1::2]):
+                runs.append((base + (b0 + int(s)) * PAGE, int(e - s) * PAGE))
+        return runs
+
+    def read_pieces(self, base, size, piece=0x10000):
+        """[(address, bytes)] of [base, base + size) read in pieces, the unreadable ones left out"""
+        out = []
+        for off in range(0, size, piece):
+            raw = self.try_read(base + off, min(piece, size - off))
+            if raw is not None:
+                out.append((base + off, raw))
+        return out
 
     def stable(self, addr, n, tries=6):
         """n bytes at addr, read until two reads in a row agree (a game thread may be writing them)"""
@@ -282,8 +363,9 @@ class TypeNamer:
         self.m, self.p, self.cache = mod, mod.p, {}
 
     def of_vtable(self, vt):
-        if vt in self.cache:
-            return self.cache[vt]
+        name = self.cache.get(vt, self)               # (one look: the objects thread may clear the cache meanwhile)
+        if name is not self:
+            return name
         name = None
         if self.m.in_section(vt, ".rdata"):
             f = self.p.try_read(vt, 8)
@@ -375,7 +457,16 @@ KNOWN = {"gameclient_rva": 0x3320FF0, "guimgr_rva": 0x3322460, "gm_hud": 0x2D0, 
          "qhh_thread": 0x2C8, "gc_elastic_cam": 0x222C8, "cam_attached_object": 0x108, "gc_zone": 0x21368}
 # Data offsets that every object of the kind carries (not tied to a signature; seen on every object)
 DATA = {"window_name": 0x50, "thread_name": 0xB0, "navnode_pos": 0x30, "list_value": 0x10,
-        "body_parent": 0x48, "co_orientation_after_location": 0xC}
+        "body_parent": 0x48, "co_orientation_after_location": 0xC,
+        "co_gid": 0x48, "co_template": 0x58, "co_zone": 0x130, "tpl_name": 0x60, "tpl_display": 0xA8,
+        "tpl_school": 0x1C8}
+# The zone's objects (the mobs): the heap read in pieces this big; quick looks (where objects were found) every
+# OBJ_QUICK s, all of it every OBJ_FULL s and on a new zone; the thread stops when nobody's asked for OBJ_IDLE s
+SCAN_CHUNK = 0x400000
+OBJ_QUICK, OBJ_FULL, OBJ_IDLE, OBJ_SETTLE, OBJ_SETTLE_EVERY = 3.0, 15.0, 120.0, 20.0, 5.0
+OBJ_SPAN = 0x138                     # an object read from +0 to past its zone pointer (+0x130)
+MOB_KEY = re.compile(r"^(\w*Mobs)_(\d+)$")
+MOB_TABLES = ("WizardMobs", "Mobs")
 
 
 def scan(code):
@@ -547,6 +638,30 @@ class _Attached:
                         return base + i
         return None
 
+    def is_client_object(self, v):
+        """v is a live ClientObject: its type name (from its vtable) ends ClientObject - a destroyed one's vtable is
+        its base class's (it reads PropertyClass), its memory otherwise much as it was"""
+        if not ptr_ok(v):
+            return False
+        n = self.tn.of(v)
+        return bool(n) and n.endswith("ClientObject")
+
+    def _object_at(self, obj, off):
+        """the pointer at obj+off if it's a ClientObject, else 0"""
+        b = self.p.try_read(obj + off, 8)
+        v = struct.unpack("<Q", b)[0] if b else 0
+        return v if self.is_client_object(v) else 0
+
+    def _scan_objects(self, obj, size):
+        """the first offset in obj (size bytes) holding a ClientObject"""
+        raw = self.p.try_read(obj, size)
+        if raw is None:
+            return None
+        for i in range(0, size - 7, 8):
+            if self.is_client_object(struct.unpack_from("<Q", raw, i)[0]):
+                return i
+        return None
+
     def _named(self, obj, off, name_off, name):
         """the pointer at obj+off if the object's name string (at name_off) is name, else 0"""
         b = self.p.try_read(obj + off, 8)
@@ -608,10 +723,7 @@ class _Attached:
                            lambda obj, off: self._typed(obj, off, is_cam))
         if not cam:
             return None, "no camera controller (not in the game world)"
-        is_obj = lambda n: n.endswith("ClientObject")
-        co = self._member("cam_attached_object", cam,
-                          lambda obj, size: self._scan_typed(obj, size, is_obj), 0x400,
-                          lambda obj, off: self._typed(obj, off, is_obj))
+        co = self._member("cam_attached_object", cam, self._scan_objects, 0x400, self._object_at)
         if not co:
             return None, "the camera follows no object"
         anim = p.u64(co + o["co_anim"])
@@ -625,6 +737,53 @@ class _Attached:
             return None, "the position isn't a number"
         yaw = (yaw + math.pi) % (2 * math.pi) - math.pi
         return {"pos": (x, y, z), "yaw": yaw, "source": src}, ""
+
+    def zone_ptr(self, gc):
+        """the ClientZone the game is in (every object of the zone holds it at +0x130), or 0"""
+        if self.o.get("gc_zone") is None:
+            return 0
+        cz = self.p.u64(gc + self.o["gc_zone"])
+        return cz if ptr_ok(cz) and self.tn.of(cz) == "ClientZone" else 0
+
+    def scan_objects(self, cz, regions=None):
+        """([addresses of the objects holding cz at +0x130], [(base, size) of the regions they were in]) - in
+        regions, or all of the game's heap (only its pages in RAM)"""
+        import numpy as np                          # (only here: the rest of navmem doesn't need it)
+        needle = np.uint64(cz)
+        found, where = [], []
+        for base, size in (regions if regions is not None else self.p.regions()):
+            hit = False
+            for rb, rs in self.p.resident(base, size):
+                for off in range(0, rs, SCAN_CHUNK):
+                    n = min(SCAN_CHUNK, rs - off)
+                    raw = self.p.try_read(rb + off, n)
+                    parts = [(rb + off, raw)] if raw is not None else self.p.read_pieces(rb + off, n)
+                    for at, data in parts:
+                        idx = np.flatnonzero(np.frombuffer(data, dtype=np.uint64, count=len(data) // 8) == needle)
+                        if len(idx):
+                            hit = True
+                            found.extend(at + int(i) * 8 - DATA["co_zone"] for i in idx)
+            if hit:
+                where.append((base, size))
+        return found, where
+
+    def template_kind(self, tpl, names, cache):
+        """(mob name or "", template name) of a template - a mob's display name is in one of the *Mobs name
+        tables (names: {key: English name}) and has a name, and it has a school (Fire, Storm...: one that fights - a
+        teleporter can borrow a mob's name, Wormguts Tower); None if tpl isn't a template (cached per template)"""
+        if tpl in cache:
+            return cache[tpl]
+        k = None
+        tname = self.tn.of(tpl) if ptr_ok(tpl) else None
+        if tname and tname.endswith("Template"):
+            key = self.p.try_string(tpl + DATA["tpl_display"]) or ""
+            m = MOB_KEY.match(key)
+            fights = bool(m) and bool((self.p.try_string(tpl + DATA["tpl_school"]) or "").strip())
+            k = ((names.get(key) or "") if fights else "", self.p.try_string(tpl + DATA["tpl_name"]) or "")
+        if len(cache) > 20000:
+            cache.clear()
+        cache[tpl] = k
+        return k
 
     def _group(self, base, fields):
         """{name: value} of fields {name: (offset, struct format)} at base, the whole span read until two
@@ -757,6 +916,11 @@ class NavMem:
         self._thread = None
         self._failed = (0, 0.0, "")      # pid, when to try again, why
         self._last_why = None
+        # the zone's mobs (the objects thread): {object address: (gid, name, template name)}, the zone they're
+        # of, why there are none, when last asked for, the English names of the *Mobs tables
+        self._objs, self._obj_cz, self._obj_why, self._obj_asked = {}, 0, "not looked yet", 0.0
+        self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
+        self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
 
     def close(self):
         with self.lock:
@@ -866,6 +1030,147 @@ class NavMem:
         with self.lock:
             return self.st.describe() if self.st else "not attached"
 
+    # ------------------------------------------------------------ the zone's mobs
+    def mobs(self):
+        """(mobs, why): mobs = [{name, pos (x, y, z), gid, template}] - the mobs in the game's zone, their
+        positions read now - or None and why (not attached, not looked yet, the names unreadable...). Never
+        raises."""
+        try:
+            with self.lock:
+                self._obj_asked = time.monotonic()
+                if self._obj_thread is None or not self._obj_thread.is_alive():
+                    self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
+                    self._obj_thread.start()
+                st, cz, objs, why = self.st, self._obj_cz, list(self._objs.items()), self._obj_why
+            if st is None or not cz or why:
+                return None, why or "not attached"
+            out, gids = [], set()
+            for obj, (gid, name, tname, vt) in objs:
+                if gid in gids:
+                    continue
+                raw = st.p.try_read(obj, OBJ_SPAN)
+                if raw is None:
+                    continue
+                # (still the same live object of this zone: a destroyed one's vtable is changed by its destructor,
+                # freed and reused memory holds something else)
+                if (struct.unpack_from("<Q", raw, 0)[0] != vt or struct.unpack_from("<Q", raw, DATA["co_gid"])[0] != gid
+                        or struct.unpack_from("<Q", raw, DATA["co_zone"])[0] != cz):
+                    continue
+                pos = self._mob_pos(st, obj, raw)
+                if pos is not None:
+                    gids.add(gid)
+                    out.append({"name": name, "pos": pos, "gid": gid, "template": tname})
+            return out, ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the mobs failed (%r)" % (e,)
+
+    @staticmethod
+    def _mob_pos(st, obj, raw):
+        """a mob's x, y, z: its body's (where it's drawn, moving) when it has one - as the wizard's - else the
+        object's own copy; None if neither is a number"""
+        o, p = st.o, st.p
+        try:
+            anim = p.u64(obj + o["co_anim"]) if o.get("co_anim") else 0
+            body = p.u64(anim + o["anim_body"]) if ptr_ok(anim) and o.get("anim_body") else 0
+            if ptr_ok(body) and p.try_read(body + DATA["body_parent"], 8) == struct.pack("<Q", obj):
+                b = p.try_read(body + o["body_pos"], 12)
+                if b:
+                    x, y, z = struct.unpack("<3f", b)
+                    if finite(x, y, z):
+                        return (x, y, z)
+        except ReadError:
+            pass
+        x, y, z = struct.unpack_from("<3f", raw, o.get("co_location") or 0xA8)
+        return (x, y, z) if finite(x, y, z) else None
+
+    def _names(self):
+        """{display key: English name} of the game's *Mobs name tables (Root.wad); None while they can't be read
+        (tried again after a minute)"""
+        if self._mob_names is None and time.monotonic() >= self._names_retry:
+            names = {}
+            try:
+                import os
+                import navgeo
+                root = os.path.join(self.game_dir or navgeo.GAME_DIR, "Data", "GameData", "Root.wad")
+                files = navgeo.read_wad_files(root, ["Locale/en-US/%s.lang" % t for t in MOB_TABLES])
+                for tbl in MOB_TABLES:
+                    data = files.get("Locale/en-US/%s.lang" % tbl)
+                    if not data:
+                        continue
+                    lines = data.decode("utf-16").split("\r\n")
+                    # (a heading line, then key, comment, text - a text's own line breaks written as \n)
+                    for i in range(1, len(lines) - 2, 3):
+                        if lines[i].isdigit():
+                            text = re.sub(r"\s+", " ", lines[i + 2].replace("\\r", " ").replace("\\n", " ")).strip()
+                            names["%s_%s" % (tbl, lines[i])] = text
+            except Exception as e:  # noqa: BLE001
+                self.log("navmem: the mob names couldn't be read (%r)" % (e,))
+            if names:
+                self._mob_names = names
+                self.log("navmem: %d mob names read" % len(names))
+            else:
+                self._names_retry = time.monotonic() + 60.0
+        return self._mob_names
+
+    def _set_objs(self, cz, objs, why):
+        with self.lock:
+            self._obj_cz, self._objs, self._obj_why = cz, objs, why
+
+    def _objects_run(self):
+        """the objects thread: the zone's mobs looked for every OBJ_QUICK s (see the top) while anyone asks"""
+        # (carried on from where it stopped when nobody asked: what it found is checked again at every read)
+        regions, last_full, zone_seen, zone_from, cache = self._obj_state
+        while True:
+            t0 = time.monotonic()
+            with self.lock:
+                if t0 - self._obj_asked > OBJ_IDLE:
+                    self._obj_thread = None
+                    self._obj_state = (regions, last_full, zone_seen, zone_from, cache)
+                    return
+                st = self.st
+            try:
+                names = self._names() if st is not None else None
+                gc = st.gameclient() if st is not None else 0
+                cz = st.zone_ptr(gc) if ptr_ok(gc) else 0
+                if st is None:
+                    self._set_objs(0, {}, "not attached")
+                elif not cz:
+                    self._set_objs(0, {}, "not in a zone")
+                elif names is None:
+                    self._set_objs(0, {}, "the mob names couldn't be read (Root.wad)")
+                else:
+                    # (a new zone: its ClientZone or its name changed - the old one's may be freed and its memory
+                    # given to the new one)
+                    zone = (cz, st.zone(gc))
+                    if zone != zone_seen:
+                        zone_seen, zone_from, regions, cache = zone, t0, None, {}
+                        self._set_objs(0, {}, "looking at the new zone")
+                    full = (regions is None or not regions or t0 - last_full >= OBJ_FULL
+                            or (t0 - zone_from < OBJ_SETTLE and t0 - last_full >= OBJ_SETTLE_EVERY))
+                    found, where = st.scan_objects(cz, None if full else regions)
+                    if full:
+                        regions, last_full = where, t0
+                    objs = {}
+                    for obj in found:
+                        raw = st.p.try_read(obj, OBJ_SPAN)
+                        if raw is None:
+                            continue
+                        vt = struct.unpack_from("<Q", raw, 0)[0]
+                        vname = st.tn.of_vtable(vt) if st.m.in_section(vt, ".rdata") else None
+                        if not vname or not vname.endswith("ClientObject"):
+                            continue                        # (not a live one: destroyed - its base class's vtable - or freed)
+                        gid = struct.unpack_from("<Q", raw, DATA["co_gid"])[0]
+                        tpl = struct.unpack_from("<Q", raw, DATA["co_template"])[0]
+                        k = st.template_kind(tpl, names, cache)
+                        if k and k[0]:
+                            objs[obj] = (gid, k[0], k[1], vt)
+                    self._set_objs(cz, objs, "")
+                    self.obj_stats = {"objects": len(found), "mobs": len(objs), "full": full,
+                                      "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
+            except Exception as e:  # noqa: BLE001 - tried again next time
+                self._set_objs(0, {}, "the zone's objects couldn't be read (%r)" % (e,))
+            time.sleep(max(0.5, OBJ_QUICK - (time.monotonic() - t0)))
+
 
 # ============================================================================ command line
 def _main():
@@ -874,6 +1179,7 @@ def _main():
     ap.add_argument("-n", type=int, default=3)
     ap.add_argument("-i", type=float, default=0.5)
     ap.add_argument("--path", action="store_true")
+    ap.add_argument("--mobs", action="store_true", help="the zone's mobs too")
     a = ap.parse_args()
     nm = NavMem(log=print)
     for k in range(a.n):
@@ -891,6 +1197,11 @@ def _main():
             for k2 in ("why_player", "why_quest"):
                 if r[k2]:
                     print("           " + k2 + ": " + r[k2])
+            if a.mobs:
+                mobs, why = nm.mobs()
+                print("           mobs: %s %s" % (why or "%d" % len(mobs), nm.obj_stats))
+                for mb in sorted(mobs or [], key=lambda q: math.hypot(q["pos"][0] - r["pos"][0], q["pos"][1] - r["pos"][1]) if r["pos"] else 0)[:15]:
+                    print("             %-24s %-30s (%.0f, %.0f, %.0f)" % ((mb["name"], mb["template"]) + mb["pos"]))
         if k + 1 < a.n:
             time.sleep(a.i)
     print(nm.describe())

@@ -253,7 +253,10 @@ global NavUnblock
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
 ;1-4 s; the helper may be busy finding its way into a game it hasn't read yet)
-NavRead(timeoutMs := 150, withPath := false, withRoute := false)
+;avoidMobs (with withRoute): the route kept away from the zone's mobs (mobradius) - but not those named in
+;goalLine, the quest's goal line (or a function giving it: called only if the ask is sent), nor one by the quest's
+;goal (the helper decides)
+NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := false, goalLine := "")
 	{
 	if (!Stat("navmem"))
 		{
@@ -268,8 +271,13 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 	if (A_TickCount < NavWaitUntil)
 		return ""
 	unblock := (withRoute && NavUnblock) ? "&unblock=1" : ""
+	if (withRoute && avoidMobs)
+		{
+		goalNow := IsObject(goalLine) ? goalLine.Call() : goalLine
+		unblock .= NavMobArgs() "&goal=" NavUri(SubStr(goalNow, 1, 160))
+		}
 	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0) unblock, timeoutMs, true)
-	if (unblock != "" && answer != "")
+	if (InStr(unblock, "&unblock=1") && answer != "")
 		NavUnblock := 0
 	if (answer = "")
 		{
@@ -279,7 +287,8 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		return ""
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
-		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""}
+		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
+		, mob: "", mx: "", my: "", mobname: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -299,7 +308,11 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		else if (f[1] = "quest")
 			nav.enabled := NavNum(f[2]), nav.questid := Trim(f[3]), nav.goalid := Trim(f[4])
 		else if (f[1] = "route" && withRoute)
+			{
 			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4]), nav.jump := NavNum(f[5]), nav.jx := NavNum(f[6]), nav.jy := NavNum(f[7])
+			;(8-11: a mob on the way the route can't go round - seconds waited for it, where it is, its name)
+			nav.mob := NavNum(f[8]), nav.mx := NavNum(f[9]), nav.my := NavNum(f[10]), nav.mobname := Trim(f[11])
+			}
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
 		else if (f[1] = "path" && withPath)
@@ -321,6 +334,30 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		}
 	NavWhy := "", NavWait := 0, NavWaitUntil := 0
 	return nav
+	}
+
+;Text for a URL: its UTF-8 bytes, all but letters, digits and -._~ as %XX (the helper reads it as UTF-8)
+NavUri(text)
+	{
+	VarSetCapacity(navUriBuf, StrPut(text, "UTF-8"), 0)
+	navUriLen := StrPut(text, &navUriBuf, "UTF-8") - 1
+	navUriOut := ""
+	Loop, % navUriLen
+		{
+		navUriByte := NumGet(navUriBuf, A_Index - 1, "UChar")
+		navUriOut .= ((navUriByte >= 48 && navUriByte <= 57) || (navUriByte >= 65 && navUriByte <= 90) || (navUriByte >= 97 && navUriByte <= 122)
+			|| navUriByte = 45 || navUriByte = 46 || navUriByte = 95 || navUriByte = 126) ? Chr(navUriByte) : "%" Format("{:02X}", navUriByte)
+		}
+	return navUriOut
+	}
+
+;The helper's arguments for keeping a route away from mobs: mobavoid (on unless 0) and mobradius (300) in
+;PlayerStats.txt - "" when it's off
+NavMobArgs()
+	{
+	if (Stats.HasKey("mobavoid") && !Stats["mobavoid"])
+		return ""
+	return "&avoid=1&mobr=" (Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300)
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08

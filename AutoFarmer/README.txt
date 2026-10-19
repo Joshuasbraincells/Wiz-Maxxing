@@ -50,6 +50,16 @@ It also follows a route the helper plans round the walls over the zone's map
 (debug.log: "the game's memory ..."). navmem:0 = only the arrow on screen.
 More in ..\AutoQuester\README.txt.
 
+Mobs (mobavoid:1, the default - Settings: "Keep away from mobs"): the helper
+also reads the zone's mobs out of the game's memory (read-only) and the route
+goes round them - mobradius (300) away - so no battle starts on the way. Not
+the mobs the quest is about: those named in its goal line ("Defeat 3 Lost
+Souls"), or standing at its goal; and not while collecting. With no way round
+(a narrow street), the wizard stands still till the mob moves off - 25 s at
+most, then it walks on past it. The walk to the potion seller keeps away from
+all of them. The dashboard's Map shows them: red dots with a faint ring (kept
+away from), the quest's amber, the nearest ones named.
+
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.
 It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never

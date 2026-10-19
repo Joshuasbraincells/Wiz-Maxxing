@@ -79,6 +79,14 @@ handsoffon:1
 ; It's only trusted once it agrees with the arrow, and whenever it can't be read the bot follows the
 ; on-screen arrow as before (debug.log: "the game's memory ..."). 0 = only the on-screen arrow
 navmem:1
+; mobavoid: 1 = walking (quests, the potion seller), the route goes round the zone's mobs - read from the game's
+; memory (read-only, navmem) - so no battle starts on the way; not the mobs the quest is about (named in its goal
+; line, or standing at the goal), and not while collecting. With no way round, it waits for the mob to move off
+; (25 s at most, then walks on). The dashboard's Map shows them as red dots (the quest's amber). 0 = off
+mobavoid:1
+; mobradius: how far (game units) the route keeps from a mob. More is safer, but a narrow street may leave no way
+; round (then it waits)
+mobradius:300
 
 ; ---- Clicking ----
 ; mousereturn: 1 = when the bot takes the mouse (a battle round, a click out of battle) it puts it back where it

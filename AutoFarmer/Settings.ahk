@@ -54,6 +54,11 @@ CfgList()
 		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
 	list.Push({key: "fleeon", label: "Flee when out of mana or cards", kind: "check", def: 1
 		, help: "Out of mana (less than the cheapest hit costs, no wand) or out of cards, two rounds running: flee, drink a potion (or buy some), and try again."})
+	list.Push({key: "-", label: "WALKING"})
+	list.Push({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
+		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."})
+	list.Push({key: "mobradius", label: "...this far from them (game units)", kind: "num", lo: 100, hi: 1500, def: 300
+		, help: "How far the route keeps from a mob - they come for you when you get near. More: safer, but narrow streets may leave no way round (then it waits)."})
 	list.Push({key: "-", label: "ALERTS"})
 	list.Push({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
 		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."})

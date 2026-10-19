@@ -71,6 +71,9 @@ global WkPromptSkip, WkPreXText
 ;A teleport on the game's path, right at it (the helper's route stops there): the seconds waited there ("" not
 ;at one), where it is ("x,y"); the one walked on into already; no way on but teleports that don't take the wizard
 global WkNavJump, WkNavJumpAt, WkJumpKey, WkJumpStuck, WkJumpPushUntil
+;A mob on the way that the helper's route can't go round (mobavoid): the seconds waited for it to move off ("" none),
+;its name; the one last logged
+global WkNavMob, WkNavMobName, WkMobLogged, WkNavMobAt
 ;(when the arrow itself was last on screen; whether it was right before X was pressed at a prompt)
 global WkRealSeenAt, WkArrowAtX
 ;(an arrow read as the memory's mirror image, its sign checked: when that was last logged)
@@ -145,6 +148,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkPromptSkip := {}, WkPreXText := ""
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
+	WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := 0
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
 	WkCollect := "", WkGoalReadAt := 0, WkAfterXLooked := 0, WkGoalLine := "", WkGoalLineAt := 0, WkRealSeenAt := 0, WkArrowAtX := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
@@ -788,6 +792,22 @@ WalkStep()
 		if (Sqrt((WkNavObj.ax - jk[1]) ** 2 + (WkNavObj.ay - jk[2]) ** 2) > 400)
 			WalkLog("teleport at " WkJumpKey ": the route goes another way now - walking on"), WkJumpKey := ""
 		}
+	;A mob on the way that the route can't go round (a corridor, a doorway - mobavoid): stand still till it
+	;moves off - also through a reading missed meanwhile (not a step towards it). The helper gives up after 25 s
+	;and routes on past it
+	if ((WkNavMob != "" || (!WkNavOk && WkNavMobAt && A_TickCount - WkNavMobAt < 1500)) && WkNavJump = "")
+		{
+		if (WkMobLogged != WkNavMobName)
+			WkMobLogged := WkNavMobName, WalkLog("a mob on the way (" WkNavMobName ") and no way round it - waiting for it to move off")
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
+		SetStatus("waiting - a mob on the way (" WkNavMobName (WkNavMob != "" ? ", " WkNavMob " s" : "") ")")
+		Sleep, 300
+		return true
+		}
+	if (WkNavOk)
+		WkMobLogged := "", WkNavMobAt := 0
 	if (WkNavJump != "")
 		{
 		if (WkJumpKey != WkNavJumpAt)
@@ -804,7 +824,7 @@ WalkStep()
 			}
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		WkBestTime := A_TickCount, WkTries := 0
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 		SetStatus("at a teleport - waiting for it to take the wizard (" WkNavJump " s)")
 		Sleep, 300
 		return true
@@ -2759,12 +2779,18 @@ WalkNav(hScr, dScr)
 	{
 	static navGoalKey := ""
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavRouted := 0, WkNavLeft := ""
-	WkNavJump := "", WkNavJumpAt := ""
+	WkNavJump := "", WkNavJumpAt := "", WkNavMob := ""
 	;(AutoQuester on its own has no vision helper. In a battle there's nothing to steer, and the battle
 	;shouldn't wait for it)
 	if (!IsFunc("NavRead") || inbattle)
 		return
-	nav := Func("NavRead").Call(150, false, NavRoute)
+	;(the route kept away from mobs - mobavoid, on unless it's 0 - but not while collecting: walking into them is
+	;the point. A collect goal left over - finished in a battle - doesn't count once the goal line has moved on. The
+	;quest's goal line goes along, read only if the ask is sent: the mobs it names aren't avoided)
+	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"]) && WkArrived != 7
+	if (avoidMobs && IsObject(WkCollect) && !WkCollect.gaveUp && CollectSameGoal(WalkGoalLine(), WkCollect.text))
+		avoidMobs := false
+	nav := Func("NavRead").Call(150, false, NavRoute, avoidMobs, Func("WalkGoalLine"))
 	why := WalkNavProblem(nav)
 	if (why = "")
 		{
@@ -2788,6 +2814,9 @@ WalkNav(hScr, dScr)
 			;also when its aim is the wizard's own spot, the free spot by a teleport inside its object)
 			if (nav.jump != "" && nav.jx != "")
 				WkNavJump := nav.jump, WkNavJumpAt := Round(nav.jx) "," Round(nav.jy)
+			;(a mob on the way it can't go round: see the mob step in WalkStep)
+			if (nav.mob != "")
+				WkNavMob := nav.mob, WkNavMobName := nav.mobname != "" ? nav.mobname : "a mob", WkNavMobAt := A_TickCount
 			}
 		;How fast the wizard is moving (game units per ms): the number on screen and the memory's are read a
 		;moment apart (up to ~150 ms with the OCR), so a pair only says how the two compare when that moment's
