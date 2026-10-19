@@ -17,6 +17,8 @@ global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
 global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
 ;CPU and RAM in use, on the STATISTICS row (DashUsage)
 global DashUsageText
+;The Settings button (Settings.ahk), left of the Map button
+global DashCfgBtn
 ;The bottom row's other buttons (they share the window's width)
 global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
@@ -32,7 +34,7 @@ global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, Dash
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
-	Gui, Dash:New, +Resize +MinSize620x610 +HwndDashHwnd, Wizard101 bot
+	Gui, Dash:New, +Resize +MinSize660x610 +HwndDashHwnd, Wizard101 bot
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
@@ -45,6 +47,7 @@ DashInit()
 	Gui, Dash:Add, Text, x372 y40 w150 h16, WHAT IT SEES
 	;(the Map button at the right end of that row; DashGuiSize keeps it there)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x618 y36 w76 h22 gDashSettingsButton vDashCfgBtn, Settings
 	Gui, Dash:Add, Button, x700 y36 w76 h22 gDashMapButton vDashMapBtn, Map
 	Gui, Dash:Font, s9 w400 cDADADA, Consolas
 	Gui, Dash:Add, Text, x12 y60 w350 h190 vDashStatText
@@ -282,6 +285,8 @@ DashParse(line)
 		DashAdd("passes")
 	else if (InStr(msg, "  Discarded ") = 1)
 		DashAdd("discards")
+	else if (InStr(msg, "  fleeing: ") = 1)
+		DashAdd("flees")
 	else if (RegExMatch(msg, "^  kill check: (.*) -> (.*)$", m))
 		{
 		DashSees.enemies := m1
@@ -456,7 +461,7 @@ DashRefresh()
 	s := "Battles          " DashNum(battles) "`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Cards cast       " DashNum(n.casts) casts "`n"
-		. "Passed           " DashNum(n.passes) "`n"
+		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
 		. "Kill-check hits  " DashNum(n.lethal) "`n"
 		. "Rounds saving pips" SubStr(DashNum(n.pipsaves), 2) "`n"
@@ -904,6 +909,12 @@ DashBytes(n)
 	return n >= 1073741824 ? Round(n / 1073741824, 1) "GB" : Round(n / 1048576) "MB"
 	}
 
+;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
+DashSettingsButton:
+	if (IsFunc("CfgShow"))
+		Func("CfgShow").Call()
+	return
+
 ;"Learn every card" on/off (CardLearn.ahk)
 DashLearnAll:
 	if (IsFunc("LearnAllToggle"))
@@ -927,6 +938,7 @@ DashGuiSize:
 		return
 	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84
+	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384
 	;(the Learn button at the right end of the Hand row, its heading up to it)
 	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138

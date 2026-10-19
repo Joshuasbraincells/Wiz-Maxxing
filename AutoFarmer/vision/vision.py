@@ -1376,6 +1376,8 @@ class Handler(BaseHTTPRequestHandler):
                 lines = ['card|{left}|{top}|{w}|{h}|{known}|{kdist:.1f}|{g}|{kind}|{kinddist:.1f}|{pips}|{pipscore:.2f}|{same}|{liked}'.format(g=int(c['grey']), **c) for c in cards]
                 log(f'/hand scale {scale} {(time.perf_counter() - t0) * 1000:.0f} ms: ' + ', '.join(
                     (c['known'].split('/')[-1] or f"?{c['kind'] or 'type?'}") + ('(grey)' if c['grey'] else '') for c in cards))
+                # (how many: an empty hand - the deck used up - answers hand|0, not nothing)
+                lines.append(f'hand|{len(cards)}')
                 return self.reply('\n'.join(lines))
             if u.path == '/cut':
                 out = q['out']

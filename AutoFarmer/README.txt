@@ -48,6 +48,30 @@ the bot; minimise it (or Windows+2) to just put it away. Next to STATISTICS:
 the CPU and RAM in use, every second - the bot (with its vision helper), the
 game and the whole PC (CPU share of all cores, RAM in use).
 
+Settings (the dashboard's Settings button, or the tray menu "Settings..."):
+the mouse and the bot's waits, and how it plays its cards, in one window -
+point at a setting to see what it does. Save writes them to PlayerStats.txt
+(each in its own line, comments kept) and the bot uses them at once - no
+restart. Defaults fills in the defaults (Save to use them).
+	- The mouse and waits: Wait for me (on/off, and the seconds after you
+	  stop), put the mouse back (when the bot takes the mouse - a battle
+	  round, a click out of battle - it goes back to where it was once it's
+	  done, unless you used the mouse or keys meanwhile), mouse speed, the
+	  wait before each click (plus a random bit, so clicks aren't evenly
+	  timed), the wait after clicks, before playing a round, after a discard
+	  and before looking at the hand again.
+	- Health: heal under %, drink a potion under %, flee out of mana/cards.
+	- Card logic: boost first (traps on the boss, blades, bubble, aura, then
+	  the biggest hit it can cast - as always), hit first (the biggest hit it
+	  can cast as soon as it has one; boosts only in rounds it has none -
+	  quick on weak mobs), or boost first on a boss you picked (Alt+1) and
+	  hit first otherwise. Boosts before each hit (0 = all it has), the kill
+	  check and its margin, which kinds of cards it plays at all (blades,
+	  traps/Feint, bubble, aura, the wand's hit, Tower Shield, Reshuffle - a
+	  kind switched off is discarded when "Discard cards it never plays" is
+	  on), boosting again after each hit, counting traps when you fight bosses
+	  alone, saving pips for a finishing hit, and discarding.
+
 Executables: ..\Wiz-Maxxing.exe starts the bot (Setup.exe puts it in the Start menu
 and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
 ..\AutoQuester) do the same as the .ahk scripts without AutoHotkey installed.
@@ -250,6 +274,12 @@ themselves. A pip cost that couldn't be read is guessed as the pips you had
 (the card was castable), and brought down whenever it shows up castable with
 fewer. learned\cards.txt lists everything learned; debug.log: "learned a new
 card ...".
+Fleeing: out of mana (less than its cheapest hit costs - every spell costs a
+mana a pip - and no wand in hand) or out of cards (the deck used up) for two
+rounds running, the bot can only pass for the rest of the battle, so it clicks
+Flee instead, drinks a potion (none left: goes and buys some) and tries again.
+PlayerStats.txt: fleeon:0 switches it off. debug.log: "fleeing: ...", "after
+fleeing: ..."; the dashboard counts them next to Passed.
 Discarding in normal battles: every round, after it's read the hand, the bot
 right-clicks away the cards it knows it never plays - learned cards it has no
 slot for (charms, globals, minions..., or one more card of a kind whose slots

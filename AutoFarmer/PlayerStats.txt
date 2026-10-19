@@ -4,7 +4,8 @@ avbosshealth:10000
 ; StatsReader last read your storm stats on 2026-10-14 19:33
 ;
 ; AutoFarmer kill calculator settings. Each line is key:value and anything after ; is a comment.
-; A key you delete falls back to the default shown here. Edit, then restart the script (Windows+1).
+; A key you delete falls back to the default shown here. Edit, then restart the script (Windows+1) - or use the
+; dashboard's Settings button: the mouse, the waits and how it plays its cards there, used at once (no restart).
 ;
 ; At the start of each round the script reads every enemy's health off the nameplates at the top
 ; of the game window, works out the MINIMUM damage of each hit in your hand (no crits), and if one
@@ -35,7 +36,28 @@ discardunaffordable:0
 discardunused:1
 ; discardmax: at most this many of those a round
 discardmax:3
+; fleeon: 1 = out of mana (less than the cheapest hit costs, no wand in hand) or out of cards (the deck used up)
+; two rounds running in a battle: flee, drink a potion (or go and buy some), and try again. 0 = keep passing.
+fleeon:1
 ; (Values may be written with or without a %. A line that can't be read pops up a warning at start.)
+
+; ---- How it plays its cards (also in the dashboard's Settings window) ----
+; cardlogic: 1 = boost first - traps on the boss, blades, the bubble and aura - then the biggest hit it can cast;
+; 2 = hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick
+; on weak mobs); 3 = boost first once you've picked a boss (Alt+1), hit first otherwise
+cardlogic:1
+; boostmax: boosting first, at most this many boost cards (blades, traps, bubble, aura) go before a hit it can
+; cast (0 = every one it has)
+boostmax:0
+; useblades, usetraps (traps, Feint, Potent), usebubble, useaura, usewand (the wand's own card), usetower,
+; usereshuffle: 0 = that kind of card isn't played (with discardunused:1 it's discarded so it draws another)
+useblades:1
+usetraps:1
+usebubble:1
+useaura:1
+usewand:1
+usetower:1
+usereshuffle:1
 
 ; ---- You playing ----
 ; handsoff: while you use the keyboard or mouse yourself, the bot waits - no battle rounds, no walking, no
@@ -54,6 +76,9 @@ handsoffon:1
 navmem:1
 
 ; ---- Clicking ----
+; mousereturn: 1 = when the bot takes the mouse (a battle round, a click out of battle) it puts it back where it
+; was once it's done - not if you've used the mouse or keys meanwhile. 0 = it's left in the middle of the game
+mousereturn:1
 ; mousespeed: how the mouse moves to what it clicks: 0 = jumps there, 1 = fastest glide (was 5, slow)
 mousespeed:1
 ; clickwait: ms between the mouse arriving and the click (was 150)
@@ -61,6 +86,14 @@ clickwait:40
 ; clickafter: % of the old wait after each click (a card, then its target: 300 ms at 100) - lower is faster;
 ; raise it if a target click gets missed after a card
 clickafter:50
+; clickrandom: up to this many ms more before each click, at random, so they aren't evenly timed (0 = none)
+clickrandom:0
+; roundwait: ms from a battle round showing up to the bot's first look at the hand (0 = at once)
+roundwait:0
+; discardafter: ms after each right-click that discards a card; discardlook: ms after discarding before the
+; hand is looked at again (the cards slide together)
+discardafter:400
+discardlook:700
 
 ; ---- Health reading ----
 ; healthocr: 1 = read enemy health and use the kill check, 0 = off (old behaviour)

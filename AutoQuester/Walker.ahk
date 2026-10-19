@@ -61,6 +61,15 @@ global WkNavChecked, WkNavZScales, WkNavScaleZone, WkNavScaleAll, WkStandIn
 ;setting); steering along it this step; how far is left along it (arrow units); the least left so far, for
 ;"is it getting anywhere" and for the badly-stuck watch; on or off (logged when that changes)
 global NavRoute, WkNavRouted, WkNavLeft, WkRouteBest, WkRouteProg, WkRouteState
+;(arrival and walking straight through a doorway by the game's memory, in game units: see the settings)
+global ArriveUnits, PushUnits
+;(X pressed at a prompt: what it opened looked at already; the quest's goal line as last read, and when)
+global WkAfterXLooked, WkGoalLine, WkGoalLineAt
+;(prompts walked past - not the quest's - logged, when: apart from WkPromptUsed, which says what X was pressed at;
+;what was on screen just before X, for what X opened: WalkCloseAfterX)
+global WkPromptSkip, WkPreXText
+;(when the arrow itself was last on screen; whether it was right before X was pressed at a prompt)
+global WkRealSeenAt, WkArrowAtX
 ;(an arrow read as the memory's mirror image, its sign checked: when that was last logged)
 global WkNavMirrorSaid
 ;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
@@ -71,6 +80,9 @@ WalkerInit(prefix := "AutoQuester")
 	{
 	;---- Settings ----
 	ArriveDist := 15     ;stop when the distance on the arrow is this or less (walks again when a new goal appears)
+	ArriveUnits := 150   ;...by the game's memory (when it can be used): this many game units from the goal - the
+	                     ;arrow's number means more or less in each zone (15 on it is 120-1500 units), this doesn't
+	PushUnits := 250     ;...and the PushStraightDist below, by the game's memory
 	TurnRate := 0.15     ;degrees the wizard turns per ms of holding A/D (measured: 22.5 degrees per 150 ms)
 	TurnSettle := 500    ;ms the camera takes to catch up after a turn: don't steer on the arrow before then
 	AheadAngle := 12     ;arrow within this many degrees of straight ahead: just walk
@@ -128,8 +140,9 @@ WalkerInit(prefix := "AutoQuester")
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
+	WkPromptSkip := {}, WkPreXText := ""
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
-	WkCollect := "", WkGoalReadAt := 0
+	WkCollect := "", WkGoalReadAt := 0, WkAfterXLooked := 0, WkGoalLine := "", WkGoalLineAt := 0, WkRealSeenAt := 0, WkArrowAtX := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
 	WkResetAt := 0
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
@@ -160,6 +173,8 @@ WalkReset()
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
 	WkNavDoor := 0, WkStandIn := 0, WkRouteBest := "", WkRouteProg := ""
+	;(a new goal: its line is read again)
+	WkGoalLineAt := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -276,6 +291,8 @@ WalkStep()
 	;arrow on a floor its own colour (the gold carpet in Pigswick Academy) can't be picked out, and scenery hides
 	;it. Dialogues and prompts are still looked for meanwhile (standIn, below), as when there's no arrow
 	arrowSeen := seen
+	if (arrowSeen)
+		WkRealSeenAt := A_TickCount
 	standIn := seen ? 0 : WalkNavStandIn()
 	;(it turned to check the memory's heading: look again)
 	if (standIn < 0)
@@ -399,12 +416,18 @@ WalkStep()
 				return true
 				}
 			}
-		;Any other "Press X ..." prompt (talk, collect, open...): press X - once a minute for the same one -
-		;then Space through whatever it opens and walk on
+		;Any other "Press X ..." prompt (talk, collect, open...) the quest wants (WalkPromptWanted: its name in the
+		;goal line, close to the goal, or collecting): press X - once a minute for the same one - then Space
+		;through whatever it opens and walk on. Others - an NPC or a vendor walked past - are left alone
 		if (prompt = "press" && WalkPromptFree(WkPromptDest, 60000))
 			{
-			StartPressX(WkPromptDest)
-			return true
+			if (WalkPromptWanted(WkPromptDest, dist))
+				{
+				StartPressX(WkPromptDest)
+				return true
+				}
+			if (!WkPromptSkip.HasKey(WkPromptDest) || A_TickCount - WkPromptSkip[WkPromptDest] > 60000)
+				WkPromptSkip[WkPromptDest] := A_TickCount, WalkLog("prompt '" SubStr(WkPromptDest, 1, 40) "' - not the quest's (not in the goal line, not near the goal): no X, walking on")
 			}
 		;A boat or the like ("BOAT TO GOBBLERTON", "Press X or click to Use") covering the arrow: use it
 		;if it goes where the quest is, otherwise step out of it and walk on
@@ -416,7 +439,22 @@ WalkStep()
 	;through it; once the arrow is back (or nothing opened within a second), walk on
 	if (WkArrived = 6)
 		{
-		if ((!seen || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
+		;What X opened: an OK box or a window - a shop, a vendor's list - is closed first (WalkCloseAfterX: OK, or
+		;Escape - nothing in it is ever clicked); looked at once, a moment after X
+		if (!WkDialog && !WkAfterXLooked && A_TickCount - WkPressAt > 700 && !WalkDialogOpen())
+			{
+			WkAfterXLooked := 1
+			if (WalkCloseAfterX())
+				{
+				WkArrived := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+				WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
+				return true
+				}
+			}
+		;(a dialogue covers the arrow on screen - not the game's memory standing in for it, which goes on
+		;regardless: then it counts when the arrow itself was on screen right before X and has gone; with no
+		;arrow to go by - Pigswick's carpet - only a dialogue box that's read)
+		if (((standIn ? WkArrowAtX : !seen) || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
 			{
 			if (!WkDialog)
 				WalkLog("pressed X: something opened (arrow covered) - pressing Space")
@@ -684,7 +722,7 @@ WalkStep()
 			SetStatus("arrived" (dist = "" ? "" : " (distance " dist ")") " - waiting for the next goal")
 			return true
 			}
-		if (!WkStraight && ((dist != "" && dist <= PushStraightDist) || (dist = "" && (WkBestDist = "" || WkBestDist <= NearDist))))
+		if (!WkStraight && ((dist != "" && WalkNear(dist, PushStraightDist, PushUnits)) || (dist = "" && (WkBestDist = "" || WkBestDist <= NearDist))))
 			{
 			;Face the goal first if it's off to the side. Not if it's behind: then the wizard has just
 			;walked over the goal point, and turning round would walk it away from a door beyond it
@@ -752,7 +790,9 @@ WalkStep()
 			WkArrived := 0, WkFar := 0, WkArrDist := "", WkBestDist := "", WkBestTime := A_TickCount, WkTries := 0
 			}
 		;Two readings in a row, so one misread number can't stop us early
-		WkNear := dist <= ArriveDist ? WkNear + 1 : 0
+		;(by the game's memory, in game units, when it can be used: the arrow's number means more or less in
+		;each zone)
+		WkNear := WalkNear(dist, ArriveDist, ArriveUnits) ? WkNear + 1 : 0
 		if (WkNear >= 2)
 			{
 			StartTalk(dist)
@@ -1031,7 +1071,10 @@ StartPressX(key)
 	if (KeysDown || HeldW)
 		ReleaseKeys()
 	WkPromptUsed[key = "" ? "?" : key] := A_TickCount
-	WkArrived := 6, WkPressAt := A_TickCount, WkTalk := 0, WkDialog := 0, WkSpaceAt := 0
+	WkArrived := 6, WkPressAt := A_TickCount, WkTalk := 0, WkDialog := 0, WkSpaceAt := 0, WkAfterXLooked := 0
+	WkArrowAtX := (WkRealSeenAt && A_TickCount - WkRealSeenAt < 1500)
+	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX)
+	WkPreXText := WalkAfterXText(preLines)
 	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("prompt '" SubStr(key, 1, 40) "' - pressed X")
 	SetStatus("pressed X at a prompt")
@@ -1305,6 +1348,106 @@ InteractPrompt()
 	return ""
 	}
 
+;Within the arrow's arrowMax of the goal - or, when the game's memory can be used this step, within units game
+;units of it (the arrow's number means more or less in different zones; the memory's distance doesn't)
+WalkNear(d, arrowMax, units)
+	{
+	if (WkNavOk && IsObject(WkNavObj) && WkNavObj.dist != "")
+		return WkNavObj.dist <= units
+	return d != "" && d <= arrowMax
+	}
+
+;Is this "Press X" prompt (key: its name's letters, WkPromptDest) one the quest wants? Its name in the quest's
+;goal line ("Talk To Benedict Glendemming in ..." has BENEDICT GLENDEMMING), close to the goal (NearDist on the
+;arrow), or collecting (a collect goal - it's how things are picked up). Prompts at others - an NPC or a vendor
+;walked past - aren't: X there opens their chatter, an OK box or their shop
+WalkPromptWanted(key, d)
+	{
+	if (WkArrived = 7 || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
+		return true
+	goal := WalkGoalLine()
+	if (goal != "" && CollectGoal(goal))
+		return true
+	g := WalkLetters(goal)
+	return (StrLen(key) >= 4 && g != "" && InStr(g, key))
+	}
+
+;The quest's goal line under the arrow, read at most every 3 s (the arrow not on screen: where it usually is)
+WalkGoalLine()
+	{
+	if (WkGoalLineAt && A_TickCount - WkGoalLineAt < 3000)
+		return WkGoalLine
+	WkGoalLineAt := A_TickCount
+	text := WalkGoalText()
+	if (text = "")
+		{
+		s := ArrowScale().scale
+		px := GameLeft + GameW / 2 - 0.7 * s, py := GameTop + GameH - 220 * s + 81.7 * s
+		text := OcrRect(Round(px - 450 * s), Round(py + 28 * s), Round(900 * s), Round(60 * s))
+		text := ErrorLevel ? "" : Trim(RegExReplace(text, "\s+", " "))
+		}
+	WkGoalLine := text
+	return text
+	}
+
+;What X at a prompt opened, if it's not a dialogue - only what's new since just before X (WkPreXText), in the
+;middle of the game where its windows open (not the chat, the prompt or the goal line): a window with a shop's
+;words (Buy, Sell, Shop, Crowns...) - closed with Escape, nothing in it clicked (never anything that could
+;spend); else a lone OK / Okay button on a line of its own - an OK box - clicked (never with Crowns on screen).
+;Escape that opened the game's menu instead closes it again. True if it closed something
+WalkCloseAfterX()
+	{
+	t := WalkAfterXText(lines)
+	if (t = "" || !IsObject(lines))
+		return false
+	if (RegExMatch(t, "i)\b(buy|sell|shop|cr[o0]wns?|purchase|recipes|reagents|treasure cards)\b", m) && !RegExMatch(WkPreXText, "i)\b\Q" m "\E\b"))
+		{
+		WalkLog("pressed X: a window opened (""" m """ in it - a shop?) - Escape, nothing in it clicked")
+		PressKey("Escape")
+		Sleep, 800
+		menuText := OcrRect(Round(GameLeft + GameW / 2 - 350 * ArrowScale().scale), Round(GameTop + GameH / 2 - 300 * ArrowScale().scale), Round(700 * ArrowScale().scale), Round(600 * ArrowScale().scale))
+		if (!ErrorLevel && RegExMatch(menuText, "i)\b(quit|log\s*out|settings|options|resume|return to game)\b"))
+			{
+			WalkLog("Escape opened the game's menu - Escape again to close it")
+			PressKey("Escape")
+			Sleep, 600
+			}
+		return true
+		}
+	;(an OK with Crowns anywhere in sight is never clicked)
+	if (RegExMatch(t, "i)cr[o0]wn"))
+		return false
+	for i, line in lines
+		if (IsObject(line.words) && line.words.Length() = 1 && RegExMatch(Trim(line.words[1].text), "i)^(ok|okay)[.!]?$")
+			&& !RegExMatch(WkPreXText, "i)\b(ok|okay)\b"))
+			{
+			w := line.words[1]
+			if (!Walking || !GameActive())
+				return false
+			WalkLog("pressed X: an OK box opened - OK")
+			ReleaseKeys()
+			;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
+			ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+			MouseMove, % Round(w.x + w.w / 2), % Round(w.y + w.h / 2), 2
+			Sleep, 60
+			Click
+			Sleep, 500
+			if (ownGrab)
+				Func("MouseLetGo").Call()
+			return true
+			}
+	return false
+	}
+
+;The middle of the game - where a window X opens shows: not the chat (bottom left), the prompt or the goal line
+;(bottom), the walker's notice (top right) - read by OCR. "" if it can't be read; its lines (with their words)
+WalkAfterXText(ByRef lines)
+	{
+	lines := ""
+	t := OcrRect(Round(GameLeft + GameW * 0.25), Round(GameTop + GameH * 0.12), Round(GameW * 0.5), Round(GameH * 0.58), "en", 1, lines)
+	return ErrorLevel ? "" : t
+	}
+
 ;Screen {x, y} of the middle of the Spiral Map's Go To World button, or "" if the map isn't open.
 ;Read by OCR in the lower right part of the map (it sits in the middle of the game, sized with the UI)
 SpiralMapButton()
@@ -1328,11 +1471,15 @@ WalkClick(x, y)
 	{
 	if (!Walking || !GameActive())
 		return
+	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
+	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
 	MouseMove, %x%, %y%, 1
 	Sleep, 40
 	if (Walking && GameActive())
 		Click
 	Sleep, 100
+	if (ownGrab)
+		Func("MouseLetGo").Call()
 	}
 
 ;One key press (down and up), only while walking is on and Wizard101 has focus

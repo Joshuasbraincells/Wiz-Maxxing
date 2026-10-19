@@ -492,9 +492,13 @@ PotionReplay(route)
 				ok := false
 				break
 				}
+			;(the mouse back where it was afterwards, unless that's done at the end of the run: mousereturn)
+			ownGrab := MouseGrab()
 			MouseMove, %x%, %y%, 3
 			Sleep, 120
 			Click
+			if (ownGrab)
+				MouseLetGo()
 			}
 		else if (f[2] = "zone")
 			{

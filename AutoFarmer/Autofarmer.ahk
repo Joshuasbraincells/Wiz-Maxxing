@@ -29,6 +29,7 @@ Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
+Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
 Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Read wizard stats now, MenuStats
@@ -67,6 +68,11 @@ MenuDash:
 DashToggle()
 return
 
+;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
+MenuSettings:
+CfgShow()
+return
+
 ;The map window (Dashboard.ahk): a top-down picture of the zone, the wizard and the quest goal
 MenuMap:
 DashMapToggle()
@@ -87,7 +93,11 @@ return
 MenuPotionRun:
 WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
 Sleep, 500
+;(the mouse back where it was afterwards - mousereturn)
+mouseOwn := MouseGrab()
 PotionRun()
+if (mouseOwn)
+	MouseLetGo()
 return
 
 MenuLogin:
@@ -131,6 +141,8 @@ global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 global BookSeenAt := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
+;Boost cards cast since the last hit (Settings.ahk CardBoostOk: boostmax)
+global BoostRun := 0
 global BossMax := 0
 global DualBattle := 0
 LoadStats()
@@ -298,7 +310,11 @@ loop,
 			{
 			battles++
 			}
+		;(the mouse, if any of this takes it - potions, stats - goes back where it was at the end: mousereturn)
+		MouseGrab()
 		checkafk()
+		;Fled a battle out of mana or cards (Flee.ahk): a potion first (or a run to buy some), then on as usual
+		FleeAfter()
 		checkmana()
 		CommandAfk()
 		CommandEnter()
@@ -311,6 +327,7 @@ loop,
 		StatsAuto()
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
 		PotionCheck()
+		MouseLetGo()
 		gosub, mobloop
 		gosub, LoreLoop
 		}
@@ -369,8 +386,28 @@ loop,
 
 RoundStart:
 
+;A wait before playing a new round (roundwait, the Settings window) - then, as the round's look began: you may
+;have started playing meanwhile (the round's yours - nothing's been taken yet), or the round may be over
+if (!RoundAgain && Stat("roundwait") > 0)
+	{
+	Sleep, % Stat("roundwait")
+	UpdateGameRect()
+	if (PlayerActing())
+		{
+		DebugLog("  you're playing (during the wait before the round) - leaving this round to you")
+		RoundLeft := 1
+		if (!PlayerTookRound)
+			PlayerTookRound := 1
+		Goto, TestRound
+		}
+	ImageSearch, rwX, rwY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+	if (ErrorLevel)
+		Goto, TestRound
+	}
 ;(a walker notice mustn't cover what the battle reads)
 WalkNoteHide()
+;(where the mouse is now: it goes back there when the round's done - mousereturn)
+MouseGrab()
 BlockInput, MouseMove
 CenterMouse()
 
@@ -379,7 +416,7 @@ if (BossChoosen == 1)
 	BossX := GameLeft + Round(BossRelX * UiScale), BossY := GameTop + Round(BossRelY * UiScale)
 
 global inbattle = 1
-LearnedThisRound := 0, LastHandAnswer := "", DiscardedUnused := 0
+LearnedThisRound := 0, LastHandAnswer := "", DiscardedUnused := 0, DiscardOffCount := 0
 
 ;Both windows share one record of blades/traps in dual mode, so the kill check is off for that whole battle
 if (dualmode == 1)
@@ -460,6 +497,8 @@ if (hitter = 0) && (Manual != 1)
 	{
 	BlockInput, MouseMoveOff
 	savedTo := SaveRoundPicture()
+	;(the mouse back once the picture's taken)
+	MouseLetGo()
 	DebugLog("  no school icon the bot knows - leaving this round to you" (savedTo = "" ? "" : " (picture of it: " savedTo ")"))
 	TrayTip, Wizard101 bot, The bot doesn't know this wizard's school yet - play this round yourself., 5, 1
 	;Wait for the round to be played (the Pass button goes), then watch for the next one
@@ -614,10 +653,11 @@ if (Manual != 1) && (!LearnedThisRound)
 ;Discard (right-click) cards that can't help this battle, then look at the hand again (not while learning
 ;every card: that discards everything it knows): first, once a round, the cards it never plays (learned, in no
 ;slot - CardLearn.ahk DiscardUnused, off the hand as the helper read it), then spare blades and Sharpen
-if (!LearnAll) && (Discards < 3) && (DiscardUnused() + DiscardSpare())
+;(and cards of kinds switched off in the Settings window: Settings.ahk DiscardSwitchedOff)
+if (!LearnAll) && (Discards < 3) && (DiscardUnused() + DiscardSpare() + DiscardSwitchedOff())
 	{
 	Discards++
-	s(700)
+	s(Stat("discardlook"))
 	Goto, FindCards
 	}
 
@@ -639,6 +679,10 @@ if (PlayerActing())
 	Goto, EndRound
 	}
 
+;Out of mana or cards - it could only pass for the rest of the battle: flee, and try again (Flee.ahk)
+if FleeCheck()
+	Goto, EndRound
+
 ;Learning every card (dashboard button / tray menu): no casting but a heal when low - learn, discard what
 ;it knows so the next round draws new cards, pass (CardLearn.ahk LearnAllRound)
 if (LearnAll)
@@ -659,7 +703,7 @@ if (LearnAll)
 global KillHit := ""
 global KillEnchant := 0
 PipSaveFor := ""
-if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1))
+if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1 && Stat("usewand")))
 	{
 	if (ReadEnemyHealth())
 		{
@@ -675,7 +719,7 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 		if UseHit(KillHit, %KillHit%, hitschool, KillEnchant)
 			{
 			;(a saved-for hit went out: the next save counts afresh)
-			PipSaveRounds := 0, PipSaveTarget := "", PipSaveStall := 0
+			PipSaveRounds := 0, PipSaveTarget := "", PipSaveStall := 0, BoostRun := 0
 			Goto, EndRound
 			}
 		}
@@ -690,75 +734,93 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 		Goto, EndRound
 	}
 
-;Automatic Battle code
-if (feint == 1) && (BossChoosen == 1) && UseTrap("feint", feint, Used1, Used2, "resources")
+;How it plays its cards (the Settings window: cardlogic, boostmax, use...): hit first - before any boost - when
+;the card logic says so (Settings.ahk CardHitFirst); boosts only up to boostmax before a hit it can cast
+;(CardBoostOk); kinds switched off aren't played. BoostRun counts the boosts since the last hit
+HitsTried := 0
+if CardHitFirst()
 	{
+	HitsTried := 1
+	if CastBestHit()
+		Goto, EndRound
+	}
+BoostOk := CardBoostOk()
+
+;Automatic Battle code
+if (feint == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("feint", feint, Used1, Used2, "resources")
+	{
+	BoostRun++
 	Goto, EndRound
 	} else if (convert == 1) && (NeedsConvert == 1) && (BossChoosen == 1) && UseConvert("convert", convert, hitschool)
 		{
 		Goto, EndRound
-		} else if (trap == 1) && (BossChoosen == 1) && UseTrap("trap", trap, used3, used4, hitschool)
+		} else if (trap == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used3, used4, hitschool)
 			{
-			Goto, EndRound 
-			} else if (trap2 == 1) && (BossChoosen == 1) && UseTrap(traptype, %traptype%, used5, used6, "resources")
-				{ 
+			BoostRun++
+			Goto, EndRound
+			} else if (trap2 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap(traptype, %traptype%, used5, used6, "resources")
+				{
+				BoostRun++
 				Goto, EndRound
-				} else if (trap3 == 1) && (BossChoosen == 1) && UseTrap("trap3", trap3, used7, used8, "resources")
+				} else if (trap3 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap3", trap3, used7, used8, "resources")
 					{
+					BoostRun++
 					Goto, EndRound
-					} else if (trap4 == 1) && (BossChoosen == 1) && UseTrap("trap4", trap4, used9, used10, "resources")
+					} else if (trap4 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap4", trap4, used9, used10, "resources")
 						{
+						BoostRun++
 						Goto, EndRound
-						} else if (blade == 1) && UseBlade("blade", blade, used11, used12, hitschool)
+						} else if (blade == 1) && BoostOk && Stat("useblades") && UseBlade("blade", blade, used11, used12, hitschool)
 							{
+							BoostRun++
 							Goto, EndRound
-							} else if (blade2 == 1) && UseBlade(bladetype, %bladetype%, used13, used14, "resources")
+							} else if (blade2 == 1) && BoostOk && Stat("useblades") && UseBlade(bladetype, %bladetype%, used13, used14, "resources")
 								{
+								BoostRun++
 								Goto, EndRound
-								} else if (blade3 == 1) && UseBlade("blade3", blade3, used15, used16, "resources")
+								} else if (blade3 == 1) && BoostOk && Stat("useblades") && UseBlade("blade3", blade3, used15, used16, "resources")
 									{
+									BoostRun++
 									Goto, EndRound
-									}  else if (blade4 == 1) && UseBlade("blade4", blade4, used17, used18, "resources")
+									}  else if (blade4 == 1) && BoostOk && Stat("useblades") && UseBlade("blade4", blade4, used17, used18, "resources")
 										{
+										BoostRun++
 										Goto, EndRound
-										} else if (bubble == 1)
+										} else if (bubble == 1) && BoostOk && Stat("usebubble")
 											{
-											Click("bubble", bubble, hitschool)
-											} else if (aura == 1)
+											if Click("bubble", bubble, hitschool)
+												BoostRun++
+											} else if (aura == 1) && BoostOk && Stat("useaura")
 												{
 												if Click("aura", aura, hitschool)
 													{
 													AuraRounds := 4
+													BoostRun++
 													}
-												} else if (hit4 == 1) && (BossChoosen = 1) && UseHit("hit4", hit4, hitschool)
+												} else if (!HitsTried) && CastBestHit()
 													{
 													Goto, EndRound
-													} else if (hit3 == 1) && UseHit("hit3", hit3, hitschool)
+													} else if (wand == 1) && Stat("usewand") && UseHit("wand", wand, hitschool)
 														{
+														BoostRun := 0
 														Goto, EndRound
-														} else if (hit2 == 1) && UseHit("hit2", hit2, hitschool)
+														} else if (tower == 1) && Stat("usetower")
 															{
-															Goto, EndRound
-															} else if (hit1 == 1) && UseHit("hit1", hit1, hitschool)
+															UseOnSelf("tower", tower, "resources")
+															} else if (reshuffle == 1) && Stat("usereshuffle")
 																{
-																Goto, EndRound
-																} else if (wand == 1) && UseHit("wand", wand, hitschool)
+																UseOnHammer("reshuffle", reshuffle, "resources")
+																ResetUsed()
+																} else if Click("pass", pass, "resources")
 																	{
 																	Goto, EndRound
-																	} else if (tower == 1)
-																	{
-																	UseOnSelf("tower", tower, "resources")
-																	} else if (reshuffle == 1)
-																		{
-																		UseOnHammer("reshuffle", reshuffle, "resources")
-																		ResetUsed()
-																		} else if Click("pass", pass, "resources")
-																			{
-																			Goto, EndRound
-																			}
+																	}
 EndRound:
 DebugLog("Round done")
-CenterMouse()
+;The mouse back where it was when the round began (mousereturn, the Settings window), else off the cards - not
+;if you've used the mouse or keys meanwhile (MouseLetGo -1: it's yours)
+if (MouseLetGo() = 0)
+	CenterMouse()
 BlockInput, MouseMoveOff
 	
 Switch()
@@ -832,15 +894,25 @@ HandsOffShow()
 	}
 
 ;Moves the mouse to x, y and clicks, quickly: mousespeed (0 = jump there, 1 = fastest glide; it used to
-;be 5), clickwait ms before the click (used to be 150), and after it `after` ms times clickafter %
-;(PlayerStats.txt; it used to wait the whole of it)
+;be 5), clickwait ms before the click (used to be 150) plus up to clickrandom ms, and after it `after` ms
+;times clickafter % (PlayerStats.txt, the Settings window; it used to wait the whole of it)
 ClickAt(x, y, after := 0)
 	{
+	;(not in a battle round: the mouse goes back where it was after the click - mousereturn)
+	ownGrab := MouseGrab()
 	MouseMove, x, y, MouseSpeedNow()
 	Sleep, % Stats.HasKey("clickwait") ? Stats["clickwait"] : 40
+	;(and a random bit more: clickrandom)
+	if (Stat("clickrandom") > 0)
+		{
+		Random, clickExtra, 0, % Stat("clickrandom")
+		Sleep, %clickExtra%
+		}
 	Click
 	if (after)
 		AfterClick(after)
+	if (ownGrab)
+		MouseLetGo()
 	}
 
 ;A wait after a click: ms times clickafter % (PlayerStats.txt; lower is faster)
@@ -1414,6 +1486,7 @@ ResetVariables()
 	Player := ""
 	BossChoosen := 0
 	boosts := 0
+	BoostRun := 0
 	sharpen := 0 
 	potent := 0
 	blade := 0
@@ -1554,6 +1627,9 @@ checkmana()
 		ImageSearch, manaX, manaY, GameLeft, ScreenY, GameLeft + GameW / 4, GameBottom, % PicOpt("resources\manaempty.png")
 		if (Errorlevel == 0)
 			{
+			;(a potion first - or a run to buy some - so it can carry on; only then keep the character from timing out)
+			if (Stat("fleeon") && FleeRefillMana("no mana"))
+				return
 			Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
 			afk()
 			}
@@ -2396,7 +2472,9 @@ DiscardCard(title, dir)
 	Mousemove, cardX + Px(5), cardY + Px(5), MouseSpeedNow()
 	s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 	Click, right
-	s(400)
+	;(the hand has changed: a fresh look next time, not the vision helper's picture of it from before)
+	VisionForget()
+	s(Stat("discardafter"))
 	DebugLog("  Discarded " title " (right-click at " cardX - GameLeft "," cardY - GameTop ")")
 	return 1
 	}
@@ -2552,6 +2630,8 @@ DebugLog(msg)
 #Include %A_ScriptDir%\Vision.ahk
 #Include %A_ScriptDir%\CardLearn.ahk
 #Include %A_ScriptDir%\Potions.ahk
+#Include %A_ScriptDir%\Flee.ahk
+#Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

@@ -82,10 +82,11 @@ DiscardUnused()
 		cards.RemoveAt(i)
 		for k, o in cards
 			o.x += (k < i ? HalfPitch : -HalfPitch)
-		s(400)
+		s(Stat("discardafter"))
 		}
+	;(the hand has changed: a fresh look next time - Vision.ahk keeps its picture of it for 400 ms)
 	if (did)
-		CenterMouse()
+		CenterMouse(), VisionForget()
 	return did
 	}
 
@@ -185,7 +186,7 @@ LearnAllRound()
 		cards.RemoveAt(i)
 		for k, o in cards
 			o.x += (k < i ? HalfPitch : -HalfPitch)
-		s(400)
+		s(Stat("discardafter"))
 		}
 	CenterMouse()
 	;(nothing learned or discarded: the greyed-out ones it keeps aren't coming into colour)
@@ -560,12 +561,15 @@ LearnSave()
 ;heading) and reads the stats again
 StatsSet(pairs, comment := "")
 	{
+	;(the Settings window's Save doesn't write the file halfway through this: Settings.ahk CfgWrite)
+	wasCrit := A_IsCritical
+	Critical
 	path := A_WorkingDir "\PlayerStats.txt"
 	FileRead, text, %path%
 	if (ErrorLevel || !InStr(text, ":"))
 		{
 		DebugLog("  couldn't read PlayerStats.txt - the learned card's numbers weren't written")
-		return false
+		return CfgUncritical(wasCrit, false)
 		}
 	lines := StrSplit(StrReplace(text, "`r"), "`n")
 	if (lines.Length() && lines[lines.Length()] = "")
@@ -595,10 +599,10 @@ StatsSet(pairs, comment := "")
 	FileDelete, %path%.tmp
 	FileAppend, %out%, %path%.tmp
 	if (ErrorLevel)
-		return false
+		return CfgUncritical(wasCrit, false)
 	FileMove, %path%.tmp, %path%, 1
 	LoadStats(true)
-	return true
+	return CfgUncritical(wasCrit, true)
 	}
 
 ;s with everything but letters, digits and -_.~ as %XX (for a request's query string)

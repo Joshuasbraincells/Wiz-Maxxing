@@ -10,7 +10,7 @@
 ;that can't be read go to debug.log instead of a message box (reloading while the bot runs)
 LoadStats(quiet := false)
 	{
-	defaults := "damage:130,pierce:0,enemyresist:15,killmargin:15,solotraps:0,reboost:0,discardunaffordable:0,discardunused:1,discardmax:3,healthocr:1,ocrscale:2,platestrip:110"
+	defaults := "damage:130,pierce:0,enemyresist:15,killmargin:15,solotraps:0,reboost:0,discardunaffordable:0,discardunused:1,discardmax:3,fleeon:1,healthocr:1,ocrscale:2,platestrip:110"
 		. ",blade:35,elementalblade:35,spiritblade:35,blade3:25,blade4:20,sharpen:10"
 		. ",trap:40,elementaltrap:30,spirittrap:30,trap3:30,trap4:0,feint:70,potent:10"
 		. ",aura:25,enchant1:100,enchant2:225,enchant3:275,enchant4:300,pipsave:3,pipsavehealth:50,handsoff:10,handsoffon:1,potionmark:1,potionfromhome:1,navmem:1"
@@ -25,6 +25,11 @@ LoadStats(quiet := false)
 		{
 		ParseStat(A_LoopField)
 		}
+	;(and the Settings window's: Settings.ahk CfgList)
+	if (IsFunc("CfgList"))
+		for each, cfgS in Func("CfgList").Call()
+			if (cfgS.HasKey("def") && !Stats.HasKey(cfgS.key))
+				Stats[cfgS.key] := cfgS.def
 	bad := ""
 	Loop, Read, %A_WorkingDir%\PlayerStats.txt
 		{
@@ -559,7 +564,7 @@ FindLethalHit(ByRef hitName, ByRef withEnchant)
 	global enchant, wand
 	inHand := [hit1, hit2, hit3, hit4]
 	hitName := "", withEnchant := 0
-	if (wand == 1 && IsLethal("wand", 0))
+	if (wand == 1 && Stat("usewand") && IsLethal("wand", 0))
 		{
 		hitName := "wand"
 		return true
