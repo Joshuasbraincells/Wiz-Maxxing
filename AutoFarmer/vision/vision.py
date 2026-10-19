@@ -35,7 +35,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /forget                                 -> reads the picture folders again (after pictures were added)
   /globes?left=&bottom=&scale=            -> "health|<n>" and "mana|<n>" off the globes at the game's bottom
                                              left (n "" if it can't be read for sure)
-  /nav[?path=1]                           -> where the wizard and its quest goal are, read from the game's memory
+  /nav[?path=1][&route=1]                 -> where the wizard and its quest goal are, read from the game's memory
                                              (read-only, see vision\navmem.py), one line each:
                                                ok|1
                                                zone|<zone path, e.g. WizardCity/WC_Ravenwood>
@@ -47,6 +47,11 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                quest|enabled|questid|goalid
                                                path|x,y,z;x,y,z;... (only with path=1: the game's own path over the
                                                                      zone's nav graph, from the wizard to the goal)
+                                               route|x|y|left       (only with route=1: where to steer - a point ahead on
+                                                                     the route planned round the walls over the zone's
+                                                                     map, vision\navroute.py - and how far is left to
+                                                                     walk; route|||  with routewhy|<why> when there's
+                                                                     none yet: the walker steers at the target then)
                                              A field that can't be read for sure is left empty (target|||): goal, target,
                                              dist and path while the quest helper is still on the last zone, target and
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
@@ -57,7 +62,8 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              units across its shorter side (+X right, +Y up): the walkable floor, obstacles
                                              and the faint nav graph (the zone's .wad, decoded once per zone - see
                                              vision\navgeo.py - and drawn in tiles that are kept), then, drawn each time,
-                                             the game's path, the wizard as an arrow showing its facing, the arrow's target
+                                             the game's path, the route planned round the walls (green, with the point
+                                             it steers at), the wizard as an arrow showing its facing, the arrow's target
                                              (a ring) and the goal (a diamond; a door with the number of zone changes when
                                              it's in another zone; on the edge, pointing, when off the picture). No zone
                                              file: the overlay on a blank background. "ERR <why>" as /nav, or when the
@@ -928,6 +934,7 @@ MAP_NAV = (138, 180, 248)
 MAP_PATH = (138, 180, 248)
 MAP_TARGET = (242, 193, 78)
 MAP_GOAL = (123, 216, 143)
+MAP_ROUTE = (110, 231, 183)
 MAP_DOOR = (197, 138, 249)
 MAP_ME = (242, 242, 242)
 MAP_TEXT = (154, 160, 166)
@@ -940,6 +947,31 @@ def nav_reader():
             import navmem
             NAV = navmem.NavMem(log=log)
         return NAV
+
+
+ROUTER = None
+
+
+def router(game_dir=''):
+    """the route planner (vision\navroute.py: the zone's map from its .wad, read-only), made on first use"""
+    global ROUTER
+    with NAV_LOCK:
+        if ROUTER is None:
+            import navroute
+            ROUTER = navroute.Planner(log=log, game_dir=game_dir)
+        return ROUTER
+
+
+def route_lines(r, game_dir):
+    """/nav's route lines for a reading r (made with path=True)"""
+    try:
+        res = router(game_dir).route(r)
+    except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
+        log(f'route: {e!r}')
+        res = {'why': f'the planner failed ({e!r})'}
+    if res.get('aim') is None:
+        return ['route|||', 'routewhy|' + (res.get('why') or '?')]
+    return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}"]
 
 
 def nav_lines(r, with_path):
@@ -1128,8 +1160,9 @@ def map_font(size):
     return MAP_FONTS[size]
 
 
-def render_navmap(r, w, h, game_dir='', span=NAV_SPAN):
-    """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known)"""
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None):
+    """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
+    planned route's answer (navroute) to draw, if any"""
     from PIL import ImageDraw
     upp = span / min(w, h)
     ukey = round(upp, 4)
@@ -1185,6 +1218,12 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN):
         d.line(pts, fill=MAP_PATH + (230,), width=int(2 * unit), joint='curve')
         for q in pts[1:]:
             d.ellipse([q[0] - 1.6 * unit, q[1] - 1.6 * unit, q[0] + 1.6 * unit, q[1] + 1.6 * unit], fill=MAP_PATH + (255,))
+    if route and route.get('route'):
+        pts = [me] + [at(p) for p in route['route'][1:]]
+        if len(pts) >= 2:
+            d.line(pts, fill=MAP_ROUTE + (235,), width=int(2 * unit), joint='curve')
+        q = at(route['aim'])
+        d.ellipse([q[0] - 2.2 * unit, q[1] - 2.2 * unit, q[0] + 2.2 * unit, q[1] + 2.2 * unit], fill=MAP_ROUTE + (255,), outline=MAP_BG + (255,))
     if r['goal'] is not None:
         q = at(r['goal'])
         door = (r['hops'] or 0) > 0
@@ -1317,8 +1356,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('OK')
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
-                r, why = nav_reader().read(path=with_path)
-                return self.reply('\n'.join(nav_lines(r, with_path)) if r is not None else 'ERR ' + why)
+                with_route = q.get('route', '0') not in ('', '0')
+                nm = nav_reader()
+                r, why = nm.read(path=with_path or with_route)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                lines = nav_lines(r, with_path)
+                if with_route:
+                    lines += route_lines(r, nm.game_dir)
+                return self.reply('\n'.join(lines))
             if u.path == '/navmap':
                 w, h = int(q['w']), int(q['h'])
                 out = q['out']
@@ -1335,8 +1381,12 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + why)
                 if r['pos'] is None or r['yaw'] is None:
                     return self.reply("ERR the wizard's position can't be read (" + (r.get('why_player') or '?') + ')')
+                try:
+                    route = router(nm.game_dir).route(r)
+                except Exception:  # noqa: BLE001 - the map without it
+                    route = None
                 with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span)
+                    img = render_navmap(r, w, h, nm.game_dir, span, route)
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':

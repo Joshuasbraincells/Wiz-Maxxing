@@ -242,11 +242,14 @@ global NavWhy, NavWaitUntil, NavWait
 ;  dist      the arrow's distance along the game's path (game units, not the number printed on the arrow)
 ;  enabled   1 while the game's quest helper is on; questid, goalid the quest and goal (as text)
 ;  path      (withPath only) the game's path, [{x, y, z}, ...] in order
+;  ax, ay    (withRoute only) where to steer: a point ahead on the route the helper planned round the walls
+;            over the zone's map (vision\navroute.py); "" when it has none yet - routewhy says why
+;  left      (withRoute only) how far is left to walk along that route and the game's path on from it (game units)
 ;A value that couldn't be read for sure is "". Returns "" when it can't be asked: navmem:0, the helper not
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
 ;1-4 s; the helper may be busy finding its way into a game it hasn't read yet)
-NavRead(timeoutMs := 150, withPath := false)
+NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 	{
 	if (!Stat("navmem"))
 		{
@@ -260,7 +263,7 @@ NavRead(timeoutMs := 150, withPath := false)
 		}
 	if (A_TickCount < NavWaitUntil)
 		return ""
-	answer := VisionGet("/nav" (withPath ? "?path=1" : ""), timeoutMs, true)
+	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0), timeoutMs, true)
 	if (answer = "")
 		{
 		NavWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
@@ -269,7 +272,7 @@ NavRead(timeoutMs := 150, withPath := false)
 		return ""
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
-		, hops: "", dist: "", enabled: "", questid: "", goalid: ""}
+		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -288,6 +291,10 @@ NavRead(timeoutMs := 150, withPath := false)
 			nav.dist := NavNum(f[2])
 		else if (f[1] = "quest")
 			nav.enabled := NavNum(f[2]), nav.questid := Trim(f[3]), nav.goalid := Trim(f[4])
+		else if (f[1] = "route" && withRoute)
+			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4])
+		else if (f[1] = "routewhy" && withRoute)
+			nav.routewhy := Trim(SubStr(navLine, 10))
 		else if (f[1] = "path" && withPath)
 			{
 			nav.path := [], nodes := SubStr(navLine, 6)

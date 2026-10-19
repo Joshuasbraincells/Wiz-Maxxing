@@ -57,6 +57,10 @@ global WkNavScale, WkNavScales, WkNavScaleBad, WkNavState, WkNavPrev, WkNavTurns
 ;unit for each zone it's been worked out in, the zone the readings so far are from, and the middle of all the
 ;zones' (for a zone not worked out yet); the memory standing in for an arrow it can't see (since when)
 global WkNavChecked, WkNavZScales, WkNavScaleZone, WkNavScaleAll, WkStandIn
+;The route round walls over the zone's map (the vision helper plans it, vision\navroute.py): on or off (the
+;setting); steering along it this step; how far is left along it (arrow units); the least left so far, for
+;"is it getting anywhere" and for the badly-stuck watch; on or off (logged when that changes)
+global NavRoute, WkNavRouted, WkNavLeft, WkRouteBest, WkRouteProg, WkRouteState
 ;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
 global WkNavDoor
 
@@ -116,6 +120,8 @@ WalkerInit(prefix := "AutoQuester")
 	NavAgreeNeed := 3     ;its heading is steered by once this many readings agree with the arrow on screen
 	NavTurnTol := 5       ;a turn holds A / D until the wizard's facing is within this many degrees...
 	NavTurnCap := 2500    ;...for at most this long (ms)
+	NavRoute := 1         ;steer along the route the vision helper plans round walls over the zone's map (its
+	                      ;floor and obstacles); 0 = straight at where the quest arrow points, as before
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
@@ -127,6 +133,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
 	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0
+	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := ""
 	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
@@ -150,7 +157,7 @@ WalkReset()
 	WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
-	WkNavDoor := 0, WkStandIn := 0
+	WkNavDoor := 0, WkStandIn := 0, WkRouteBest := "", WkRouteProg := ""
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -632,7 +639,7 @@ WalkStep()
 			WkGoneSpaces += 1, WkSpaceAt := A_TickCount
 			}
 		SetStatus("waiting - no quest arrow on screen (battle, loading or dialogue?)")
-		WkBestDist := "", WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
+		WkBestDist := "", WkRouteBest := "", WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 		Sleep, 300
 		return true
 		}
@@ -752,6 +759,13 @@ WalkStep()
 		;Progress = closer than ever before, or a new goal further away
 		if (WkBestDist = "" || dist < WkBestDist - 1 || dist > WkBestDist + 50)
 			WkBestDist := dist, WkBestTime := A_TickCount, WkTries := 0
+		;...or getting on along the route round walls: going round one gets no closer as the crow flies for a
+		;while (and for the badly-stuck watch below)
+		onRoute := WkNavUse && WkNavRouted && WkNavLeft != ""
+		if (onRoute && (WkRouteBest = "" || WkNavLeft < WkRouteBest - 1 || WkNavLeft > WkRouteBest + 50))
+			WkRouteBest := WkNavLeft, WkBestTime := A_TickCount, WkTries := 0
+		if (onRoute && (WkRouteProg = "" || WkNavLeft < WkRouteProg - 30 || WkNavLeft > WkRouteProg + 300))
+			WkRouteProg := WkNavLeft, WkProgAt := A_TickCount
 		;Badly stuck: walking on and on without getting any closer to the goal for StuckForever (the clock only
 		;runs while it walks here - a gap of over 5 s since it last looked, a battle or a talk, is left out):
 		;the Commons, and start over from there
@@ -778,7 +792,8 @@ WalkStep()
 			}
 		;On the way to an obstacle remembered from before: keep to the side that got round it then (not
 		;while already getting round something)
-		if (A_TickCount > WkBiasUntil && WkTries = 0 && !IsObject(WkEsc) && WkMem.Length())
+		;(not on the route round walls: that knows the walls - the ones remembered were met without it)
+		if (A_TickCount > WkBiasUntil && WkTries = 0 && !IsObject(WkEsc) && WkMem.Length() && !onRoute)
 			{
 			spot := WalkMemAhead(WalkZone(), dist)
 			if (IsObject(spot))
@@ -870,7 +885,7 @@ WalkStep()
 	if (!Walking)
 		return false
 	SetStatus("walking - " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees, distance " (dist = "" ? "?" : dist) (steer != h ? " (keeping clear of the obstacle)" : "") (fine ? "" : " (talk prompt showing)")
-		. (standIn ? " (no arrow on screen - by the game's memory)" : WkNavUse ? " (game's memory)" : ""))
+		. (standIn ? " (no arrow on screen - by the game's memory)" : WkNavUse && WkNavRouted ? " (on the route round walls)" : WkNavUse ? " (game's memory)" : ""))
 	;Is the wizard actually moving? With W held, the picture moves along. Two looks in a row where it
 	;has hardly changed = walking into something, so don't wait the full StuckTime
 	still := WalkStill()
@@ -2344,17 +2359,33 @@ WalkMemLearn(zone, d, side, walkMs, worked)
 ;the camera still swinging round)
 WalkNav(hScr, dScr)
 	{
-	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := ""
+	static navGoalKey := ""
+	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavRouted := 0, WkNavLeft := ""
 	;(AutoQuester on its own has no vision helper. In a battle there's nothing to steer, and the battle
 	;shouldn't wait for it)
 	if (!IsFunc("NavRead") || inbattle)
 		return
-	nav := Func("NavRead").Call()
+	nav := Func("NavRead").Call(150, false, NavRoute)
 	why := WalkNavProblem(nav)
 	if (why = "")
 		{
 		WkNavOk := 1, WkNavObj := nav, WkNavHops := nav.hops
+		;(a new goal - another zone, quest goal or zone changes to go: "getting on" along the route, and the
+		;badly-stuck watch, start over from it)
+		goalKey := nav.zone "|" nav.goalid "|" nav.hops
+		if (goalKey != navGoalKey)
+			navGoalKey := goalKey, WkRouteBest := "", WkRouteProg := "", WkProgBest := ""
 		WkNavH := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.tx, nav.ty)
+		;(checked against the arrow on screen by where it points, not by the route)
+		hTarget := WkNavH
+		;The route round walls (the helper's plan over the zone's map): steer at its aim - a point ahead on it,
+		;in sight - instead of straight at where the arrow points; how far is left along it
+		if (NavRoute && nav.ax != "" && nav.ay != "")
+			{
+			hAim := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.ax, nav.ay)
+			if (hAim != "")
+				WkNavH := hAim, WkNavRouted := 1
+			}
 		;How fast the wizard is moving (game units per ms): the number on screen and the memory's are read a
 		;moment apart (up to ~150 ms with the OCR), so a pair only says how the two compare when that moment's
 		;walking is small next to the distance. (Lone digits misread: 20 or more only)
@@ -2370,11 +2401,31 @@ WalkNav(hScr, dScr)
 			WalkNavLearnScale(nav.dist / dScr, nav.hops)
 		if (nav.dist != "" && WkNavScale > 0 && WkNavScaleBad < 2)
 			WkNavD := Round(nav.dist / WkNavScale)
-		if (hScr != "" && WkNavH != "")
-			WalkNavVote(hScr, WkNavH)
+		if (WkNavRouted && nav.left != "" && WkNavScale > 0 && WkNavScaleBad < 2)
+			WkNavLeft := nav.left / WkNavScale
+		if (hScr != "" && hTarget != "")
+			WalkNavVote(hScr, hTarget)
 		WkNavUse := WkNavTrusted && WkNavH != ""
 		}
 	WalkNavSay(why, nav)
+	WalkNavRouteSay(why = "" ? nav : "")
+	}
+
+;Logs the route round walls coming and going: once each way (a moment with none while it plans isn't a change)
+WalkNavRouteSay(nav)
+	{
+	if (!NavRoute || !IsObject(nav))
+		return
+	if (WkNavRouted && WkRouteState != "on")
+		WalkLog("the route round walls (the zone's map): steering along it" (WkNavLeft != "" ? " - " Round(WkNavLeft) " to go" : ""))
+	else if (!WkNavRouted && WkRouteState = "on" && nav.routewhy != "planning")
+		WalkLog("no route round walls (" (nav.routewhy = "" ? "?" : nav.routewhy) ") - steering at where the arrow points")
+	else if (!WkNavRouted && WkRouteState = "" && nav.routewhy != "" && nav.routewhy != "planning")
+		WalkLog("no route round walls (" nav.routewhy ") - steering at where the arrow points")
+	if (WkNavRouted)
+		WkRouteState := "on"
+	else if (nav.routewhy != "planning")
+		WkRouteState := "off"
 	}
 
 ;Why this reading of the game's memory can't be used ("" it can)

@@ -198,6 +198,19 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	    prompts are still looked for meanwhile; not in a battle or at a
 	    loading screen. debug.log: "no arrow on screen - the game's memory
 	    stands in for it".
+	  - the route round walls: the helper plans the way to the goal over
+	    the zone's own map (its floor, walls and obstacles, from the zone's
+	    file - the same map as the dashboard's Map window, where the plan is
+	    drawn in green), following the game's own quest path but keeping
+	    clear of walls, corners, ledges and the storeys above and below. The
+	    wizard steers at a point a little way ahead on it, so it goes round
+	    walls instead of walking into them; going round one isn't taken for
+	    being stuck. Things that aren't in the zone's file - NPCs, other
+	    players - are still met by the usual "stuck: back up and go round".
+	    debug.log: "the route round walls (the zone's map): steering along
+	    it" / "no route round walls (...) - steering at where the arrow
+	    points" (it does that whenever there's no plan). NavRoute := 0 at the
+	    top of Walker.ahk switches it off.
 	  - turns: it holds A / D until the wizard's facing has really turned
 	    that far (within about 5 degrees), instead of guessing from the time.
 	  - a goal in another zone: the arrow leads to the way out (a door, a
