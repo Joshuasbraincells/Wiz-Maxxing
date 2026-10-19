@@ -15,6 +15,8 @@ global DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld :=
 ;Counts (rounds, passes, ...) and casts per card; what it sees ({key: text}); card names off PlayerStats.txt
 global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
 global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
+;CPU and RAM in use, on the STATISTICS row (DashUsage)
+global DashUsageText
 ;The bottom row's other buttons (they share the window's width)
 global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
@@ -36,7 +38,10 @@ DashInit()
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
 	Gui, Dash:Add, Text, x12 y10 w760 h22 vDashHead, Wizard101 bot
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y40 w340 h16, STATISTICS
+	Gui, Dash:Add, Text, x12 y40 w86 h16, STATISTICS
+	Gui, Dash:Font, s8 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x100 y41 w270 h16 vDashUsageText, CPU / RAM ...
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x372 y40 w150 h16, WHAT IT SEES
 	;(the Map button at the right end of that row; DashGuiSize keeps it there)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
@@ -458,6 +463,7 @@ DashRefresh()
 		. "Potions drunk    " DashNum(n.potions) "   (buying runs: " (n.potionRuns = "" ? 0 : n.potionRuns) ")`n"
 		. "Cards learned    " DashNum(n.learned)
 	DashSet("DashStatText", s)
+	DashSet("DashUsageText", DashUsage())
 	;What it sees
 	see := DashSees
 	zone := IsFunc("WalkZone") ? Func("WalkZone").Call() : ""
@@ -829,6 +835,74 @@ DashWalkToggle:
 DashFolder:
 	Run, %A_ScriptDir%
 	return
+
+;CPU and RAM in use, for the STATISTICS row: the bot (this script and its vision helper), the game, the whole PC.
+;CPU from the time each has used since the last look (all cores = 100%), RAM its working set (what Task Manager
+;shows, about). Read-only process queries - nothing is changed
+DashUsage()
+	{
+	static last := {}, procs := {}
+	EnvGet, cores, NUMBER_OF_PROCESSORS
+	cores := cores > 0 ? cores : 1
+	now := A_TickCount
+	gamePid := 0
+	WinGet, gamePid, PID, ahk_class %GameClass% ahk_exe %GameExe%
+	who := {bot: [DllCall("GetCurrentProcessId"), VisionPid], game: [gamePid]}
+	out := {}
+	for name, pids in who
+		{
+		cpu := 0, ram := 0, seen := 0
+		for each, pid in pids
+			{
+			if (!pid)
+				continue
+			if (!procs.HasKey(pid))
+				procs[pid] := DllCall("OpenProcess", "UInt", 0x1000, "Int", 0, "UInt", pid, "Ptr")
+			h := procs[pid]
+			if (!h)
+				continue
+			VarSetCapacity(ft, 32, 0)
+			if (!DllCall("GetProcessTimes", "Ptr", h, "Ptr", &ft, "Ptr", &ft + 8, "Ptr", &ft + 16, "Ptr", &ft + 24))
+				{
+				DllCall("CloseHandle", "Ptr", h), procs.Delete(pid)
+				continue
+				}
+			used := NumGet(ft, 16, "Int64") + NumGet(ft, 24, "Int64")
+			if (last.HasKey(pid) && now > last[pid].at)
+				cpu += (used - last[pid].used) / 10000 / (now - last[pid].at) / cores * 100
+			last[pid] := {used: used, at: now}
+			cb := 8 + 8 * A_PtrSize
+			VarSetCapacity(pmc, cb, 0), NumPut(cb, pmc, 0, "UInt")
+			if (DllCall("K32GetProcessMemoryInfo", "Ptr", h, "Ptr", &pmc, "UInt", cb))
+				ram += NumGet(pmc, 8 + A_PtrSize, "UPtr")
+			seen += 1
+			}
+		out[name] := seen ? DashUsageNum(cpu) "%" Chr(183) DashBytes(ram) : "-"
+		}
+	;the whole PC: busy share of all cores since the last look, and RAM in use
+	VarSetCapacity(st, 24, 0)
+	pcCpu := "?"
+	if (DllCall("GetSystemTimes", "Ptr", &st, "Ptr", &st + 8, "Ptr", &st + 16))
+		{
+		idle := NumGet(st, 0, "Int64"), total := NumGet(st, 8, "Int64") + NumGet(st, 16, "Int64")
+		if (last.HasKey("pc") && total > last.pc.total)
+			pcCpu := DashUsageNum(100 * (1 - (idle - last.pc.idle) / (total - last.pc.total)))
+		last.pc := {idle: idle, total: total}
+		}
+	VarSetCapacity(ms, 64, 0), NumPut(64, ms, 0, "UInt")
+	pcRam := DllCall("GlobalMemoryStatusEx", "Ptr", &ms) ? NumGet(ms, 4, "UInt") "%" : "?"
+	return "CPU" Chr(183) "RAM   bot " out.bot "   game " out.game "   PC " pcCpu "%" Chr(183) pcRam
+	}
+
+DashUsageNum(v)
+	{
+	return v < 0 ? 0 : v < 10 ? Round(v, 1) : Round(v)
+	}
+
+DashBytes(n)
+	{
+	return n >= 1073741824 ? Round(n / 1073741824, 1) "GB" : Round(n / 1048576) "MB"
+	}
 
 ;"Learn every card" on/off (CardLearn.ahk)
 DashLearnAll:

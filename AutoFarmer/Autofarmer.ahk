@@ -437,6 +437,22 @@ if (Manual != 1)
 hammerX = %hitterX%
 hammerY = %hitterY%
 
+;No school badge found on the name plates - your plate in another slot can show none (seen with a 1280x1024
+;window, the left plate): the school this character was seen fighting with before (resources\characters.txt,
+;by its CharID in the game's log), and your own plate - found by your name - as the hitter's (a solo battle)
+if (hitter = 0) && (Manual != 1) && (player == 1)
+	{
+	knownSchool := StatsSchoolOf(StatsCharID())
+	if (BadgeNumber(knownSchool))
+		{
+		hitschool := knownSchool, hitter := BadgeNumber(knownSchool)
+		hammerX := playerX + Px(25), hammerY := playerY + Px(8)
+		if (school = "")
+			school := knownSchool
+		DebugLog("  no school badge found on the name plates - this character fought as " knownSchool " before: using that, with your own plate as the hitter's")
+		}
+	}
+
 ;A character the bot has no pictures for (no school icon it knows on the screen, e.g. a new wizard of
 ;another school): leave the round to you rather than passing it, and keep a picture of the round so
 ;that character's name, school icon and cards can be cut from it

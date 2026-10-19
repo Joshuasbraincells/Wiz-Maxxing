@@ -44,7 +44,9 @@ for a card it doesn't know, * for a greyed-out one - enemies' health, zone,
 the walker) and the log as it's written. Windows+2 or the tray menu shows /
 hides it; it opens on a monitor the game isn't on and remembers where you put
 it (dashboard.ini). It never takes the focus by itself. Its X (close) stops
-the bot; minimise it (or Windows+2) to just put it away.
+the bot; minimise it (or Windows+2) to just put it away. Next to STATISTICS:
+the CPU and RAM in use, every second - the bot (with its vision helper), the
+game and the whole PC (CPU share of all cores, RAM in use).
 
 Executables: ..\Wiz-Maxxing.exe starts the bot (Setup.exe puts it in the Start menu
 and on the desktop). Autofarmer.exe (and StatsReader.exe here, AutoQuester.exe in
@@ -202,7 +204,11 @@ damage / pierce lines near the top are only used for a school with none.
 	  5 s (it stops at once if you touch them, if the game loses focus or a
 	  battle starts). At most once every 30 minutes per character.
 	  debug.log: "Stats: ...". It knows each character's school from the
-	  badge by its name plate in battle (resources\characters.txt).
+	  badge by its name plate in battle (resources\characters.txt) - and
+	  when a battle shows no badge it knows (your plate in another slot can
+	  show none), it goes by that: the school this character fought as
+	  before, with your own plate (found by your name) as the hitter's.
+	  debug.log: "no school badge found on the name plates - ..."
 	- Tray menu "Read wizard stats now" (or double-click StatsReader.ahk;
 	  while AutoFarmer runs, that just asks AutoFarmer to do it): read them
 	  again, e.g. after changing gear.
