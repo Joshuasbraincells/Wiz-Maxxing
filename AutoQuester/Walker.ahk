@@ -61,6 +61,8 @@ global WkNavChecked, WkNavZScales, WkNavScaleZone, WkNavScaleAll, WkStandIn
 ;setting); steering along it this step; how far is left along it (arrow units); the least left so far, for
 ;"is it getting anywhere" and for the badly-stuck watch; on or off (logged when that changes)
 global NavRoute, WkNavRouted, WkNavLeft, WkRouteBest, WkRouteProg, WkRouteState
+;(an arrow read as the memory's mirror image, its sign checked: when that was last logged)
+global WkNavMirrorSaid
 ;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
 global WkNavDoor
 
@@ -133,7 +135,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
 	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0
-	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := ""
+	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := "", WkNavMirrorSaid := 0
 	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
@@ -1401,12 +1403,32 @@ Turn(h)
 	key := h < 0 ? "a" : "d"
 	ms := Round(Abs(h) / TurnRate)
 	ms := ms < 30 ? 30 : ms > 800 ? 800 : ms
+	;(the game's memory readable this step but its heading's sign not checked yet: the wizard's facing before
+	;and after this turn checks it - see the end)
+	yaw0 := (WkNavOk && !WkNavChecked && IsObject(WkNavObj) && IsFunc("NavRead")) ? WkNavObj.yaw : ""
 	KeysDown := 1
 	Send, {Blind}{%key% down}
 	Critical, Off
 	HoldFor(ms)
 	Send, {Blind}{%key% up}
 	WkTurnAt := A_TickCount
+	if (yaw0 != "" && Walking)
+		{
+		Sleep, 120
+		nav := Func("NavRead").Call(120)
+		if (IsObject(nav) && nav.yaw != "")
+			{
+			turned := WkNavSign * ArrowWrap((nav.yaw - yaw0) * 57.29578)
+			;(a fair way round: which way round its heading is, is settled - the keys turn the wizard)
+			if (Abs(turned) >= 15 && turned * h < 0)
+				{
+				WkNavSign := -WkNavSign, turned := -turned
+				WalkLog("turn: holding " key " turned the wizard " Round(Abs(turned)) " degrees the other way than the game's memory's heading said - turned its sign round")
+				}
+			if (Abs(turned) >= 15)
+				WalkNavConfirm("holding " key " turned the wizard " Round(Abs(turned)) " degrees the way its heading said")
+			}
+		}
 	}
 
 ;Back up, turn UnstickTurn degrees to one side and walk along the obstacle for walkMs
@@ -2488,7 +2510,20 @@ WalkNavVote(hScr, hMem)
 	else if (hScr * hMem < 0 && Abs(ArrowWrap(hScr + hMem)) <= 35)
 		{
 		WkNavMirror += 1, WkNavAgree := 0, WkNavOdd := 0
-		if (WkNavMirror >= NavAgreeNeed)
+		;(its sign checked - the wizard's own facing turned with the keys the way it said, or the arrow agreed:
+		;it's the game's, the same everywhere. An arrow that reads as its mirror image is misread there - a dais,
+		;a carpet, the camera's angle - and isn't followed; turns go on checking the sign: NavTurn turns it round
+		;if one ever goes the other way)
+		if (WkNavMirror >= NavAgreeNeed && WkNavChecked)
+			{
+			WkNavMirror := 0
+			if (A_TickCount - WkNavMirrorSaid > 60000)
+				{
+				WkNavMirrorSaid := A_TickCount
+				WalkLog("the arrow reads as the game's memory's mirror image (" NavAgreeNeed " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - the arrow misread here? Keeping the memory's heading (checked by turning)")
+				}
+			}
+		else if (WkNavMirror >= NavAgreeNeed)
 			{
 			WkNavSign := -WkNavSign, WkNavMirror := 0, WkNavTrusted := 0
 			WalkLog("the game's memory: its heading is the arrow's mirror image (" NavAgreeNeed " readings, the last: arrow " Round(hScr) ", memory " Round(hMem) " degrees) - turned it round, checking again")

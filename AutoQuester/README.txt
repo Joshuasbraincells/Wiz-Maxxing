@@ -179,8 +179,12 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	    points - once it's been checked: it agrees with the arrow on screen
 	    (3 clear readings; if it's the arrow's mirror image its sign is
 	    turned round and checked again), or, with no arrow to check it by,
-	    a turn goes the way it says. Once checked it's kept (checked:1 in
-	    resources\nav_calibration.txt) and used from the start next time.
+	    a turn goes the way it says (any turn, timed or not, checks it).
+	    Once checked it's kept (checked:1 in resources\nav_calibration.txt)
+	    and used from the start next time, and an arrow that reads as its
+	    mirror image doesn't turn it round any more (the arrow is misread
+	    there - the dais in the Headmistress's office did that); turns go on
+	    checking it.
 	    debug.log: "the game's memory: its heading agrees with the arrow's"
 	    / "holding d turned the wizard ... the way its heading said".
 	  - distance: the memory's instead of the OCR'd number (which misses
@@ -201,7 +205,8 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	  - the route round walls: the helper plans the way to the goal over
 	    the zone's own map (its floor, walls and obstacles, from the zone's
 	    file - the same map as the dashboard's Map window, where the plan is
-	    drawn in green), following the game's own quest path but keeping
+	    drawn in green and the floor is shaded by height: brighter is
+	    higher), following the game's own quest path but keeping
 	    clear of walls, corners, ledges and the storeys above and below. The
 	    wizard steers at a point a little way ahead on it, so it goes round
 	    walls instead of walking into them; going round one isn't taken for

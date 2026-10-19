@@ -927,6 +927,8 @@ NAV_ZONES_KEPT = 3
 # colours, to sit on the dashboard (1B1D22 / 111317, accent 8AB4F8)
 MAP_BG = (17, 19, 23)
 MAP_FLOOR = (44, 48, 56)
+MAP_FLOOR_LOW = (34, 38, 46)        # the floor shaded by height: the zone's lowest...
+MAP_FLOOR_HIGH = (104, 112, 130)    # ...and highest (a dais, a ramp, a balcony stand out)
 MAP_RIM = (72, 78, 90)
 MAP_WATER = (28, 52, 74)
 MAP_OBST = (204, 112, 74)
@@ -1005,6 +1007,8 @@ class ZoneLayers:
         self.zone, self.why = zone, ''
         self.tris = {}          # 'floor' / 'water': (F, 3, 2) world XY triangles, with (F, 4) bounds
         self.polys = {}         # 'floor' / 'obst': [(k, 2) polygon], with (n, 4) bounds
+        self.tz = {}            # 'floor': (F,) each floor triangle's height; 'floorpoly': each walkable box's top
+        self.zlo = self.zhi = 0.0  # the floor's height range (for its shading)
         self.segs = np.zeros((0, 2, 2))
         self.nodes = np.zeros((0, 2))
         self.bounds = None      # x1, y1, x2, y2 of everything
@@ -1021,6 +1025,7 @@ class ZoneLayers:
         self.nodes = P[:, :2]
         tris = {'floor': [], 'water': []}
         polys = {'floor': [], 'obst': []}
+        tz = {'floor': [], 'floorpoly': []}
         for s in bcd:
             cat = s['category_flags']
             if s['type'] == 'mesh':
@@ -1028,8 +1033,13 @@ class ZoneLayers:
                 if kind and len(s['mesh']['faces']):
                     v, f = navgeo.mesh_world(s)
                     tris[kind].append(v[f][:, :, :2])
+                    if kind == 'floor':
+                        tz['floor'].append(v[f][:, :, 2].mean(1))
             elif cat & 0x2:                                          # a walkable box (a platform)
-                polys['floor'] += [p for p in navgeo.footprint(s, 24) if len(p) >= 3]
+                ps = [p for p in navgeo.footprint(s, 24) if len(p) >= 3]
+                ab = navgeo.aabb(s)
+                polys['floor'] += ps
+                tz['floorpoly'] += [ab[1][2] if ab is not None else 0.0] * len(ps)
             elif cat & 0x81 and s['type'] in ('box', 'cylinder', 'sphere', 'tube'):
                 # an obstacle - unless it hangs over the floor (an arch's top, a roof): its bottom higher
                 # than a wizard over every nav node round it
@@ -1040,6 +1050,10 @@ class ZoneLayers:
                     if near.any() and lo[2] > P[near, 2].max() + 180:
                         continue
                 polys['obst'] += [p for p in navgeo.footprint(s, 28) if len(p) >= 3]
+        self.tz = {'floor': np.concatenate(tz['floor']) if tz['floor'] else np.zeros(0), 'floorpoly': np.array(tz['floorpoly'])}
+        allz = np.concatenate([self.tz['floor'], self.tz['floorpoly']])
+        if len(allz):
+            self.zlo, self.zhi = float(np.percentile(allz, 2)), float(np.percentile(allz, 98))
         allb = []
         for k, t in tris.items():
             t = np.concatenate(t) if t else np.zeros((0, 3, 2))
@@ -1079,20 +1093,36 @@ class ZoneLayers:
         from PIL import ImageDraw, ImageFilter
         ground = Image.new('L', (size, size), 0)                  # 0 nothing, 1 floor, 2 water
         dg = ImageDraw.Draw(ground)
+        shade = Image.new('L', (size, size), 0)                   # the floor's height, 0-255 over the zone's range
+        dsh = ImageDraw.Draw(shade)
+        span = max(1.0, self.zhi - self.zlo)
+
+        def level(z):
+            return int(round(255 * min(1.0, max(0.0, (z - self.zlo) / span))))
         for kind, val in (('floor', 1), ('water', 2)):
             t, b = self.tris[kind]
-            for tri in px(t[inside(b)]).tolist():
+            sel = np.nonzero(inside(b))[0]
+            if kind == 'floor' and len(sel):
+                sel = sel[np.argsort(self.tz['floor'][sel], kind='stable')]          # higher floors over lower
+            for k, tri in zip(sel.tolist(), px(t[sel]).tolist()):
                 dg.polygon([tuple(q) for q in tri], fill=val, outline=val)
+                if kind == 'floor':
+                    dsh.polygon([tuple(q) for q in tri], fill=level(self.tz['floor'][k]), outline=level(self.tz['floor'][k]))
             if kind == 'floor':
                 ps, b = self.polys['floor']
                 for k in np.nonzero(inside(b))[0] if len(b) else ():
                     dg.polygon([tuple(q) for q in px(ps[k]).tolist()], fill=val, outline=val)
+                    lv = level(self.tz['floorpoly'][k]) if k < len(self.tz['floorpoly']) else 0
+                    dsh.polygon([tuple(q) for q in px(ps[k]).tolist()], fill=lv, outline=lv)
         g = np.asarray(ground)
+        sh = np.asarray(shade).astype(np.float32)[..., None] / 255.0
         solid = Image.fromarray(((g > 0) * 255).astype(np.uint8))
         rim = (np.asarray(solid.filter(ImageFilter.MaxFilter(2 * S + 1))) > 0) & (g == 0)
         rgb = np.empty((size, size, 3), np.uint8)
         rgb[:] = MAP_BG
-        rgb[g == 1] = MAP_FLOOR
+        lo, hi = np.array(MAP_FLOOR_LOW, np.float32), np.array(MAP_FLOOR_HIGH, np.float32)
+        floor_rgb = (lo + (hi - lo) * sh).astype(np.uint8)
+        rgb[g == 1] = floor_rgb[g == 1]
         rgb[g == 2] = MAP_WATER
         rgb[rim] = MAP_RIM
         img = Image.fromarray(rgb).convert('RGBA')
