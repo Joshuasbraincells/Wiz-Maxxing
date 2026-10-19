@@ -68,6 +68,9 @@ global WkAfterXLooked, WkGoalLine, WkGoalLineAt
 ;(prompts walked past - not the quest's - logged, when: apart from WkPromptUsed, which says what X was pressed at;
 ;what was on screen just before X, for what X opened: WalkCloseAfterX)
 global WkPromptSkip, WkPreXText
+;A teleport on the game's path, right at it (the helper's route stops there): the seconds waited there ("" not
+;at one), where it is ("x,y"); the one walked on into already; no way on but teleports that don't take the wizard
+global WkNavJump, WkNavJumpAt, WkJumpKey, WkJumpStuck, WkJumpPushUntil
 ;(when the arrow itself was last on screen; whether it was right before X was pressed at a prompt)
 global WkRealSeenAt, WkArrowAtX
 ;(an arrow read as the memory's mirror image, its sign checked: when that was last logged)
@@ -141,6 +144,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkPromptSkip := {}, WkPreXText := ""
+	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
 	WkCollect := "", WkGoalReadAt := 0, WkAfterXLooked := 0, WkGoalLine := "", WkGoalLineAt := 0, WkRealSeenAt := 0, WkArrowAtX := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
@@ -282,6 +286,18 @@ WalkStep()
 	;it: the arrow, as before
 	fair := seen && !moved && score >= 0.8
 	WalkNav(fair && A_TickCount - WkTurnAt > TurnSettle + 150 ? h : "", fair ? dist : "")
+	;The way on is only teleports that don't take the wizard (locked till a quest's done, or only the other way)
+	;and the zone's paths have no other: walking off, and a notice - the arrow would lead back to one
+	if (WkJumpStuck = 1)
+		{
+		WkJumpStuck := 2
+		Walking := 0
+		ReleaseKeys()
+		WalkLog("stuck at a teleport: the quest's way on is a teleport that doesn't take the wizard (locked, or one way only), and the zone's paths have no other - walking off")
+		SetStatus("stuck - the way on is a teleport that doesn't work here. Press F8 to walk again")
+		WalkNotify("stuck", "Stuck at a teleport", "The quest's way on goes through a teleport here that doesn't take the wizard (locked till a quest's done, or it only goes the other way), and the zone's paths have no other way, so walking is off. Do what opens it (or move on to another quest) and press F8 to walk again.")
+		return false
+		}
 	if (WkNavUse)
 		h := WkNavH
 	if (WkNavD != "")
@@ -762,6 +778,37 @@ WalkStep()
 		return true
 		}
 
+	;A teleport on the game's path (the route stops at it - the zone's paths jump from there to far off: a
+	;trolley, a hole down to the sewers): walk straight on into it for a second, once (X at its prompt if it
+	;asks: WalkPromptWanted), then stand by it - not back and forth over it - while the helper waits for it to
+	;take the wizard. One that doesn't in 15 s is given up and the route goes another way: walking on
+	if (WkJumpKey != "" && WkNavJump = "" && WkNavRouted && IsObject(WkNavObj) && WkNavObj.ax != "")
+		{
+		jk := StrSplit(WkJumpKey, ",")
+		if (Sqrt((WkNavObj.ax - jk[1]) ** 2 + (WkNavObj.ay - jk[2]) ** 2) > 400)
+			WalkLog("teleport at " WkJumpKey ": the route goes another way now - walking on"), WkJumpKey := ""
+		}
+	if (WkNavJump != "")
+		{
+		if (WkJumpKey != WkNavJumpAt)
+			{
+			WkJumpKey := WkNavJumpAt, WkJumpPushUntil := A_TickCount + 1000
+			WalkLog("teleport on the game's path at " WkNavJumpAt " - walking on into it (given up if it doesn't take the wizard)")
+			}
+		if (A_TickCount < WkJumpPushUntil)
+			{
+			HoldW(1)
+			SetStatus("walking on into a teleport on the game's path")
+			Sleep, 50
+			return true
+			}
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		WkBestTime := A_TickCount, WkTries := 0
+		SetStatus("at a teleport - waiting for it to take the wizard (" WkNavJump " s)")
+		Sleep, 300
+		return true
+		}
 	if (dist != "")
 		{
 		WkLastRead := A_TickCount
@@ -1363,7 +1410,8 @@ WalkNear(d, arrowMax, units)
 ;walked past - aren't: X there opens their chatter, an OK box or their shop
 WalkPromptWanted(key, d)
 	{
-	if (WkArrived = 7 || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
+	;(and right at a teleport on the game's path: its prompt is the way on)
+	if (WkArrived = 7 || WkNavJump != "" || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
 		return true
 	goal := WalkGoalLine()
 	if (goal != "" && CollectGoal(goal))
@@ -1501,6 +1549,8 @@ WalkToggle()
 		;(a collect goal given up on gets another go)
 		if (IsObject(WkCollect) && WkCollect.gaveUp)
 			WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
+		;(teleports the helper gave up get another go - you may have done what opens one: NavRead, AutoFarmer)
+		WkJumpStuck := 0, WkJumpKey := "", NavUnblock := 1
 		WalkReset()
 		SetStatus("walking on")
 		}
@@ -2530,6 +2580,7 @@ WalkNav(hScr, dScr)
 	{
 	static navGoalKey := ""
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavRouted := 0, WkNavLeft := ""
+	WkNavJump := "", WkNavJumpAt := ""
 	;(AutoQuester on its own has no vision helper. In a battle there's nothing to steer, and the battle
 	;shouldn't wait for it)
 	if (!IsFunc("NavRead") || inbattle)
@@ -2543,7 +2594,7 @@ WalkNav(hScr, dScr)
 		;badly-stuck watch, start over from it)
 		goalKey := nav.zone "|" nav.goalid "|" nav.hops
 		if (goalKey != navGoalKey)
-			navGoalKey := goalKey, WkRouteBest := "", WkRouteProg := "", WkProgBest := ""
+			navGoalKey := goalKey, WkRouteBest := "", WkRouteProg := "", WkProgBest := "", WkJumpKey := "", WkJumpStuck := 0
 		WkNavH := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.tx, nav.ty)
 		;(checked against the arrow on screen by where it points, not by the route)
 		hTarget := WkNavH
@@ -2554,6 +2605,10 @@ WalkNav(hScr, dScr)
 			hAim := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.ax, nav.ay)
 			if (hAim != "")
 				WkNavH := hAim, WkNavRouted := 1
+			;(right at a teleport on the game's path: the route stops there - see the teleport step in WalkStep;
+			;also when its aim is the wizard's own spot, the free spot by a teleport inside its object)
+			if (nav.jump != "" && nav.jx != "")
+				WkNavJump := nav.jump, WkNavJumpAt := Round(nav.jx) "," Round(nav.jy)
 			}
 		;How fast the wizard is moving (game units per ms): the number on screen and the memory's are read a
 		;moment apart (up to ~150 ms with the OCR), so a pair only says how the two compare when that moment's
@@ -2578,6 +2633,9 @@ WalkNav(hScr, dScr)
 		}
 	WalkNavSay(why, nav)
 	WalkNavRouteSay(why = "" ? nav : "")
+	;(no way on but teleports that don't take the wizard - the helper gave them up: WalkStep stops walking)
+	if (why = "" && InStr(nav.routewhy, "teleport that doesn't take the wizard") && !WkJumpStuck)
+		WkJumpStuck := 1
 	}
 
 ;Logs the route round walls coming and going: once each way (a moment with none while it plans isn't a change)

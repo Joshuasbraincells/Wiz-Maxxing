@@ -232,6 +232,8 @@ VisionBadge(x1, y1, x2, y2, ByRef bx, ByRef by, nearX := 0, nearY := 0)
 ;touched. navmem:0 in PlayerStats.txt switches it off (the walker then only reads the arrow off the screen).
 ;Why the last NavRead got nothing; when it may ask again, and how long it waited last time
 global NavWhy, NavWaitUntil, NavWait
+;Set by the walker's F8 (walking on): the next NavRead asks the helper to forget the teleports it gave up
+global NavUnblock
 
 ;The wizard and the quest goal from the game's memory, as an object:
 ;  ok        1
@@ -245,6 +247,8 @@ global NavWhy, NavWaitUntil, NavWait
 ;  ax, ay    (withRoute only) where to steer: a point ahead on the route the helper planned round the walls
 ;            over the zone's map (vision\navroute.py); "" when it has none yet - routewhy says why
 ;  left      (withRoute only) how far is left to walk along that route and the game's path on from it (game units)
+;  jump, jx, jy  (withRoute only) right at a teleport on the game's path (the route stops at it): the seconds
+;            waited there, and where it is; "" otherwise
 ;A value that couldn't be read for sure is "". Returns "" when it can't be asked: navmem:0, the helper not
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
@@ -263,7 +267,10 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		}
 	if (A_TickCount < NavWaitUntil)
 		return ""
-	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0), timeoutMs, true)
+	unblock := (withRoute && NavUnblock) ? "&unblock=1" : ""
+	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0) unblock, timeoutMs, true)
+	if (unblock != "" && answer != "")
+		NavUnblock := 0
 	if (answer = "")
 		{
 		NavWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
@@ -272,7 +279,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		return ""
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
-		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: ""}
+		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -292,7 +299,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false)
 		else if (f[1] = "quest")
 			nav.enabled := NavNum(f[2]), nav.questid := Trim(f[3]), nav.goalid := Trim(f[4])
 		else if (f[1] = "route" && withRoute)
-			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4])
+			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4]), nav.jump := NavNum(f[5]), nav.jx := NavNum(f[6]), nav.jy := NavNum(f[7])
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
 		else if (f[1] = "path" && withPath)

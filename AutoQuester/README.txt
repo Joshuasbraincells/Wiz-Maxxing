@@ -216,6 +216,21 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	    it" / "no route round walls (...) - steering at where the arrow
 	    points" (it does that whenever there's no plan). NavRoute := 0 at the
 	    top of Walker.ahk switches it off.
+	  - teleports on the way: a zone's paths can jump from one spot to
+	    another far off (a trolley, a hole down to the sewers, a portal), and
+	    the game's quest path takes them - even one this character can't use
+	    yet, or one the wrong way (most only go one way: a way out of the
+	    sewers isn't a way in - the game's quest helper doesn't mind). The
+	    route stops at a teleport (never past it, into the walls); the wizard
+	    walks on into it for a second (X at its prompt, if it asks) and waits
+	    there - no turning back and forth over it. One taken the wrong way is
+	    gone round at once by the zone's own paths; one that hasn't taken the
+	    wizard in 15 s is given up for 30 minutes and gone round - another
+	    teleport, or a way walked. With none left, walking stops with a
+	    "Stuck at a teleport" notice (F8 walks again, and gives the teleports
+	    another go: you may have done what opens one). debug.log: "teleport on
+	    the game's path at ...", "route: the game's path takes the teleport
+	    at ... the wrong way", "... hasn't taken the wizard in 15 s".
 	  - turns: it holds A / D until the wizard's facing has really turned
 	    that far (within about 5 degrees), instead of guessing from the time.
 	  - a goal in another zone: the arrow leads to the way out (a door, a

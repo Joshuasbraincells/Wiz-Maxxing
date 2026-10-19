@@ -973,7 +973,10 @@ def route_lines(r, game_dir):
         res = {'why': f'the planner failed ({e!r})'}
     if res.get('aim') is None:
         return ['route|||', 'routewhy|' + (res.get('why') or '?')]
-    return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}"]
+    # (fields 5-7: right at a teleport on the game's path - the seconds waited there, and where it is)
+    jump = res.get('jump')
+    tail = '||' if jump is None else f"{jump:.0f}|{res['jump_at'][0]:.0f}|{res['jump_at'][1]:.0f}"
+    return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail]
 
 
 def nav_lines(r, with_path):
@@ -1389,6 +1392,11 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
                 with_route = q.get('route', '0') not in ('', '0')
+                # (the walker walked on with F8: teleports given up get another go - something may have opened one)
+                if q.get('unblock', '0') not in ('', '0') and ROUTER is not None:
+                    ROUTER.blocked.clear()
+                    ROUTER.jwait, ROUTER._round = None, None
+                    log('route: teleports given up forgotten (walking on with F8)')
                 nm = nav_reader()
                 r, why = nm.read(path=with_path or with_route)
                 if r is None:
@@ -1414,7 +1422,7 @@ class Handler(BaseHTTPRequestHandler):
                 if r['pos'] is None or r['yaw'] is None:
                     return self.reply("ERR the wizard's position can't be read (" + (r.get('why_player') or '?') + ')')
                 try:
-                    route = router(nm.game_dir).route(r)
+                    route = router(nm.game_dir).route(r, wait=False)
                 except Exception:  # noqa: BLE001 - the map without it
                     route = None
                 with MAP_LOCK:

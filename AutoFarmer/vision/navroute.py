@@ -40,6 +40,19 @@ How it plans
 
 Things the zone files don't have - NPCs, other players, doors that open - aren't avoided; the walker's own
 "stuck: back up and go round" handles those as before.
+
+Teleports
+  * The zone's nav graph has links that aren't walked: a trolley, a portal, a hole down to the sewers - a link
+    far longer than walking ones (JUMP_LEN), or between heights far apart and steeper than stairs (JUMP_DZ,
+    JUMP_SLOPE). The game's quest path takes
+    them, even one this character can't use (locked till a quest's done) - and even one the wrong way: the
+    zone's nav graph has most teleports one way only (a way out of the sewers isn't a way in), the game's quest
+    helper doesn't mind which way a link goes. One taken the wrong way is routed round straight away (by the
+    nav graph's links, which way they go). The carrot never goes past one: it
+    stops at the link's start, and while the wizard is right there (JUMP_NEAR) the answer says so ('jump': the
+    seconds it's waited) - the walker walks on into it, X at its prompt. If it hasn't taken the wizard after
+    JUMP_GIVEUP seconds there, it's given up (BLOCK_FOR) and the route goes by the zone's nav graph round it -
+    another teleport, or a way walked; with none, no route ('locked') and the walker says so.
 """
 import collections
 import math
@@ -75,6 +88,14 @@ LOOK_NEAR = 220.0
 REPLAN_Z = 250.0        # the wizard this much higher / lower than when the field was made: a new one
 EDGE_CELLS = 6          # ...or this near the window's edge
 ZONES_KEPT = 3
+JUMP_LEN = 2500.0       # a nav link longer than this, or between heights more than JUMP_DZ apart and steeper than
+JUMP_DZ = 400.0         # JUMP_SLOPE (up / across - stairs are at most ~0.65): a teleport
+JUMP_SLOPE = 0.7
+JUMP_NEAR = 160.0       # the wizard this near a teleport's start (or at the free spot nearest it): waiting for it
+JUMP_RINGS = 30         # ...that free spot looked for this many squares round it (its start can be inside its object)
+JUMP_GIVEUP = 15.0      # ...given up after this many seconds there (counted only while it's asked about)
+BLOCK_FOR = 1800.0      # ...for this long (it may open once a quest is done)
+JUMP_COST = 500.0       # a teleport's cost when routing round one on the nav graph
 
 DIRS = [(-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
         (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)), (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2))]
@@ -92,6 +113,8 @@ class ZoneGeo:
         self.boxes = []          # (R, location, half sizes, x1, y1, x2, y2, zlo, zhi, walkable)
         self.cyls = []           # cylinders, tubes: (centre, axis, radius, half length, x1, y1, x2, y2, zlo, zhi, walkable)
         self.round = []          # spheres: (polygon (k, 2), zlo, zhi, walkable)
+        # the zone's nav graph (navgraph), which nodes have links and their connected parts, teleports checked
+        self.nav, self._adj, self._linked, self._part, self._jcache = None, None, None, None, {}
         try:
             import navgeo
             d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR)
@@ -130,6 +153,131 @@ class ZoneGeo:
         self.otris = np.concatenate(otris) if otris else empty3
         if not len(self.floor) and not any(b[9] for b in self.boxes):
             self.why = 'the zone file has no floor'
+        # the zone's nav graph, for routing round a teleport that doesn't work (navgraph)
+        self.nav = d.get('nav')
+
+    def navgraph(self):
+        """(positions (N, 3), adjacency [[(b, cost, jump), ...] per node]) of the zone's nav graph - its links one
+        way each, as stored - or None"""
+        if self.nav is None or not len(self.nav['positions']):
+            return None
+        if self._adj is None:
+            P, idx = self.nav['positions'], self.nav['index_of']
+            adj = [[] for _ in range(len(P))]
+            for a_id, b_id in self.nav['links'].tolist():
+                a, b = idx.get(int(a_id)), idx.get(int(b_id))
+                if a is None or b is None or a == b:
+                    continue
+                j = self.is_jump(P[a], P[b])
+                cost = JUMP_COST if j else float(np.linalg.norm(P[a] - P[b]))
+                adj[a].append((b, cost, j))
+            # (nodes with links, and the connected part each is in - links either way - for nav_path's ends)
+            linked = np.zeros(len(P), bool)
+            und = [[] for _ in range(len(P))]
+            for a in range(len(P)):
+                for b, _, _ in adj[a]:
+                    linked[a] = linked[b] = True
+                    und[a].append(b), und[b].append(a)
+            part = np.full(len(P), -1)
+            for s in range(len(P)):
+                if part[s] >= 0 or not linked[s]:
+                    continue
+                part[s], todo = s, [s]
+                while todo:
+                    u = todo.pop()
+                    for v in und[u]:
+                        if part[v] < 0:
+                            part[v] = s
+                            todo.append(v)
+            self._adj, self._linked, self._part = adj, linked, part
+        return self.nav['positions'], self._adj
+
+    def is_jump(self, a, b):
+        """is_jump - but a steep link (not a long one) only when its floor can't be walked: a square along it with
+        no floor, or a step of more than STEP_EDGE from one to the next (a steep slope is walked: Empyrea's
+        Aeroplains, MooShu's waterfall cave). Kept per node pair"""
+        if not is_jump(a, b):
+            return False
+        h = math.hypot(a[0] - b[0], a[1] - b[1])
+        if h > JUMP_LEN:
+            return True
+        key = tuple(round(float(c)) for c in (a[0], a[1], a[2], b[0], b[1], b[2]))
+        if key in self._jcache:
+            return self._jcache[key]
+        x0, y0 = min(a[0], b[0]) - 2 * CELL, min(a[1], b[1]) - 2 * CELL
+        nx = int(math.ceil((abs(a[0] - b[0]) + 4 * CELL) / CELL))
+        ny = int(math.ceil((abs(a[1] - b[1]) + 4 * CELL) / CELL))
+        jump = True
+        try:
+            ground, H, _ = self.grids(x0, y0, nx, ny, [tuple(map(float, a)), tuple(map(float, b))])
+            jump, prev = False, None
+            for t in np.linspace(0.0, 1.0, max(2, int(h / (CELL / 2))) + 1):
+                x, y = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
+                j, i = min(ny - 1, int((y - y0) // CELL)), min(nx - 1, int((x - x0) // CELL))
+                if ground[j, i] == 0 or (prev is not None and abs(H[j, i] - prev) > STEP_EDGE):
+                    jump = True
+                    break
+                prev = H[j, i]
+        except Exception:  # noqa: BLE001 - can't tell: a teleport, as the plain rule says
+            jump = True
+        self._jcache[key] = jump
+        return jump
+
+    def node_at(self, p, near=12.0):
+        """the nav node at p (a point of the game's path: its nodes), or None"""
+        g = self.navgraph()
+        if g is None:
+            return None
+        P = g[0]
+        d = np.hypot(P[:, 0] - p[0], P[:, 1] - p[1])
+        k = int(np.argmin(d))
+        return k if d[k] <= near and abs(P[k, 2] - p[2]) <= 60 else None
+
+    def start_node(self, pos):
+        """the nav node a route on the zone's nav graph starts from: the one with links nearest pos, on its storey
+        if there's one - or None"""
+        g = self.navgraph()
+        if g is None:
+            return None
+        P = g[0]
+        d = np.hypot(P[:, 0] - pos[0], P[:, 1] - pos[1])
+        same = np.abs(P[:, 2] - pos[2]) <= FLOOR_BAND
+        s = int(np.argmin(np.where(same & self._linked, d, np.where(self._linked, d + 1e9, np.inf))))
+        return s if self._linked[s] else None
+
+    def nav_path(self, pos, goal, blocked):
+        """[(x, y, z), ...] along the zone's nav graph from the node nearest pos (on its storey) to the one nearest
+        goal, not taking the links in blocked ({(a, b)} node pairs) - or None when there's no way"""
+        g = self.navgraph()
+        if g is None:
+            return None
+        P, adj = g
+        # (its ends: nodes with links - a zone has a few on their own - the goal's in the wizard's connected part)
+        s = self.start_node(pos)
+        if s is None:
+            return None
+        dg = np.hypot(np.hypot(P[:, 0] - goal[0], P[:, 1] - goal[1]), P[:, 2] - goal[2])
+        t = int(np.argmin(np.where(self._part == self._part[s], dg, np.inf)))
+        import heapq
+        best, prev, todo = {s: 0.0}, {}, [(0.0, s)]
+        while todo:
+            c, u = heapq.heappop(todo)
+            if u == t:
+                break
+            if c > best.get(u, 1e18):
+                continue
+            for v, w, j in adj[u]:
+                if (u, v) in blocked:
+                    continue
+                if c + w < best.get(v, 1e18):
+                    best[v], prev[v] = c + w, u
+                    heapq.heappush(todo, (c + w, v))
+        if t not in best:
+            return None
+        out = [t]
+        while out[-1] != s:
+            out.append(prev[out[-1]])
+        return [tuple(float(c) for c in P[k]) for k in reversed(out)]
 
     @staticmethod
     def _tri_pick(tris, x1, y1, x2, y2, zlo, zhi):
@@ -356,6 +504,12 @@ class ZoneGeo:
         return j1, i1, np.asarray(img) > 0
 
 
+def is_jump(a, b):
+    """a link between nav nodes a and b ((x, y, z)) that isn't walked: a teleport (see Teleports at the top)"""
+    h, dz = math.hypot(a[0] - b[0], a[1] - b[1]), abs(a[2] - b[2])
+    return h > JUMP_LEN or (dz > JUMP_DZ and dz > JUMP_SLOPE * h)
+
+
 def _grow(mask, cells):
     """distance in squares from mask (0 on it, 1, 2 ... up to cells; cells + 1 beyond) - octagonal steps"""
     dist = np.where(mask, 0, cells + 1).astype(np.int16)
@@ -384,7 +538,7 @@ def _sl(d, n):
 class Field:
     """The cost to the carrot from every square of a window"""
 
-    def __init__(self, geo, pos, carrot, goal, rest, via=(), carrot_z=None, carrot_goal=True):
+    def __init__(self, geo, pos, carrot, goal, rest, via=(), carrot_z=None, carrot_goal=True, rings=GOAL_RINGS):
         t0 = time.perf_counter()
         self.zone, self.z, self.carrot, self.goal, self.rest = geo.zone, pos[2], carrot, goal, rest
         self.why, self.D = '', None
@@ -429,7 +583,7 @@ class Field:
         cost = cost + np.where(near, SOFT_COST * (soft_cells + 1 - dist) / (soft_cells + 1 - hard_cells), 0.0)
         cost[self.blocked] = np.inf
         self.cost, self.ground, self.H = cost, ground, H
-        g = self._free_near(*self.cell(carrot), GOAL_RINGS)
+        g = self._free_near(*self.cell(carrot), rings)
         if g is None:
             self.why = "the goal is inside a wall (no free spot near it)"
             return
@@ -558,6 +712,10 @@ class Planner:
         self.cv = threading.Condition()
         self.thread = None
         self.last = None                     # the last answer, for the map: (time, zone, route, aim)
+        self.blocked = {}                    # teleports given up: (zone, node a, node b) -> when
+        self.wrong_way = set()               # teleports the game's path took the wrong way (logged once each)
+        self._round = None                   # the last _path_round: (key, answer)
+        self.jwait = None                    # waiting at one: {'key', 'waited', 'last'}
 
     # ---- the background thread
     def _geo(self, zone):
@@ -585,7 +743,8 @@ class Planner:
                 if geo.why:
                     why = geo.why
                 else:
-                    f = Field(geo, job['pos'], job['carrot'], job['goal'], job['rest'], job['via'], job['carrot_z'], job['carrot_goal'])
+                    f = Field(geo, job['pos'], job['carrot'], job['goal'], job['rest'], job['via'], job['carrot_z'], job['carrot_goal'],
+                              job.get('rings', GOAL_RINGS))
                     why = f.why
             except Exception as e:  # noqa: BLE001 - logged; no route, the walker steers as before
                 why = f'the planner failed ({e!r})'
@@ -609,10 +768,11 @@ class Planner:
 
     # ---- answering
     @staticmethod
-    def carrot(pos, path, goal, keep=None):
+    def carrot(pos, path, goal, keep=None, jumps=is_jump):
         """(carrot (x, y), its height, is it the goal, the game's path on from it to the goal, the path's points
-        up to it) - the farthest point of [path..., goal] within REACH of pos, from the one nearest pos on;
-        carrot None when none is that near"""
+        up to it, the teleport it's the start of ((x, y, z) its start, (x, y, z) its end) or None) - the farthest
+        point of [path..., goal] within REACH of pos, from the one nearest pos on, and not past a teleport on the
+        path (is_jump); carrot None when none is that near"""
         G = [tuple(p) for p in (path or ())] + [tuple(goal)]
         dists = [math.hypot(p[0] - pos[0], p[1] - pos[1]) for p in G]
         # (the nearest on the wizard's own storey - one right above or below it is on another)
@@ -639,10 +799,16 @@ class Planner:
         if best is not None and best > k0:
             best = Planner._before_overlap(pos, G, k0, best)
         if best is None:
-            return None, None, True, 0.0, []
+            return None, None, True, 0.0, [], None
+        # (not past a teleport: the first on the path from the nearest node on - its start is the carrot)
+        jump = None
+        for k in range(k0, min(best, len(G) - 2) + 1):
+            if k + 1 < len(G) - 1 and jumps(G[k], G[k + 1]):
+                best, jump = k, (G[k], G[k + 1])
+                break
         rest = sum(math.hypot(G[k + 1][0] - G[k][0], G[k + 1][1] - G[k][1]) for k in range(best, len(G) - 1))
         # (the goal's own height is real; a path node's is moved like the rest - see Field)
-        return (G[best][0], G[best][1]), G[best][2], best == len(G) - 1, rest, G[k0:best]
+        return (G[best][0], G[best][1]), G[best][2], best == len(G) - 1, rest, G[k0:best], jump
 
     @staticmethod
     def _before_overlap(pos, G, k0, best):
@@ -668,16 +834,133 @@ class Planner:
             return max(k0, seg[hit[0]] - 1)
         return best
 
-    def route(self, r):
+    def _blocked_now(self, zone):
+        """the teleports given up in zone, still given up: {(a, b)} node pairs"""
+        now = time.time()
+        for k in [k for k, at in self.blocked.items() if now - at > BLOCK_FOR]:
+            del self.blocked[k]
+        return {(k[1], k[2]) for k in self.blocked if k[0] == zone}
+
+    def _path_round(self, zone, pos, path, goal):
+        """(path, why): the game's path - or, when it takes a teleport given up (_blocked_now) or one the wrong way
+        (the zone's nav graph has that link only the other way), one round it on the zone's nav graph; path None
+        (why says) when there's no way round"""
+        if path is None:
+            path = []                                   # (the game's path not read: as before, the goal itself)
+        geo = self.zones.get(zone)
+        if geo is None or not path or geo.navgraph() is None:
+            return path, ''
+        blocked = self._blocked_now(zone)
+        # (a route round starts from the nav node nearest the wizard: worked out again when that changes)
+        key = (zone, tuple(map(tuple, path)), tuple(goal), frozenset(blocked), geo.start_node(pos))
+        if self._round is not None and self._round[0] == key:
+            return self._round[1]
+        adj = geo.navgraph()[1]
+        bad = False
+        for p, q in zip(path, path[1:]):
+            if not geo.is_jump(p, q):
+                continue
+            a, b = geo.node_at(p), geo.node_at(q)
+            if a is None or b is None:
+                continue
+            if (a, b) in blocked:
+                bad = True
+            elif not any(v == b for v, _, _ in adj[a]):
+                bad = True
+                if (zone, a, b) not in self.wrong_way:
+                    self.wrong_way.add((zone, a, b))
+                    self.log(f"route: the game's path takes the teleport at {p[0]:.0f}, {p[1]:.0f} the wrong way (the zone's "
+                             f'paths have it only from {q[0]:.0f}, {q[1]:.0f}) - routing round it')
+        if not bad:
+            answer = (path, '')
+        else:
+            alt = geo.nav_path(pos, goal, blocked)
+            answer = (alt, '') if alt is not None else (
+                None, "the way on is a teleport that doesn't take the wizard (locked, or only the other way) - no other way on the zone's paths")
+        self._round = (key, answer)
+        return answer
+
+    @staticmethod
+    def _by_nodes(pos, path, goal, jumps=is_jump):
+        """(aim, left): straight along the zone's nav graph (its links are walked) - the node of [path..., goal] on
+        from the one nearest pos, the next once it's passed or right at it, not across a teleport"""
+        G = [tuple(p) for p in path] + [tuple(goal)]
+        same = [k for k in range(len(G)) if abs(G[k][2] - pos[2]) <= FLOOR_BAND] or range(len(G))
+        k = min(same, key=lambda q: math.hypot(G[q][0] - pos[0], G[q][1] - pos[1]))
+        if k + 1 < len(G) and not (k + 1 < len(G) - 1 and jumps(G[k], G[k + 1])):
+            seg = math.hypot(G[k + 1][0] - G[k][0], G[k + 1][1] - G[k][1])
+            if (math.hypot(G[k][0] - pos[0], G[k][1] - pos[1]) < 80
+                    or math.hypot(G[k + 1][0] - pos[0], G[k + 1][1] - pos[1]) < seg):
+                k += 1
+        left = math.hypot(G[k][0] - pos[0], G[k][1] - pos[1]) + sum(
+            math.hypot(G[q + 1][0] - G[q][0], G[q + 1][1] - G[q][1]) for q in range(k, len(G) - 1))
+        return (G[k][0], G[k][1]), left
+
+    def route(self, r, wait=True):
+        """the answer (see the top); wait: count the time at a teleport (the walker's asks - not the map's)"""
         if r is None or r.get('pos') is None or r.get('goal') is None or not r.get('zone'):
             return {'why': 'no position or goal'}
         pos, goal, zone = tuple(r['pos']), tuple(r['goal']), r['zone']
+        # (the wait at a teleport is one visit's: forgotten once the wizard's well away from it, or elsewhere)
+        w = self.jwait
+        if w is not None and (w['key'][0] != zone or math.hypot(w['key'][1][0] - pos[0], w['key'][1][1] - pos[1]) > 1200
+                              or abs(w['key'][1][2] - pos[2]) > FLOOR_BAND):
+            self.jwait = None
+        geo0 = self.zones.get(zone)
+        jumps = geo0.is_jump if geo0 is not None else is_jump
         f = self.field
         if f is not None and (f.zone != zone or math.hypot(f.goal[0] - goal[0], f.goal[1] - goal[1]) > 60):
             f = None                                              # (another zone, or a new goal)
-        carrot, cz, cgoal, rest, via = self.carrot(pos, r.get('path'), goal, f.carrot if f is not None else None)
+        path, why = self._path_round(zone, pos, r.get('path'), goal)
+        if path is None:
+            self.jwait = None
+            return {'why': why, 'locked': True}
+        game = [tuple(q) for q in (r.get('path') or ())]
+        rerouted = [tuple(q) for q in path] != game
+        carrot, cz, cgoal, rest, via, jump = self.carrot(pos, path, goal, f.carrot if f is not None else None, jumps)
+
+        def fail(why):
+            """no route round walls: the walker steers at the arrow - unless the game's path was routed round (a
+            teleport given up, or taken the wrong way): the arrow leads there, so straight along the nav graph"""
+            if not rerouted:
+                return {'why': why}
+            aim, left = self._by_nodes(pos, path, goal, jumps)
+            out = {'aim': aim, 'left': left, 'route': [(pos[0], pos[1]), aim], 'why': '', 'bynodes': why}
+            if waited is not None:
+                out['jump'], out['jump_at'] = waited, (jump[0][0], jump[0][1])
+            return out
+        # (right at a teleport on the path: how long it's waited there - counted only while it's asked about, so
+        # a battle meanwhile isn't waiting - and given up after JUMP_GIVEUP: routed round it)
+        waited = None
+        # (at it: near its start - or at the free spot nearest it, when its start is inside its object)
+        at_spot = (jump is not None and f is not None and getattr(f, 'gcell', None) is not None
+                   and math.hypot(f.carrot[0] - jump[0][0], f.carrot[1] - jump[0][1]) <= 2 * CELL
+                   and math.hypot(f.world(*f.gcell)[0] - pos[0], f.world(*f.gcell)[1] - pos[1]) <= 2 * CELL + 40)
+        if wait and jump is not None and (math.hypot(jump[0][0] - pos[0], jump[0][1] - pos[1]) <= JUMP_NEAR or at_spot):
+            now, key = time.time(), (zone, jump[0], jump[1])
+            w = self.jwait
+            if w is None or w['key'] != key:
+                w = self.jwait = {'key': key, 'waited': 0.0, 'last': now}
+            elif now - w['last'] < 2.0:
+                w['waited'] += now - w['last']
+            w['last'] = now
+            waited = w['waited']
+            if waited > JUMP_GIVEUP:
+                geo = self.zones.get(zone)
+                a = geo.node_at(jump[0]) if geo is not None else None
+                b = geo.node_at(jump[1]) if geo is not None else None
+                self.jwait, waited = None, None
+                if a is not None and b is not None:
+                    self.blocked[(zone, a, b)] = time.time()
+                    self.log(f'route: the teleport at {jump[0][0]:.0f}, {jump[0][1]:.0f} (to {jump[1][0]:.0f}, {jump[1][1]:.0f}) '
+                             f"hasn't taken the wizard in {JUMP_GIVEUP:.0f} s (locked?) - routing round it for {BLOCK_FOR / 60:.0f} minutes")
+                    path, why = self._path_round(zone, pos, r.get('path'), goal)
+                    if path is None:
+                        return {'why': why, 'locked': True}
+                    rerouted = [tuple(q) for q in path] != game
+                    carrot, cz, cgoal, rest, via, jump = self.carrot(pos, path, goal, None, jumps)
         if carrot is None:
-            return {'why': "the game's path is out of reach"}
+            return fail("the game's path is out of reach")
         j, i = f.cell(pos) if f is not None else (0, 0)
         stale = (f is None or not f.inside(j, i, EDGE_CELLS) or abs(pos[2] - f.z) > REPLAN_Z
                  or math.hypot(f.carrot[0] - carrot[0], f.carrot[1] - carrot[1]) > 2 * CELL)
@@ -689,18 +972,18 @@ class Planner:
                          and abs(failed[0]['pos'][2] - pos[2]) <= REPLAN_Z and time.time() - failed[0]['at'] < 5)
             if not same_fail:
                 self._ask({'zone': zone, 'pos': pos, 'carrot': carrot, 'carrot_z': cz, 'carrot_goal': cgoal, 'goal': goal,
-                           'rest': rest, 'via': via, 'at': time.time()})
+                           'rest': rest, 'via': via, 'at': time.time(), 'rings': JUMP_RINGS if jump is not None else GOAL_RINGS})
         # (the last job, for the carrot as it is now, found no plan: the old field leads only to the old carrot -
         # walked to it, it would hold the wizard there. No aim: the walker steers at the arrow meanwhile)
         if (f is not None and failed is not None and failed[0]['zone'] == zone
                 and math.hypot(f.carrot[0] - carrot[0], f.carrot[1] - carrot[1]) > 2 * CELL
                 and math.hypot(failed[0]['carrot'][0] - carrot[0], failed[0]['carrot'][1] - carrot[1]) <= 2 * CELL):
-            return {'why': failed[1]}
+            return fail(failed[1])
         if f is None or not f.inside(j, i):
-            return {'why': failed[1] if failed is not None and failed[0]['zone'] == zone else 'planning'}
+            return fail(failed[1] if failed is not None and failed[0]['zone'] == zone else 'planning')
         cells, length = f.walk(pos)
         if cells is None:
-            return {'why': length}
+            return fail(length)
         pts = [(pos[0], pos[1])] + [f.world(*c) for c in cells[1:]]
         aim = None
         j0, i0 = f.cell(pos)
@@ -724,4 +1007,7 @@ class Planner:
         step = max(1, len(pts) // 60)
         route = pts[::step] + ([pts[-1]] if (len(pts) - 1) % step else [])
         self.last = (time.time(), zone, route, aim)
-        return {'aim': aim, 'left': left, 'route': route, 'why': ''}
+        out = {'aim': aim, 'left': left, 'route': route, 'why': ''}
+        if waited is not None:
+            out['jump'], out['jump_at'] = waited, (jump[0][0], jump[0][1])
+        return out
