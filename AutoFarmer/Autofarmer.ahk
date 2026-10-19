@@ -379,7 +379,7 @@ if (BossChoosen == 1)
 	BossX := GameLeft + Round(BossRelX * UiScale), BossY := GameTop + Round(BossRelY * UiScale)
 
 global inbattle = 1
-LearnedThisRound := 0, LastHandAnswer := ""
+LearnedThisRound := 0, LastHandAnswer := "", DiscardedUnused := 0
 
 ;Both windows share one record of blades/traps in dual mode, so the kill check is off for that whole battle
 if (dualmode == 1)
@@ -596,8 +596,9 @@ if (Manual != 1) && (!LearnedThisRound)
 	}
 
 ;Discard (right-click) cards that can't help this battle, then look at the hand again (not while learning
-;every card: that discards everything it knows)
-if (!LearnAll) && (Discards < 3) && DiscardSpare()
+;every card: that discards everything it knows): first, once a round, the cards it never plays (learned, in no
+;slot - CardLearn.ahk DiscardUnused, off the hand as the helper read it), then spare blades and Sharpen
+if (!LearnAll) && (Discards < 3) && (DiscardUnused() + DiscardSpare())
 	{
 	Discards++
 	s(700)

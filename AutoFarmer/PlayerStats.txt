@@ -29,6 +29,12 @@ reboost:0
 ; discardunaffordable: 1 = a hit that won't cast is discarded (unless enchanted). 0 = keep it for a later round.
 ; (The script reads your pips off your nameplate and doesn't try hits you can't afford yet.)
 discardunaffordable:0
+; discardunused: 1 = every round, cards in hand the bot never plays are discarded (learned cards it has no slot
+; for: charms, globals, minions..., or one more card of a kind whose slots are full) so it draws ones it can use.
+; Treasure cards among them go too (a discarded treasure card may be lost). 0 = keep them.
+discardunused:1
+; discardmax: at most this many of those a round
+discardmax:3
 ; (Values may be written with or without a %. A line that can't be read pops up a warning at start.)
 
 ; ---- You playing ----

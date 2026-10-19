@@ -244,6 +244,15 @@ themselves. A pip cost that couldn't be read is guessed as the pips you had
 (the card was castable), and brought down whenever it shows up castable with
 fewer. learned\cards.txt lists everything learned; debug.log: "learned a new
 card ...".
+Discarding in normal battles: every round, after it's read the hand, the bot
+right-clicks away the cards it knows it never plays - learned cards it has no
+slot for (charms, globals, minions..., or one more card of a kind whose slots
+are full) - so the next round draws cards it can use; at most 3 a round. Its
+own cards stay, and so do cards it doesn't know yet (greyed out ones may be its
+own; in colour they're learned first). Spare blades and Sharpen go once they
+can't stack any more, as before. PlayerStats.txt: discardunused:0 switches it
+off, discardmax: how many a round. Treasure cards it has no slot for are
+discarded too. debug.log: "Discarded learned card ...".
 Learn every card (dashboard button, or the tray menu): for a deck you made
 to be learned - one of every card. Switch it on and start a battle (an easy
 one). Each round the bot learns what's in hand, right-clicks away every card

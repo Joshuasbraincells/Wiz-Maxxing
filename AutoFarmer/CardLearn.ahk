@@ -33,6 +33,72 @@ global LearnFreeCache := ""
 ;"Learn every card" (LearnAllToggle): on, the learned count when it started, rounds, rounds with nothing
 ;new, rounds with an empty hand
 global LastHandAnswer, LearnAll, LearnAllFrom, LearnAllRounds, LearnAllIdle, LearnAllEmpty, LearnAllSeen
+;Cards the bot never plays discarded this round already (DiscardUnused: once a round - RoundStart clears it)
+global DiscardedUnused := 0
+
+;---- Discarding what the bot never plays (normal battles) ----
+;Once a round, after the hand's been read and learned (LastHandAnswer): every card in it the bot knows for sure
+;it never plays - a learned card in no slot: a charm, a global, a minion... it has no use for, a type it doesn't
+;know, or one more card of a kind whose slots are all taken - is right-clicked away, so the next round draws
+;cards it can use. Not: its own cards (hits, heals, blades, traps... - spare blades and Sharpen have their own
+;rule, DiscardSpare), cards it doesn't know (greyed out - they may be its own; in colour they're learned first,
+;and go next round if they get no slot), and nothing while you're playing. At most discardmax a round
+;(PlayerStats.txt; discardunused:0 switches it off). From the left, following the hand as it re-centres (a
+;card gone: those left of it slide right half a card, those right of it slide left). Returns how many
+DiscardUnused()
+	{
+	global
+	local cards, f, c, i, k, o, did, most, pid, why
+	if (DiscardedUnused || LastHandAnswer = "" || !Stat("discardunused") || LearnAll)
+		return 0
+	DiscardedUnused := 1
+	if (IsFunc("PlayerActing") && Func("PlayerActing").Call())
+		return 0
+	most := Stats.HasKey("discardmax") ? Stats["discardmax"] + 0 : 3
+	cards := []
+	Loop, Parse, LastHandAnswer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f.Length() < 12 || f[1] != "card")
+			continue
+		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0})
+		}
+	did := 0, i := 1
+	while (i <= cards.Length() && did < most)
+		{
+		c := cards[i]
+		if (InStr(c.known, "learned/") != 1)
+			{
+			i += 1
+			continue
+			}
+		pid := SubStr(c.known, 9)
+		why := LearnWhyUnused(pid)
+		MouseMove, % Round(c.x), % Round(c.y), MouseSpeedNow()
+		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
+		Click, right
+		did += 1
+		DebugLog("  Discarded learned card " pid " - " why " (right-click at " Round(c.x) - GameLeft "," Round(c.y) - GameTop ")")
+		cards.RemoveAt(i)
+		for k, o in cards
+			o.x += (k < i ? HalfPitch : -HalfPitch)
+		s(400)
+		}
+	if (did)
+		CenterMouse()
+	return did
+	}
+
+;Why learned card id isn't one the bot plays (for the log)
+LearnWhyUnused(id)
+	{
+	if (!IsObject(LearnedCards))
+		return "the bot has no use for it"
+	for i, c in LearnedCards
+		if (c.id = id)
+			return LearnDescribe(c) ": " (c.type = "" ? "a type the bot doesn't play" : "no free slot for it")
+	return "the bot has no use for it"
+	}
 
 ;---- Learn every card (dashboard button / tray menu) ----
 ;For a deck made to be learned (one of every card): in a battle, every round it learns what's in hand (in
