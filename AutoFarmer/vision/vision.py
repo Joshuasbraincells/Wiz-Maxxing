@@ -76,7 +76,7 @@ Only numpy and Pillow (katsuba is used for a zone .wad only if installed and the
 it). Stops by itself when the AutoFarmer process (--parent <pid>) is gone.
 """
 import argparse
-import collections, ctypes, glob, json, math, os, re, sys, tempfile, threading, time
+import collections, ctypes, glob, json, math, os, re, struct, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -964,6 +964,81 @@ def router(game_dir=''):
         return ROUTER
 
 
+ROUTER_TO = None
+
+
+def router_to(game_dir=''):
+    """a second route planner, for /navto (a walk to a spot of the bot's own: the potion seller) - the walker's
+    (router) keeps its field, its carrot and its teleport waits"""
+    global ROUTER_TO
+    with NAV_LOCK:
+        if ROUTER_TO is None:
+            import navroute
+            ROUTER_TO = navroute.Planner(log=log, game_dir=game_dir)
+        return ROUTER_TO
+
+
+# The potion sellers: the NPC templates with a PotionShopBehavior (the potion shop's window) - found by looking
+# through every ObjectData template in Root.wad: Hilda Brewer in Wizard City's Commons and one in the Arcanum.
+# Where each stands is read from the zone's own gamedata.bin (its placements: "<template> instance", the location
+# property - hash 1b dc 7e 85, then x, y, z - just before the name), so a seller the game moves is still found
+POTION_SELLERS = ('WC_PotionShopkeeper', 'AR-ARC-NPC13')
+SELLER_LOC = b'\x1b\xdc\x7e\x85'
+SELLERS_SEEN = {}
+
+
+def potion_sellers(zone, game_dir=''):
+    """[(name, (x, y, z)), ...] - the potion sellers placed in zone (from its gamedata.bin; read-only), kept; None
+    when the zone's file can't be read"""
+    if zone in SELLERS_SEEN:
+        return SELLERS_SEEN[zone]
+    import navgeo
+    out = []
+    try:
+        b = navgeo.read_wad_files(navgeo.wad_path(zone, game_dir or navgeo.GAME_DIR), ['gamedata.bin']).get('gamedata.bin')
+    except (OSError, ValueError) as e:
+        log(f'/seller {zone}: {e!r}')
+        return None                                    # (not kept: asked again next time)
+    for name in POTION_SELLERS if b else ():
+        for m in re.finditer(re.escape(name.encode()) + rb' instance( \(\d+\))?', b):
+            k = b.rfind(SELLER_LOC, max(0, m.start() - 160), m.start())
+            if k >= 0:
+                x, y, z = struct.unpack_from('<3f', b, k + 4)
+                if all(math.isfinite(v) and abs(v) < 1e6 for v in (x, y, z)):
+                    out.append((name, (x, y, z)))
+    SELLERS_SEEN[zone] = out
+    return out
+
+
+def navto_lines(target, game_dir):
+    """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
+    bot's own - planned by router_to along the zone's nav graph"""
+    nm = nav_reader()
+    r, why = nm.read(path=False, wait=3.0)
+    if r is None:
+        return ['ERR ' + why]
+    if r['pos'] is None or r['yaw'] is None or not r['zone']:
+        return ['ERR the game\'s memory can\'t say where the wizard is']
+    lines = ['ok|1', 'zone|' + r['zone'], 'pos|' + '|'.join(f'{c:.2f}' for c in r['pos']) + f"|{r['yaw']:.4f}"]
+    try:
+        p = router_to(nm.game_dir or game_dir)
+        geo = p._geo(r['zone'])
+        # (walked links only - no teleports on the way to a spot of the bot's own: nothing there to wait at one)
+        if geo.why or geo.navgraph() is None:
+            path = None
+        else:
+            P, adj = geo.navgraph()
+            jumps = {(a, b) for a in range(len(P)) for b, _, j in adj[a] if j}
+            path = geo.nav_path(r['pos'], target, jumps)
+        res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False)
+    except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot
+        log(f'/navto: {e!r}')
+        res = {'why': f'the planner failed ({e!r})'}
+    if res.get('aim') is None:
+        return lines + ['route|||', 'routewhy|' + (res.get('why') or '?')]
+    return lines + [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}"]
+
+
 def route_lines(r, game_dir):
     """/nav's route lines for a reading r (made with path=True)"""
     try:
@@ -1389,6 +1464,21 @@ class Handler(BaseHTTPRequestHandler):
                 cut_card(float(q['left']), float(q['top']), float(q['scale']), out, q.get('file'))
                 log(f'/cut {out}')
                 return self.reply('OK')
+            if u.path == '/seller':
+                zone = q.get('zone', '')
+                # (the game's folder comes from its running .exe: attached first, so another install is found)
+                nm = nav_reader()
+                nm.read(path=False, wait=3.0)
+                found = potion_sellers(zone, nm.game_dir) if zone else []
+                if found is None:
+                    return self.reply("ERR the zone's file can't be read")
+                return self.reply('\n'.join(f'seller|{n}|{x:.1f}|{y:.1f}|{z:.1f}' for n, (x, y, z) in found) or 'none')
+            if u.path == '/navto':
+                try:
+                    target = (float(q['x']), float(q['y']), float(q['z']))
+                except (KeyError, ValueError):
+                    return self.reply('ERR x, y, z wanted', 400)
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir)))
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
                 with_route = q.get('route', '0') not in ('', '0')

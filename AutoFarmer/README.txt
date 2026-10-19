@@ -303,9 +303,23 @@ Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %
 (PlayerStats.txt, default 40) of your most health (read off your name plate in
 battle) it drinks a potion (Ctrl+O). If health doesn't go up, you're out, and
-it goes to buy more WITH GOLD (never Crowns) at your Mark:
+it goes to buy more WITH GOLD (never Crowns):
+	- By the zone's map (potionwalk:1, the default - the Settings window's
+	  "Walk to the potion seller by the map"): nothing to record. Where the
+	  potion sellers stand is in the game's own files (Hilda Brewer in Wizard
+	  City's Commons, one in the Arcanum). Out of potions in a zone with one,
+	  the bot walks to her by the zone's map (the same route planner as the
+	  quest walking), presses X at her prompt, clicks Fill All (found by the
+	  words on it - never with "Crown" round it), closes the window and drinks.
+	  From anywhere else: a Recall (Page Up) to your Mark - leave it anywhere
+	  in the Commons, it needn't be right by her - or, in Wizard City, the
+	  Commons (End). Then on with the quest from there. A buying you recorded
+	  at your Mark (below) is still used; potionwalk:0 for only that.
+	  debug.log: "Potions: walking to the potion seller (...) by the zone's
+	  map", "Fill All at ...".
+	Or recorded, at your Mark:
 	- Once: leave a Mark (Page Down) right next to the potion seller
-	  (Hilda Brewer, Wizard City Fairegrounds) and keep it there - don't
+	  (Hilda Brewer, Wizard City's Commons) and keep it there - don't
 	  Page Down anywhere else. Then tray menu "Record potion buying...": the
 	  bot recalls you to the Mark (Page Up); press X to talk, click Fill All
 	  (and close the window), press F9. It's saved as routes\mark_<wizard>.txt

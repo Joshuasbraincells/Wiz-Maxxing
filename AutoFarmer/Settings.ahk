@@ -50,6 +50,8 @@ CfgList()
 		, help: "In battle: a healing card (the heal1 / heal2 pictures) on yourself when your health is under this %. 0 = never."})
 	list.Push({key: "potionat", label: "Drink a potion under this % (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
 		, help: "Out of battle: a potion (Ctrl+O) when your health is under this % - out of potions, the bot buys more with gold. 0 = never."})
+	list.Push({key: "potionwalk", label: "Walk to the potion seller by the map", kind: "check", def: 1
+		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
 	list.Push({key: "fleeon", label: "Flee when out of mana or cards", kind: "check", def: 1
 		, help: "Out of mana (less than the cheapest hit costs, no wand) or out of cards, two rounds running: flee, drink a potion (or buy some), and try again."})
 	list.Push({key: "|"})
