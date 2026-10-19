@@ -117,7 +117,9 @@ WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
 Sleep, 500
 ;(the mouse back where it was afterwards - mousereturn)
 mouseOwn := MouseGrab()
+PotionManual := 1
 PotionRun()
+PotionManual := 0
 if (mouseOwn)
 	MouseLetGo()
 return
@@ -144,6 +146,8 @@ global on := 1
 ;The bot on (F6): off, it does nothing - no battles, walking, potions or reconnecting. Opened by the game in
 ;standby (/standby: "Open with Wizard101") it starts off; never turned on, the game closing closes it too
 global BotOn := 1, BotStandby := 0, BotEverOn := 1, BotGameSeenAt := A_TickCount
+;(a potion run started from the tray: on for it even with the bot off)
+global PotionManual := 0
 for each, botArg in A_Args
 	if (botArg = "/standby")
 		BotOn := 0, BotStandby := 1, BotEverOn := 0
@@ -980,6 +984,13 @@ BotRestart()
 		Run, "%A_ScriptFullPath%" /restart %arg%, %A_ScriptDir%, UseErrorLevel
 	else
 		Run, "%A_AhkPath%" /restart "%A_ScriptFullPath%" %arg%, %A_ScriptDir%, UseErrorLevel
+	}
+
+;Walker.ahk's check before it presses a key or clicks for the game's menu: the bot on (F6) - or a potion run you
+;started from the tray - and no key or mouse of yours since from (A_TickCount; 0: not looked at)
+WalkHostOn(from := 0)
+	{
+	return (BotOn || PotionManual) && !(from && A_TickCount - A_TimeIdlePhysical > from)
 	}
 
 ;The tray menu's tick and the dashboard's button for the bot on / off

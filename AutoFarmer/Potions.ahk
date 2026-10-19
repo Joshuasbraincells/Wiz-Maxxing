@@ -813,24 +813,38 @@ PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false)
 	return ""
 	}
 
-;Closes the potion shop's window (Escape) - and the game's menu, if Escape opened that instead
-PotionCloseShop()
+;Closes the potion shop's window (Escape) - and Wizard101's own menu, if Escape opened that instead (the shop had
+;closed by itself): Walker.ahk WalkCloseGameMenu, by the menu's labels or buttons. Nothing pressed with Wizard101 not
+;in front, the bot off (F6; a run from the tray counts as on) or once you've touched the mouse or keyboard (since:
+;the run's start, else from now) - each checked right before it; it's left to you
+PotionCloseShop(since := 0)
 	{
-	Send, {Blind}{Escape}
-	Sleep, 800
-	;(a box on top of it closed instead: the shop's still up - Escape once more)
-	if (IsObject(PotionFindWords("i)^fill$", "i)^all[.!]?$")))
+	from := since ? since : A_TickCount
+	Loop, 2
 		{
+		;(the second time only if a box on top of it closed instead: the shop's still up)
+		if (A_Index = 2 && !IsObject(PotionFindWords("i)^fill$", "i)^all[.!]?$")))
+			break
+		Critical
+		if (!WalkMenuMayAct(false, from))
+			{
+			Critical, Off
+			DebugLog("Potions: the shop's window left to you (Wizard101 isn't in front, the bot is off or you've taken over)")
+			return
+			}
 		Send, {Blind}{Escape}
+		Critical, Off
 		Sleep, 800
 		}
-	menuText := OcrRect(Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.15), Round(GameW * 0.4), Round(GameH * 0.7))
-	if (!ErrorLevel && RegExMatch(menuText, "i)\b(quit|log\s*out|settings|options|resume|return to game)\b"))
-		{
-		DebugLog("Potions: Escape opened the game's menu - Escape again")
-		Send, {Blind}{Escape}
-		Sleep, 600
-		}
+	menuNow := WalkCloseGameMenu(false, menuSeen, from)
+	if (menuNow = 1)
+		DebugLog("Potions: Escape had opened the game's menu (the shop had closed by itself) - closed it")
+	else if (menuNow = 2)
+		DebugLog("Potions: the game's menu is open and didn't close - left to you")
+	else if (menuNow = -1)
+		DebugLog("Potions: shop closed - not checked for the game's menu (Wizard101 isn't in front, the bot is off or you've taken over)")
+	else
+		DebugLog("Potions: shop closed (read after: " (menuSeen = "" ? "nothing" : SubStr(menuSeen, 1, 160)) ")")
 	}
 
 ;At the potion seller: X at her prompt, Fill All in her window (never with "Crown" round it), a box asking to
@@ -874,18 +888,18 @@ PotionBuyHere(s, since := 0)
 		DebugLog("Potions: ""Crown"" in the shop's window - not clicking, stopping (gold only): " SubStr(RegExReplace(seen, "\s+", " "), 1, 160))
 		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
 		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
-		PotionCloseShop()
+		PotionCloseShop(since)
 		return false
 		}
 	if (!IsObject(w))
 		{
 		DebugLog("Potions: no Fill All on screen after X (read: " SubStr(RegExReplace(seen, "\s+", " "), 1, 160) ") - closing, not buying")
-		PotionCloseShop()
+		PotionCloseShop(since)
 		return false
 		}
 	if (!PotionNoCrowns(w.x, w.y) || !PotionOk(true, since))
 		{
-		PotionCloseShop()
+		PotionCloseShop(since)
 		return false
 		}
 	DebugLog("Potions: Fill All at " w.x - GameLeft "," w.y - GameTop " - clicking")
@@ -893,13 +907,15 @@ PotionBuyHere(s, since := 0)
 	Sleep, 1200
 	;(a box asking to pay with gold: its OK / Yes - only with "gold" in it and no Crown round it)
 	c := PotionFindWords("i)^(ok|okay|yes)[.!]?$", "", seen, true)
+	;(what's on screen after it - the shop still up, a box asking to pay, or nothing: for debug.log)
+	DebugLog("Potions: after Fill All, read: " (seen = "" ? "(nothing)" : SubStr(RegExReplace(seen, "\s+", " "), 1, 200)))
 	if (IsObject(c) && RegExMatch(seen, "i)gold") && !RegExMatch(seen, "i)cr[o0]wn") && PotionOk(true, since) && PotionNoCrowns(c.x, c.y))
 		{
 		DebugLog("Potions: a box asking to pay with gold - OK")
 		ClickAt(c.x, c.y, 300)
 		Sleep, 1000
 		}
-	PotionCloseShop()
+	PotionCloseShop(since)
 	return true
 	}
 

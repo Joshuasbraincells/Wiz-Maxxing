@@ -1453,13 +1453,7 @@ WalkCloseAfterX()
 		WalkLog("pressed X: a window opened (""" m """ in it - a shop?) - Escape, nothing in it clicked")
 		PressKey("Escape")
 		Sleep, 800
-		menuText := OcrRect(Round(GameLeft + GameW / 2 - 350 * ArrowScale().scale), Round(GameTop + GameH / 2 - 300 * ArrowScale().scale), Round(700 * ArrowScale().scale), Round(600 * ArrowScale().scale))
-		if (!ErrorLevel && RegExMatch(menuText, "i)\b(quit|log\s*out|settings|options|resume|return to game)\b"))
-			{
-			WalkLog("Escape opened the game's menu - Escape again to close it")
-			PressKey("Escape")
-			Sleep, 600
-			}
+		WalkCloseGameMenu()
 		return true
 		}
 	;(an OK with Crowns anywhere in sight is never clicked)
@@ -2104,8 +2098,197 @@ WalkSureNoBattle()
 	return IsFunc("BotNoBattle") ? Func("BotNoBattle").Call() : false
 	}
 
+;Wizard101's own menu (Escape opens it when nothing else is open) up: two of its page's labels read (GRAPHICS,
+;RESOLUTION, FULLSCREEN, TEXTURE DETAIL, HARDWARE CURSOR, UI SIZE - often read clipped: ESOLUTION, ULLSCREEN...), or
+;its buttons QUIT / IDLE / HELP / OK (WalkMenuButtons) - read enlarged, as yellow on red they aren't read at 1:1. Never
+;with a disconnect box, a question or Crowns read. okBtn: the screen spot of its OK, if read (wantOk: the buttons
+;read for it even with the labels read). seen: what was read (for debug.log)
+WalkGameMenuOpen(ByRef okBtn := "", wantOk := false, ByRef seen := "")
+	{
+	okBtn := "", seen := ""
+	;(the middle 70% of the game - the chat's corner mostly left out - enlarged up to twice, to 2500 px across at
+	;most, Windows OCR's limit: small labels read better)
+	readW := Min(Round(GameW * 0.7), 2500)
+	t := OcrRect(Round(GameLeft + (GameW - readW) / 2), Round(GameTop + GameH * 0.1), readW, Round(GameH * 0.8), "en", Min(2, 2500 / readW), menuLines)
+	if (ErrorLevel || !IsObject(menuLines))
+		return false
+	seen := RegExReplace(t, "\s+", " ")
+	if (RegExMatch(t, "i)reconnect|disconnect|are you sure|cr[o0]wn"))
+		return false
+	;(labels: from short lines only - a word or two, not sentences - one label a line)
+	labels := {}
+	for i, line in menuLines
+		{
+		if (!IsObject(line.words) || line.words.Length() > 3)
+			continue
+		flat := RegExReplace(Format("{:L}", line.text), "[^a-z]")
+		for k, re in {graphics: "graphic", resolution: "solutio|olution", fullscreen: "lscreen|fullscr", texture: "texture|t[ui]redet"
+			, cursor: "cursor|recurs|hardwar", uisize: "uisiz"}
+			if (RegExMatch(flat, re))
+				{
+				labels[k] := 1
+				break
+				}
+		}
+	;(its buttons are sometimes read at 1:1 too)
+	menuUp := WalkMenuButtons(menuLines, okRead)
+	menuUp := menuUp || labels.Count() >= 2
+	if (menuUp && (!wantOk || IsObject(okRead)))
+		{
+		okBtn := okRead
+		return true
+		}
+	;(the buttons: the lower middle of the game, enlarged to 2500 px across at most)
+	bandW := Min(Round(GameW * 0.6), 1560)
+	b := OcrRect(Round(GameLeft + (GameW - bandW) / 2), Round(GameTop + GameH * 0.5), bandW, Round(GameH * 0.45), "en", Min(2, 2500 / bandW), bandLines)
+	if (!ErrorLevel && IsObject(bandLines) && !RegExMatch(b, "i)reconnect|disconnect|are you sure|cr[o0]wn"))
+		{
+		seen .= " | " RegExReplace(b, "\s+", " ")
+		if (WalkMenuButtons(bandLines, bandOk))
+			menuUp := true, okRead := IsObject(bandOk) ? bandOk : okRead
+		}
+	okBtn := menuUp ? okRead : ""
+	return menuUp
+	}
+
+;The game menu's button row in an OCR read (lines as OcrRect gives them): three or four of QUIT, IDLE, HELP, OK
+;(0K, 1DLE... too) side by side at one height - no other word between them - in that order left to right, far apart
+;like buttons (a gap of more than a word's height between them): not words of a sentence. okAt: the OK's middle,
+;if it's one of them
+WalkMenuButtons(lines, ByRef okAt := "")
+	{
+	okAt := "", allWords := []
+	for i, line in lines
+		{
+		if (!IsObject(line.words))
+			continue
+		for j, bw in line.words
+			{
+			word := RegExReplace(Format("{:L}", bw.text), "[^a-z0-9]")
+			n := RegExMatch(word, "^[qo0]uit$") ? 1 : RegExMatch(word, "^[il1]dle$") ? 2 : word = "help" ? 3 : RegExMatch(word, "^[o0]k$") ? 4 : 0
+			allWords.Push({n: n, x: bw.x, y: bw.y + bw.h / 2, w: bw.w, h: bw.h})
+			}
+		}
+	for i, first in allWords
+		{
+		if (!first.n)
+			continue
+		;(every word at this one's height, left to right)
+		row := []
+		for j, bw in allWords
+			if (Abs(bw.y - first.y) <= Max(first.h, 10) * 0.6)
+				{
+				at := row.Length() + 1
+				for k, r in row
+					if (bw.x < r.x)
+						{
+						at := k
+						break
+						}
+				row.InsertAt(at, bw)
+				}
+		firstAt := 0, lastAt := 0
+		for k, r in row
+			if (r.n)
+				lastAt := k, firstAt := firstAt ? firstAt : k
+		runLen := lastAt - firstAt + 1
+		if (runLen < 3 || runLen > 4)
+			continue
+		okRow := true, okSpot := ""
+		Loop, % runLen
+			{
+			r := row[firstAt + A_Index - 1]
+			if (!r.n)
+				{
+				okRow := false
+				break
+				}
+			if (A_Index > 1)
+				{
+				prev := row[firstAt + A_Index - 2]
+				if (r.n <= prev.n || r.x - (prev.x + prev.w) < Max(r.h, 8))
+					{
+					okRow := false
+					break
+					}
+				}
+			if (r.n = 4)
+				okSpot := {x: Round(r.x + r.w / 2), y: Round(r.y)}
+			}
+		if (okRow)
+			{
+			okAt := okSpot
+			return true
+			}
+		}
+	return false
+	}
+
+;May the bot press a key or click for the game's menu: Wizard101 in front, walking on (needWalking - not for the
+;potion run, which works with walking off) and, in AutoFarmer, its WalkHostOn: the bot on (F6) and no key or mouse
+;of yours since from (A_TickCount)
+WalkMenuMayAct(needWalking, from := 0)
+	{
+	if (!GameActive() || (needWalking && !Walking))
+		return false
+	return IsFunc("WalkHostOn") ? Func("WalkHostOn").Call(from) : true
+	}
+
+;Closes Wizard101's menu if it's up (WalkGameMenuOpen): Escape - twice at most - and if it's still there, its OK
+;(never Quit), each only while the bot may act (WalkMenuMayAct, checked right before it, from since - or the start
+;of this). -1: not looked at (the bot mayn't act), 0: no menu, 1: closed, 2: still up (left to you). seen: what the
+;first look read (for debug.log)
+WalkCloseGameMenu(needWalking := true, ByRef seen := "", since := 0)
+	{
+	seen := "", from := since ? since : A_TickCount
+	if (!WalkMenuMayAct(needWalking, from))
+		return -1
+	if (!WalkGameMenuOpen("", false, seen))
+		return 0
+	Loop, 2
+		{
+		WalkLog("the game's menu is open (an Escape opened it?) - Escape to close it")
+		Critical
+		if (!WalkMenuMayAct(needWalking, from))
+			{
+			Critical, Off
+			WalkLog("the game's menu left to you (the bot is off, Wizard101 isn't in front or you've taken over)")
+			return 2
+			}
+		Send, {Blind}{Escape}
+		Critical, Off
+		Sleep, 800
+		;(the second time, its OK looked for too - for a click if Escape won't do)
+		if (!WalkGameMenuOpen(menuOk, A_Index = 2))
+			return 1
+		}
+	if (!IsObject(menuOk))
+		{
+		WalkLog("the game's menu is still open and its OK wasn't read - left to you")
+		return 2
+		}
+	WalkLog("the game's menu is still open - its OK")
+	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
+	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	Critical
+	clicked := WalkMenuMayAct(needWalking, from)
+	if (clicked)
+		Click, % menuOk.x " " menuOk.y
+	Critical, Off
+	Sleep, 100
+	if (ownGrab)
+		Func("MouseLetGo").Call()
+	if (!clicked)
+		{
+		WalkLog("the game's menu left to you (the bot is off, Wizard101 isn't in front or you've taken over)")
+		return 2
+		}
+	Sleep, 700
+	return WalkGameMenuOpen() ? 2 : 1
+	}
+
 ;Escape, once: for a window an X of the bot's opened that Space doesn't close (a shop, say). If that opened
-;the game's own menu instead (nothing else was open), Escape again to close it
+;the game's own menu instead (nothing else was open), it's closed again (WalkCloseGameMenu)
 WalkEscape()
 	{
 	if (KeysDown || HeldW)
@@ -2113,14 +2296,7 @@ WalkEscape()
 	WalkLog("no arrow for " Round((A_TickCount - WkNoArrowFrom) / 1000) " s since an X of the bot's - Escape, in case that opened a window Space doesn't close (a shop?)")
 	PressKey("Escape")
 	Sleep, 1200
-	sc := ArrowScale().scale
-	menuText := OcrRect(Round(GameLeft + GameW / 2 - 350 * sc), Round(GameTop + GameH / 2 - 300 * sc), Round(700 * sc), Round(600 * sc))
-	if (!ErrorLevel && RegExMatch(menuText, "i)\b(quit|log\s*out|settings|options|resume|return to game)\b"))
-		{
-		WalkLog("Escape opened the game's menu - Escape again to close it")
-		PressKey("Escape")
-		Sleep, 600
-		}
+	WalkCloseGameMenu()
 	}
 
 ;A notice for you: a small window on top (it doesn't take the focus from the game) with a sound, plus a
@@ -2899,6 +3075,9 @@ NavTurn(h)
 	WkTurnAt := A_TickCount
 	took := A_TickCount - downAt
 	stillTurns := ending = "not turning" ? stillTurns + 1 : 0
+	;(not turning: Wizard101's own menu may be up - keys don't reach the wizard then; closed, and tried again)
+	if (ending = "not turning" && WalkCloseGameMenu() = 1)
+		stillTurns := 0
 	if (ending = "wrong way")
 		{
 		WkNavSign := -WkNavSign, WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0
