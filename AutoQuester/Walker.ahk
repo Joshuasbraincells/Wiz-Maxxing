@@ -2136,6 +2136,9 @@ WalkNotify(kind, title, text, withKeep := false)
 	WalkNotifyClose()
 	WkNoteKind := kind, WkNoteTitle := title, WkNoteShown := 0, WkNoteOff := 0
 	WalkLog("NEEDS YOU - " title ": " text)
+	;(and to Discord, if alerts are set up: AutoFarmer's Alerts.ahk)
+	if (IsFunc("AlertSend"))
+		Func("AlertSend").Call("walk-" kind, title, text)
 	;(+E0x08000000: clicking it never takes the focus from the game)
 	Gui, WkNote:New, +AlwaysOnTop +ToolWindow +E0x08000000 +HwndWkNoteHwnd, Wizard101 bot needs you
 	Gui, WkNote:Margin, 14, 12

@@ -59,6 +59,11 @@ usewand:1
 usetower:1
 usereshuffle:1
 
+; ---- Alerts ----
+; alertson: 1 = a Discord message when the wizard needs you (stuck, out of potions or mana, logged out, a quest
+; that needs you...) - once a webhook is set: tray menu "Discord alerts...". 0 = none
+alertson:1
+
 ; ---- You playing ----
 ; handsoff: while you use the keyboard or mouse yourself, the bot waits - no battle rounds, no walking, no
 ; potions - and carries on this many seconds after you stop (0 = it never waits for you)

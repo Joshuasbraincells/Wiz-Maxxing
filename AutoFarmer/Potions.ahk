@@ -179,6 +179,7 @@ PotionRun()
 		{
 		DebugLog("Potions: no potion route recorded from " commons " - going back (tray menu 'Record potion buying...')")
 		TrayTip, Wizard101 bot, % "Out of potions, and there's no route to the potion seller from " commons ".`nRecord one: tray menu 'Record potion buying...'", 10, 2
+		AlertSend("potions", "out of potions", "No route to the potion seller from " commons " - record one (tray menu: Record potion buying...).")
 		PotionRecall()
 		return false
 		}
@@ -211,6 +212,7 @@ PotionRunMark()
 		{
 		DebugLog("Potions: out of potions, but no buying recorded at this wizard's Mark yet - not recalling. Leave a Mark (Page Down) right next to the potion seller (Hilda Brewer), then tray menu 'Record potion buying...'")
 		TrayTip, Wizard101 bot, % "Out of potions. To buy more: leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons), then tray menu 'Record potion buying...' (once for each wizard).", 10, 2
+		AlertSend("potions", "out of potions", "Nothing set up to buy more: leave a Mark (Page Down) in Wizard City's Commons.")
 		return false
 		}
 	marksOff := PotionOff()
@@ -231,6 +233,7 @@ PotionRunMark()
 			low := (g.mana != "" && g.mana < 10)
 			DebugLog("Potions: no Recall - " (low ? "mana is " g.mana ", and a Recall costs up to 10" : "no Mark, or too little mana for it? The Mark goes right next to the potion seller (Hilda Brewer)"))
 			TrayTip, Wizard101 bot, % "Out of potions, and Page Up (Recall) went nowhere.`n" (low ? "Mana is " g.mana " - a Recall costs up to 10." : "No Mark, or too little mana for the Recall. The Mark goes right next to the potion seller (Hilda Brewer)."), 10, 2
+			AlertSend("potions", "out of potions", "The Recall to your Mark went nowhere - " (low ? "mana is " g.mana "." : "no Mark, or too little mana."))
 			return false
 			}
 		}
@@ -247,6 +250,7 @@ PotionRunMark()
 		marksOff[who] := shop
 		DebugLog("Potions: this wizard's Mark is in " shop (shop = rec.zone ? " but not by " rec.prompt " (no prompt with that name)" : ", but the buying was recorded in " rec.zone) " - the Mark isn't at the potion seller. Nothing clicked; no more recalls till you Mark (Page Down) next to her again and restart the bot (Windows+1), or record the buying again")
 		TrayTip, Wizard101 bot, % "This wizard's Mark isn't at the potion seller (it's in " shop ").`nMark (Page Down) right next to Hilda Brewer again, then restart the bot (Windows+1).", 10, 2
+		AlertSend("potions", "out of potions", "This wizard's Mark isn't at the potion seller (it's in " shop ") - Mark next to Hilda Brewer again and restart the bot.")
 		PotionCarryOn(false)
 		return false
 		}
@@ -582,6 +586,7 @@ PotionNoCrowns(x, y)
 		{
 		DebugLog("Potions: ""Crown"" on screen by the next click - not clicking, stopping (gold only): " RegExReplace(text, "\s+", " "))
 		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
+		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
 		return false
 		}
 	return true
@@ -868,6 +873,7 @@ PotionBuyHere(s, since := 0)
 		{
 		DebugLog("Potions: ""Crown"" in the shop's window - not clicking, stopping (gold only): " SubStr(RegExReplace(seen, "\s+", " "), 1, 160))
 		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
+		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
 		PotionCloseShop()
 		return false
 		}
@@ -953,6 +959,7 @@ PotionRunWalk()
 			{
 			DebugLog("Potions: out of potions, and no potion seller here (" zone ") - leave your Mark (Page Down) anywhere in Wizard City's Commons: the bot recalls there and walks to Hilda Brewer by the map")
 			TrayTip, Wizard101 bot, % "Out of potions, and no potion seller here.`nLeave your Mark (Page Down) anywhere in Wizard City's Commons - the bot recalls there and walks to Hilda Brewer.", 10, 2
+			AlertSend("potions", "out of potions", "No potion seller here (" zone ") - leave your Mark (Page Down) anywhere in Wizard City's Commons.")
 			PotionCarryOn(false)
 			return false
 			}

@@ -54,6 +54,9 @@ CfgList()
 		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
 	list.Push({key: "fleeon", label: "Flee when out of mana or cards", kind: "check", def: 1
 		, help: "Out of mana (less than the cheapest hit costs, no wand) or out of cards, two rounds running: flee, drink a potion (or buy some), and try again."})
+	list.Push({key: "-", label: "ALERTS"})
+	list.Push({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
+		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."})
 	list.Push({key: "|"})
 	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
 	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]

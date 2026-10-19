@@ -31,6 +31,7 @@ Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
+Menu, Tray, Add, Discord alerts..., MenuAlerts
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
@@ -125,6 +126,11 @@ return
 
 MenuLogin:
 ReconnectSetLogin()
+return
+
+;Discord alerts when the wizard needs you (Alerts.ahk): the webhook set, tested or removed
+MenuAlerts:
+AlertSetup()
 return
 
 #1::
@@ -558,6 +564,7 @@ if (hitter = 0) && (Manual != 1)
 	MouseLetGo()
 	DebugLog("  no school icon the bot knows - leaving this round to you" (savedTo = "" ? "" : " (picture of it: " savedTo ")"))
 	TrayTip, Wizard101 bot, The bot doesn't know this wizard's school yet - play this round yourself., 5, 1
+	AlertSend("school", "a wizard it doesn't know", "No school icon the bot knows on the name plates - the round is left to you (a new wizard? its pictures get cut from the round pictures it saves).")
 	;Wait for the round to be played (the Pass button goes), then watch for the next one
 	unknownFrom := A_TickCount
 	Loop
@@ -1770,6 +1777,7 @@ checkmana()
 			if (Stat("fleeon") && FleeRefillMana("no mana"))
 				return
 			Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
+			AlertSend("mana", "out of mana", "No mana and no potion to be had - the bot has stopped (kept from timing out).")
 			afk()
 			}
 		}
@@ -1785,6 +1793,7 @@ if (loopmode == 1)
 	if (Errorlevel == 0)
 		{
 		Respond("Error, Inventory Full. Preventing Time out.")
+		AlertSend("inventory", "backpack full", "The backpack is full - mob-loop farming has stopped (kept from timing out).")
 		afk()
 		loopmode := 0
 		return
@@ -2778,6 +2787,7 @@ DebugLog(msg)
 #Include %A_ScriptDir%\Potions.ahk
 #Include %A_ScriptDir%\Flee.ahk
 #Include %A_ScriptDir%\Settings.ahk
+#Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

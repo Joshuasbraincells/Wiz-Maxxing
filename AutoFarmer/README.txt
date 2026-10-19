@@ -14,6 +14,20 @@ walks your wizard towards the quest goal by following the yellow quest arrow
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+Discord alerts (tray menu "Discord alerts..."): when the wizard needs you, a
+message goes to your Discord channel - stuck (walking stopped), a teleport that
+doesn't work, no quest arrow, waiting at the quest goal, a collect quest that
+needs you, out of potions with none to be had, "Crowns" seen in a potion run,
+out of mana, a wizard it doesn't know, the backpack full, or it can't get back
+into the game (a login turned down, patching, the launcher). It says what's
+wrong, the zone and the time - never a login or a screenshot. Set it up: in
+Discord the channel's settings > Integrations > Webhooks > New Webhook > Copy
+Webhook URL, then paste it into "Discord alerts..." (typed hidden; kept in
+Windows Credential Manager as "Wiz-Maxxing Discord webhook", never in a file
+or debug.log) - a test message is sent. Empty: another test; OFF: removed.
+The same alert at most once in 10 minutes; alertson:0 (the Settings window)
+switches them off. debug.log: "Discord: ...".
+
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
 Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
 own tray icon) and opens the bot by itself when Wizard101 starts - in

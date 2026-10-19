@@ -395,6 +395,8 @@ RcGone()
 			RcNote := 1
 			RcLogMsg("the game has closed and there's no saved login (tray menu: Set Wizard101 login...), so it can't start it again by itself")
 			TrayTip, Wizard101 bot, Wizard101 has closed. Save your login with "Set Wizard101 login..." in the tray menu and the bot can start it again by itself., 10, 2
+			if (IsFunc("AlertSend"))
+				Func("AlertSend").Call("reconnect", "Wizard101 has closed", "There's no saved login to start it again with (tray menu: Set Wizard101 login...).")
 			}
 		return false
 		}
@@ -894,6 +896,9 @@ RcSet(newState, why := "")
 	RcState := newState, RcStateAt := A_TickCount, RcNote := 0, RcPeeks := 0, RcPeekAt := 0
 	if (why != "")
 		RcLogMsg(why)
+	;(stopped: it needs you - to Discord too, if alerts are set up: Alerts.ahk)
+	if (newState = "stopped" && !RcScanning && IsFunc("AlertSend"))
+		Func("AlertSend").Call("reconnect", "can't get back into the game", why)
 	if (newState = "")
 		RcStatus("online")
 	}
