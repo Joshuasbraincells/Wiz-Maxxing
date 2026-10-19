@@ -49,7 +49,7 @@ foreach ($script in 'Setup.ahk', 'Wiz-Maxxing.ahk', 'AutoFarmer\Autofarmer.ahk',
     $out = [IO.Path]::ChangeExtension($in, '.exe')
     if (-not (Test-Path $in)) { throw "$script isn't there - run this from the Wizard101 folder (build.ps1 sits next to AutoFarmer\ and AutoQuester\)." }
     $running = Get-Process -Name ([IO.Path]::GetFileNameWithoutExtension($out)) -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $out }
-    if ($running) { throw "$(Split-Path $out -Leaf) is running - close it first (its tray icon > Exit, or Windows+Esc), then build again." }
+    if ($running) { throw "$(Split-Path $out -Leaf) is running - close it first (its tray icon > Exit, or Windows+Esc; the 'Open with Wizard101' watcher: its tray icon > Stop watching), then build again." }
     if (Test-Path $out) { Remove-Item $out -Force }
     $p = Start-Process -FilePath $compiler -ArgumentList "/in `"$in`" /out `"$out`" /base `"$base`"$iconArg /silent" -Wait -PassThru -NoNewWindow
     if ($p.ExitCode -ne 0 -or -not (Test-Path $out)) { throw "Compiling $script failed (Ahk2Exe exit $($p.ExitCode))." }

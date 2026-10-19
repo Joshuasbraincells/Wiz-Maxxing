@@ -194,7 +194,8 @@ UpInstall(rel)
 		for i, f in res.failed
 			list .= "`n   " f
 		UpLog("update to " rel.tag " failed - put back as it was; couldn't write: " SubStr(StrReplace(list, "`n   ", " | "), 4))
-		MsgBox, 48, Wiz-Maxxing update, % "The update couldn't replace these files, so everything was put back as it was:" list "`n`nClose anything that has them open (Setup, an editor, the bot) and try again - the update is offered again next time."
+		if (!UpTestYes)
+			MsgBox, 48, Wiz-Maxxing update, % "The update couldn't replace these files, so everything was put back as it was:" list "`n`nClose anything that has them open (Setup, an editor, the bot, the 'Open with Wizard101' watcher: its tray icon > Stop watching) and try again - the update is offered again next time."
 		FileRemoveDir, %tmp%, 1
 		return false
 		}
@@ -278,13 +279,19 @@ UpCopy(src, dest, rollback)
 			res.backups.Push(rel)
 			}
 		FileCopy, %A_LoopFileFullPath%, %target%, 1
-		;(in use - a running program: moved aside, deleted next time)
+		;(in use - a running program: moved aside, deleted next time. A .old still in use - the watcher's own image
+		;from an earlier update - can't be replaced: another name)
 		if (ErrorLevel && exists)
 			{
-			FileMove, %target%, %target%.old, 1
+			old := target ".old"
+			if (FileExist(old))
+				FileDelete, %old%
+			if (FileExist(old))
+				old := target "." A_TickCount ".old"
+			FileMove, %target%, %old%, 1
 			if (!ErrorLevel)
 				{
-				res.renamed.Push(rel)
+				res.renamed.Push({rel: rel, old: old})
 				FileCopy, %A_LoopFileFullPath%, %target%, 1
 				}
 			}
@@ -305,10 +312,10 @@ UpRollback(res)
 	{
 	for i, rel in res.created
 		FileDelete, %A_ScriptDir%\%rel%
-	for i, rel in res.renamed
+	for i, r in res.renamed
 		{
-		FileDelete, %A_ScriptDir%\%rel%
-		FileMove, %A_ScriptDir%\%rel%.old, %A_ScriptDir%\%rel%, 1
+		FileDelete, % A_ScriptDir "\" r.rel
+		FileMove, % r.old, % A_ScriptDir "\" r.rel, 1
 		}
 	rollback := A_Temp "\wiz-maxxing-update\rollback"
 	for i, rel in res.backups

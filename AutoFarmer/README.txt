@@ -5,11 +5,23 @@ Autofarmer.ahk now does both and starts by itself when you double-click it:
 it fights whenever a battle round is up (the Pass button shows) and otherwise
 walks your wizard towards the quest goal by following the yellow quest arrow
 (the walking comes from ..\AutoQuester\Walker.ahk). Keys:
+	F6           the bot on / off (off: no battles, walking, potions or
+	             reconnecting - it waits; while it's off, F6 and F8 only work
+	             in Wizard101, and the Alt+ keys aren't taken at all)
 	F8           walking on / off
 	Windows+1    restart (Alt+Esc too)
 	Windows+Esc  quit
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
+
+Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
+Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
+own tray icon) and opens the bot by itself when Wizard101 starts - in
+standby: it does nothing till you press F6 in the game. Before that it checks
+for updates (it asks only if there's a newer release). Never a second bot: one
+already running is left alone. A bot opened this way and never turned on
+closes when the game does, and opens again with it. The tray menu's tick (or
+the watcher's own "Don't open with Wizard101 any more") turns it off.
 
 Walking by the game's memory (navmem:1 in PlayerStats.txt, the default): the
 vision helper also reads where the wizard is, which way it faces and where the

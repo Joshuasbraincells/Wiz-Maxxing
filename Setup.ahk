@@ -25,6 +25,7 @@ SetWorkingDir, %A_ScriptDir%
 SetBatchLines, -1
 
 global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS, SuUp, SuUpS, SuPa, SuPaS
+global SuWa, SuWaS
 global SuLogHwnd := 0, SuBusy := 0
 
 if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
@@ -53,6 +54,8 @@ Gui, Su:Add, Checkbox, xm y+8 w260 vSuSh, Desktop shortcut "Wiz-Maxxing"
 Gui, Su:Add, Text, x+8 w350 vSuShS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuPa, Run box and PATH (Win+R: Wiz-Maxxing)
 Gui, Su:Add, Text, x+8 w350 vSuPaS, ...
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuWa, Open with Wizard101 (F6 starts it)
+Gui, Su:Add, Text, x+8 w350 vSuWaS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuAh, AutoHotkey v1.1 (to rebuild the exes)
 Gui, Su:Add, Text, x+8 w350 vSuAhS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuGi, Git (to get updates with git pull)
@@ -83,6 +86,8 @@ SuCheck(tick := false)
 	SuShow("SuSh", "SuShS", sc, sc ? "on the desktop" : "not there", tick)
 	pa := SuPathOk()
 	SuShow("SuPa", "SuPaS", pa, pa ? "Win+R or a terminal: Wiz-Maxxing" : "not set up", tick)
+	wa := WatchIsOn()
+	SuShow("SuWa", "SuWaS", wa, wa ? "on - the bot opens in standby when the game starts" : "off (the bot's tray menu switches it too)", tick, false)
 	ahk := SuAhk()
 	SuShow("SuAh", "SuAhS", ahk != "", ahk != "" ? "found: " SuShort(ahk) : "not installed (only needed to rebuild)", tick, false)
 	git := SuWhere("git.exe")
@@ -117,6 +122,11 @@ SuInstall:
 		SuShortcut()
 	if (SuPa)
 		SuAddPath()
+	if (SuWa)
+		{
+		SuLogLine("== Open with Wizard101")
+		SuLogLine(WatchSet(A_ScriptDir, true) ? "on: a watcher starts with Windows (" WatchLink() ") and opens the bot in standby when Wizard101 starts - press F6 in the game to start it" : "couldn't make the Startup folder's shortcut")
+		}
 	if (SuAh)
 		SuInstallAhk()
 	if (SuGi)
@@ -477,3 +487,4 @@ SuShort(path)
 	}
 
 #Include %A_ScriptDir%\Updater.ahk
+#Include %A_ScriptDir%\Watch.ahk

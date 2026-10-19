@@ -3,12 +3,19 @@
 ; Wiz-Maxxing.exe by build.ps1, with the wizard icon; Setup puts it in the Start menu and on the desktop.
 ;   Wiz-Maxxing.exe /check   only the update check, with a message either way (the tray menu's "Check for
 ;                            updates"); the bot is started again only if it was updated
+;   Wiz-Maxxing.exe /watch   the watcher ("Open with Wizard101" - started with Windows): opens the bot in standby
+;                            when Wizard101 starts (Watch.ahk); F6 then starts it
 ; AutoHotkey v1.1.
 #NoEnv
 #NoTrayIcon
 #SingleInstance off
 checkOnly := (A_Args[1] = "/check")
 dir := A_ScriptDir "\AutoFarmer"
+if (A_Args[1] = "/watch")
+	{
+	WatchGame(dir)
+	ExitApp
+	}
 if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
 	{
 	MsgBox, 48, Wiz-Maxxing, % "The bot isn't here: Wiz-Maxxing.exe has to stay in the bot's folder, next to AutoFarmer\ (it's in " A_ScriptDir ")."
@@ -26,3 +33,4 @@ if (ErrorLevel)
 ExitApp
 
 #Include %A_ScriptDir%\Updater.ahk
+#Include %A_ScriptDir%\Watch.ahk

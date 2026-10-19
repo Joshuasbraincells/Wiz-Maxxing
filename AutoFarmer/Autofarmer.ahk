@@ -16,6 +16,8 @@ CoordMode, ToolTip, Screen
 
 ;Battles (this script) and quest walking (..\AutoQuester\Walker.ahk) run together in one loop and
 ;start by themselves: fight when a battle round is up, otherwise follow the quest arrow.
+;  F6           the bot on / off (off: no battles, walking, potions or reconnecting). Opened by the game -
+;               "Open with Wizard101", /standby - it starts off and waits for F6
 ;  F8           walking on / off
 ;  Windows+1    restart (also Alt+Esc)
 ;  Windows+Esc  quit
@@ -24,6 +26,7 @@ CoordMode, ToolTip, Screen
 OnExit("WalkerQuit")
 ;No standard tray menu: its "Pause Script" would freeze the walker with a key held down
 Menu, Tray, NoStandard
+Menu, Tray, Add, Bot on/off (F6), MenuBotToggle
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
@@ -32,6 +35,7 @@ Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
 Menu, Tray, Add, Check for updates, MenuUpdates
+Menu, Tray, Add, Open with Wizard101 (in standby - F6 starts it), MenuWatch
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now, MenuPotionRun
@@ -42,9 +46,28 @@ Menu, Tray, Default, Walking on/off (F8)
 SetTimer, StartBot, -300
 return
 
+;(F6 / F8 while the bot is off - standby, paused: only in Wizard101, not taken from other programs)
+#If BotOn || WinActive("ahk_exe WizardGraphicalClient.exe")
+F6::
+MenuBotToggle:
+BotToggle()
+return
+
 F8::
 MenuWalk:
 WalkToggle()
+return
+#If
+
+;"Open with Wizard101": a watcher started with Windows opens the bot when the game starts (..\Watch.ahk)
+MenuWatch:
+SplitPath, A_ScriptDir, , watchRoot
+watchOn := !WatchIsOn()
+if (WatchSet(watchRoot, watchOn))
+	TrayTip, Wizard101 bot, % watchOn ? "The bot now opens by itself when Wizard101 starts - in standby: F6 starts it." : "The bot won't open by itself with Wizard101 any more.", 6, 1
+else
+	TrayTip, Wizard101 bot, Couldn't change "Open with Wizard101" (the Startup folder's shortcut)., 6, 2
+WatchShow()
 return
 
 MenuReconnect:
@@ -106,7 +129,7 @@ return
 
 #1::
 MenuRestart:
-Reload
+BotRestart()
 return
 
 MenuExit:
@@ -114,7 +137,18 @@ ExitApp
 
 StartBot:
 global on := 1
-TrayTip, Wizard101 bot, Running: battles and quest walking. F8 turns walking on/off - Windows+Esc quits., 4
+;The bot on (F6): off, it does nothing - no battles, walking, potions or reconnecting. Opened by the game in
+;standby (/standby: "Open with Wizard101") it starts off; never turned on, the game closing closes it too
+global BotOn := 1, BotStandby := 0, BotEverOn := 1, BotGameSeenAt := A_TickCount
+for each, botArg in A_Args
+	if (botArg = "/standby")
+		BotOn := 0, BotStandby := 1, BotEverOn := 0
+	else if (botArg = "/off")
+		BotOn := 0
+if (BotOn)
+	TrayTip, Wizard101 bot, Running: battles and quest walking. F6 pauses it`, F8 turns walking on/off - Windows+Esc quits., 4
+else
+	TrayTip, Wizard101 bot, Ready - Wizard101 started. Press F6 to start the bot (battles`, quest walking`, potions)., 8
 
 ;Kill calculator (KillCalc.ahk): settings from PlayerStats.txt, enemy health read off the screen,
 ;and the blades/traps/aura/bubble we've put up this battle
@@ -205,6 +239,8 @@ FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 ;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
 DashInit()
 HandsOffShow()
+BotOnShow()
+WatchShow()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
 LoadPicSets()
 if (!DetectPicSet())
@@ -260,6 +296,27 @@ ResetUsed()
 TestRound:
 loop,
 {
+	;Off (F6) - or opened by the game in standby: nothing till F6 (no battles, walking, potions or reconnecting).
+	;Opened in standby and never turned on: Wizard101 closing closes the bot too (it opens again with the game)
+	if (!BotOn)
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		BlockInput, MouseMoveOff
+		if (BotStandby && !BotEverOn)
+			{
+			Process, Exist, %GameExe%
+			if (ErrorLevel)
+				BotGameSeenAt := A_TickCount
+			else if (A_TickCount - BotGameSeenAt > 15000)
+				{
+				DebugLog("Wizard101 closed while the bot was waiting for F6 - closing the bot (it opens again with the game)")
+				ExitApp
+				}
+			}
+		Sleep, 300
+		continue
+		}
 	UpdateGameRect()
 	if (A_TickCount - LastBeat > 10000)
 		{
@@ -669,6 +726,16 @@ if (AuraRounds > 0 && !RoundAgain)
 	AuraRounds--
 	}
 
+;Turned off (F6) during the round: it's left - nothing more cast, the mouse given back
+if (!BotOn)
+	{
+	DebugLog("  bot off (F6) - leaving this round")
+	RoundLeft := 1
+	MouseLetGo()
+	BlockInput, MouseMoveOff
+	Goto, TestRound
+	}
+
 ;You started playing while the bot looked at the hand: the round is yours
 if (PlayerActing())
 	{
@@ -737,6 +804,15 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 ;How it plays its cards (the Settings window: cardlogic, boostmax, use...): hit first - before any boost - when
 ;the card logic says so (Settings.ahk CardHitFirst); boosts only up to boostmax before a hit it can cast
 ;(CardBoostOk); kinds switched off aren't played. BoostRun counts the boosts since the last hit
+;Turned off (F6) during the round: it's left - nothing more cast, the mouse given back
+if (!BotOn)
+	{
+	DebugLog("  bot off (F6) - leaving this round")
+	RoundLeft := 1
+	MouseLetGo()
+	BlockInput, MouseMoveOff
+	Goto, TestRound
+	}
 HitsTried := 0
 if CardHitFirst()
 	{
@@ -856,6 +932,69 @@ PlayerActing()
 		}
 	PlayerActive := acting
 	return acting
+	}
+
+;The bot on / off (F6, the tray menu, the dashboard's button): off, the main loop does nothing; keys held let go
+BotToggle()
+	{
+	BotOn := !BotOn
+	if (BotOn)
+		{
+		BotEverOn := 1
+		;(turned on in a battle: what was played meanwhile isn't known - no kill check till it ends, and the boss
+		;picked again with Alt+1)
+		if (inbattle == 1)
+			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - Alt+1 the boss again for traps)")
+		;(the walker starts afresh: the wizard may have moved meanwhile)
+		if (IsFunc("WalkReset"))
+			Func("WalkReset").Call()
+		DebugLog("Bot on (F6) - battles, quest walking and potions")
+		TrayTip, Wizard101 bot, On - battles`, quest walking and potions. F6 pauses it., 4, 1
+		}
+	else
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		BlockInput, MouseMoveOff
+		DebugLog("Bot off (F6) - it does nothing till F6 again")
+		TrayTip, Wizard101 bot, Off - the bot does nothing till you press F6 again., 4, 1
+		}
+	BotOnShow()
+	}
+
+;A restart (Windows+1, Alt+Esc, the tray menu) that keeps the bot off or in standby - Reload drops the arguments
+BotRestart()
+	{
+	arg := (BotStandby && !BotEverOn) ? "/standby" : (!BotOn ? "/off" : "")
+	if (arg = "")
+		{
+		Reload
+		return
+		}
+	if (A_IsCompiled)
+		Run, "%A_ScriptFullPath%" /restart %arg%, %A_ScriptDir%, UseErrorLevel
+	else
+		Run, "%A_AhkPath%" /restart "%A_ScriptFullPath%" %arg%, %A_ScriptDir%, UseErrorLevel
+	}
+
+;The tray menu's tick and the dashboard's button for the bot on / off
+BotOnShow()
+	{
+	if (BotOn)
+		Menu, Tray, Check, Bot on/off (F6)
+	else
+		Menu, Tray, Uncheck, Bot on/off (F6)
+	if (IsFunc("DashBotShow"))
+		Func("DashBotShow").Call(BotOn)
+	}
+
+;The tray menu's tick for "Open with Wizard101"
+WatchShow()
+	{
+	if (WatchIsOn())
+		Menu, Tray, Check, Open with Wizard101 (in standby - F6 starts it)
+	else
+		Menu, Tray, Uncheck, Open with Wizard101 (in standby - F6 starts it)
 	}
 
 ;For the walker: no battle on - the spellbook (it only shows out of battle) seen in the last 2 s
@@ -1753,6 +1892,9 @@ ModeBox(ByRef mode, ByRef name, ByRef x, ByRef y, ByRef w, ByRef h)
 			}
 	}
 	
+;(the modes and picks below - Alt+D, Alt+S, Alt+1... - only while the bot is on: off, their keys go to whatever
+;program has them)
+#If BotOn
 $#!d::
 if (on == 1)
 	{
@@ -1880,6 +2022,7 @@ if ((on == 1) && (inbattle == 1))
 	CenterMouse()
 	}
 return
+#If
 
 GuiClose:
 Gui, Destroy
@@ -1971,7 +2114,7 @@ CommandReload()
 		if (ErrorLevel == 0) 
 			{
 			Respond("Reloading Script.")
-			Reload
+			BotRestart()
 			} else if (Errorlevel == 2)
 				{
 				ErrorBox("CommandReload", dir, title)
@@ -2190,6 +2333,7 @@ CommandPort()
 		}
 	}
 
+#If BotOn
 !0::
 if (on = 1)
 	{
@@ -2290,12 +2434,14 @@ if (on = 1)
 	}
 return
 
+#If
+
 #Esc::
 ExitApp
 return
 
 !Esc::
-Reload
+BotRestart()
 return
 
 
@@ -2635,3 +2781,4 @@ DebugLog(msg)
 #Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk
+#Include %A_ScriptDir%\..\Watch.ahk

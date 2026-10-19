@@ -20,7 +20,7 @@ global DashUsageText
 ;The Settings button (Settings.ahk), left of the Map button
 global DashCfgBtn
 ;The bottom row's other buttons (they share the window's width)
-global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn
+global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn, DashBotBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
 global DashLearnBtn, DashHandHead, DashCardPic1, DashCardPic2, DashCardPic3, DashCardPic4, DashCardPic5, DashCardPic6, DashCardPic7
 global DashCardTxt1, DashCardTxt2, DashCardTxt3, DashCardTxt4, DashCardTxt5, DashCardTxt6, DashCardTxt7
@@ -72,6 +72,7 @@ DashInit()
 	Gui, Dash:Add, Button, x12 y740 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
 	Gui, Dash:Add, Button, x130 y740 w80 h26 gDashClearLog vDashClearBtn, Clear
 	Gui, Dash:Add, Button, x218 y740 w120 h26 gDashOpenLog vDashLogBtn, Open debug.log
+	Gui, Dash:Add, Button, x346 y740 w120 h26 gDashBotToggle vDashBotBtn, Bot: on (F6)
 	Gui, Dash:Add, Button, x346 y740 w150 h26 gDashWalkToggle vDashWalkBtn, Walking on/off (F8)
 	Gui, Dash:Add, Button, x504 y740 w140 h26 gDashFolder vDashFolderBtn, Open bot folder
 	Gui, Dash:Add, Button, x652 y740 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
@@ -95,6 +96,13 @@ DashLearnShow(learnOn)
 	{
 	if (DashHwnd)
 		GuiControl, Dash:, DashLearnBtn, % learnOn ? "Learning... (stop)" : "Learn every card"
+	}
+
+;The bot on/off button's label
+DashBotShow(isOn)
+	{
+	if (DashHwnd)
+		GuiControl, Dash:, DashBotBtn, % "Bot: " (isOn ? "on" : "off") " (F6)"
 	}
 
 ;The "Wait while I play" button's label
@@ -436,7 +444,9 @@ DashRefresh()
 	up := (A_TickCount - DashStart) // 1000
 	upText := Format("{:02}:{:02}:{:02}", up // 3600, Mod(up // 60, 60), Mod(up, 60))
 	;What it's doing
-	if (PotionRecording)
+	if (!BotOn)
+		doing := BotEverOn ? "Off - F6 turns the bot on" : "Standby - press F6 to start the bot"
+	else if (PotionRecording)
 		doing := "Recording potion buying"
 	else if (LearnAll)
 		doing := "Learning every card (" (IsObject(LearnedCards) ? LearnedCards.Length() - LearnAllFrom : 0) " new so far)"
@@ -921,6 +931,12 @@ DashLearnAll:
 		Func("LearnAllToggle").Call()
 	return
 
+;The bot on/off (BotToggle in Autofarmer.ahk)
+DashBotToggle:
+	if (IsFunc("BotToggle"))
+		Func("BotToggle").Call()
+	return
+
 ;"Wait while I play" on/off (HandsOffToggle in Autofarmer.ahk)
 DashHandsToggle:
 	if (IsFunc("HandsOffToggle"))
@@ -947,10 +963,10 @@ DashGuiSize:
 	;(the bottom row shares the width, each button in proportion to the width it was made with, so all six
 	;fit at any size - 620 at the least)
 	;(a label runs in the global scope: Dash-named variables only)
-	DashRowX := 12, DashRowRoom := A_GuiWidth - 24 - 5 * 6
-	for DashRowI, DashRowB in [["DashPauseBtn", 110], ["DashClearBtn", 80], ["DashLogBtn", 120], ["DashWalkBtn", 150], ["DashFolderBtn", 140], ["DashHandsBtn", 124]]
+	DashRowX := 12, DashRowRoom := A_GuiWidth - 24 - 6 * 6
+	for DashRowI, DashRowB in [["DashPauseBtn", 100], ["DashClearBtn", 70], ["DashLogBtn", 110], ["DashBotBtn", 100], ["DashWalkBtn", 140], ["DashFolderBtn", 120], ["DashHandsBtn", 120]]
 		{
-		DashRowW := Floor(DashRowRoom * DashRowB[2] / 724)
+		DashRowW := Floor(DashRowRoom * DashRowB[2] / 760)
 		GuiControl, Dash:Move, % DashRowB[1], % "x" DashRowX " y" A_GuiHeight - 36 " w" DashRowW
 		DashRowX += DashRowW + 6
 		}
