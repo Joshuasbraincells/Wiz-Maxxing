@@ -144,31 +144,19 @@ ParseHealth(text)
 	return list
 	}
 
-;An OCR line on the enemy nameplates' row along the top, high in the strip: it starts at one of the four plates'
-;left edges (the first's 143 px, then every 511 px, at UI scale 1 - measured at 1440p, UI 1.144: "LOST SOUL" and its
-;"55/55" at 164, a second enemy's name at 749), or it's a plate's own pair - a name with a health line (cur/max)
-;starting at its left edge just under it, or that health line (rects: the strip's lines). A mob's floating name over
-;its head (RANK under it) can reach up into the strip, but it's neither (its RANK line never counts)
+;An OCR line of an enemy nameplate along the top: a name on the plates' row - its top ~27 and ~15 tall at UI scale 1,
+;the same at 1440p (UI 1.144: top 31, 17 tall) and 1920x1200 (UI 1.265: top 34, 19 tall) - or a plate's health line
+;under it (top ~47; OCR doesn't always read it). Not by where the plates sit across: their spacing differs with the
+;window (511 at 1440p, 331 at 1920x1200, at UI scale 1). A mob's floating name over its head can reach up into the
+;strip, but it's taller (~22) or lower; its RANK line never counts. rects: unused (the strip's lines)
 OnPlateRow(r, rects := "")
 	{
-	if (r.y - GameTop > Px(75) || RegExMatch(r.text, "i)^\W*RANK\b"))
+	if (RegExMatch(r.text, "i)^\W*RANK\b"))
 		return false
-	Loop, 4
-		{
-		if (Abs(r.x - (GameLeft + Px(143.4 + 511.4 * (A_Index - 1)))) <= Px(30))
-			return true
-		}
-	for i, o in (IsObject(rects) ? rects : [])
-		{
-		if (o = r || Abs(o.x - r.x) > Px(10))
-			continue
-		;(a name with its health line just under it, or a health line with its name just over it)
-		if (IsNameLine(r.text) && IsHealthLine(o.text) && o.y > r.y && o.y - r.y <= r.h * 2.5)
-			return true
-		if (IsHealthLine(r.text) && IsNameLine(o.text) && r.y > o.y && r.y - o.y <= o.h * 2.5)
-			return true
-		}
-	return false
+	top := (r.y - GameTop) / UiScale, tall := r.h / UiScale
+	if (IsHealthLine(r.text))
+		return Abs(top - 47) <= 7 && tall <= 20
+	return Abs(top - 27) <= 5 && Abs(tall - 15) <= 3
 	}
 
 ;OCR line kinds: a plate's name line (letters, no digits) or its health line ("current/max")
