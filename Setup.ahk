@@ -3,6 +3,12 @@
 ;
 ; Each part shows whether it's there already; the ones that are missing are ticked. Install does the ticked
 ; ones, in order, writing what happens in the log below:
+;   Install to your Programs folder   %LOCALAPPDATA%\Programs\Wiz-Maxxing (yours, no admin - the updater keeps
+;                     working): the bot (and the watcher) closed, this folder copied there - over an install that's
+;                     there already as an update does, its settings, learned cards and routes kept - then Setup
+;                     starts from there and goes; that one does the rest of what was ticked (the shortcuts, Start
+;                     menu, PATH and watcher now point there) and offers the download - the unpacked folder and the
+;                     Wiz-Maxxing zip(s) beside it - to the Recycle Bin. Not for a git checkout
 ;   Python 3          the vision helper (card and badge matching) runs on it. winget installs it for you
 ;                     only (no admin); without winget, the installer from python.org
 ;   numpy and Pillow  the Python packages the vision helper uses (pip), then checked by importing them;
@@ -25,8 +31,22 @@ SetWorkingDir, %A_ScriptDir%
 SetBatchLines, -1
 
 global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS, SuUp, SuUpS, SuPa, SuPaS
-global SuWa, SuWaS
+global SuWa, SuWaS, SuIn, SuInS
 global SuLogHwnd := 0, SuBusy := 0
+;(started again from the Programs folder after the copy: the folder it was in, the parts still to do, the old
+;Setup's pid - /moved <folder> /do <py,pk,...> /oldpid <pid>)
+global SuMovedFrom := "", SuMovedDo := "", SuMovedPid := 0, SuMovedSaved := ""
+for suI, suA in A_Args
+	{
+	if (suA = "/moved")
+		SuMovedFrom := RTrim(A_Args[suI + 1], "\")
+	else if (suA = "/saved")
+		SuMovedSaved := A_Args[suI + 1]
+	else if (suA = "/do")
+		SuMovedDo := A_Args[suI + 1]
+	else if (suA = "/oldpid")
+		SuMovedPid := A_Args[suI + 1] + 0
+	}
 
 if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
 	{
@@ -41,7 +61,9 @@ Gui, Su:Font, s11 w600, Segoe UI
 Gui, Su:Add, Text, w620, Get this PC ready to run the Wizard101 bot
 Gui, Su:Font, s9 w400, Segoe UI
 Gui, Su:Add, Text, w620 y+4, The ticked parts get installed. Python and its packages are needed for the card matching and the zone map; the last two are only for changing the bot.
-Gui, Su:Add, Checkbox, xm y+14 w260 vSuPy, Python 3
+Gui, Su:Add, Checkbox, xm y+14 w260 vSuIn, Install to your Programs folder
+Gui, Su:Add, Text, x+8 w350 vSuInS, ...
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuPy, Python 3
 Gui, Su:Add, Text, x+8 w350 vSuPyS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuPk, numpy and Pillow (Python packages)
 Gui, Su:Add, Text, x+8 w350 vSuPkS, ...
@@ -68,11 +90,59 @@ Gui, Su:Font, s9, Consolas
 Gui, Su:Add, Edit, xm y+12 w620 h240 ReadOnly -Wrap +HScroll vSuLog HwndSuLogHwnd
 Gui, Su:Show
 SuCheck(true)
+;(started from the Programs folder after the copy: the parts that were ticked, and the shortcuts / Start menu / PATH /
+;watcher that point to the old folder - SuCheck ticks those - done; then the download offered to the Recycle Bin)
+if (SuMovedFrom != "")
+	{
+	SuMovedPrep()
+	gosub, SuInstall
+	SuOfferDelete(SuMovedFrom)
+	}
 return
+
+;Before the moved-on install: the parts that were ticked ticked again, the old Setup gone, the old folder off the PATH
+SuMovedPrep()
+	{
+	SuLogLine("Installed in " A_ScriptDir " - doing the rest here")
+	;(never copied on again from here; the parts exactly as they were ticked - plus what still points into the old
+	;folder, which may go to the Recycle Bin: the shortcuts, the watcher, the PATH)
+	GuiControl, Su:, SuIn, 0
+	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
+		GuiControl, Su:, % "Su" code, % InStr("," SuMovedDo ",", "," code ",") ? 1 : 0
+	if (SuLinkHere(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk", SuMovedFrom))
+		GuiControl, Su:, SuSm, 1
+	if (SuLinkHere(A_Desktop "\Wiz-Maxxing.lnk", SuMovedFrom))
+		GuiControl, Su:, SuSh, 1
+	if (SuLinkHere(WatchLink(), SuMovedFrom))
+		GuiControl, Su:, SuWa, 1
+	RegRead, oldPath, HKCU\Environment, Path
+	if (SuInPath(oldPath, SuMovedFrom))
+		GuiControl, Su:, SuPa, 1
+	;(the old Setup gone, so its folder can go)
+	if (SuMovedPid)
+		Process, WaitClose, %SuMovedPid%, 15
+	;(the old folder off your PATH - this one goes on it)
+	GuiControlGet, pa, Su:, SuPa
+	if (pa)
+		SuRemovePath(SuMovedFrom)
+	}
 
 ;What's there already. tick: tick the missing parts (the first look)
 SuCheck(tick := false)
 	{
+	home := SuHome()
+	notOwn := SuOwnFolder(A_ScriptDir)
+	newer := SuNewerThere(home)
+	if (SuSamePath(A_ScriptDir, home))
+		SuShow("SuIn", "SuInS", true, "installed: " SuShort(home), tick)
+	else if (FileExist(A_ScriptDir "\.git") != "")
+		SuShow("SuIn", "SuInS", true, "a git checkout - it stays where it is (git pull updates it)", tick)
+	else if (notOwn != "")
+		SuShow("SuIn", "SuInS", false, "can't from here: " notOwn " - put the bot's files in a folder of their own", tick, false)
+	else if (newer != "")
+		SuShow("SuIn", "SuInS", true, "a newer version (" newer ") is installed - start that one", tick)
+	else
+		SuShow("SuIn", "SuInS", false, "runs from " SuShort(A_ScriptDir) " - copies itself to " SuShort(home), tick)
 	py := SuPython()
 	SuShow("SuPy", "SuPyS", py != "", py != "" ? "found: " SuShort(py) : "not installed", tick)
 	pk := py != "" && SuRun("""" py """ -c ""import numpy, PIL""", false) = 0
@@ -81,14 +151,14 @@ SuCheck(tick := false)
 	SuShow("SuUn", "SuUnS", marked = 0, marked = 0 ? "nothing blocked" : marked " file(s) marked as downloaded", tick)
 	up := UpToken() != ""
 	SuShow("SuUp", "SuUpS", up, up ? "token saved - Wiz-Maxxing checks for updates when you open it" : "no token yet", tick)
-	sm := FileExist(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk") != ""
-	SuShow("SuSm", "SuSmS", sm, sm ? "in the Start menu" : "not there", tick)
-	sc := FileExist(A_Desktop "\Wiz-Maxxing.lnk") != ""
-	SuShow("SuSh", "SuShS", sc, sc ? "on the desktop" : "not there", tick)
+	sm := SuLinkHere(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk")
+	SuShow("SuSm", "SuSmS", sm, sm ? "in the Start menu" : FileExist(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk") ? "there, but for another folder" : "not there", tick)
+	sc := SuLinkHere(A_Desktop "\Wiz-Maxxing.lnk")
+	SuShow("SuSh", "SuShS", sc, sc ? "on the desktop" : FileExist(A_Desktop "\Wiz-Maxxing.lnk") ? "there, but for another folder" : "not there", tick)
 	pa := SuPathOk()
 	SuShow("SuPa", "SuPaS", pa, pa ? "Win+R or a terminal: Wiz-Maxxing" : "not set up", tick)
-	wa := WatchIsOn()
-	SuShow("SuWa", "SuWaS", wa, wa ? "on - the bot opens in standby when the game starts" : "off (the bot's tray menu switches it too)", tick, false)
+	wa := WatchIsOn() && SuLinkHere(WatchLink())
+	SuShow("SuWa", "SuWaS", wa, wa ? "on - the bot opens in standby when the game starts" : WatchIsOn() ? "on, but for another folder" : "off (the bot's tray menu switches it too)", tick, WatchIsOn())
 	ahk := SuAhk()
 	SuShow("SuAh", "SuAhS", ahk != "", ahk != "" ? "found: " SuShort(ahk) : "not installed (only needed to rebuild)", tick, false)
 	git := SuWhere("git.exe")
@@ -109,6 +179,21 @@ SuInstall:
 	Gui, Su:Submit, NoHide
 	SuBusy := 1
 	GuiControl, Su:Disable, SuGo
+	;(first: copied to the Programs folder - Setup starts again from there and does the rest; this one goes)
+	if (SuIn)
+		{
+		suHomeRes := SuInstallHome()
+		if (suHomeRes = 1)
+			ExitApp
+		if (suHomeRes = -1)
+			{
+			SuLogLine("")
+			SuLogLine("Stopped: nothing else was done (see above). Untick ""Install to your Programs folder"" to set this folder up as it is.")
+			GuiControl, Su:Enable, SuGo
+			SuBusy := 0
+			return
+			}
+		}
 	if (SuPy)
 		SuInstallPython()
 	if (SuPk)
@@ -163,6 +248,299 @@ SuGuiEscape:
 	ExitApp
 
 ;---- the parts ----
+
+;A line in the log, and code back (for a return)
+SuSay(text, code)
+	{
+	SuLogLine(text)
+	return code
+	}
+
+;Your own Programs folder's Wiz-Maxxing (%LOCALAPPDATA%\Programs\Wiz-Maxxing: no admin needed, as Discord and VS Code)
+SuHome()
+	{
+	EnvGet, la, LOCALAPPDATA
+	return (la = "" ? A_AppData "\..\Local" : la) "\Programs\Wiz-Maxxing"
+	}
+
+;Whether two folders are the same (any case, with or without a trailing \)
+SuSamePath(a, b)
+	{
+	return RTrim(a, "\") = RTrim(b, "\")
+	}
+
+;Whether shortcut lnk is there and starts something in this folder (in: another) - its own folder, or the script it
+;runs
+SuLinkHere(lnk, in := "")
+	{
+	if (!FileExist(lnk))
+		return false
+	FileGetShortcut, %lnk%, target, dir, args
+	here := RTrim(in = "" ? A_ScriptDir : in, "\") "\"
+	return InStr(target, here) = 1 || InStr(dir "\", here) = 1 || InStr(args, here)
+	}
+
+;Why folder dir isn't the bot's own ("" if it is): a whole drive, a folder of yours (the Desktop, Documents,
+;Downloads, your profile, OneDrive...), or one with other things in it besides the bot's - those are never copied
+;into the Programs folder or offered to the Recycle Bin. contentsToo false: only whether it's a drive or such a folder
+SuOwnFolder(dir, contentsToo := true)
+	{
+	dir := RTrim(dir, "\")
+	if (RegExMatch(dir, "^[A-Za-z]:$") || RegExMatch(dir, "^\\\\[^\\]+\\[^\\]+$"))
+		return "it's a whole drive"
+	EnvGet, prof, USERPROFILE
+	EnvGet, od1, OneDrive
+	EnvGet, od2, OneDriveConsumer
+	EnvGet, od3, OneDriveCommercial
+	for i, k in [A_Desktop, A_DesktopCommon, A_MyDocuments, prof, prof "\Downloads", SuKnownFolder("{374DE290-123F-4565-9164-39C4925E467B}")
+		, od1, od2, od3, A_ProgramFiles, A_WinDir, A_Temp, A_AppData, RegExReplace(SuHome(), "\\[^\\]+$")]
+		if (k != "" && SuSamePath(dir, k))
+			return "it's " k " itself"
+	if (!contentsToo)
+		return ""
+	Loop, Files, %dir%\*, FD
+		if (!RegExMatch(A_LoopFileName, "i)^(\.git.*|\.github|AutoFarmer|AutoPetTrainer|AutoQuester|assets|backups|README\.md|Setup\.(ahk|exe)|Updater\.ahk|Watch\.ahk|Wiz-Maxxing\.(ahk|exe)|build\.(cmd|ps1)|version\.txt|updater\.(ini|log)|.+\.old|desktop\.ini|Thumbs\.db)$"))
+			return "it has other things in it too (" A_LoopFileName ")"
+	return ""
+	}
+
+;A known folder's path (guid: its FOLDERID), "" if Windows doesn't say
+SuKnownFolder(guid)
+	{
+	VarSetCapacity(id, 16, 0)
+	if (DllCall("ole32\CLSIDFromString", "WStr", guid, "Ptr", &id) != 0)
+		return ""
+	if (DllCall("shell32\SHGetKnownFolderPath", "Ptr", &id, "UInt", 0, "Ptr", 0, "Ptr*", p) != 0 || !p)
+		return ""
+	path := StrGet(p, "UTF-16")
+	DllCall("ole32\CoTaskMemFree", "Ptr", p)
+	return path
+	}
+
+;The version installed in home when it's newer than this folder's ("" if not, or none there)
+SuNewerThere(home)
+	{
+	if (!FileExist(home "\AutoFarmer\Autofarmer.ahk"))
+		return ""
+	FileRead, theirs, %home%\version.txt
+	FileRead, mine, %A_ScriptDir%\version.txt
+	theirs := Trim(theirs, " `t`r`n"), mine := Trim(mine, " `t`r`n")
+	return (theirs != "" && UpCompare(theirs, mine) > 0) ? theirs : ""
+	}
+
+;When the bot last ran from folder dir (its debug.log's time, else the last run's; 0 never)
+SuLastRun(dir)
+	{
+	for i, f in [dir "\AutoFarmer\debug.log", dir "\AutoFarmer\debug.previous.log"]
+		if (FileExist(f))
+			{
+			FileGetTime, at, %f%, M
+			return at + 0
+			}
+	return 0
+	}
+
+;Your files in folder from (settings, learned cards, routes, the walker's memory: the updater's UpIsMine - not the
+;logs, backups or made pictures) copied into folder to, as they lie. How many
+SuCopyMine(from, to)
+	{
+	slots := UpLearnedSlots(from "\AutoFarmer\learned\cards.txt")
+	n := 0
+	Loop, Files, %from%\*, FR
+		{
+		rel := SubStr(A_LoopFileFullPath, StrLen(from) + 2)
+		if (RegExMatch(rel, "i)(^|\\)(backups|generated)\\|\.log$") || !UpIsMine(rel, slots))
+			continue
+		target := to "\" rel
+		SplitPath, target, , targetDir
+		FileCreateDir, %targetDir%
+		FileCopy, %A_LoopFileFullPath%, %target%, 1
+		if (!ErrorLevel)
+			n++
+		}
+	return n
+	}
+
+;The install stopped: the watcher started again if it was closed for it (closedWatch), and -1 back
+SuInstallStop(text, closedWatch)
+	{
+	SuLogLine(text)
+	if (closedWatch && WatchIsOn())
+		Run, % WatchLink(), , UseErrorLevel
+	return -1
+	}
+
+;Copies the bot to SuHome and starts Setup from there (the rest of what's ticked, /do) - 1 if it did (this Setup
+;then goes), 0 if there was nothing to do (here already), -1 if it couldn't (nothing else is done)
+SuInstallHome()
+	{
+	SuLogLine("== Install to your Programs folder")
+	home := SuHome()
+	if (SuSamePath(A_ScriptDir, home))
+		return SuSay("installed here already", 0)
+	if (FileExist(A_ScriptDir "\.git") != "")
+		return SuSay("this is a git checkout - it stays where it is", 0)
+	if (InStr(home "\", A_ScriptDir "\") = 1 || InStr(A_ScriptDir "\", home "\") = 1)
+		return SuSay("this folder and " home " are inside each other - move this folder somewhere else first", -1)
+	notOwn := SuOwnFolder(A_ScriptDir)
+	if (notOwn != "")
+		return SuSay("not from " A_ScriptDir ": " notOwn " - put the bot's files in a folder of their own (unzip the download as it is) and run Setup there", -1)
+	newer := SuNewerThere(home)
+	if (newer != "")
+		return SuSay("a newer version (" newer ") is installed there - start that one (Start menu: Wiz-Maxxing); this older one isn't put over it", -1)
+	if (WatchBotRunning())
+		{
+		MsgBox, 262180, Wiz-Maxxing setup, The bot is running. Close it to install it in your Programs folder?
+		IfMsgBox, No
+			return SuSay("the bot is running - not installed", -1)
+		}
+	;(the bot from here and from there, and the watcher - they keep their files open)
+	UpCloseBots(A_ScriptDir)
+	UpCloseBots(home)
+	DetectHiddenWindows, On
+	closedWatch := WatchPids().Length() > 0
+	for i, pid in WatchPids()
+		{
+		WinClose, ahk_pid %pid% ahk_class AutoHotkey
+		Process, WaitClose, %pid%, 5
+		if (ErrorLevel)
+			Process, Close, %pid%
+		}
+	FileRead, ver, %A_ScriptDir%\version.txt
+	ver := Trim(ver, " `t`r`n")
+	if (FileExist(home "\AutoFarmer\Autofarmer.ahk"))
+		{
+		;(an install there already: this version's files over it - all or nothing, as an update does. Your settings,
+		;learned cards and routes: the folder the bot ran from last keeps them in use, the other's are saved in the
+		;install's backups\ - nothing lost)
+		oldWins := SuLastRun(A_ScriptDir) > SuLastRun(home)
+		FormatTime, stamp, , yyyy-MM-dd HHmm
+		SplitPath, A_ScriptDir, , oldParent
+		SplitPath, oldParent, oldParentName
+		saved := home "\backups\install " stamp (oldWins ? " - the install's own before" : " - from " oldParentName)
+		SuLogLine("an install is there already - copying this version over it")
+		rollback := A_Temp "\wiz-maxxing-install-rollback"
+		FileRemoveDir, %rollback%, 1
+		res := UpCopy(A_ScriptDir, home, rollback)
+		if (res.failed.Length())
+			{
+			UpRollback(res, home, rollback)
+			FileRemoveDir, %rollback%, 1
+			return SuInstallStop("couldn't write " res.failed.Length() " file(s) there (in use?) - put back as it was: " res.failed[1], closedWatch)
+			}
+		FileRemoveDir, %rollback%, 1
+		if (oldWins)
+			{
+			n := SuCopyMine(home, saved)
+			SuLogLine("the bot ran from here last: your settings, learned cards and routes from here are used there (the install's own " n " file(s) saved in " saved ")")
+			SuCopyMine(A_ScriptDir, home)
+			}
+		else
+			{
+			n := SuCopyMine(A_ScriptDir, saved)
+			SuLogLine("the install's own settings, learned cards and routes stay in use (this folder's " n " file(s) saved in " saved ")")
+			}
+		UpMergeStats(A_ScriptDir "\AutoFarmer\PlayerStats.txt", home "\AutoFarmer\PlayerStats.txt", ver)
+		FileCopy, %A_ScriptDir%\version.txt, %home%\version.txt, 1
+		SuLogLine(res.copied " file(s) copied")
+		}
+	else
+		{
+		existed := InStr(FileExist(home), "D")
+		FileCreateDir, %home%
+		FileCopyDir, %A_ScriptDir%, %home%, 1
+		if (ErrorLevel || !FileExist(home "\AutoFarmer\Autofarmer.ahk"))
+			{
+			;(half a copy must never count as an install)
+			if (!existed)
+				FileRemoveDir, %home%, 1
+			return SuInstallStop("couldn't copy everything to " home " (in use? the disk full?) - nothing installed", closedWatch)
+			}
+		saved := ""
+		SuLogLine("copied to " home " - with your settings, learned cards and routes")
+		}
+	do := ""
+	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
+		if (Su%code%)
+			do .= (do = "" ? "" : ",") code
+	if (!BotRun(home "\Setup", "/moved """ A_ScriptDir """ /do " (do = "" ? "-" : do) " /oldpid " DllCall("GetCurrentProcessId") (saved = "" ? "" : " /saved """ saved """"), home))
+		return SuInstallStop("installed in " home ", but its Setup didn't start - start it there yourself (Start menu or " home "\Setup)", closedWatch)
+	return 1
+	}
+
+;Your PATH without folder dir (and its App Paths entry, if it's that folder's)
+SuRemovePath(dir, envKey := "HKCU\Environment")
+	{
+	RegRead, path, %envKey%, Path
+	if (!SuInPath(path, dir))
+		return
+	keep := ""
+	Loop, Parse, path, `;
+		if (Trim(A_LoopField) != "" && RTrim(Trim(A_LoopField), "\") != RTrim(dir, "\"))
+			keep .= (keep = "" ? "" : ";") A_LoopField
+	RegWrite, REG_EXPAND_SZ, %envKey%, Path, %keep%
+	SuLogLine(ErrorLevel ? "couldn't take the old folder off your PATH" : "the old folder taken off your PATH: " dir)
+	}
+
+;The download offered to the Recycle Bin once it's installed: the folder it was unpacked to (the outer
+;Wiz-Maxxing-v... one too, when it holds nothing else) and the Wiz-Maxxing zip(s) beside it. Never the install, a
+;git checkout, or a folder that isn't the bot's
+SuOfferDelete(old)
+	{
+	home := SuHome()
+	old := RTrim(old, "\")
+	if (old = "" || !FileExist(old "\AutoFarmer\Autofarmer.ahk") || SuSamePath(old, home)
+		|| InStr(home "\", old "\") = 1 || InStr(old "\", home "\") = 1 || FileExist(old "\.git") != "" || SuOwnFolder(old) != "")
+		return
+	top := old
+	SplitPath, old, , parent
+	SplitPath, parent, parentName, grand
+	zipDir := parent
+	if (RegExMatch(parentName, "i)^Wiz-Maxxing") && grand != "" && SuOnlyChild(parent, old) && SuOwnFolder(parent, false) = "")
+		top := parent, zipDir := grand
+	zips := []
+	Loop, Files, %zipDir%\Wiz-Maxxing*.zip
+		zips.Push(A_LoopFileFullPath)
+	list := "`n   " top
+	for i, z in zips
+		list .= "`n   " z
+	note := SuMovedSaved = "" ? "(Everything was copied over - your settings, learned cards and routes too.)"
+		: "(The settings, learned cards and routes in use are in the install; the other copy was saved in`n   " SuMovedSaved ")"
+	MsgBox, 262436, Wiz-Maxxing setup, % "Wiz-Maxxing is installed in`n   " home "`n`nMove the download to the Recycle Bin?" list "`n`n" note
+	IfMsgBox, No
+		return SuLogLine("the download was left where it is")
+	SuLogLine("== The download to the Recycle Bin")
+	for i, f in [top]
+		{
+		;(the old bot's vision helper can take a few seconds to go after the bot)
+		Loop, 5
+			{
+			FileRecycle, %f%
+			if (!FileExist(f))
+				break
+			Sleep, 1500
+			}
+		SuLogLine(FileExist(f) ? "couldn't move " f " (still in use? an Explorer window open in it?) - delete it yourself" : "to the Recycle Bin: " f)
+		}
+	for i, z in zips
+		{
+		FileRecycle, %z%
+		SuLogLine(FileExist(z) ? "couldn't move " z : "to the Recycle Bin: " z)
+		}
+	}
+
+;Whether folder parent holds child and nothing else
+SuOnlyChild(parent, child)
+	{
+	n := 0, other := false
+	Loop, Files, %parent%\*, FD
+		{
+		n++
+		if (!SuSamePath(A_LoopFileFullPath, child))
+			other := true
+		}
+	return n = 1 && !other
+	}
 
 SuInstallPython()
 	{

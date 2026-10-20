@@ -257,10 +257,13 @@ UpInstall(rel)
 	return true
 	}
 
-;Closes the bot's programs running from this folder: its exes, or its scripts run by AutoHotkey - nothing else
-;(an editor that has a script open is left alone). Politely first; forced only if it's an AutoHotkey program
-UpCloseBots()
+;Closes the bot's programs running from this folder (dir: another): its exes, or its scripts run by AutoHotkey -
+;nothing else (an editor that has a script open is left alone). Politely first; forced only if it's an AutoHotkey
+;program
+UpCloseBots(dir := "")
 	{
+	if (dir = "")
+		dir := A_ScriptDir
 	DetectHiddenWindows, On
 	pids := []
 	bots := "i)^(AutoFarmer\\Autofarmer|AutoFarmer\\StatsReader|AutoQuester\\AutoQuester)\."
@@ -271,11 +274,11 @@ UpCloseBots()
 			continue
 		mine := false
 		;(an exe of the bot, in this folder)
-		if (InStr(path, A_ScriptDir "\") = 1 && RegExMatch(SubStr(path, StrLen(A_ScriptDir) + 2), bots "exe$"))
+		if (InStr(path, dir "\") = 1 && RegExMatch(SubStr(path, StrLen(dir) + 2), bots "exe$"))
 			mine := true
 		;(AutoHotkey running one of the bot's scripts from this folder: the script is its first argument)
 		else if (RegExMatch(path, "i)\\AutoHotkey[^\\]*\.exe$") && RegExMatch(cmd, "i)""?([A-Z]:\\[^""]+?\.ahk)""?", m)
-			&& InStr(m1, A_ScriptDir "\") = 1 && RegExMatch(SubStr(m1, StrLen(A_ScriptDir) + 2), bots "ahk$"))
+			&& InStr(m1, dir "\") = 1 && RegExMatch(SubStr(m1, StrLen(dir) + 2), bots "ahk$"))
 			mine := true
 		if (mine && WinExist("ahk_pid " p.ProcessId " ahk_class AutoHotkey"))
 			pids.Push(p.ProcessId)
@@ -354,19 +357,22 @@ UpCopy(src, dest, rollback)
 	return res
 	}
 
-;Puts the folder back as it was before UpCopy
-UpRollback(res)
+;Puts the folder (dest: another) back as it was before UpCopy (rollback: the folder UpCopy was given)
+UpRollback(res, dest := "", rollback := "")
 	{
+	if (dest = "")
+		dest := A_ScriptDir
+	if (rollback = "")
+		rollback := A_Temp "\wiz-maxxing-update\rollback"
 	for i, rel in res.created
-		FileDelete, %A_ScriptDir%\%rel%
+		FileDelete, %dest%\%rel%
 	for i, r in res.renamed
 		{
-		FileDelete, % A_ScriptDir "\" r.rel
-		FileMove, % r.old, % A_ScriptDir "\" r.rel, 1
+		FileDelete, % dest "\" r.rel
+		FileMove, % r.old, % dest "\" r.rel, 1
 		}
-	rollback := A_Temp "\wiz-maxxing-update\rollback"
 	for i, rel in res.backups
-		FileCopy, %rollback%\%rel%, %A_ScriptDir%\%rel%, 1
+		FileCopy, %rollback%\%rel%, %dest%\%rel%, 1
 	UpLog("put back: " res.backups.Length() " file(s) restored, " res.created.Length() " new one(s) removed")
 	}
 
