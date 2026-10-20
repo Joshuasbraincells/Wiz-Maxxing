@@ -413,6 +413,8 @@ loop,
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
 		PotionCheck()
 		MouseLetGo()
+		;(the log's OneDrive copy, when it's on: a picture of the game every 2 minutes - LogMirrorSnap)
+		LogMirrorSnap(120000)
 		gosub, mobloop
 		gosub, LoreLoop
 		}
@@ -440,6 +442,7 @@ loop,
 		;(a battle's first round: which mob started it, from how far and how far off its facing - Vision.ahk)
 		if (SeenOut)
 			CaughtLog()
+		LogMirrorSnap(120000)
 		SeenOut := 0
 		if (dualmode == 1)
 			{
@@ -2905,14 +2908,102 @@ SaveRoundPicture()
 	return path
 	}
 
-;Appends a timestamped line to debug.log next to this script
+;Appends a timestamped line to debug.log next to this script (and to its copy on OneDrive: LogMirrorDir)
 DebugLog(msg)
 	{
 	FormatTime, now,, HH:mm:ss
 	FileAppend, % now " " msg "`r`n", %A_ScriptDir%\debug.log
+	lmTo := LogMirrorDir(lmFresh)
+	if (lmTo != "" && !lmFresh)
+		FileAppend, % now " " msg "`r`n", %lmTo%\debug.log
 	;(and onto the dashboard's log)
 	if (DashHwnd)
 		DashLog(now " " msg)
+	}
+
+;The log copied to OneDrive as well (logmirror:1 - Settings, ALERTS), for help from another PC (OneDrive syncs it
+;there): <OneDrive>\Wiz-Maxxing logs\<this PC's name>\ - debug.log line by line (when it's switched on, the run so far
+;and debug.previous.log are copied over first), and pictures of the game (LogMirrorSnap). The folder, or "" when it's
+;off or this PC has no OneDrive folder; fresh: 1 when it was switched on just now (the log copied, this line in it)
+LogMirrorDir(ByRef fresh := 0)
+	{
+	static lmDir := "", lmOn := 0
+	fresh := 0
+	if (!(Stats.HasKey("logmirror") && Stats["logmirror"]))
+		{
+		lmOn := 0
+		return ""
+		}
+	if (!lmOn)
+		{
+		lmOn := 1, lmDir := ""
+		;(your own OneDrive first - a work account's is %OneDrive% too)
+		EnvGet, od, OneDriveConsumer
+		if (od = "" || !InStr(FileExist(od), "D"))
+			EnvGet, od, OneDrive
+		FormatTime, now,, HH:mm:ss
+		if (od != "" && InStr(FileExist(od), "D"))
+			{
+			lmDir := od "\Wiz-Maxxing logs\" A_ComputerName
+			FileCreateDir, %lmDir%
+			FileAppend, % now " Log copy: on - " lmDir "`r`n", %A_ScriptDir%\debug.log
+			FileCopy, %A_ScriptDir%\debug.previous.log, %lmDir%\debug.previous.log, 1
+			FileCopy, %A_ScriptDir%\debug.log, %lmDir%\debug.log, 1
+			fresh := 1
+			}
+		else
+			FileAppend, % now " Log copy: no OneDrive folder on this PC - not copied`r`n", %A_ScriptDir%\debug.log
+		}
+	return lmDir
+	}
+
+;A picture of the game into the log's OneDrive copy (snap_<when>.jpg, the newest 15 kept; the vision helper makes
+;it): every: at most this often (ms) - out of battle and at a round's start every 2 minutes, an alert's at once (kind:
+;the alert's). Only the game itself: its window there and not minimised with nothing else's over it (the bot's own may
+;be: LogMirrorGameShown), in its world - its spellbook or a battle's Pass button on screen, never the login screen -
+;and no reconnect under way (nor for a reconnect alert)
+LogMirrorSnap(every := 0, kind := "")
+	{
+	static lmLast := 0
+	if (every && lmLast && A_TickCount - lmLast < every)
+		return
+	if (InStr(kind, "reconnect") || RcState != "")
+		return
+	lmTo := LogMirrorDir()
+	if (lmTo = "" || !VisionOn || !LogMirrorGameShown())
+		return
+	ImageSearch, lmX, lmY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
+	if (ErrorLevel)
+		{
+		ImageSearch, lmX, lmY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+		if (ErrorLevel)
+			return
+		}
+	lmLast := A_TickCount
+	FormatTime, stamp, %A_NowUTC%, yyyyMMdd_HHmmss
+	VisionGet("/snap?x1=" GameLeft "&y1=" GameTop "&x2=" GameLeft + GameW "&y2=" GameTop + GameH "&keep=15&out=" NavUri(lmTo "\snap_" stamp ".jpg"), 3000, true)
+	}
+
+;The game's window is up, not minimised, and on top over the game area: at its middle, corners and edges the window
+;there is the game's (or one of the bot's own - its notices, the dashboard)
+LogMirrorGameShown()
+	{
+	WinGet, g, ID, ahk_class %GameClass% ahk_exe %GameExe%
+	if (!g || DllCall("IsIconic", "Ptr", g) || GameW <= 0 || GameH <= 0)
+		return false
+	me := DllCall("GetCurrentProcessId")
+	for i, f in [[0.5, 0.5], [0.05, 0.05], [0.5, 0.05], [0.95, 0.05], [0.05, 0.5], [0.95, 0.5], [0.05, 0.95], [0.5, 0.95], [0.95, 0.95]]
+		{
+		x := GameLeft + Round(GameW * f[1]), y := GameTop + Round(GameH * f[2])
+		w := DllCall("WindowFromPoint", "Int64", (y << 32) | (x & 0xFFFFFFFF), "Ptr")
+		top := w ? DllCall("GetAncestor", "Ptr", w, "UInt", 2, "Ptr") : 0
+		if (top = g)
+			continue
+		WinGet, pid, PID, ahk_id %top%
+		if (!top || pid != me)
+			return false
+		}
+	return true
 	}
 
 #Include %A_ScriptDir%\Ocr.ahk

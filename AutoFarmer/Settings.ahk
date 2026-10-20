@@ -100,6 +100,8 @@ CfgList()
 	list.Push({key: "discardunaffordable", label: "Discard hits it can't cast yet", kind: "check", def: 0
 		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."})
 	list.Push({key: "-", label: "ALERTS"})
+	list.Push({key: "logmirror", label: "Copy the log to OneDrive (help from another PC)", kind: "check", def: 0
+		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."})
 	list.Push({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
 		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."})
 	return list

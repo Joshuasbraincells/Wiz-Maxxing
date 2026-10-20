@@ -76,6 +76,9 @@ AlertUrlOk(url)
 ;wrong and what to do. Sent in the background
 AlertSend(kind, title, text)
 	{
+	;(the log's OneDrive copy, when it's on: what the game showed - at most every 20 s)
+	if (IsFunc("LogMirrorSnap"))
+		Func("LogMirrorSnap").Call(20000, kind)
 	if (Stats.HasKey("alertson") && !Stats["alertson"])
 		return
 	url := AlertUrl()

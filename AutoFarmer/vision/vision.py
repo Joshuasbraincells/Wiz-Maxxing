@@ -63,6 +63,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /navto?x=&y=&z=[&avoid=1&mobr=300]      -> where the wizard is and the route to a spot of the bot's own (the potion
                                              seller): ok|1, zone|, pos|, route|x|y|left (all mobs kept away from with
                                              avoid=1)
+  /snap?x1=&y1=&x2=&y2=&out=<...\Wiz-Maxxing logs\<PC>\snap_<when>.jpg>[&keep=15] -> the screen rectangle (the
+                                             game: the bot checks it's on top) saved as a JPEG (half size when wider
+                                             than 1600) - the log's OneDrive copy; that folder's oldest snap_*.jpg
+                                             beyond keep removed: "ok|<file>" or "ERR <why>" (nowhere else: 400)
   /caught                                 -> the mob that started a battle (asked at its first round), off the mobs
                                              read lately (while walking with mob avoidance on): the one nearest the
                                              wizard, looked back to where it set off towards him (noticed him):
@@ -360,6 +364,36 @@ def grab_screen(x1, y1, x2, y2):
         g32.DeleteDC(mdc)
         u32.ReleaseDC(None, sdc)
     return np.frombuffer(buf, np.uint8).reshape(h, w, 4)[..., 2::-1].astype(np.float32)
+
+
+def snap_out_ok(out):
+    """/snap writes only snap_<...>.jpg into a "Wiz-Maxxing logs\\<PC>" folder"""
+    out = os.path.normpath(out)
+    d = os.path.dirname(out)
+    return (bool(re.match(r'^snap_[\w.-]+\.jpg$', os.path.basename(out), re.I))
+            and os.path.basename(os.path.dirname(d)).lower() == 'wiz-maxxing logs' and os.path.isabs(out))
+
+
+def snap(x1, y1, x2, y2, out, keep=15):
+    """/snap: the screen rectangle into out (JPEG, half size when wider than 1600); the newest keep snap_*.jpg kept
+    (by their time on disk)"""
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError('an empty rectangle')
+    a = grab_screen(x1, y1, x2, y2)
+    im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+    if im.width > 1600:
+        im = im.resize((im.width // 2, im.height // 2), Image.BILINEAR)
+    d = os.path.dirname(out)
+    os.makedirs(d, exist_ok=True)
+    im.save(out + '.tmp', 'JPEG', quality=70)
+    os.replace(out + '.tmp', out)
+    if keep > 0:
+        for f in sorted(glob.glob(os.path.join(d, 'snap_*.jpg')), key=os.path.getmtime)[:-keep]:
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+    return out
 
 
 def grab(x1, y1, x2, y2, file=None):
@@ -1669,6 +1703,14 @@ class Handler(BaseHTTPRequestHandler):
                 except ValueError:
                     near = 300.0
                 return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, mob_cone(q))))
+            if u.path == '/snap':
+                if not snap_out_ok(q.get('out', '')):
+                    return self.reply('ERR out must be a snap_*.jpg in a Wiz-Maxxing logs\\<PC> folder', 400)
+                try:
+                    return self.reply('ok|' + snap(int(q['x1']), int(q['y1']), int(q['x2']), int(q['y2']), q['out'],
+                                                   max(1, int(q.get('keep') or 15))))
+                except Exception as e:
+                    return self.reply('ERR ' + repr(e))
             if u.path == '/caught':
                 return self.reply(caught_line())
             if u.path == '/mobs':

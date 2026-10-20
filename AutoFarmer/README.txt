@@ -28,6 +28,12 @@ or debug.log) - a test message is sent. Empty: another test; OFF: removed.
 The same alert at most once in 10 minutes; alertson:0 (the Settings window)
 switches them off. debug.log: "Discord: ...".
 
+The log on OneDrive (Settings: "Copy the log to OneDrive", logmirror:1): debug.log
+is also written to your OneDrive folder, Wiz-Maxxing logs\<this PC's name>\,
+with a picture of the game every 2 minutes and at each alert (snap_*.jpg, the
+newest 15) - OneDrive syncs it, so the bot on one PC can be followed from
+another. Off by default; nothing else is sent anywhere.
+
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
 Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
 own tray icon) and opens the bot by itself when Wizard101 starts - in
