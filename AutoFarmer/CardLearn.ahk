@@ -73,6 +73,12 @@ DiscardUnused()
 			continue
 			}
 		pid := SubStr(c.known, 9)
+		;(put in a slot this round - the hand was read before it got one: the bot plays it now)
+		if (LearnSlotOf(pid) != "")
+			{
+			i += 1
+			continue
+			}
 		why := LearnWhyUnused(pid)
 		MouseMove, % Round(c.x), % Round(c.y), MouseSpeedNow()
 		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
@@ -88,6 +94,16 @@ DiscardUnused()
 	if (did)
 		CenterMouse(), VisionForget()
 	return did
+	}
+
+;The slot learned card id is used as ("" none, or not a learned card)
+LearnSlotOf(id)
+	{
+	if (IsObject(LearnedCards))
+		for i, c in LearnedCards
+			if (c.id = id)
+				return c.slot
+	return ""
 	}
 
 ;Why learned card id isn't one the bot plays (for the log)
@@ -278,25 +294,7 @@ LearnNew(card)
 		DebugLog("  a new card in hand couldn't be saved (vision\vision.log)")
 		return 0
 		}
-	;Its numbers, from its text (e.g. "65-105", "400 for Self Only", "-50% to next"): read at three sizes,
-	;a number two of them agree on (OCR misreads now and then - Scorpion's 160-200 once came out 260-200)
-	k := UiScale, votes := {}, value := "", text := ""
-	for each, zoom in [3, 2, 4]
-		{
-		t := OcrRect(card.left + Round(2.6 * k), card.top + Round(74.3 * k), Round(65.6 * k), Round(29.7 * k), "en", zoom)
-		t := Trim(RegExReplace(t, "[|\r\n]+", " "))
-		if (text = "")
-			text := t
-		v := LearnValue(t, card.type)
-		if (v = "")
-			continue
-		votes[v] := votes.HasKey(v) ? votes[v] + 1 : 1
-		if (votes[v] >= 2)
-			{
-			value := v, text := t
-			break
-			}
-		}
+	value := LearnReadValue(card, text)
 	if (value = "" && text != "")
 		DebugLog("  the new card's numbers couldn't be read for sure (""" text """) - its damage counts as 0 for the kill check")
 	c := {id: id, sch: hitschool, type: card.type, pips: card.pips, guess: 0, value: value, target: (card.type = "damage") ? 1 : 0, slot: ""
@@ -311,6 +309,31 @@ LearnNew(card)
 	DebugLog("  learned a new card: " LearnDescribe(c) " - " where " (picture: " c.dir "\learned\" id ".card.png)")
 	TrayTip, Wizard101 bot, % "New card learned: " LearnDescribe(c) "`n" (c.slot != "" ? "Using it as " c.slot "." : "Kept, not used yet."), 5, 1
 	return got
+	}
+
+;A card's numbers, from its text (e.g. "65-105", "400 for Self Only", "-50% to next"): read at three sizes, a
+;number two of them agree on (OCR misreads now and then - Scorpion's 160-200 once came out 260-200). "" if none;
+;text: what was read
+LearnReadValue(card, ByRef text)
+	{
+	k := UiScale, votes := {}, text := ""
+	for each, zoom in [3, 2, 4]
+		{
+		t := OcrRect(card.left + Round(2.6 * k), card.top + Round(74.3 * k), Round(65.6 * k), Round(29.7 * k), "en", zoom)
+		t := Trim(RegExReplace(t, "[|\r\n]+", " "))
+		if (text = "")
+			text := t
+		v := LearnValue(t, card.type)
+		if (v = "")
+			continue
+		votes[v] := votes.HasKey(v) ? votes[v] + 1 : 1
+		if (votes[v] >= 2)
+			{
+			text := t
+			return v
+			}
+		}
+	return ""
 	}
 
 ;The number on a card's text that matters: a damage range's lowest ("65-105" -> 65; "" when the range
@@ -332,6 +355,8 @@ LearnValue(text, type)
 ;a guessed pip cost comes down to the pips you have. 1 if it went into a slot
 LearnSeenAgain(card)
 	{
+	;(learned cards whose numbers were read again this run, at each UI size: id|scale)
+	static reread := {}
 	if (card.grey)
 		return 0
 	for i, c in LearnedCards
@@ -355,6 +380,20 @@ LearnSeenAgain(card)
 			if (c.slot != "")
 				LearnStats(c)
 			}
+		;(its numbers weren't read when it was learned - e.g. in a small window: read again, once a run at each
+		;UI size)
+		if (c.value = "" && (c.type = "damage" || c.type = "aoe" || c.type = "heal") && !reread.HasKey(c.id "|" Round(UiScale, 2)))
+			{
+			reread[c.id "|" Round(UiScale, 2)] := 1
+			v := LearnReadValue(card, text)
+			if (v != "")
+				{
+				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its numbers read now - " v " (""" text """)")
+				c.value := v, c.text := text, changed := 1
+				if (c.slot != "")
+					LearnStats(c)
+				}
+			}
 		;(a hit's pips never go to 0 that way: 0 means an X-pip spell there)
 		low := InStr(c.slot, "\hit") ? 1 : 0
 		if (c.guess && PipsNow >= 0 && c.pips != "" && PipsNow < c.pips && PipsNow >= low)
@@ -364,10 +403,18 @@ LearnSeenAgain(card)
 			if (c.slot != "")
 				LearnStats(c)
 			}
-		if (c.slot = "")
-			got := LearnPlace(c)
-		if (got)
+		;(a hit in a slot whose numbers changed: still in order with the other hits? Else out of it, and put
+		;where it fits - 1 either way: the pictures changed)
+		if (changed && RegExMatch(c.slot, "\\hit([1-4])$", hn) && !LearnHitFits(c, hn1))
+			{
+			LearnUnplace(c, "its numbers now put it out of order with the other hits")
+			got := 1
+			}
+		if (c.slot = "" && LearnPlace(c))
+			{
+			got := 1
 			DebugLog("  learned card " c.id " (" LearnDescribe(c) ") now in use as " c.slot)
+			}
 		if (changed || got)
 			LearnSave()
 		return got
@@ -396,6 +443,20 @@ LearnPlace(c)
 		return 0
 		}
 	FileCopy, %src%.raw.png, %dest%.raw.png, 1
+	;(and in the other picture sets it's been cut in - at another UI size: the slot's picture there too, as the
+	;helper does for a card learned in a slot already; the slot is free in every set, or it wouldn't be here)
+	Loop, Files, % A_WorkingDir "\ui*", D
+		{
+		if (A_LoopFileFullPath = setDir || !LearnIsSet(A_LoopFileName) || !FileExist(A_LoopFileFullPath "\learned\" c.id ".png"))
+			continue
+		other := A_LoopFileFullPath "\" slot
+		SplitPath, other,, otherDir
+		FileCreateDir, %otherDir%
+		if (FileExist(other ".png"))
+			FileCopy, %other%.png, % A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" A_LoopFileName ", before learned card " c.id ").png", 1
+		FileCopy, % A_LoopFileFullPath "\learned\" c.id ".png", %other%.png, 1
+		FileCopy, % A_LoopFileFullPath "\learned\" c.id ".raw.png", %other%.raw.png, 1
+		}
 	;(pictures made from what was there before)
 	Loop, Files, % A_WorkingDir "\generated\ui*", D
 		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
@@ -416,30 +477,12 @@ LearnSlotFor(c)
 		if (c.pips = 0)
 			return LearnFree(sch "\wand") ? sch "\wand" : ""
 		;(only where it keeps hit1-3 weakest to strongest - the battle casts hit3 first, then hit2, hit1 -
-		;else it's kept out of use rather than cast before a stronger hit)
-		val := (c.value != "") ? c.value + 0 : 0
-		strongest := 0
-		Loop, 4
-			if (!LearnFree(sch "\hit" A_Index))
-				strongest := Max(strongest, Stat(sch ".hit" A_Index))
+		;else it's kept out of use rather than cast before a stronger hit; hit4, cast on bosses only, only for
+		;one stronger than all of them: LearnHitFits)
 		Loop, 3
-			{
-			n := A_Index
-			if (!LearnFree(sch "\hit" n))
-				continue
-			inOrder := true
-			Loop, 4
-				{
-				if (A_Index = n || LearnFree(sch "\hit" A_Index))
-					continue
-				v := Stat(sch ".hit" A_Index)
-				if ((A_Index < n && v > val) || (A_Index > n && v < val))
-					inOrder := false
-				}
-			if (inOrder)
-				return sch "\hit" n
-			}
-		if (val > strongest && LearnFree(sch "\hit4"))
+			if (LearnFree(sch "\hit" A_Index) && LearnHitFits(c, A_Index))
+				return sch "\hit" A_Index
+		if (LearnFree(sch "\hit4") && LearnHitFits(c, 4))
 			return sch "\hit4"
 		return ""
 		}
@@ -455,6 +498,104 @@ LearnSlotFor(c)
 	if (c.type = "ward")
 		return LearnFree("resources\tower") ? "resources\tower" : ""
 	return ""
+	}
+
+;Which of two hits is stronger: > 0 the first, < 0 the second, 0 can't tell (or the same). By their damage where
+;both are known (a hit's damage not read is 0 in PlayerStats.txt), else by their pips
+LearnStronger(val1, pips1, val2, pips2)
+	{
+	if (val1 > 0 && val2 > 0)
+		return val1 - val2
+	;(pips "" when they were guessed, not read: no use for this)
+	if (pips1 > 0 && pips2 > 0 && pips1 != pips2)
+		return pips1 - pips2
+	;(the second's damage known, the first's not and no pips to tell by: the first counts as 0 - as ever)
+	if (val2 > 0 && !(pips1 > 0 && pips2 > 0))
+		return 0 - val2
+	return ""
+	}
+
+;Whether learned/known hit c in slot hitN (n 1-4) keeps the hits in order against the other slots taken: hit1-3
+;weakest to strongest, hit4 stronger than all (LearnStronger; can't tell - its damage unread and the same pips, or
+;no pips read - doesn't fit)
+LearnHitFits(c, n)
+	{
+	sch := c.sch, val := (c.value != "") ? c.value + 0 : 0, pips := c.guess ? "" : c.pips
+	Loop, 4
+		{
+		m := A_Index
+		if (m = n || LearnFree(sch "\hit" m))
+			continue
+		cmp := LearnStronger(Stat(sch ".hit" m), LearnSlotPips(sch, m), val, pips)
+		if (cmp = "")
+			return false
+		if (n = 4 && cmp >= 0)
+			return false
+		if ((m < n && cmp > 0) || (m > n && cmp < 0))
+			return false
+		}
+	return true
+	}
+
+;Slot <sch>\hitN's pip cost as read ("" not known: a learned card's guessed one, or none in PlayerStats.txt)
+LearnSlotPips(sch, n)
+	{
+	if (IsObject(LearnedCards))
+		for i, c in LearnedCards
+			if (c.sch = sch && c.slot = sch "\hit" n)
+				return c.guess ? "" : c.pips
+	p := Stat(sch ".hit" n "pips")
+	return (p > 0) ? p : ""
+	}
+
+;Takes learned card c out of its slot (why: for the log): the slot's pictures that are its removed - what was there
+;before put back (backups\) - so the slot's free again
+LearnUnplace(c, why)
+	{
+	slot := c.slot
+	DebugLog("  learned card " c.id " (" LearnDescribe(c) "): out of " slot " - " why)
+	sets := [[A_WorkingDir, "main"]]
+	Loop, Files, % A_WorkingDir "\ui*", D
+		if (LearnIsSet(A_LoopFileName))
+			sets.Push([A_LoopFileFullPath, A_LoopFileName])
+	for i, s in sets
+		{
+		pic := s[1] "\" slot
+		if (!LearnSameFile(pic ".png", s[1] "\learned\" c.id ".png"))
+			continue
+		FileDelete, %pic%.png
+		FileDelete, %pic%.raw.png
+		back := A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" s[2] ", before learned card " c.id ").png"
+		if (FileExist(back))
+			FileCopy, %back%, %pic%.png, 1
+		}
+	Loop, Files, % A_WorkingDir "\generated\ui*", D
+		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
+	LearnFreeCache := {}
+	c.slot := ""
+	}
+
+;Whether folder name (e.g. "ui1.144") is a cut picture set's: ui and its UI scale
+LearnIsSet(name)
+	{
+	sc := SubStr(name, 3)
+	if sc is not number
+		return false
+	return (SubStr(name, 1, 2) = "ui" && sc >= 0.3 && sc <= 4)
+	}
+
+;Whether files a and b are the same, byte for byte
+LearnSameFile(a, b)
+	{
+	FileGetSize, sa, %a%
+	if (ErrorLevel || sa = "" || sa = 0)
+		return false
+	FileGetSize, sb, %b%
+	if (ErrorLevel || sb != sa)
+		return false
+	FileRead, da, *c %a%
+	FileRead, db, *c %b%
+	return DllCall("msvcrt\memcmp", "Ptr", &da, "Ptr", &db, "UPtr", sa, "CDecl Int") = 0
 	}
 
 ;Whether slot rel (e.g. "balance\hit2") is free: no cut picture big enough to use for it in any set (the
