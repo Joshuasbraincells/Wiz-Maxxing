@@ -351,13 +351,31 @@ NavUri(text)
 	return navUriOut
 	}
 
-;The helper's arguments for keeping a route away from mobs: mobavoid (on unless 0) and mobradius (300) in
-;PlayerStats.txt - "" when it's off
+;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
+;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
+;mobs' real sight cone against the mobcone / mobsight settings
+CaughtLog()
+	{
+	if (!VisionOn)
+		return
+	a := VisionGet("/caught", 600, true)
+	f := StrSplit(Trim(a, " `r`n"), "|")
+	if (f[1] != "caught" || f.Length() < 6)
+		return
+	cone := (Stats.HasKey("mobcone") ? Round(Stats["mobcone"]) : 60), sight := (Stat("mobsight") > 0 ? Round(Stat("mobsight")) : 600)
+	where := (f[4] = "") ? "its facing unknown" : ((f[4] <= cone / 2 && f[3] <= sight) ? "inside" : "outside") " the sight cone set (" cone " degrees wide, " sight " long)"
+	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
+		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
+	}
+
+;The helper's arguments for keeping a route away from mobs: mobavoid (on unless 0), mobradius (300), and their sight
+;cone in front of them - mobcone degrees wide (60; 0: none), mobsight long (600) - in PlayerStats.txt; "" when it's off
 NavMobArgs()
 	{
 	if (Stats.HasKey("mobavoid") && !Stats["mobavoid"])
 		return ""
 	return "&avoid=1&mobr=" (Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300)
+		. "&cone=" (Stats.HasKey("mobcone") ? Round(Stats["mobcone"]) : 60) "&sight=" (Stat("mobsight") > 0 ? Round(Stat("mobsight")) : 600)
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08

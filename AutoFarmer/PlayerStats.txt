@@ -87,6 +87,10 @@ mobavoid:1
 ; mobradius: how far (game units) the route keeps from a mob. More is safer, but a narrow street may leave no way
 ; round (then it waits)
 mobradius:300
+; mobcone / mobsight: a mob notices you in a cone in front of it too - the route keeps out of a cone mobcone degrees
+; wide (0 = none) and mobsight long in front of each mob (which way it faces is read from the game)
+mobcone:60
+mobsight:600
 
 ; ---- Clicking ----
 ; mousereturn: 1 = when the bot takes the mouse (a battle round, a click out of battle) it puts it back where it

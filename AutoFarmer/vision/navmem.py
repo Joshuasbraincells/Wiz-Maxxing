@@ -4,7 +4,7 @@
     nm = NavMem(log=print)
     r, why = nm.read(path=True)     # r: a dict (see NavMem.read), or None and why it can't be read
 
-    mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), gid, template}], or None and why
+    mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), yaw, gid, template}], or None and why
 
     python navmem.py [-n 5] [-i 1] [--path] [--mobs]   readings from the command line (and how long each took)
 
@@ -1032,9 +1032,9 @@ class NavMem:
 
     # ------------------------------------------------------------ the zone's mobs
     def mobs(self):
-        """(mobs, why): mobs = [{name, pos (x, y, z), gid, template}] - the mobs in the game's zone, their
-        positions read now - or None and why (not attached, not looked yet, the names unreadable...). Never
-        raises."""
+        """(mobs, why): mobs = [{name, pos (x, y, z), yaw, gid, template}] - the mobs in the game's zone, their
+        positions and facing (yaw, radians, forward = (-sin yaw, -cos yaw); None if unread) read now - or None and why
+        (not attached, not looked yet, the names unreadable...). Never raises."""
         try:
             with self.lock:
                 self._obj_asked = time.monotonic()
@@ -1059,29 +1059,35 @@ class NavMem:
                 pos = self._mob_pos(st, obj, raw)
                 if pos is not None:
                     gids.add(gid)
-                    out.append({"name": name, "pos": pos, "gid": gid, "template": tname})
+                    out.append({"name": name, "pos": pos[:3], "yaw": pos[3], "gid": gid, "template": tname})
             return out, ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the mobs failed (%r)" % (e,)
 
     @staticmethod
     def _mob_pos(st, obj, raw):
-        """a mob's x, y, z: its body's (where it's drawn, moving) when it has one - as the wizard's - else the
-        object's own copy; None if neither is a number"""
+        """a mob's x, y, z, yaw: its body's (where it's drawn, moving, facing) when it has one - as the wizard's -
+        else the object's own copy (pitch, roll, yaw follow x, y, z in both); yaw None if it isn't a number; None if
+        the position isn't"""
         o, p = st.o, st.p
+
+        def pose(raw24):
+            x, y, z, _pitch, _roll, yaw = struct.unpack("<6f", raw24)
+            if not finite(x, y, z):
+                return None
+            return (x, y, z, (yaw + math.pi) % (2 * math.pi) - math.pi if finite(yaw) else None)
         try:
             anim = p.u64(obj + o["co_anim"]) if o.get("co_anim") else 0
             body = p.u64(anim + o["anim_body"]) if ptr_ok(anim) and o.get("anim_body") else 0
             if ptr_ok(body) and p.try_read(body + DATA["body_parent"], 8) == struct.pack("<Q", obj):
-                b = p.try_read(body + o["body_pos"], 12)
-                if b:
-                    x, y, z = struct.unpack("<3f", b)
-                    if finite(x, y, z):
-                        return (x, y, z)
+                b = p.try_read(body + o["body_pos"], 24)
+                got = pose(b) if b else None
+                if got is not None:
+                    return got
         except ReadError:
             pass
-        x, y, z = struct.unpack_from("<3f", raw, o.get("co_location") or 0xA8)
-        return (x, y, z) if finite(x, y, z) else None
+        at = o.get("co_location") or 0xA8
+        return pose(raw[at:at + 24]) if len(raw) >= at + 24 else None
 
     def _names(self):
         """{display key: English name} of the game's *Mobs name tables (Root.wad); None while they can't be read
@@ -1201,7 +1207,12 @@ def _main():
                 mobs, why = nm.mobs()
                 print("           mobs: %s %s" % (why or "%d" % len(mobs), nm.obj_stats))
                 for mb in sorted(mobs or [], key=lambda q: math.hypot(q["pos"][0] - r["pos"][0], q["pos"][1] - r["pos"][1]) if r["pos"] else 0)[:15]:
-                    print("             %-24s %-30s (%.0f, %.0f, %.0f)" % ((mb["name"], mb["template"]) + mb["pos"]))
+                    off = ""
+                    if mb.get("yaw") is not None and r["pos"]:
+                        dx, dy = r["pos"][0] - mb["pos"][0], r["pos"][1] - mb["pos"][1]
+                        c = (dx * -math.sin(mb["yaw"]) + dy * -math.cos(mb["yaw"])) / (math.hypot(dx, dy) or 1.0)
+                        off = "  yaw %.2f, you %.0f deg off its facing" % (mb["yaw"], math.degrees(math.acos(max(-1.0, min(1.0, c)))))
+                    print("             %-24s %-30s (%.0f, %.0f, %.0f)%s" % ((mb["name"], mb["template"]) + tuple(mb["pos"]) + (off,)))
         if k + 1 < a.n:
             time.sleep(a.i)
     print(nm.describe())

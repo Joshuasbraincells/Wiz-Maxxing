@@ -52,13 +52,20 @@ More in ..\AutoQuester\README.txt.
 
 Mobs (mobavoid:1, the default - Settings: "Keep away from mobs"): the helper
 also reads the zone's mobs out of the game's memory (read-only) and the route
-goes round them - mobradius (300) away - so no battle starts on the way. Not
+goes round them - mobradius (300) away - so no battle starts on the way. A
+mob notices you further off in front of it, so the route also keeps out of a
+cone in front of each one (which way it faces is read from the game too):
+mobcone degrees wide (60; 0 = no cone) and mobsight long (600) - Settings.
+Players put that cone at anything from 50 to 120 degrees; to measure it, each
+battle's first round logs which mob started it, how far away you were and how
+many degrees off its facing ("Caught by ..." in debug.log). Not
 the mobs the quest is about: those named in its goal line ("Defeat 3 Lost
 Souls"), or standing at its goal; and not while collecting. With no way round
 (a narrow street), the wizard stands still till the mob moves off - 25 s at
 most, then it walks on past it. The walk to the potion seller keeps away from
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
-away from), the quest's amber, the nearest ones named.
+away from) and a faint wedge for their sight cone, the quest's amber, the
+nearest ones named.
 
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.

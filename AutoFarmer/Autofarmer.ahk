@@ -437,6 +437,9 @@ loop,
 			Goto, RoundStart
 			}
 		DebugLog("Round start: Pass button at " startX - GameLeft "," startY - GameTop)
+		;(a battle's first round: which mob started it, from how far and how far off its facing - Vision.ahk)
+		if (SeenOut)
+			CaughtLog()
 		SeenOut := 0
 		if (dualmode == 1)
 			{
@@ -1889,11 +1892,25 @@ Afk()
 
 checkmana()
 	{
+	;(when the picture was last found with mana in the globe - logged at most every 5 minutes)
+	static wrongSaid := 0
 	if (afk == 0)
 		{
 		ImageSearch, manaX, manaY, GameLeft, ScreenY, GameLeft + GameW / 4, GameBottom, % PicOpt("resources\manaempty.png")
 		if (Errorlevel == 0)
 			{
+			;(the picture is small and, made for other UI sizes, mostly see-through: it can match the energy globe
+			;beside the mana globe, clear when it's low. The mana globe's number, read by the helper, has the last
+			;word: enough for the cheapest hit - at least 3 - is mana)
+			manaNow := VisionOn ? PotionGlobes().mana : ""
+			manaNeed := Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit())
+			if (manaNow != "" && manaNow + 0 >= manaNeed)
+				{
+				if (!wrongSaid || A_TickCount - wrongSaid > 300000)
+					DebugLog("no mana? The mana-empty picture matched at " manaX - GameLeft "," manaY - GameTop " (the energy globe beside it?), but the mana globe reads " manaNow " - carrying on")
+				wrongSaid := A_TickCount
+				return
+				}
 			;(a potion first - or a run to buy some - so it can carry on; only then keep the character from timing out)
 			if (Stat("fleeon") && FleeRefillMana("no mana"))
 				return

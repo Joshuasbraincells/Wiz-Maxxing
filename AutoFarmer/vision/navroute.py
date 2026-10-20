@@ -44,12 +44,18 @@ Things the zone files don't have - NPCs, other players, doors that open - aren't
 Mobs (the game's memory: navmem's mobs, those the caller wants avoided - not the ones the quest is about)
   * Each square within MOB_NEAR of a mob (on the wizard's storey) costs MOB_COST more, and up to MOB_SOFT away
     less and less more: the route goes round them where there's room. Not a wall: with no other way it's still
-    a route. The field is worked out again when a mob near it has moved MOB_MOVED (at most every MOB_REPLAN s).
+    a route. The field is worked out again when a mob near it has moved MOB_MOVED, or turned MOB_TURNED (at most
+    every MOB_REPLAN s).
+  * A mob notices you in a cone in front of it too (its sight): the squares in a cone cone[0] degrees wide and
+    cone[1] long in front of it (its facing off the game's memory - none known, no cone) cost MOB_COST more as well,
+    a little wider and longer less and less more - behind a wall from it too (whether a mob sees through walls isn't
+    known; the collision grid has fences, posts and the like): the route keeps out of it where there's room.
   * The route on (MOB_AHEAD of it) still coming nearer a mob (on the wizard's storey) than the wizard is now, to
-    within MOB_NEAR: the answer says so ('mob': the seconds it's waited, 'mob_at', 'mob_name') - the walker stands
-    still till it moves off. A mob behind the wizard, or whose ring the route leads out of, doesn't count. One wait
+    within MOB_NEAR, or into its cone (the wizard not in it now; not where a wall hides him from it - no wait for
+    that): the answer says so ('mob': the seconds it's waited, 'mob_at', 'mob_name') - the walker stands still till
+    it moves off. A mob behind the wizard, or whose ring the route leads out of, doesn't count. One wait
     however the mobs take turns blocking: after MOB_GIVEUP s those mobs aren't avoided for MOB_IGNORE s (walked
-    past - one may come for the wizard).
+    past - one may come for the wizard) - only their cone, when only their cone was in the way (their ring kept).
 
 Teleports
   * The zone's nav graph has links that aren't walked: a trolley, a portal, a hole down to the sewers - a link
@@ -111,6 +117,8 @@ MOB_SOFT = 520.0        # ...and dearer up to this far
 MOB_COST = 40.0         # extra cost of a square within MOB_NEAR (not a wall: with no other way, it's walked past)
 MOB_SOFT_COST = 4.0     # ...right outside it, fading to nothing at MOB_SOFT
 MOB_MOVED = 60.0        # a mob near the field this far from where the field has it: a new field...
+MOB_TURNED = 0.35       # ...or turned this far (radians, 20 degrees: its cone swung round)
+MOB_CONE = (60.0, 600.0)   # its sight: a cone this wide (degrees) and long (game units) in front of it
 MOB_REPLAN = 0.7        # ...at most this often (s)
 MOB_AHEAD = 900.0       # the route this far on passing within MOB_NEAR of a mob: wait for it to move off...
 MOB_GIVEUP = 25.0       # ...for this long at most (s); then it isn't avoided...
@@ -558,11 +566,11 @@ class Field:
     """The cost to the carrot from every square of a window"""
 
     def __init__(self, geo, pos, carrot, goal, rest, via=(), carrot_z=None, carrot_goal=True, rings=GOAL_RINGS,
-                 mobs=(), mob_near=MOB_NEAR):
+                 mobs=(), mob_near=MOB_NEAR, cone=MOB_CONE):
         t0 = time.perf_counter()
         self.zone, self.z, self.carrot, self.goal, self.rest = geo.zone, pos[2], carrot, goal, rest
         self.why, self.D = '', None
-        self.mobs, self.mob_near, self.mob_mask = (), mob_near, None
+        self.mobs, self.mob_near, self.mob_mask, self.cone = (), mob_near, None, cone
         # (round the wizard, the carrot and the game's path between them - a way round that strays further than
         # MARGIN from those isn't looked for)
         xs = [pos[0], carrot[0]] + [p[0] for p in via]
@@ -590,6 +598,7 @@ class Field:
         soft_cells = int(round(SOFT / CELL))
         see_cells = int(round(CLEAR_SEE / CELL))
         dist = _grow(solid, soft_cells)
+        self.wall = np.asarray(solid, dtype=bool)      # (what a mob can't see through)
         self.blocked = dist <= hard_cells
         self.see_blocked = dist <= see_cells
         cost = np.where(ground == 1, 1.0, np.where(ground == 2, COST_WATER, COST_OFF))
@@ -605,18 +614,31 @@ class Field:
         # the mobs avoided: dearer near them (on this storey; within the window or near enough to reach into it)
         soft = max(MOB_SOFT, mob_near + 2 * CELL)
         x1, y1 = self.x0 + self.nx * CELL, self.y0 + self.ny * CELL
-        kept = tuple((m[0], m[1], m[2]) for m in mobs
-                     if self.x0 - soft <= m[0] <= x1 + soft and self.y0 - soft <= m[1] <= y1 + soft
+        sight = cone[1] if cone and cone[0] > 0 else 0.0
+        reach = max(soft, sight + 2 * CELL)
+        kept = tuple((m[0], m[1], m[2], m[3] if len(m) > 3 else None) for m in mobs
+                     if self.x0 - reach <= m[0] <= x1 + reach and self.y0 - reach <= m[1] <= y1 + reach
                      and abs(m[2] - pos[2]) <= FLOOR_BAND)
-        self.mobs, self.mob_mask = kept, np.zeros((self.ny, self.nx), dtype=bool)
+        self.mobs, self.mob_mask, self.cone = kept, np.zeros((self.ny, self.nx), dtype=bool), cone
         if kept:
             cx = self.x0 + (np.arange(self.nx) + 0.5) * CELL
             cy = self.y0 + (np.arange(self.ny) + 0.5) * CELL
-            for mx, my, _ in kept:
-                d = np.hypot(cx[None, :] - mx, cy[:, None] - my)
+            for mx, my, _, myaw in kept:
+                dx, dy = cx[None, :] - mx, cy[:, None] - my
+                d = np.hypot(dx, dy)
                 inner = d <= mob_near
-                self.mob_mask |= inner
                 cost = cost + np.where(inner, MOB_COST, np.where(d <= soft, MOB_SOFT_COST * (soft - d) / (soft - mob_near), 0.0))
+                # (its sight: the cone in front of it; a little wider and longer, dearer less and less)
+                if sight > 0 and myaw is not None:
+                    fx, fy = -math.sin(myaw), -math.cos(myaw)
+                    along = dx * fx + dy * fy
+                    ang = np.degrees(np.arccos(np.clip(along / np.maximum(d, 1e-6), -1.0, 1.0)))
+                    half = cone[0] / 2
+                    seen = (ang <= half) & (d <= sight)
+                    edge = (~seen) & (ang <= half + 15) & (d <= sight + 150)
+                    cost = cost + np.where(seen, MOB_COST, np.where(edge, MOB_SOFT_COST, 0.0))
+                    inner = inner | seen
+                self.mob_mask |= inner
         cost[self.blocked] = np.inf
         self.cost, self.ground, self.H = cost, ground, H
         g = self._free_near(*self.cell(carrot), rings)
@@ -714,6 +736,34 @@ class Field:
             length += best[3] * CELL
         return cells, length
 
+    def _sees(self, mx, my, jj, ii):
+        """which of the squares (rows jj, columns ii) a mob at mx, my can see: no wall square on the straight line
+        between (the first 1.5 squares from it and the last one left out: it stands by a wall, the square is by
+        one); outside the window counts as open. In batches: a long, wide cone is many squares"""
+        out = np.ones(len(jj), dtype=bool)
+        for s in range(0, len(jj), 3000):
+            j, i = jj[s:s + 3000], ii[s:s + 3000]
+            tx, ty = self.x0 + (i + 0.5) * CELL, self.y0 + (j + 0.5) * CELL
+            L = np.hypot(tx - mx, ty - my)
+            n = int(L.max() / (CELL * 0.5)) + 2 if len(L) else 2
+            t = np.linspace(0.0, 1.0, n)[None, :]
+            along = L[:, None] * t
+            sj = np.floor((my + (ty[:, None] - my) * t - self.y0) / CELL).astype(np.int32)
+            si = np.floor((mx + (tx[:, None] - mx) * t - self.x0) / CELL).astype(np.int32)
+            use = ((sj >= 0) & (sj < self.ny) & (si >= 0) & (si < self.nx)
+                   & (along >= CELL * 1.5) & (along <= L[:, None] - CELL))
+            hit = np.zeros(sj.shape, dtype=bool)
+            hit[use] = self.wall[sj[use], si[use]]
+            out[s:s + 3000] = ~hit.any(axis=1)
+        return out
+
+    def sees(self, m, p):
+        """mob m (its 'pos') can see world point p: no wall between, as _sees"""
+        j, i = self.cell(p)
+        if not (0 <= j < self.ny and 0 <= i < self.nx):
+            return True
+        return bool(self._sees(m['pos'][0], m['pos'][1], np.array([j]), np.array([i]))[0])
+
     def seen(self, a, b, mask, skip=0.0):
         """a straight line from world a to world b crosses no square of mask, and no ledge (the first skip
         units left out: the wizard brushing a wall starts inside its margin - the wall itself, further on,
@@ -754,6 +804,7 @@ class Planner:
         self.jwait = None                    # waiting at one: {'key', 'waited', 'last'}
         self.mwait = None                    # waiting for mobs to move off the way: {'waited', 'last', 'gids'}
         self.mob_ignored = {}                # mobs waited for too long: gid -> when (not avoided for MOB_IGNORE)
+        self.pose_stale = None               # the field a mob on the way isn't where (or facing as) it has it: a new one
 
     # ---- the background thread
     def _geo(self, zone):
@@ -782,7 +833,8 @@ class Planner:
                     why = geo.why
                 else:
                     f = Field(geo, job['pos'], job['carrot'], job['goal'], job['rest'], job['via'], job['carrot_z'], job['carrot_goal'],
-                              job.get('rings', GOAL_RINGS), job.get('mobs', ()), job.get('mob_near', MOB_NEAR))
+                              job.get('rings', GOAL_RINGS), job.get('mobs', ()), job.get('mob_near', MOB_NEAR),
+                              job.get('cone', MOB_CONE))
                     why = f.why
             except Exception as e:  # noqa: BLE001 - logged; no route, the walker steers as before
                 why = f'the planner failed ({e!r})'
@@ -936,28 +988,41 @@ class Planner:
 
     @staticmethod
     def _mobs_moved(f, mobs):
-        """the mobs near f's window aren't where f has them (moved MOB_MOVED, come or gone)"""
+        """the mobs near f's window aren't where f has them (moved MOB_MOVED or turned MOB_TURNED, come or gone)"""
         if f is None:
             return False
-        soft = max(MOB_SOFT, f.mob_near + 2 * CELL)
+        cone = getattr(f, 'cone', None)
+        sight = cone[1] if cone and cone[0] > 0 else 0.0
+        reach = max(MOB_SOFT, f.mob_near + 2 * CELL, sight + 2 * CELL)
         x1, y1 = f.x0 + f.nx * CELL, f.y0 + f.ny * CELL
-        now = [m for m in mobs if f.x0 - soft <= m[0] <= x1 + soft and f.y0 - soft <= m[1] <= y1 + soft
+        now = [m for m in mobs if f.x0 - reach <= m[0] <= x1 + reach and f.y0 - reach <= m[1] <= y1 + reach
                and abs(m[2] - f.z) <= FLOOR_BAND]
         if len(now) != len(f.mobs):
             return True
-        return any(min((math.hypot(m[0] - q[0], m[1] - q[1]) for q in f.mobs), default=1e9) > MOB_MOVED for m in now)
+        for m in now:
+            q = min(f.mobs, key=lambda q: math.hypot(m[0] - q[0], m[1] - q[1]), default=None)
+            if q is None or math.hypot(m[0] - q[0], m[1] - q[1]) > MOB_MOVED:
+                return True
+            yaw_now, yaw_then = (m[3] if len(m) > 3 else None), q[3]
+            if sight > 0 and yaw_now is not None and yaw_then is not None:
+                if abs((yaw_now - yaw_then + math.pi) % (2 * math.pi) - math.pi) > MOB_TURNED:
+                    return True
+        return False
 
-    def route(self, r, wait=True, mobs=None, mob_near=MOB_NEAR):
+    def route(self, r, wait=True, mobs=None, mob_near=MOB_NEAR, cone=MOB_CONE):
         """the answer (see the top); wait: count the time at a teleport or a mob (the walker's asks - not the
-        map's); mobs: [{'pos': (x, y, z), 'gid', 'name'}] to keep away from"""
+        map's); mobs: [{'pos': (x, y, z), 'yaw', 'gid', 'name'}] to keep away from - mob_near round each, and out of
+        a cone (degrees wide, long) in front of it"""
         if r is None or r.get('pos') is None or r.get('goal') is None or not r.get('zone'):
             return {'why': 'no position or goal'}
         pos, goal, zone = tuple(r['pos']), tuple(r['goal']), r['zone']
         now = time.time()
-        for gid in [g for g, at in list(self.mob_ignored.items()) if now - at > MOB_IGNORE]:
+        for gid in [g for g, v in list(self.mob_ignored.items()) if now - v[0] > MOB_IGNORE]:
             self.mob_ignored.pop(gid, None)      # (the map's asks run alongside the walker's)
-        mobs = [m for m in (mobs or ()) if m.get('gid') not in self.mob_ignored]
-        mob_pts = [tuple(m['pos']) for m in mobs]
+        # (given up: a ring wait drops the mob; a cone wait only its cone - no facing, its ring still kept)
+        mobs = [m if m.get('gid') not in self.mob_ignored else dict(m, yaw=None) for m in (mobs or ())
+                if self.mob_ignored.get(m.get('gid'), (0.0, 'cone'))[1] != 'ring']
+        mob_pts = [tuple(m['pos'][:3]) + (m.get('yaw'),) for m in mobs]
         # (the wait at a teleport is one visit's: forgotten once the wizard's well away from it, or elsewhere)
         w = self.jwait
         if w is not None and (w['key'][0] != zone or math.hypot(w['key'][1][0] - pos[0], w['key'][1][1] - pos[1]) > 1200
@@ -1022,7 +1087,11 @@ class Planner:
         mobs_moved = self._mobs_moved(f, mob_pts)
         stale = (f is None or not f.inside(j, i, EDGE_CELLS) or abs(pos[2] - f.z) > REPLAN_Z
                  or math.hypot(f.carrot[0] - carrot[0], f.carrot[1] - carrot[1]) > 2 * CELL
-                 or (mobs_moved and time.time() - f.made >= MOB_REPLAN))
+                 or (mobs_moved and time.time() - f.made >= MOB_REPLAN)
+                 # (how far to keep from the mobs changed - the settings: a new field, while there are mobs to keep from)
+                 or (bool(mob_pts) and (f.mob_near != mob_near or tuple(getattr(f, 'cone', None) or ()) != tuple(cone or ())))
+                 # (the mob on the way turned or stepped a little since the field: its cone or ring isn't there)
+                 or (self.pose_stale is not None and self.pose_stale is f and time.time() - f.made >= MOB_REPLAN))
         failed = self.failed
         if stale and not self.busy and self.want is None:
             same_fail = (failed is not None and failed[0]['zone'] == zone
@@ -1032,7 +1101,8 @@ class Planner:
             if not same_fail:
                 self._ask({'zone': zone, 'pos': pos, 'carrot': carrot, 'carrot_z': cz, 'carrot_goal': cgoal, 'goal': goal,
                            'rest': rest, 'via': via, 'at': time.time(), 'rings': JUMP_RINGS if jump is not None else GOAL_RINGS,
-                           'mobs': mob_pts, 'mob_near': mob_near})
+                           'mobs': mob_pts, 'mob_near': mob_near, 'cone': cone})
+                self.pose_stale = None
         # (the last job, for the carrot as it is now, found no plan: the old field leads only to the old carrot -
         # walked to it, it would hold the wizard there. No aim: the walker steers at the arrow meanwhile)
         if (f is not None and failed is not None and failed[0]['zone'] == zone
@@ -1076,7 +1146,11 @@ class Planner:
         # a mob on the way the route can't go round: wait for it to move off - one wait however mobs take turns being
         # the one in the way (asks less than 2 s apart), given up as a whole after MOB_GIVEUP. (Not cleared while a
         # new field is being worked out for mobs that moved: only a field that knows where they are clears it)
-        blocker = self._mob_on_way(pts, mobs, mob_near, pos[2]) if mobs else None
+        blocker = self._mob_on_way(pts, mobs, mob_near, pos[2], cone, f) if mobs else None
+        # (the field doesn't have it where it is now, or facing as it is: a new field - the way round it may be
+        # clear - before a long wait on this one)
+        if blocker is not None and not self._pose_known(f, blocker, cone):
+            self.pose_stale = f
         if wait:
             w = self.mwait
             if blocker is None:
@@ -1084,36 +1158,75 @@ class Planner:
                     self.mwait = None
             else:
                 if w is None or now - w['last'] >= 2.0:
-                    w = self.mwait = {'waited': 0.0, 'last': now, 'gids': set()}
+                    w = self.mwait = {'waited': 0.0, 'last': now, 'gids': {}}
                 else:
                     w['waited'] += now - w['last']
                 w['last'] = now
-                w['gids'].add(blocker.get('gid'))
+                # (what of it was in the way: its ring, or only its cone - the ring counts once it has been)
+                gid = blocker.get('gid')
+                w['gids'][gid] = 'ring' if blocker.get('block') == 'ring' or w['gids'].get(gid) == 'ring' else 'cone'
                 if w['waited'] > MOB_GIVEUP:
-                    for gid in w['gids']:
-                        self.mob_ignored[gid] = now
+                    for g, kind in w['gids'].items():
+                        self.mob_ignored[g] = (now, kind)
                     self.mwait = None
-                    self.log(f"route: {blocker.get('name') or 'a mob'} has stood on the way for {MOB_GIVEUP:.0f} s - walking on past it")
+                    if w['gids'][gid] == 'cone':
+                        self.log(f"route: {blocker.get('name') or 'a mob'} has faced the way for {MOB_GIVEUP:.0f} s - walking on "
+                                 f"through its sight (still keeping {mob_near:.0f} from it)")
+                    else:
+                        self.log(f"route: {blocker.get('name') or 'a mob'} has stood on the way for {MOB_GIVEUP:.0f} s - walking on past it")
                 else:
                     out['mob'], out['mob_at'], out['mob_name'] = w['waited'], tuple(blocker['pos'][:2]), blocker.get('name') or ''
         return out
 
     @staticmethod
-    def _mob_on_way(pts, mobs, mob_near, z):
+    def _in_cone(m, p, cone, shrink=1.0):
+        """p is in mob m's sight: the cone (degrees wide, long) in front of it, shrunk by shrink"""
+        if not cone or cone[0] <= 0 or m.get('yaw') is None:
+            return False
+        dx, dy = p[0] - m['pos'][0], p[1] - m['pos'][1]
+        d = math.hypot(dx, dy)
+        if d < 1e-6 or d > cone[1] * shrink:
+            return d < 1e-6
+        fx, fy = -math.sin(m['yaw']), -math.cos(m['yaw'])
+        return math.degrees(math.acos(max(-1.0, min(1.0, (dx * fx + dy * fy) / d)))) <= cone[0] / 2 * shrink
+
+    @staticmethod
+    def _pose_known(f, m, cone):
+        """the field f has mob m where it is now (within a square) and facing as it does now (to a tenth of the
+        cone's half - the slack _mob_on_way's shrunk cone leaves)"""
+        if f is None or not f.mobs:
+            return False
+        q = min(f.mobs, key=lambda q: math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1]))
+        if math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1]) > CELL:
+            return False
+        if cone and cone[0] > 0 and m.get('yaw') is not None and q[3] is not None:
+            tol = max(math.radians(1.0), math.radians(cone[0] / 2 * 0.1))
+            if abs((m['yaw'] - q[3] + math.pi) % (2 * math.pi) - math.pi) > tol:
+                return False
+        return True
+
+    @staticmethod
+    def _mob_on_way(pts, mobs, mob_near, z, cone=None, f=None):
         """the first mob along the route's first MOB_AHEAD that it comes within 0.85 mob_near of - and nearer than
-        the wizard is to it now (not one behind, nor one whose ring it leads out of) - on the wizard's storey; or
-        None"""
+        the wizard is to it now (not one behind, nor one whose ring it leads out of) - or into whose sight cone it
+        walks (the wizard not in it now; a wall between - field f's - hides him), on the wizard's storey; or None.
+        The mob comes back as a copy with 'block': 'ring' or 'cone' (what of it is in the way)"""
         near = mob_near * 0.85
-        here = [(m, math.hypot(m['pos'][0] - pts[0][0], m['pos'][1] - pts[0][1])) for m in mobs
-                if abs(m['pos'][2] - z) <= FLOOR_BAND]
+
+        def spots(m, p):
+            return Planner._in_cone(m, p, cone, 0.85) and (f is None or f.sees(m, p))
+        here = [(m, math.hypot(m['pos'][0] - pts[0][0], m['pos'][1] - pts[0][1]), spots(m, pts[0]))
+                for m in mobs if abs(m['pos'][2] - z) <= FLOOR_BAND]
         run, prev = 0.0, pts[0]
         for q in pts[1:]:
             run += math.hypot(q[0] - prev[0], q[1] - prev[1])
             prev = q
             if run > MOB_AHEAD:
                 break
-            for m, d0 in here:
+            for m, d0, seen0 in here:
                 d = math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1])
                 if d <= near and d < d0 - CELL:
-                    return m
+                    return dict(m, block='ring')
+                if not seen0 and spots(m, q):
+                    return dict(m, block='cone')
         return None
