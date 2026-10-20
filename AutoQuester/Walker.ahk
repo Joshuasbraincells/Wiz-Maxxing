@@ -15,7 +15,10 @@
 global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
-global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait
+global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, TurnStopUnits, TurnStopDist, WkAcceptLook
+;A quest offer's Accept: when a dialogue was last Spaced through (its offer may follow), the looks since, the clicks
+;on this offer and when the first was
+global WkDlgEndAt, WkAcceptLooks, WkAcceptClicks, WkAcceptAt
 global WkGoalZones, WkKnownZones, WkZonesFile, WkPromptDest, WkTransUsed, WkTransSeen, WkTransStep, WkTransStepAt, WkWaitWhat
 global WkPromptUsed, WkZoneFrom, WkZoneAt, WkPressAt, DialogQuiet, WkQuietUntil, WkQuietLogged
 ;A loading screen per the game's log: a zone transfer under way (WkLoading), when the last one finished
@@ -92,7 +95,10 @@ WalkerInit(prefix := "AutoQuester")
 	TurnRate := 0.15     ;degrees the wizard turns per ms of holding A/D (measured: 22.5 degrees per 150 ms)
 	TurnSettle := 500    ;ms the camera takes to catch up after a turn: don't steer on the arrow before then
 	AheadAngle := 12     ;arrow within this many degrees of straight ahead: just walk
-	TurnInPlace := 60    ;arrow further off than this: stop and turn on the spot first
+	TurnInPlace := 60    ;arrow further off than this, close to the goal (below): stop and turn on the spot first;
+	                     ;further away it turns walking on (the game takes W and A/D at once - no stopping)
+	TurnStopUnits := 300 ;...close: this many game units from the goal by the game's memory (a walking turn circles
+	TurnStopDist := 20   ;   about 100 units wide), else this on the arrow
 	StuckTime := 4000    ;ms of walking without getting any closer = stuck, try to get around
 	UnstickTries := 5    ;give up after this many tries at getting round the same obstacle
 	UnreadLimit := 3000  ;ms without a readable distance before it stops and waits
@@ -358,6 +364,9 @@ WalkStep()
 		gone := A_TickCount - WkNoArrowFrom
 		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !WalkDialogOpen())
 			{
+			;(a quest offer: accepted, not closed)
+			if (WalkAcceptQuest("no arrow since an X"))
+				return Walking ? true : false
 			WkEscTried := 1
 			WalkEscape()
 			return Walking ? true : false
@@ -387,6 +396,14 @@ WalkStep()
 		WkDlgLook := A_TickCount + 400
 		if (WalkDialogOpen())
 			return WalkSkipDialog()
+		}
+	;A quest offer still up after a dialogue (it covers the arrow): its ACCEPT
+	if ((!seen || standIn) && !inbattle && WkDlgEndAt && A_TickCount - WkDlgEndAt < 30000 && A_TickCount > WkAcceptLook)
+		{
+		WkAcceptLooks += 1
+		WkAcceptLook := A_TickCount + (WkAcceptLooks > 2 ? 3000 : 1500)
+		if (WalkAcceptQuest("the arrow's gone since the dialogue"))
+			return Walking ? true : false
 		}
 
 	;The arrow led to a World Gate (the goal is in another world) or a sigil (a dungeon entrance):
@@ -973,7 +990,8 @@ WalkStep()
 	steer := h
 	if (A_TickCount < WkBiasUntil)
 		steer := h + WkBias * (WkBiasUntil - A_TickCount) / BiasTime
-	if (Abs(steer) > TurnInPlace)
+	;(a big turn close to the goal: on the spot - walking on, it would circle round the goal)
+	if (Abs(steer) > TurnInPlace && WalkNear(dist != "" ? dist : WkBestDist, TurnStopDist, TurnStopUnits))
 		{
 		HoldW(0)
 		SetStatus("turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees")
@@ -988,8 +1006,18 @@ WalkStep()
 			WkLastRead := A_TickCount
 		return true
 		}
+	;(further away: turning walking on - W stays down while A/D turns the wizard)
 	HoldW(1)
-	if (fine && Abs(steer) > AheadAngle)
+	if (Abs(steer) > TurnInPlace)
+		{
+		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move")
+		Turn(steer)
+		;(a big turn swings the wizard round, not closer - as on the spot, it doesn't count towards stuck)
+		WkBestTime := A_TickCount
+		if (WkBestDist != "" && WkBestDist > NearDist)
+			WkLastRead := A_TickCount
+		}
+	else if (fine && Abs(steer) > AheadAngle)
 		Turn(steer)
 	if (!Walking)
 		return false
@@ -1001,6 +1029,9 @@ WalkStep()
 	if (still != "")
 		WkStill := (still && dist != "") ? WkStill + 1 : 0
 	slowStuck := A_TickCount - WkBestTime > StuckTime
+	;(not moving: a quest offer's window up holds the wizard still - accepted, not counted as stuck)
+	if ((slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime)) && WalkAcceptQuest("the wizard isn't moving"))
+		return Walking ? true : false
 	if (slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime))
 		{
 		zone := WalkZone()
@@ -1027,7 +1058,9 @@ WalkStep()
 			}
 		if (WkTries >= UnstickTries)
 			{
-			WalkLog("stuck: gave up after " UnstickTries " tries")
+			;(what the game showed, to see what held it - AutoFarmer: Windows temp, "Wizard101 bot rounds")
+			stuckPic := IsFunc("SaveRoundPicture") ? Func("SaveRoundPicture").Call() : ""
+			WalkLog("stuck: gave up after " UnstickTries " tries" (stuckPic != "" ? " (the game's picture: " stuckPic ")" : ""))
 			if (WalkCommonsReset("couldn't get round an obstacle in " UnstickTries " tries"))
 				return true
 			Walking := 0
@@ -1179,9 +1212,74 @@ WalkSkipDialog()
 		}
 	WalkLog("dialogue: skipped with " presses " Space presses")
 	SetStatus("dialogue skipped (" presses " Space presses)")
+	;(a quest-giver's: the quest offer comes up after it - its ACCEPT clicked; looked for again a while: WalkStep)
+	Sleep, 300
+	if (Walking)
+		WalkAcceptQuest("after the dialogue")
+	WkDlgEndAt := A_TickCount, WkAcceptLooks := 0
 	WkDialog := 1, WkTalk += presses, WkSpaceAt := A_TickCount
 	WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
 	WkBestTime := A_TickCount, WkLastRead := A_TickCount
+	return true
+	}
+
+;A quest offer's ACCEPT button (the window a quest-giver opens after the dialogue - Space doesn't take it, and the
+;wizard can't walk while it's up), read by OCR over the middle of the game: {x, y} on the screen, or "" - never in a
+;window that says anything about Crowns, or that's a friend / trade / teleport / group request or a duel
+WalkAcceptButton()
+	{
+	;(the middle of the game, then its lower part bigger - a button's coloured letters read better larger)
+	for pass, f in [[0.8, 0.07, 0.86], [0.6, 0.45, 0.5]]
+		{
+		readW := Round(GameW * f[1]), readH := Round(GameH * f[3])
+		t := OcrRect(Round(GameLeft + (GameW - readW) / 2), Round(GameTop + GameH * f[2]), readW, readH, "en", Min(pass = 1 ? 2 : 3, 2500 / readW), acceptLines)
+		;(anything about Crowns anywhere: never)
+		if (ErrorLevel || !IsObject(acceptLines) || RegExMatch(t, "i)cr[o0]wn"))
+			return ""
+		;(a button: the word on a short line - ACCEPT and DECLINE side by side can read as one)
+		btn := ""
+		for each, line in acceptLines
+			{
+			if (!IsObject(line.words) || line.words.Length() > 3)
+				continue
+			for each, word in line.words
+				if (btn = "" && RegExMatch(word.text, "i)^\W*ACC?E[PF]T\W*$"))
+					btn := {x: Round(word.x + word.w / 2), y: Round(word.y + word.h / 2)}
+			}
+		if (btn = "")
+			continue
+		;(its window - the lines above the button and round it - not a friend, trade, teleport or group request or a
+		;duel; chat and the goal line elsewhere on the screen don't count)
+		for each, line in acceptLines
+			if (Abs(line.y + line.h / 2 - btn.y) <= GameH * 0.45 && Abs(line.x + line.w / 2 - btn.x) <= GameW * 0.3
+				&& RegExMatch(line.text, "i)friend request|be your friend|wants? to (trade|duel)|\bduel\b|invit(e|es|ed) you|teleport to|join (my|your|the|a|our) (group|team|party)|\bparty invit"))
+				return ""
+		return btn
+		}
+	return ""
+	}
+
+;The quest offer's ACCEPT clicked if it's up (why: for the log). True if it was
+WalkAcceptQuest(why)
+	{
+	;(this offer clicked twice already in the last 20 s: no more - the stuck / Escape / notice ways carry on)
+	if (WkAcceptClicks >= 2 && A_TickCount - WkAcceptAt < 20000)
+		return false
+	if (A_TickCount - WkAcceptAt >= 20000)
+		WkAcceptClicks := 0
+	btn := WalkAcceptButton()
+	if (!IsObject(btn) || !Walking || !GameActive())
+		return false
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	if (!WkAcceptClicks)
+		WkAcceptAt := A_TickCount
+	WkAcceptClicks += 1
+	WalkLog("quest offer: ACCEPT showing (" why ") - clicking it at " btn.x - GameLeft "," btn.y - GameTop (WkAcceptClicks > 1 ? " (again)" : ""))
+	SetStatus("accepting the quest")
+	WalkClick(btn.x, btn.y)
+	Sleep, 700
+	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0
 	return true
 	}
 
@@ -1892,17 +1990,11 @@ CollectStep(seen, h, dist)
 				}
 			;(the camera shows about 40 degrees either side of straight ahead)
 			ang := (foe.x - (GameLeft + GameW / 2)) / (GameW / 2) * 40
+			HoldW(1)
 			if (Abs(ang) > 30)
-				{
-				HoldW(0)
 				Turn(ang)
-				}
-			else
-				{
-				HoldW(1)
-				if (Abs(ang) > 6)
-					Turn(ang * 0.7)
-				}
+			else if (Abs(ang) > 6)
+				Turn(ang * 0.7)
 			SetStatus("collecting - walking into a monster (" Round(ang) " degrees)")
 			return Walking ? true : false
 			}
@@ -1920,14 +2012,9 @@ CollectStep(seen, h, dist)
 		{
 		if (WkRoamLeg)
 			WalkLog("collect: " dist " away from the spot - heading back"), WkRoamLeg := 0
-		if (Abs(h) > TurnInPlace)
-			HoldW(0), Turn(h)
-		else
-			{
-			HoldW(1)
-			if (Abs(h) > AheadAngle)
-				Turn(h)
-			}
+		HoldW(1)
+		if (Abs(h) > AheadAngle)
+			Turn(h)
 		SetStatus("collecting - back towards the spot (distance " dist ")")
 		return Walking ? true : false
 		}

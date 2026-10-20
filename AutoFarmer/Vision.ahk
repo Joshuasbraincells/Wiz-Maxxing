@@ -253,7 +253,7 @@ global NavUnblock
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
 ;1-4 s; the helper may be busy finding its way into a game it hasn't read yet)
-;avoidMobs (with withRoute): the route kept away from the zone's mobs (mobradius) - but not those named in
+;avoidMobs (with withRoute): the route kept out of what the zone's mobs see (mobshape, mobradius) - but not those named in
 ;goalLine, the quest's goal line (or a function giving it: called only if the ask is sent), nor one by the quest's
 ;goal (the helper decides)
 NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := false, goalLine := "")
@@ -353,7 +353,7 @@ NavUri(text)
 
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
-;mobs' real sight cone against the mobcone / mobsight settings
+;mobs' real sight against the mobshape / mobradius settings
 CaughtLog()
 	{
 	if (!VisionOn)
@@ -362,20 +362,35 @@ CaughtLog()
 	f := StrSplit(Trim(a, " `r`n"), "|")
 	if (f[1] != "caught" || f.Length() < 6)
 		return
-	cone := (Stats.HasKey("mobcone") ? Round(Stats["mobcone"]) : 60), sight := (Stat("mobsight") > 0 ? Round(Stat("mobsight")) : 600)
-	where := (f[4] = "") ? "its facing unknown" : ((f[4] <= cone / 2 && f[3] <= sight) ? "inside" : "outside") " the sight cone set (" cone " degrees wide, " sight " long)"
+	s := MobShape()
+	if (s.wide >= 360)
+		where := (f[3] <= s.range ? "inside" : "outside") " the circle set (" s.range " all round)"
+	else if (f[4] = "")
+		where := "its facing unknown"
+	else
+		where := ((f[4] <= s.wide / 2 && f[3] <= s.range) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
 	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
 		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
 	}
 
-;The helper's arguments for keeping a route away from mobs: mobavoid (on unless 0), mobradius (300), and their sight
-;cone in front of them - mobcone degrees wide (60; 0: none), mobsight long (600) - in PlayerStats.txt; "" when it's off
+;What the mobs see, as PlayerStats.txt says: {shape (mobshape: 1 a circle all round, 2 a semi-circle in front - the
+;default, 3 a cone in front), wide (degrees: 360, 180, mobcone - 60), range (mobradius: how far, 300), name}
+MobShape()
+	{
+	shape := Stats.HasKey("mobshape") ? Round(Stats["mobshape"]) : 2
+	shape := (shape >= 1 && shape <= 3) ? shape : 2
+	cone := Stats.HasKey("mobcone") && Stats["mobcone"] >= 5 ? Min(180, Round(Stats["mobcone"])) : 60
+	return {shape: shape, wide: shape = 1 ? 360 : shape = 2 ? 180 : cone, range: Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300
+		, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"}
+	}
+
+;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off
 NavMobArgs()
 	{
 	if (Stats.HasKey("mobavoid") && !Stats["mobavoid"])
 		return ""
-	return "&avoid=1&mobr=" (Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300)
-		. "&cone=" (Stats.HasKey("mobcone") ? Round(Stats["mobcone"]) : 60) "&sight=" (Stat("mobsight") > 0 ? Round(Stat("mobsight")) : 600)
+	s := MobShape()
+	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "")
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08

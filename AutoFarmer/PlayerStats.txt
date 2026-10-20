@@ -87,13 +87,14 @@ navmem:1
 ; line, or standing at the goal), and not while collecting. With no way round, it waits for the mob to move off
 ; (25 s at most, then walks on). The dashboard's Map shows them as red dots (the quest's amber). 0 = off
 mobavoid:1
-; mobradius: how far (game units) the route keeps from a mob. More is safer, but a narrow street may leave no way
-; round (then it waits)
+; mobshape: what a mob sees - the shape the route keeps out of: 1 = a circle all round, 2 = a semi-circle in front,
+; 3 = a cone in front (mobcone degrees wide). In front: which way it faces is read from the game (unknown: the whole
+; circle), and a little room is kept all round its body
+mobshape:2
+; mobradius: how far (game units) the shape reaches. More is safer, but a narrow street may leave no way round (then
+; it waits)
 mobradius:300
-; mobcone / mobsight: a mob notices you in a cone in front of it too - the route keeps out of a cone mobcone degrees
-; wide (0 = none) and mobsight long in front of each mob (which way it faces is read from the game)
 mobcone:60
-mobsight:600
 
 ; ---- Clicking ----
 ; mousereturn: 1 = when the bot takes the mouse (a battle round, a click out of battle) it puts it back where it

@@ -57,12 +57,12 @@ CfgList()
 	list.Push({key: "-", label: "WALKING"})
 	list.Push({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
 		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."})
-	list.Push({key: "mobradius", label: "...this far from them (game units)", kind: "num", lo: 100, hi: 1500, def: 300
-		, help: "How far the route keeps from a mob all round - they come for you when you get near. More: safer, but narrow streets may leave no way round (then it waits)."})
-	list.Push({key: "mobcone", label: "...and out of their sight cone (degrees wide)", kind: "num", lo: 0, hi: 180, def: 60
-		, help: "A mob notices you in a cone in front of it, further than all round: the route keeps out of a cone this wide (degrees) in front of each mob, which way it faces read from the game. 0 = no cone. Players say 50 to 120."})
-	list.Push({key: "mobsight", label: "...that cone's length (game units)", kind: "num", lo: 100, hi: 3000, def: 600
-		, help: "How far in front of a mob its sight cone reaches. More: safer, but more streets look blocked (then it waits for the mob to turn or move)."})
+	list.Push({key: "mobshape", label: "...what they see", kind: "pick", def: 2, picks: ["A circle all round", "A semi-circle in front", "A cone in front"]
+		, help: "The shape round each mob the route keeps out of - a mob notices you there. In front: which way it faces is read from the game (unknown: the whole circle), and a little room is kept all round its body. The dashboard's Map draws it."})
+	list.Push({key: "mobradius", label: "...how far they notice you (game units)", kind: "num", lo: 100, hi: 3000, def: 300
+		, help: "How far the shape reaches from a mob. More: safer, but narrow streets may leave no way round (then it waits for the mob to turn or move)."})
+	list.Push({key: "mobcone", label: "...the cone's width (degrees; a cone only)", kind: "num", lo: 5, hi: 180, def: 60
+		, help: "With 'A cone in front': how wide the cone is. Players say 50 to 120."})
 	list.Push({key: "|"})
 	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
 	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]

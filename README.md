@@ -2,7 +2,7 @@
 
 # Wizard101 bots
 
-AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card learning, potions, dashboard) and
+AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card learning, potions, dungeon farming, dashboard) and
 **AutoQuester** (the quest walker on its own). Details: [AutoFarmer/README.txt](AutoFarmer/README.txt).
 
 ## Set up a PC

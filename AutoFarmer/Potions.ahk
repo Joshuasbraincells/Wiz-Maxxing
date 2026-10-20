@@ -64,6 +64,10 @@ global PotionMarkZone := "", PotionMarkAt := 0
 global PotionMarkOff, PotionRecAtMark := 0, PotionRecRestart := 0
 ;(a potion shop that couldn't be closed: PotionCarryOn stops walking and says so)
 global PotionShopLeft
+;No potions and none to be bought (the run failed): resting - no walking - till health is back (PotionCheck); when
+;the last drink found none (no Ctrl+O again for 2 minutes)
+;(no starting values: this file is #Included at the bottom, where they never run - blank counts as 0)
+global PotionResting, PotionNoneAt, PotionRestFrom
 
 ;Called out of battle from the main loop (every few seconds at most): low health -> drink, none -> run
 PotionCheck()
@@ -78,15 +82,40 @@ PotionCheck()
 	if (hp > most)
 		PotionNoteMax(hp, false), most := hp
 	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
-	if (!most || 100 * hp / most >= limit)
+	pct := most ? 100 * hp / most : 100
+	;(resting: on again once health is back over the limit + 20 %, or after 10 minutes all the same)
+	if (PotionResting && (pct >= limit + 20 || A_TickCount - PotionRestFrom > 600000))
+		{
+		PotionResting := 0
+		DebugLog("Potions: health " hp "/" most " (" Round(pct) "%) - " (pct >= limit + 20 ? "back up" : "10 minutes rested") ", walking on")
+		}
+	if (!most || pct >= limit)
 		return
-	DebugLog("Potions: health " hp "/" most " (" Round(100 * hp / most) "%) - under " limit "%: drinking a potion")
-	if (PotionDrink(hp))
-		return
+	;(no potion at the last drink, 2 minutes ago or less: not again yet)
+	if (A_TickCount - PotionNoneAt > 120000 || !PotionNoneAt)
+		{
+		DebugLog("Potions: health " hp "/" most " (" Round(pct) "%) - under " limit "%: drinking a potion")
+		if (PotionDrink(hp))
+			{
+			PotionNoneAt := 0
+			return
+			}
+		PotionNoneAt := A_TickCount
+		}
 	if (A_TickCount < PotionFailUntil)
+		{
+		;(none, and buying failed lately: rest rather than walk into a battle this low)
+		if (!PotionResting)
+			{
+			PotionResting := 1, PotionRestFrom := A_TickCount
+			DebugLog("Potions: no potions, and buying failed lately - resting (no walking) till health is back over " limit + 20 "% (it comes back by itself)")
+			}
 		return
+		}
 	DebugLog("Potions: no potion left - going to buy some")
-	if (!PotionRun())
+	if (PotionRun())
+		PotionNoneAt := 0, PotionResting := 0
+	else
 		PotionFailUntil := A_TickCount + 10 * 60000
 	}
 
@@ -792,16 +821,18 @@ PotionWalkTo(s, since := 0)
 			}
 		h := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.ax != "" ? nav.ax : s.x, nav.ay != "" ? nav.ay : s.y)
 		h := (h = "") ? 0 : h
-		if (Abs(h) > 60)
+		;(a big turn close to her on the spot - walking on, it would circle round her; else turning walking on: the
+		;game takes W and A/D at once)
+		if (Abs(h) > 60 && d < 300)
 			{
 			PotionHoldW(0)
 			PotionTurnBy(h)
 			}
 		else
 			{
+			PotionHoldW(1)
 			if (Abs(h) > 12)
 				PotionTurnBy(h)
-			PotionHoldW(1)
 			}
 		Sleep, 60
 		}

@@ -115,8 +115,8 @@ FleeAfter()
 		{
 		Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
 		TrayTip, Wizard101 bot, Out of mana and couldn't get potions - the bot has stopped (kept from timing out)., 10, 2
-		AlertSend("mana", "out of mana", "Fled out of mana, and no potion to be had (none left, and buying didn't work) - the bot has stopped (kept from timing out).")
-		afk()
+		AlertSend("mana", "out of mana", "Fled out of mana, and no potion to be had (none left, and buying didn't work) - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
+		afk("mana")
 		}
 	}
 

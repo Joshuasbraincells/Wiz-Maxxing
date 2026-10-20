@@ -9,7 +9,7 @@
 ;
 ; Updating: the release zip is downloaded, the bot is closed if it's running, and the zip's files are
 ; copied over this folder - except your own: PlayerStats.txt (only settings it doesn't have yet are added),
-; learned cards (learned\ folders, and the slot pictures learned\cards.txt says they went into), potion
+; learned cards (learned\ folders, and the slot pictures learned\cards.txt says they went into), dungeon runs, potion
 ; routes, the walker's memory, window positions, logs. A program that's in use (Wiz-Maxxing.exe, Setup.exe)
 ; is renamed out of the way and the new one put in its place. It's all or nothing: every file it replaces
 ; is copied aside first, and if any file can't be written the folder is put back as it was, version.txt
@@ -397,7 +397,7 @@ UpIsMine(rel, slots)
 	{
 	if (RegExMatch(rel, "i)^AutoFarmer\\(PlayerStats\.txt|dashboard\.ini|resources\\characters\.txt)$"))
 		return true
-	if (RegExMatch(rel, "i)(^|\\)(learned|routes|backups|generated)\\"))
+	if (RegExMatch(rel, "i)(^|\\)(learned|routes|backups|generated|dungeons)\\"))
 		return true
 	if (RegExMatch(rel, "i)^AutoQuester\\resources\\(walk_memory|known_zones)\.txt$"))
 		return true

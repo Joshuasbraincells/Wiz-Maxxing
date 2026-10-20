@@ -1,0 +1,631 @@
+; Dungeons.ahk - dungeon farming: a run you record once, walked again and again (the dashboard's Dungeons tab).
+; AHK v1.1, functions and labels only; #Included by Autofarmer.ahk. Needs the vision helper and the game's memory
+; (read-only: where the wizard is, which zone) - the same as walking by the map.
+;
+; Recording (Record a run): stand where the run starts - outside the dungeon, by its sigil - and play one run the
+; way the bot should: X at the sigil, walk to the boss (fighting on the way), and walk back out to where you started.
+; Then F9 (or Stop recording). Every 200 game units walked is a spot to walk to; each X you press is "press X here"
+; (a sigil, a door, someone to talk to); a battle's start is "a battle here" (on the way back it waits a moment
+; for one there); a loading screen starts the next zone's spots. Walking (F8) is off while you record. Saved as
+; dungeons\<name>.txt - one step a line: kind|zone|x|y|z (walk, x, fight) - kept by updates.
+;
+; Running (pick one, Run): the bot walks from spot to spot by the zone's map (the route planner, round walls),
+; presses X where you did, lets every battle be fought (the battle loop - the bot on, F6), Spaces through a
+; dialogue, and at the end starts over - so many times (0: till you stop it). A loading screen into a zone further
+; on: it carries on from there. Walking off (F8), you playing, a battle: it waits. Somewhere the recording doesn't
+; go (another zone - a potion run, a defeat), stuck for good, or the game's memory unreadable: it stops and says
+; why (debug.log "Dungeons: ...", the Dungeons tab, Discord).
+
+;The run being walked: {name, file, steps [{kind, zone, x, y, z}], i (the step walked to), runs (done), want (0
+;till stopped), the step's progress (best, bestLeft, bestAt, unstuck), fightUntil / fightBattles (waiting at a
+;battle spot), loadUntil (waiting for a loading screen out of zone fromZone), push (a spot past a doorway to walk at
+;meanwhile), misses, seen (battles at the last look)} - "" when none
+global DgRun
+;Recording: on, its steps so far, the last spot recorded, its zone, when the Pass button was last up
+global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt
+;The Dungeons tab's controls (Dashboard.ahk makes them)
+global DashTabs, DgList, DgHelp, DgRecBtn, DgRecStopBtn, DgRunBtn, DgStopBtn, DgDelBtn, DgFolderBtn, DgTimes, DgTimesUD
+global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote
+
+;The folder the runs are kept in
+DgDir()
+	{
+	return A_ScriptDir "\dungeons"
+	}
+
+;A run's file read: {name, file, steps} - "" if it can't be read or has fewer than two steps
+DgLoad(file)
+	{
+	steps := [], name := ""
+	Loop, Read, %file%
+		{
+		line := Trim(A_LoopReadLine)
+		if (line = "" || SubStr(line, 1, 1) = ";")
+			continue
+		f := StrSplit(line, "|")
+		if (f[1] = "name")
+			name := f[2]
+		else if (RegExMatch(f[1], "^(walk|x|fight)$") && f.Length() >= 5 && f[3] f[4] f[5] != "")
+			steps.Push({kind: f[1], zone: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0})
+		}
+	if (steps.Length() < 2)
+		return ""
+	if (name = "")
+		SplitPath, file, , , , name
+	return {name: name, file: file, steps: steps}
+	}
+
+;The list on the Dungeons tab filled from the folder (the run being walked selected)
+DgListFill()
+	{
+	if (!DashHwnd)
+		return
+	Gui, Dash:Default
+	Gui, Dash:ListView, DgList
+	LV_Delete()
+	Loop, Files, % DgDir() "\*.txt"
+		{
+		d := DgLoad(A_LoopFileFullPath)
+		if (!IsObject(d))
+			continue
+		zones := {}, nx := 0, nf := 0
+		for i, s in d.steps
+			zones[s.zone] := 1, nx += (s.kind = "x"), nf += (s.kind = "fight")
+		nz := 0
+		for z in zones
+			nz++
+		FormatTime, when, %A_LoopFileTimeModified%, yyyy-MM-dd HH:mm
+		row := LV_Add("", d.name, d.steps.Length(), nz, nx, nf, when, A_LoopFileFullPath)
+		if (IsObject(DgRun) && DgRun.file = A_LoopFileFullPath)
+			LV_Modify(row, "Select Focus")
+		}
+	Gui, Dash:ListView, DgList
+	}
+
+;The selected run's file ("" none)
+DgSelected()
+	{
+	Gui, Dash:Default
+	Gui, Dash:ListView, DgList
+	row := LV_GetNext(0)
+	if (!row)
+		return ""
+	LV_GetText(file, row, 7)
+	return file
+	}
+
+;The status line on the Dungeons tab (and the buttons that go with it)
+DgShow(text := "")
+	{
+	if (!DashHwnd)
+		return
+	if (text = "")
+		{
+		if (DgRecording)
+			text := "Recording: " DgRecSteps.Length() " steps so far, in " DgRecZone ". Press F9 (or Stop recording) once you're back where you started."
+		else if (IsObject(DgRun))
+			text := "Running '" DgRun.name "': run " DgRun.runs + 1 (DgRun.want ? " of " DgRun.want : "") ", step " DgRun.i " of " DgRun.steps.Length() (Walking ? "" : " - paused (walking off: F8)")
+		else
+			text := "Not running. Record a run, or pick one and click Run."
+		}
+	GuiControl, Dash:, DgStatus, %text%
+	GuiControl, % "Dash:" (DgRecording || IsObject(DgRun) ? "Disable" : "Enable"), DgRecBtn
+	GuiControl, % "Dash:" (DgRecording ? "Enable" : "Disable"), DgRecStopBtn
+	GuiControl, % "Dash:" (DgRecording || IsObject(DgRun) ? "Disable" : "Enable"), DgRunBtn
+	GuiControl, % "Dash:" (IsObject(DgRun) ? "Enable" : "Disable"), DgStopBtn
+	}
+
+;---- Recording ----
+
+DgRecordStart()
+	{
+	if (DgRecording || IsObject(DgRun))
+		return
+	if (PotionRecording)
+		{
+		MsgBox, 262192, Record a dungeon run, The potion buying is being recorded - finish that first (F9).
+		return
+		}
+	nav := VisionOn ? NavRead(2000) : ""
+	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
+		{
+		MsgBox, 262192, Record a dungeon run, % "The bot can't read where your wizard is from the game's memory (" (VisionOn ? NavWhy : "the vision helper isn't running") "). Be in the game, in the world (not loading), and try again."
+		return
+		}
+	MsgBox, 262177, Record a dungeon run, % "Recording from here (" nav.zone ").`n`nPlay one run the way the bot should: X at the dungeon's sigil, walk to the boss (fight on the way), and walk back out to here. Then press F9 (or Stop recording on the Dungeons tab).`n`nWalk with the keyboard or the mouse, as you like. Quest walking (F8) is off while you record."
+	IfMsgBox, Cancel
+		return
+	if (Walking)
+		Walking := 0, ReleaseKeys(), SetStatus("walking off - recording a dungeon run")
+	DgRecSteps := [], DgRecZone := nav.zone, DgRecBattleAt := 0, DgRecLast := ""
+	DgRecAdd("walk", nav)
+	DgRecording := 1
+	Hotkey, ~*x, DgRecXKey, On
+	Hotkey, F9, DgRecF9, On
+	SetTimer, DgRecTick, 250
+	DebugLog("Dungeons: recording a run from " nav.zone " at " Round(nav.x) ", " Round(nav.y) " - F9 to finish")
+	TrayTip, Wizard101 bot, % "Recording a dungeon run from " nav.zone ". Play it, come back here, then press F9.", 8, 1
+	DgShow()
+	}
+
+;A step recorded where nav says the wizard is
+DgRecAdd(kind, nav)
+	{
+	DgRecSteps.Push({kind: kind, zone: nav.zone, x: nav.x, y: nav.y, z: nav.z})
+	DgRecLast := {x: nav.x, y: nav.y, z: nav.z, zone: nav.zone}
+	DgShow()
+	}
+
+;Every 250 ms while recording: a spot every 200 game units walked, the first in a new zone (a loading screen), a
+;battle's start (the Pass button up after none for 15 s) - nothing while one's on
+DgRecTickF()
+	{
+	if (!DgRecording)
+		{
+		SetTimer, DgRecTick, Off
+		return
+		}
+	ImageSearch, bx, by, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+	battle := (ErrorLevel = 0)
+	nav := NavRead(400)
+	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
+		return
+	if (battle)
+		{
+		if (!DgRecBattleAt || A_TickCount - DgRecBattleAt > 15000)
+			{
+			;(where the wizard was walking when it started: the last spot, as the battle moves it into the circle)
+			last := DgRecSteps[DgRecSteps.Length()]
+			DgRecSteps.Push({kind: "fight", zone: last.zone, x: last.x, y: last.y, z: last.z})
+			DebugLog("Dungeons: recording - a battle (" DgRecSteps.Length() " steps)")
+			DgShow()
+			}
+		DgRecBattleAt := A_TickCount
+		return
+		}
+	;(right after a battle the wizard stands where its circle was: carry on from there)
+	if (nav.zone != DgRecZone)
+		{
+		DgRecZone := nav.zone
+		DebugLog("Dungeons: recording - into " nav.zone)
+		DgRecAdd("walk", nav)
+		return
+		}
+	if (Sqrt((nav.x - DgRecLast.x) ** 2 + (nav.y - DgRecLast.y) ** 2) >= 200 || Abs(nav.z - DgRecLast.z) > 120)
+		DgRecAdd("walk", nav)
+	}
+
+;X pressed in the game while recording: "press X here"
+DgRecX()
+	{
+	if (!DgRecording || !GameActive())
+		return
+	nav := NavRead(400)
+	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
+		return
+	DgRecAdd("x", nav)
+	DebugLog("Dungeons: recording - X pressed in " nav.zone " (" DgRecSteps.Length() " steps)")
+	}
+
+;Recording ends: named and saved (save false: thrown away)
+DgRecordStop(save := true)
+	{
+	if (!DgRecording)
+		return
+	DgRecording := 0
+	SetTimer, DgRecTick, Off
+	Hotkey, ~*x, Off
+	Hotkey, F9, Off
+	steps := DgRecSteps
+	if (!save || steps.Length() < 3)
+		{
+		DebugLog("Dungeons: recording " (save ? "too short - nothing saved" : "thrown away"))
+		DgShow(save ? "The recording was too short - nothing saved." : "")
+		return
+		}
+	first := steps[1], last := steps[steps.Length()]
+	away := Round(Sqrt((first.x - last.x) ** 2 + (first.y - last.y) ** 2))
+	SplitPath, % first.zone, start
+	FormatTime, day, , yyyy-MM-dd
+	InputBox, name, Save the dungeon run, % steps.Length() " steps recorded." (first.zone != last.zone || away > 400 ? "`n`nIt ends " (first.zone != last.zone ? "in another zone (" last.zone ")" : away " away from where it started") " - a run that's to start over should end back where it began." : "") "`n`nName it:", , 460, 190, , , , , % start " " day
+	if (ErrorLevel || Trim(name) = "")
+		{
+		DebugLog("Dungeons: recording not saved (no name)")
+		DgShow("Not saved.")
+		return
+		}
+	name := Trim(RegExReplace(name, "[\\/:*?""<>|]", "-"))
+	FileCreateDir, % DgDir()
+	file := DgDir() "\" name ".txt"
+	text := "; Wiz-Maxxing dungeon run, recorded " A_Now ". One step a line: kind|zone|x|y|z`r`n"
+		. "; walk: walk to this spot; x: press X here (a sigil, a door, someone to talk to); fight: a battle started here`r`n"
+		. "name|" name "`r`n"
+	for i, s in steps
+		text .= s.kind "|" s.zone "|" Round(s.x, 1) "|" Round(s.y, 1) "|" Round(s.z, 1) "`r`n"
+	FileDelete, %file%
+	FileAppend, %text%, %file%
+	DebugLog("Dungeons: saved '" name "' - " steps.Length() " steps (" file ")")
+	DgListFill()
+	DgShow("Saved '" name "' (" steps.Length() " steps). Pick it and click Run.")
+	}
+
+;---- Running ----
+
+;The run in file started (times: how many - 0 till stopped; avoid: keep away from mobs on the way)
+DgRunStart(file, times, avoid)
+	{
+	if (DgRecording || IsObject(DgRun))
+		return
+	d := DgLoad(file)
+	if (!IsObject(d))
+		{
+		MsgBox, 262192, Dungeons, % "Couldn't read " file " (a run needs at least two steps)."
+		return
+		}
+	if (!WkNavChecked && !WkNavTrusted)
+		{
+		MsgBox, 262192, Dungeons, The game's memory hasn't been checked against the quest arrow yet - walk a quest for a minute first (F8), then run the dungeon.
+		return
+		}
+	nav := NavRead(2000)
+	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
+		{
+		MsgBox, 262192, Dungeons, % "The bot can't read where your wizard is from the game's memory (" NavWhy ")."
+		return
+		}
+	DgRun := {name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: times + 0, avoid: avoid, misses: 0, seen: battles
+		, fightUntil: 0, loadUntil: 0, push: ""}
+	;(not at the start: on from the nearest spot in this zone)
+	k := DgNearest(nav)
+	if (!k)
+		{
+		DgRun := ""
+		MsgBox, 262192, Dungeons, % "The wizard is in " nav.zone " - the run '" d.name "' doesn't go there. Go to where it starts (" d.steps[1].zone ") and run it again."
+		return
+		}
+	DgRun.i := k
+	DgFresh()
+	if (!Walking)
+		{
+		Walking := 1
+		WalkNotifyClose()
+		}
+	ReleaseKeys()
+	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length() (avoid ? " (keeping away from mobs)" : ""))
+	DgShow()
+	}
+
+;The step nearest the wizard in its zone (1 when it's the start's); 0 if no step is in its zone
+DgNearest(nav)
+	{
+	best := 0, bestD := ""
+	for i, s in DgRun.steps
+		{
+		if (s.zone != nav.zone)
+			continue
+		d := Sqrt((s.x - nav.x) ** 2 + (s.y - nav.y) ** 2)
+		if (i = 1 && d < 300)
+			return 1
+		if (bestD = "" || d < bestD)
+			best := i, bestD := d
+		}
+	return best
+	}
+
+;A new step: its progress afresh
+DgFresh()
+	{
+	DgRun.best := "", DgRun.bestLeft := "", DgRun.bestAt := A_TickCount, DgRun.unstuck := 0
+	}
+
+;Stops the run (why: for the log and the tab; alert: also to Discord and the tray)
+DgStop(why, alert := true)
+	{
+	if (!IsObject(DgRun))
+		return
+	name := DgRun.name, runs := DgRun.runs
+	DgRun := ""
+	ReleaseKeys()
+	Walking := 0
+	DebugLog("Dungeons: stopped '" name "' after " runs " run" (runs = 1 ? "" : "s") " - " why)
+	DgShow("Stopped '" name "' after " runs " run" (runs = 1 ? "" : "s") ": " why)
+	if (alert)
+		{
+		TrayTip, Wizard101 bot, % "Dungeon run stopped: " why, 10, 2
+		AlertSend("dungeon", "Dungeon run stopped", "'" name "' stopped after " runs " run" (runs = 1 ? "" : "s") ": " why)
+		}
+	}
+
+;Where the wizard is and the route to spot p (the helper's /navto - the game's memory, read-only, and its route
+;planner): {x, y, z, yaw, zone, ax, ay, left, why} - ax/ay "" with no route - or ""
+DgNavTo(p)
+	{
+	answer := VisionGet("/navto?x=" Round(p.x, 1) "&y=" Round(p.y, 1) "&z=" Round(p.z, 1) (DgRun.avoid ? NavMobArgs() : ""), 2500, true)
+	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
+		return ""
+	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}
+	Loop, Parse, answer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f[1] = "pos")
+			nav.x := f[2], nav.y := f[3], nav.z := f[4], nav.yaw := f[5]
+		else if (f[1] = "zone")
+			nav.zone := f[2]
+		else if (f[1] = "route")
+			nav.ax := f[2], nav.ay := f[3], nav.left := f[4]
+		else if (f[1] = "routewhy")
+			nav.why := Trim(SubStr(A_LoopField, 10))
+		}
+	return (nav.x = "" || nav.yaw = "") ? "" : nav
+	}
+
+;The first step after the one walked to that's in zone ("" none)
+DgZoneAhead(zone)
+	{
+	Loop, % DgRun.steps.Length() - DgRun.i
+		if (DgRun.steps[DgRun.i + A_Index].zone = zone)
+			return DgRun.i + A_Index
+	return ""
+	}
+
+;On to the next step: into another zone after a walk - a doorway: walk on past the last spot for up to 10 s (push)
+;till the loading screen; at the end, a run done
+DgNext()
+	{
+	r := DgRun
+	cur := r.steps[r.i]
+	r.i += 1
+	DgFresh()
+	if (r.i > r.steps.Length())
+		{
+		r.runs += 1
+		DebugLog("Dungeons: '" r.name "' - run " r.runs " done")
+		if (r.want && r.runs >= r.want)
+			{
+			DgStop("done - " r.runs " run" (r.runs = 1 ? "" : "s"), false)
+			TrayTip, Wizard101 bot, % "Dungeon runs done: " r.runs, 8, 1
+			return
+			}
+		r.i := 1
+		}
+	nxt := r.steps[r.i]
+	if (nxt.zone != cur.zone && cur.kind != "x")
+		{
+		;(the way the wizard walked to the last spot, 400 further on)
+		prev := r.i >= 3 ? r.steps[r.i - 2] : cur
+		dx := cur.x - prev.x, dy := cur.y - prev.y, l := Sqrt(dx * dx + dy * dy)
+		r.push := l > 1 ? {x: cur.x + dx / l * 400, y: cur.y + dy / l * 400, z: cur.z} : ""
+		r.loadUntil := A_TickCount + 10000, r.fromZone := cur.zone
+		}
+	DgShow()
+	}
+
+;Turns h degrees (+ right) walking on: by the game's memory when it can, else by time
+DgTurn(h)
+	{
+	if ((WkNavTrusted || WkNavChecked) && NavTurn(h))
+		return
+	PotionTurnBy(h)
+	}
+
+;One step of a dungeon run (the main loop, out of a battle round, instead of the quest walker's)
+DungeonStep()
+	{
+	r := DgRun
+	if (!IsObject(r))
+		return
+	if (!Walking || !GameActive() || inbattle = 1)
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		;(a battle, walking off, the game not in front: not getting stuck meanwhile)
+		r.bestAt := A_TickCount
+		Sleep, 150
+		return
+		}
+	;(a battle was fought since the last look: not stuck, and the wizard stands where its circle was)
+	if (battles != r.seen)
+		r.seen := battles, r.bestAt := A_TickCount
+	st := r.steps[r.i]
+	;Waiting at a battle spot: one comes, or 8 s
+	if (r.fightUntil)
+		{
+		if (battles > r.fightBattles || A_TickCount > r.fightUntil)
+			{
+			r.fightUntil := 0
+			DgNext()
+			}
+		else
+			{
+			if (KeysDown || HeldW)
+				ReleaseKeys()
+			Sleep, 200
+			}
+		return
+		}
+	nav := DgNavTo(IsObject(r.push) ? r.push : st)
+	if (!IsObject(nav))
+		{
+		r.misses += 1
+		if (r.misses >= 20)
+			DgStop("the game's memory can't be read (" VisionErr ")")
+		else
+			{
+			if (KeysDown || HeldW)
+				ReleaseKeys()
+			Sleep, 300
+			}
+		return
+		}
+	r.misses := 0
+	if (nav.zone != st.zone)
+		{
+		;(walking through the doorway, or the sigil's loading screen - still in the zone it's leaving: a while)
+		waiting := A_TickCount < r.loadUntil && nav.zone = r.fromZone
+		;(loaded into a zone further on: on from its first step)
+		k := waiting ? "" : DgZoneAhead(nav.zone)
+		if (k)
+			{
+			DebugLog("Dungeons: in " nav.zone " - on from step " k)
+			r.i := k, r.push := "", r.loadUntil := 0
+			DgFresh()
+			DgShow()
+			return
+			}
+		if (waiting)
+			{
+			if (IsObject(r.push))
+				DgSteer(nav, r.push, 999)
+			else if (KeysDown || HeldW)
+				ReleaseKeys()
+			Sleep, 100
+			return
+			}
+		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone " (a potion run, a defeat, or a door that didn't load?)")
+		return
+		}
+	r.push := "", r.loadUntil := 0, r.fromZone := ""
+	d := Sqrt((nav.x - st.x) ** 2 + (nav.y - st.y) ** 2)
+	if (d <= (st.kind = "x" ? 100 : 160))
+		{
+		DgArrive(st)
+		return
+		}
+	;(getting on: closer as the crow flies, or along the route round walls)
+	if (r.best = "" || d < r.best - 40)
+		r.best := d, r.bestAt := A_TickCount, r.unstuck := 0
+	if (nav.left != "" && (r.bestLeft = "" || nav.left < r.bestLeft - 40 || nav.left > r.bestLeft + 300))
+		r.bestLeft := nav.left, r.bestAt := A_TickCount, r.unstuck := 0
+	if (A_TickCount - r.bestAt > 7000)
+		{
+		r.unstuck += 1
+		if (r.unstuck > 4)
+			{
+			DgStop("stuck " Round(d) " from step " r.i " (" st.zone ") - no closer after backing up 4 times")
+			return
+			}
+		DebugLog("Dungeons: no closer to step " r.i " in 7 s (" Round(d) " away) - backing up and turning")
+		HoldW(0)
+		BackUp(700)
+		DgTurn(Mod(r.unstuck, 2) ? 90 : -90)
+		HoldW(1)
+		Sleep, 900
+		r.bestAt := A_TickCount
+		return
+		}
+	DgSteer(nav, st, d)
+	}
+
+;Steers at spot p (the route's aim when there's one): a big turn close to it on the spot, else walking on
+DgSteer(nav, p, d)
+	{
+	h := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.ax != "" ? nav.ax : p.x, nav.ay != "" ? nav.ay : p.y)
+	h := (h = "") ? 0 : h
+	if (Abs(h) > 60 && d < 250)
+		{
+		HoldW(0)
+		DgTurn(h)
+		}
+	else
+		{
+		HoldW(1)
+		if (Abs(h) > 12)
+			DgTurn(h)
+		}
+	Sleep, 60
+	}
+
+;At step st: a walk - on; X - pressed (then a loading screen, or a dialogue Spaced through and a quest accepted);
+;a battle spot - waiting for one
+DgArrive(st)
+	{
+	r := DgRun
+	if (st.kind = "x")
+		{
+		ReleaseKeys()
+		Sleep, 150
+		PressKey("x")
+		DebugLog("Dungeons: X at step " r.i " (" st.zone ")")
+		nxt := r.steps[r.i < r.steps.Length() ? r.i + 1 : 1]
+		if (nxt.zone != st.zone)
+			{
+			DgNext()
+			r.push := "", r.loadUntil := A_TickCount + 30000, r.fromZone := st.zone
+			return
+			}
+		Sleep, 1200
+		if (WalkDialogOpen())
+			WalkSkipDialog()
+		WalkAcceptQuest("a dungeon run")
+		DgNext()
+		return
+		}
+	if (st.kind = "fight")
+		{
+		ReleaseKeys()
+		r.fightUntil := A_TickCount + 8000, r.fightBattles := battles
+		return
+		}
+	DgNext()
+	}
+
+;---- The tab's buttons (labels run in the global scope: Dg-named variables only) ----
+
+DgRecordClick:
+	DgRecordStart()
+	return
+
+DgRecStopClick:
+DgRecF9:
+	DgRecordStop()
+	return
+
+DgRecXKey:
+	DgRecX()
+	return
+
+DgRecTick:
+	DgRecTickF()
+	return
+
+DgRunClick:
+	Gui, Dash:Submit, NoHide
+	DgRunFile := DgSelected()
+	if (DgRunFile = "")
+		MsgBox, 262208, Dungeons, Pick a run in the list first (or record one).
+	else
+		DgRunStart(DgRunFile, DgTimes, DgAvoid)
+	return
+
+DgStopClick:
+	DgStop("you stopped it", false)
+	return
+
+DgDeleteClick:
+	DgRunFile := DgSelected()
+	if (DgRunFile = "")
+		return
+	if (IsObject(DgRun) && DgRun.file = DgRunFile)
+		{
+		MsgBox, 262192, Dungeons, That run is being walked - stop it first.
+		return
+		}
+	SplitPath, DgRunFile, DgRunName
+	MsgBox, 262436, Dungeons, % "Delete the run '" DgRunName "'? (It goes to the Recycle Bin.)"
+	IfMsgBox, Yes
+		{
+		FileRecycle, %DgRunFile%
+		DebugLog("Dungeons: deleted " DgRunFile)
+		DgListFill()
+		}
+	return
+
+DgFolderClick:
+	FileCreateDir, % DgDir()
+	Run, % DgDir()
+	return
+
+DgListEvent:
+	if (A_GuiEvent = "DoubleClick" && !DgRecording && !IsObject(DgRun))
+		gosub, DgRunClick
+	return

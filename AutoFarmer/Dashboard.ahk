@@ -21,6 +21,8 @@ global DashUsageText
 global DashCfgBtn
 ;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState)
 global DashUpdBtn, DashUpdBusy
+;Where the tabs' inside starts in the window (GuiControl Move places a tab's controls from there: DashGuiSize)
+global DashTabOX, DashTabOY, DashTabOW, DashTabOH
 ;The bottom row's other buttons (they share the window's width)
 global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn, DashBotBtn
 ;The Hand section: its heading, and a picture and a label for each of up to 7 cards
@@ -36,7 +38,7 @@ global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, Dash
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
-	Gui, Dash:New, +Resize +MinSize660x610 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
+	Gui, Dash:New, +Resize +MinSize660x640 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
@@ -45,48 +47,83 @@ DashInit()
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	Gui, Dash:Add, Button, x640 y7 w136 h24 gDashUpdButton vDashUpdBtn, Check for updates
 	;(the button says "Checking..." a while after a click: DashUpdBusy)
+	;Two tabs: Bot (statistics, what it sees, the hand, the log) and Dungeons (Dungeons.ahk)
+	Gui, Dash:Font, s9 w600 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons
+	Gui, Dash:Tab, 1
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y40 w86 h16, STATISTICS
+	Gui, Dash:Add, Text, x12 y68 w86 h16, STATISTICS
 	Gui, Dash:Font, s8 w400 c9AA0A6, Segoe UI
-	Gui, Dash:Add, Text, x100 y41 w270 h16 vDashUsageText, CPU / RAM ...
+	Gui, Dash:Add, Text, x100 y69 w270 h16 vDashUsageText, CPU / RAM ...
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x372 y40 w150 h16, WHAT IT SEES
+	Gui, Dash:Add, Text, x372 y68 w150 h16, WHAT IT SEES
 	;(the Map button at the right end of that row; DashGuiSize keeps it there)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x618 y36 w76 h22 gDashSettingsButton vDashCfgBtn, Settings
-	Gui, Dash:Add, Button, x700 y36 w76 h22 gDashMapButton vDashMapBtn, Map
+	Gui, Dash:Add, Button, x618 y64 w76 h22 gDashSettingsButton vDashCfgBtn, Settings
+	Gui, Dash:Add, Button, x700 y64 w76 h22 gDashMapButton vDashMapBtn, Map
 	Gui, Dash:Font, s9 w400 cDADADA, Consolas
-	Gui, Dash:Add, Text, x12 y60 w350 h190 vDashStatText
-	Gui, Dash:Add, Text, x372 y60 w400 h190 vDashSeeText
+	Gui, Dash:Add, Text, x12 y88 w350 h190 vDashStatText
+	Gui, Dash:Add, Text, x372 y88 w400 h190 vDashSeeText
 	;The hand: each card as the bot saw it this round, and what it took it for (DashHandSeen)
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y258 w630 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Add, Text, x12 y286 w630 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x646 y252 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
+	Gui, Dash:Add, Button, x646 y280 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
 	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
 	Loop, 7
 		{
 		cx := 12 + (A_Index - 1) * 72
-		Gui, Dash:Add, Picture, x%cx% y278 w58 h97 Hidden vDashCardPic%A_Index%
-		Gui, Dash:Add, Text, x%cx% y377 w66 h28 Hidden vDashCardTxt%A_Index%
+		Gui, Dash:Add, Picture, x%cx% y306 w58 h97 Hidden vDashCardPic%A_Index%
+		Gui, Dash:Add, Text, x%cx% y405 w66 h28 Hidden vDashCardTxt%A_Index%
 		}
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y410 w200 h16, LOG
+	Gui, Dash:Add, Text, x12 y438 w200 h16, LOG
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
-	Gui, Dash:Add, Edit, x12 y430 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
+	Gui, Dash:Add, Edit, x12 y458 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x12 y740 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
-	Gui, Dash:Add, Button, x130 y740 w80 h26 gDashClearLog vDashClearBtn, Clear
-	Gui, Dash:Add, Button, x218 y740 w120 h26 gDashOpenLog vDashLogBtn, Open debug.log
-	Gui, Dash:Add, Button, x346 y740 w120 h26 gDashBotToggle vDashBotBtn, Bot: on (F6)
-	Gui, Dash:Add, Button, x346 y740 w150 h26 gDashWalkToggle vDashWalkBtn, Walking on/off (F8)
-	Gui, Dash:Add, Button, x504 y740 w140 h26 gDashFolder vDashFolderBtn, Open bot folder
-	Gui, Dash:Add, Button, x652 y740 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
+	Gui, Dash:Add, Button, x12 y768 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
+	Gui, Dash:Add, Button, x130 y768 w80 h26 gDashClearLog vDashClearBtn, Clear
+	Gui, Dash:Add, Button, x218 y768 w120 h26 gDashOpenLog vDashLogBtn, Open debug.log
+	Gui, Dash:Add, Button, x346 y768 w120 h26 gDashBotToggle vDashBotBtn, Bot: on (F6)
+	Gui, Dash:Add, Button, x346 y768 w150 h26 gDashWalkToggle vDashWalkBtn, Walking on/off (F8)
+	Gui, Dash:Add, Button, x504 y768 w140 h26 gDashFolder vDashFolderBtn, Open bot folder
+	Gui, Dash:Add, Button, x652 y768 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
+	;The Dungeons tab: a run recorded once, walked again and again (Dungeons.ahk)
+	Gui, Dash:Tab, 2
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y68 w400 h16, DUNGEON FARMING
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x12 y88 w760 h48 vDgHelp, Record a run once: stand outside the dungeon by its sigil, click Record a run and play it - X at the sigil, to the boss (fighting on the way), back out to where you started - then press F9. Pick it and click Run: the bot walks the same way, presses X where you did, fights every battle (the bot on, F6) and starts over. F8 pauses it.
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x12 y142 w120 h26 gDgRecordClick vDgRecBtn, Record a run
+	Gui, Dash:Add, Button, x138 y142 w150 h26 gDgRecStopClick vDgRecStopBtn Disabled, Stop recording (F9)
+	Gui, Dash:Add, Button, x300 y142 w90 h26 gDgRunClick vDgRunBtn, Run
+	Gui, Dash:Add, Button, x396 y142 w90 h26 gDgStopClick vDgStopBtn Disabled, Stop run
+	Gui, Dash:Add, Button, x498 y142 w90 h26 gDgDeleteClick vDgDelBtn, Delete
+	Gui, Dash:Add, Button, x594 y142 w110 h26 gDgFolderClick vDgFolderBtn, Open folder
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x12 y182 w44 h18 vDgTimesLabel, Run it
+	Gui, Dash:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Edit, x58 y179 w60 h22 Number Right vDgTimes, 0
+	Gui, Dash:Add, UpDown, vDgTimesUD Range0-9999 0x80, 0
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x126 y182 w220 h18 vDgTimesNote, times (0 = until you stop it)
+	Gui, Dash:Add, Checkbox, x360 y182 w300 h18 vDgAvoid, Keep away from mobs on the way
+	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
+	Gui, Dash:Add, Text, x12 y212 w760 h44 vDgStatus, Not running.
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y262 w760 h526 vDgList gDgListEvent AltSubmit -Multi Background111317 cDADADA, Run|Steps|Zones|X|Battles|Recorded|File
+	LV_ModifyCol(1, 300), LV_ModifyCol(2, "60 Integer"), LV_ModifyCol(3, "60 Integer"), LV_ModifyCol(4, "50 Integer"), LV_ModifyCol(5, "70 Integer")
+	LV_ModifyCol(6, 140), LV_ModifyCol(7, 0)
+	Gui, Dash:Tab
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
 	if (earlier != "")
 		DashAppend(earlier)
 	IniRead, shown, %A_ScriptDir%\dashboard.ini, window, shown, 1
+	;(the Dungeons tab's list and status)
+	DgListFill()
+	DgShow()
 	if (shown)
 		DashShow()
 	SetTimer, DashRefresh, 1000
@@ -126,8 +163,8 @@ DashShow()
 	IniRead, w, %A_ScriptDir%\dashboard.ini, window, w, 784
 	IniRead, h, %A_ScriptDir%\dashboard.ini, window, h, %A_Space%
 	IniRead, layout, %A_ScriptDir%\dashboard.ini, window, layout, 1
-	;(the Hand section came in above the log: a window saved before that is that much taller now)
-	h := (h = "") ? 776 : (layout < 2 ? h + 152 : h)
+	;(the Hand section came in above the log, then the tabs: a window saved before that is that much taller now)
+	h := (h = "") ? 804 : (layout < 2 ? h + 180 : layout < 3 ? h + 28 : h)
 	;(w and h are at 100% display scaling; Windows' scaling makes the window that much bigger)
 	dpi := A_ScreenDPI / 96
 	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
@@ -220,7 +257,7 @@ DashSavePlace()
 	if (!DashShown || !DashHwnd)
 		return
 	if (DashSaveWin(DashHwnd, "window"))
-		IniWrite, 2, %A_ScriptDir%\dashboard.ini, window, layout
+		IniWrite, 3, %A_ScriptDir%\dashboard.ini, window, layout
 	}
 
 ;Saves where a window is in dashboard.ini [section]: x, y on the screen, and its inside's width and height at
@@ -445,6 +482,9 @@ DashCardName(title, dir := "")
 
 DashRefresh()
 	{
+	;(a dungeon run or recording: its line on the Dungeons tab)
+	if (IsObject(DgRun) || DgRecording)
+		DgShow()
 	if (!DashShown || !DashHwnd)
 		return
 	up := (A_TickCount - DashStart) // 1000
@@ -989,15 +1029,27 @@ DashGuiClose:
 DashGuiSize:
 	if (A_EventInfo = 1)
 		return
+	;(GuiControl Move places a tab's controls from the tabs' inside, not the window's: where that starts, measured
+	;once the window's up - a control moved to 0,0 there and where it lands read)
+	if (DashTabOX = "")
+		{
+		GuiControl, Dash:Move, DashPauseBtn, x0 y0
+		GuiControlGet, DashTabO, Dash:Pos, DashPauseBtn
+		}
 	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 164
 	GuiControl, Dash:Move, DashUpdBtn, % "x" A_GuiWidth - 144
-	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84
-	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166
+	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84 - DashTabOX
+	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166 - DashTabOX
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384
 	;(the Learn button at the right end of the Hand row, its heading up to it)
-	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138
+	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138 - DashTabOX
 	GuiControl, Dash:Move, DashHandHead, % "w" A_GuiWidth - 154
-	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 476
+	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 504
+	;(the tabs fill the window under the heading; the Dungeons tab's list takes what's left)
+	GuiControl, Dash:Move, DashTabs, % "w" A_GuiWidth - 12 " h" A_GuiHeight - 42
+	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, DgStatus, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, DgList, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 274
 	;(the bottom row shares the width, each button in proportion to the width it was made with, so all six
 	;fit at any size - 620 at the least)
 	;(a label runs in the global scope: Dash-named variables only)
@@ -1005,7 +1057,7 @@ DashGuiSize:
 	for DashRowI, DashRowB in [["DashPauseBtn", 100], ["DashClearBtn", 70], ["DashLogBtn", 110], ["DashBotBtn", 100], ["DashWalkBtn", 140], ["DashFolderBtn", 120], ["DashHandsBtn", 120]]
 		{
 		DashRowW := Floor(DashRowRoom * DashRowB[2] / 760)
-		GuiControl, Dash:Move, % DashRowB[1], % "x" DashRowX " y" A_GuiHeight - 36 " w" DashRowW
+		GuiControl, Dash:Move, % DashRowB[1], % "x" DashRowX - DashTabOX " y" A_GuiHeight - 36 - DashTabOY " w" DashRowW
 		DashRowX += DashRowW + 6
 		}
 	return

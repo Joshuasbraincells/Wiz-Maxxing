@@ -246,8 +246,8 @@ Walking by the game's memory (AutoFarmer only, read-only)
 	navmem:0 in AutoFarmer\PlayerStats.txt switches it off. AutoQuester.ahk
 	on its own has no vision helper, so it always follows the arrow.
 	Mobs (AutoFarmer, mobavoid:1): the route goes round the zone's mobs -
-	read from the game's memory - and out of the cone in front of each
-	(mobcone degrees wide, mobsight long), except the ones the quest is about (named
+	read from the game's memory - out of what each sees (mobshape: a
+	semi-circle in front, a circle or a cone; mobradius far), except the ones the quest is about (named
 	in its goal line, or at its goal) and while collecting. With no way
 	round it stands still till the mob moves off ("waiting - a mob on the
 	way"), 25 s at most.

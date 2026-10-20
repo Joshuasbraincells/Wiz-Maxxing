@@ -34,6 +34,17 @@ with a picture of the game every 2 minutes and at each alert (snap_*.jpg, the
 newest 15) - OneDrive syncs it, so the bot on one PC can be followed from
 another. Off by default; nothing else is sent anywhere.
 
+Dungeon farming (the dashboard's Dungeons tab): record a run once - stand
+outside the dungeon by its sigil, click "Record a run" and play it (X at the
+sigil, to the boss, fighting on the way, back out to where you started), then
+press F9 and name it. Pick it and click Run (so many times, or 0 = until you
+stop it): the bot walks the same way by the zone's map, presses X where you
+did, fights every battle (the bot on, F6), Spaces through dialogues and starts
+over. F8 pauses it. Somewhere the run doesn't go (a potion run, a defeat), or
+stuck for good: it stops and says why (the tab, debug.log "Dungeons: ...",
+Discord). Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
+vision helper and the game's memory, like walking by the map.
+
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
 Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
 own tray icon) and opens the bot by itself when Wizard101 starts - in
@@ -58,11 +69,12 @@ More in ..\AutoQuester\README.txt.
 
 Mobs (mobavoid:1, the default - Settings: "Keep away from mobs"): the helper
 also reads the zone's mobs out of the game's memory (read-only) and the route
-goes round them - mobradius (300) away - so no battle starts on the way. A
-mob notices you further off in front of it, so the route also keeps out of a
-cone in front of each one (which way it faces is read from the game too):
-mobcone degrees wide (60; 0 = no cone) and mobsight long (600) - Settings.
-Players put that cone at anything from 50 to 120 degrees; to measure it, each
+keeps out of what each one sees, so no battle starts on the way: Settings,
+"...what they see" (mobshape) - a semi-circle in front (the default), a
+circle all round, or a cone in front (mobcone degrees wide) - mobradius (300)
+far; which way each faces is read from the game too, and a little room is
+kept all round its body. Players put the cone at 50 to 120 degrees; to
+measure what they really see, each
 battle's first round logs which mob started it, how far away you were and how
 many degrees off its facing ("Caught by ..." in debug.log). Not
 the mobs the quest is about: those named in its goal line ("Defeat 3 Lost
@@ -70,8 +82,7 @@ Souls"), or standing at its goal; and not while collecting. With no way round
 (a narrow street), the wizard stands still till the mob moves off - 25 s at
 most, then it walks on past it. The walk to the potion seller keeps away from
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
-away from) and a faint wedge for their sight cone, the quest's amber, the
-nearest ones named.
+away from: its shape), the quest's amber, the nearest ones named.
 
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.

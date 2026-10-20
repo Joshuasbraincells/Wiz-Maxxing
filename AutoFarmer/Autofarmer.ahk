@@ -311,6 +311,10 @@ global loopmode := 0
 
 ;Sleep timings
 global Tick := 100
+;Why the bot is holding (afk): "mana" - it carries on by itself once there's mana again (CheckAfk)
+global AfkWhy := ""
+;When the picture set in use last matched (the spellbook or a round's Pass button), and at what game size
+global PicSetOkAt := 0, PicSetOkSize := ""
 global Buffer := 300
 global Half := 600
 global Second := 1100
@@ -383,7 +387,7 @@ loop,
 	ImageSearch, roundX, roundY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
 	bookSeen := (ErrorLevel = 0)
 	if (bookSeen)
-		BookSeenAt := A_TickCount
+		BookSeenAt := A_TickCount, PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
 	if (ErrorLevel = 0)
 		{
 		if (!SeenOut)
@@ -428,6 +432,7 @@ loop,
 		}
 	If (startErr = 0)
 		{
+		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
 		;A battle round is up: stop walking first (a key could still be held from the last step)
 		if (KeysDown || HeldW)
 			ReleaseKeys()
@@ -457,7 +462,9 @@ loop,
 	;Neither the spellbook nor the Pass button: maybe the game's UI is another size now (the window
 	;or the display scaling changed), so every few seconds look with the other picture sets - and if
 	;none fits and a round is up, measure the UI size and make a set for it
-	if (!bookSeen && A_TickCount - LastSetTry > 3000)
+	;(only when the game's window changed size since the pictures last matched, or nothing has matched for 10
+	;minutes - between battle rounds and in dialogues neither shows, and a made set can match what's there then)
+	if (!bookSeen && A_TickCount - LastSetTry > 3000 && (PicSetOkSize != GameW "x" GameH || A_TickCount - PicSetOkAt > 600000))
 		{
 		LastSetTry := A_TickCount
 		if (DetectPicSet(true) || DetectUiScale())
@@ -471,6 +478,15 @@ loop,
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		}
+	;(low on health with no potions and none to be bought: standing still till it's back - Potions.ahk)
+	else if (PotionResting)
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		}
+	;(a dungeon run on the Dungeons tab: its way instead of the quest's - Dungeons.ahk)
+	else if (IsObject(DgRun))
+		DungeonStep()
 	else
 		WalkStep()
 }
@@ -1871,25 +1887,35 @@ CheckAfk()
 	{
 	if (afk == 1)
 		{
-		;Waits for you to press w/a/s/d, checking for a disconnect every second meanwhile
+		;Waits for you to press w/a/s/d, checking for a disconnect every second meanwhile - held for mana: every
+		;30 s the mana globe looked at, and on by itself once there's enough for the cheapest hit (at least 3)
 		Loop
 			{
 			Input , OutputVar, T1, {w} {a} {s} {d}, w, a, s, d
 			if (Errorlevel != "Timeout")
 				break
 			ReconnectCheck()
+			if (AfkWhy = "mana" && VisionOn && Mod(A_Index, 30) = 0 && GameActive())
+				{
+				afkMana := PotionGlobes().mana
+				if (afkMana != "" && afkMana + 0 >= Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit()))
+					{
+					DebugLog("no mana: the mana globe reads " afkMana " now - carrying on")
+					break
+					}
+				}
 			}
-		afk := 0
+		afk := 0, AfkWhy := ""
 		}
 	}
 return
 
-Afk()
+Afk(why := "")
 	{
 	if (afk == 0)
 		{
 		LockMove("a")
-		afk := 1
+		afk := 1, AfkWhy := why
 		}
 	}
 
@@ -1907,6 +1933,15 @@ checkmana()
 			;word: enough for the cheapest hit - at least 3 - is mana)
 			manaNow := VisionOn ? PotionGlobes().mana : ""
 			manaNeed := Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit())
+			;(the helper running but the number not read - the wrong picture set, a window over it: not on the
+			;picture alone)
+			if (VisionOn && manaNow = "")
+				{
+				if (!wrongSaid || A_TickCount - wrongSaid > 300000)
+					DebugLog("no mana? The mana-empty picture matched, but the mana globe's number can't be read - not acting on the picture alone")
+				wrongSaid := A_TickCount
+				return
+				}
 			if (manaNow != "" && manaNow + 0 >= manaNeed)
 				{
 				if (!wrongSaid || A_TickCount - wrongSaid > 300000)
@@ -1918,8 +1953,8 @@ checkmana()
 			if (Stat("fleeon") && FleeRefillMana("no mana"))
 				return
 			Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
-			AlertSend("mana", "out of mana", "No mana and no potion to be had - the bot has stopped (kept from timing out).")
-			afk()
+			AlertSend("mana", "out of mana", "No mana and no potion to be had - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
+			afk("mana")
 			}
 		}
 	}
@@ -3018,6 +3053,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
+#Include %A_ScriptDir%\Dungeons.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk
 #Include %A_ScriptDir%\..\Watch.ahk

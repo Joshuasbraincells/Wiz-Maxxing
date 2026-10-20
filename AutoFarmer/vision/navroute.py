@@ -46,10 +46,11 @@ Mobs (the game's memory: navmem's mobs, those the caller wants avoided - not the
     less and less more: the route goes round them where there's room. Not a wall: with no other way it's still
     a route. The field is worked out again when a mob near it has moved MOB_MOVED, or turned MOB_TURNED (at most
     every MOB_REPLAN s).
-  * A mob notices you in a cone in front of it too (its sight): the squares in a cone cone[0] degrees wide and
-    cone[1] long in front of it (its facing off the game's memory - none known, no cone) cost MOB_COST more as well,
-    a little wider and longer less and less more - behind a wall from it too (whether a mob sees through walls isn't
-    known; the collision grid has fences, posts and the like): the route keeps out of it where there's room.
+  * A mob notices you in front of it (its sight): the squares in a cone cone[0] degrees wide and cone[1] long in
+    front of it - 180 wide: a semi-circle (the callers' shape setting; a circle all round is mob_near alone, no cone)
+    - cost MOB_COST more as well, a little wider and longer less and less more - behind a wall from it too (whether
+    a mob sees through walls isn't known; the collision grid has fences, posts and the like): the route keeps out of
+    it where there's room. Its facing unknown (off the game's memory): the whole circle cone[1] round it.
   * The route on (MOB_AHEAD of it) still coming nearer a mob (on the wizard's storey) than the wizard is now, to
     within MOB_NEAR, or into its cone (the wizard not in it now; not where a wall hides him from it - no wait for
     that): the answer says so ('mob': the seconds it's waited, 'mob_at', 'mob_name') - the walker stands still till
@@ -115,12 +116,13 @@ JUMP_GIVEUP = 15.0      # ...given up after this many seconds there (counted onl
 BLOCK_FOR = 1800.0      # ...for this long (it may open once a quest is done)
 JUMP_COST = 500.0       # a teleport's cost when routing round one on the nav graph
 MOB_NEAR = 300.0        # a mob avoided: the wizard kept at least this far from it (they come for it nearer)
-MOB_SOFT = 520.0        # ...and dearer up to this far
+MOB_SOFT = 520.0        # ...and dearer up to this far (as much further for another mob_near)
 MOB_COST = 40.0         # extra cost of a square within MOB_NEAR (not a wall: with no other way, it's walked past)
 MOB_SOFT_COST = 4.0     # ...right outside it, fading to nothing at MOB_SOFT
 MOB_MOVED = 60.0        # a mob near the field this far from where the field has it: a new field...
 MOB_TURNED = 0.35       # ...or turned this far (radians, 20 degrees: its cone swung round)
 MOB_CONE = (60.0, 600.0)   # its sight: a cone this wide (degrees) and long (game units) in front of it
+MOB_BODY = 120.0        # a semi-circle or cone: kept this far from the mob all round all the same (its body)
 MOB_REPLAN = 0.7        # ...at most this often (s)
 MOB_AHEAD = 900.0       # the route this far on passing within MOB_NEAR of a mob: wait for it to move off...
 MOB_GIVEUP = 25.0       # ...for this long at most (s); then it isn't avoided...
@@ -615,24 +617,31 @@ class Field:
         near = (dist > hard_cells) & (dist <= soft_cells)
         cost = cost + np.where(near, SOFT_COST * (soft_cells + 1 - dist) / (soft_cells + 1 - hard_cells), 0.0)
         # the mobs avoided: dearer near them (on this storey; within the window or near enough to reach into it)
-        soft = max(MOB_SOFT, mob_near + 2 * CELL)
+        soft = mob_near + max(MOB_SOFT - MOB_NEAR, 2 * CELL)
         x1, y1 = self.x0 + self.nx * CELL, self.y0 + self.ny * CELL
         sight = cone[1] if cone and cone[0] > 0 else 0.0
-        reach = max(soft, sight + 2 * CELL)
-        kept = tuple((m[0], m[1], m[2], m[3] if len(m) > 3 else None) for m in mobs
+        reach = self.reach = max(soft, sight + 2 * CELL)
+        # ((x, y, z, yaw, sees): sees False - its sight given up waiting (route) - only mob_near round it)
+        kept = tuple((m[0], m[1], m[2], m[3] if len(m) > 3 else None, m[4] if len(m) > 4 else True) for m in mobs
                      if self.x0 - reach <= m[0] <= x1 + reach and self.y0 - reach <= m[1] <= y1 + reach
                      and abs(m[2] - pos[2]) <= FLOOR_BAND)
         self.mobs, self.mob_mask, self.cone = kept, np.zeros((self.ny, self.nx), dtype=bool), cone
         if kept:
             cx = self.x0 + (np.arange(self.nx) + 0.5) * CELL
             cy = self.y0 + (np.arange(self.ny) + 0.5) * CELL
-            for mx, my, _, myaw in kept:
+            for mx, my, _, myaw, msees in kept:
                 dx, dy = cx[None, :] - mx, cy[:, None] - my
                 d = np.hypot(dx, dy)
                 inner = d <= mob_near
                 cost = cost + np.where(inner, MOB_COST, np.where(d <= soft, MOB_SOFT_COST * (soft - d) / (soft - mob_near), 0.0))
-                # (its sight: the cone in front of it; a little wider and longer, dearer less and less)
-                if sight > 0 and myaw is not None:
+                # (its sight: the cone in front of it - its facing unknown, all round; a little wider and longer,
+                # dearer less and less)
+                if sight > 0 and msees and myaw is None:
+                    seen = d <= sight
+                    edge = (~seen) & (d <= sight + 150)
+                    cost = cost + np.where(seen, MOB_COST, np.where(edge, MOB_SOFT_COST, 0.0))
+                    inner = inner | seen
+                elif sight > 0 and msees:
                     fx, fy = -math.sin(myaw), -math.cos(myaw)
                     along = dx * fx + dy * fy
                     ang = np.degrees(np.arccos(np.clip(along / np.maximum(d, 1e-6), -1.0, 1.0)))
@@ -996,7 +1005,9 @@ class Planner:
             return False
         cone = getattr(f, 'cone', None)
         sight = cone[1] if cone and cone[0] > 0 else 0.0
-        reach = max(MOB_SOFT, f.mob_near + 2 * CELL, sight + 2 * CELL)
+        # (the same reach the field kept its mobs within - else a still mob between two reaches looks come or gone
+        # at every ask)
+        reach = getattr(f, 'reach', None) or max(MOB_SOFT, f.mob_near + 2 * CELL, sight + 2 * CELL)
         x1, y1 = f.x0 + f.nx * CELL, f.y0 + f.ny * CELL
         now = [m for m in mobs if f.x0 - reach <= m[0] <= x1 + reach and f.y0 - reach <= m[1] <= y1 + reach
                and abs(m[2] - f.z) <= FLOOR_BAND]
@@ -1007,6 +1018,10 @@ class Planner:
             if q is None or math.hypot(m[0] - q[0], m[1] - q[1]) > MOB_MOVED:
                 return True
             yaw_now, yaw_then = (m[3] if len(m) > 3 else None), q[3]
+            if (m[4] if len(m) > 4 else True) != q[4]:
+                return True
+            if sight > 0 and (yaw_now is None) != (yaw_then is None):
+                return True
             if sight > 0 and yaw_now is not None and yaw_then is not None:
                 if abs((yaw_now - yaw_then + math.pi) % (2 * math.pi) - math.pi) > MOB_TURNED:
                     return True
@@ -1023,9 +1038,9 @@ class Planner:
         for gid in [g for g, v in list(self.mob_ignored.items()) if now - v[0] > MOB_IGNORE]:
             self.mob_ignored.pop(gid, None)      # (the map's asks run alongside the walker's)
         # (given up: a ring wait drops the mob; a cone wait only its cone - no facing, its ring still kept)
-        mobs = [m if m.get('gid') not in self.mob_ignored else dict(m, yaw=None) for m in (mobs or ())
+        mobs = [m if m.get('gid') not in self.mob_ignored else dict(m, sees=False) for m in (mobs or ())
                 if self.mob_ignored.get(m.get('gid'), (0.0, 'cone'))[1] != 'ring']
-        mob_pts = [tuple(m['pos'][:3]) + (m.get('yaw'),) for m in mobs]
+        mob_pts = [tuple(m['pos'][:3]) + (m.get('yaw'), m.get('sees', True)) for m in mobs]
         # (the wait at a teleport is one visit's: forgotten once the wizard's well away from it, or elsewhere)
         w = self.jwait
         if w is not None and (w['key'][0] != zone or math.hypot(w['key'][1][0] - pos[0], w['key'][1][1] - pos[1]) > 1200
@@ -1183,13 +1198,16 @@ class Planner:
 
     @staticmethod
     def _in_cone(m, p, cone, shrink=1.0):
-        """p is in mob m's sight: the cone (degrees wide, long) in front of it, shrunk by shrink"""
-        if not cone or cone[0] <= 0 or m.get('yaw') is None:
+        """p is in mob m's sight: the cone (degrees wide, long) in front of it, shrunk by shrink - its facing
+        unknown, the circle that long round it; its sight given up waiting ('sees' False), never"""
+        if not cone or cone[0] <= 0 or not m.get('sees', True):
             return False
         dx, dy = p[0] - m['pos'][0], p[1] - m['pos'][1]
         d = math.hypot(dx, dy)
         if d < 1e-6 or d > cone[1] * shrink:
             return d < 1e-6
+        if m.get('yaw') is None:
+            return True
         fx, fy = -math.sin(m['yaw']), -math.cos(m['yaw'])
         return math.degrees(math.acos(max(-1.0, min(1.0, (dx * fx + dy * fy) / d)))) <= cone[0] / 2 * shrink
 

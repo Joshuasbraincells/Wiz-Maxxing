@@ -56,10 +56,12 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      seconds waited there, where it is)
                                                     |mob|mx|my|name (8-11: a mob on the way the route can't go round: the
                                                                      seconds waited for it to move off, where, its name)
-                                             &avoid=1[&mobr=300][&cone=60&sight=600][&goal=<the quest's goal line>] (with
-                                             route=1): the route kept mobr away from the zone's mobs (navmem, read-only)
-                                             and out of the cone (cone degrees wide, sight long) in front of each - not
-                                             those named in the goal line, nor (a fight goal) one by the goal
+                                             &avoid=1[&mobr=300][&shape=2][&cone=60][&goal=<the quest's goal line>] (with
+                                             route=1): the route kept out of what each of the zone's mobs (navmem,
+                                             read-only) sees, mobr far: shape 1 a circle all round, 2 a semi-circle in
+                                             front, 3 a cone cone degrees wide in front (no shape: mobr all round and a
+                                             cone= / sight= cone) - not those named in the goal line, nor (a fight
+                                             goal) one by the goal
   /navto?x=&y=&z=[&avoid=1&mobr=300]      -> where the wizard is and the route to a spot of the bot's own (the potion
                                              seller): ok|1, zone|, pos|, route|x|y|left (all mobs kept away from with
                                              avoid=1)
@@ -1223,6 +1225,29 @@ def mob_cone(q):
     return (min(180.0, max(0.0, wide)), min(3000.0, max(0.0, far)))
 
 
+def mob_avoid(q):
+    """(how far all round, (degrees wide, long) in front) to keep from the mobs, as asked: mobr= how far they notice
+    you; shape= 1 a circle all round, 2 a semi-circle in front, 3 a cone in front cone= degrees wide (a semi-circle or
+    cone: navroute.MOB_BODY all round as well). No shape=: mobr all round and the cone= / sight= cone (mob_cone)"""
+    import navroute
+
+    def num(k, default, lo, hi):
+        try:
+            v = float(q.get(k) or 0) or default
+        except ValueError:
+            v = default
+        return min(hi, max(lo, v))
+    rng = num('mobr', 300.0, 100.0, 3000.0)
+    shape = q.get('shape', '')
+    if shape == '1':
+        return rng, (0.0, 0.0)
+    if shape == '2':
+        return navroute.MOB_BODY, (180.0, rng)
+    if shape == '3':
+        return navroute.MOB_BODY, (num('cone', 60.0, 5.0, 180.0), rng)
+    return min(1500.0, rng), mob_cone(q)
+
+
 def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
     """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from - mob_near round
     them, out of their sight cone (degrees wide, long) in front"""
@@ -1537,29 +1562,32 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
                           fill=col + (255,), outline=MAP_BG + (255,))
         else:
             edge_pointer(q, col)
-    # the mobs: a red dot each (the quest's amber), a faint ring as far as they're kept away from (on a layer under
-    # everything else drawn - a see-through fill would wipe out what's under it here); names by the nearest few
+    # the mobs: a red dot each (the quest's amber), faintly the shape they're kept out of - a circle all round, or a
+    # semi-circle / cone in front with their body's small circle (its facing unknown: the whole circle) - on a layer
+    # under everything else drawn (a see-through fill would wipe out what's under it here); names by the nearest few
     near_r = (MOBS_SHOWN.get('near') or 300.0) / upp * S
+    cone = MOBS_SHOWN.get('cone')
+    sector = bool(cone and cone[0] > 0 and cone[1] > 0)
+    sight_r = cone[1] / upp * S if sector else 0.0
     by_dist = sorted(mobs or [], key=lambda m: math.hypot(m['pos'][0] - r['pos'][0], m['pos'][1] - r['pos'][1]))
     fm = map_font(int(5.5 * unit))
     rings = None
     for k, m in enumerate(by_dist):
         q = at(m['pos'])
-        if not on_pic(q, -near_r):
+        if not on_pic(q, -max(near_r, sight_r)):
             continue
         col = MAP_MOB_QUEST if m.get('quest') else MAP_MOB
         if not m.get('quest') and rings_on:
             if rings is None:
                 rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
                 dr = ImageDraw.Draw(rings)
-            dr.ellipse([q[0] - near_r, q[1] - near_r, q[0] + near_r, q[1] + near_r], fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
-            # (its sight cone in front of it: forward = (-sin yaw, -cos yaw); the picture's y is -Y)
-            cone = MOBS_SHOWN.get('cone')
-            if cone and cone[0] > 0 and m.get('yaw') is not None:
-                sight_r = cone[1] / upp * S
+            ring_r = sight_r if sector and m.get('yaw') is None else near_r
+            dr.ellipse([q[0] - ring_r, q[1] - ring_r, q[0] + ring_r, q[1] + ring_r], fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
+            # (its sight in front of it: forward = (-sin yaw, -cos yaw); the picture's y is -Y)
+            if sector and m.get('yaw') is not None:
                 face = math.degrees(math.atan2(math.cos(m['yaw']), -math.sin(m['yaw'])))
                 dr.pieslice([q[0] - sight_r, q[1] - sight_r, q[0] + sight_r, q[1] + sight_r], face - cone[0] / 2, face + cone[0] / 2,
-                            fill=col + (28,), outline=col + (90,), width=max(1, int(unit * 0.6)))
+                            fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
         s = 2.8 * unit
         d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=col + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.7)))
         if k < 6 and on_pic(q, 4 * unit):
@@ -1698,11 +1726,8 @@ class Handler(BaseHTTPRequestHandler):
                 except (KeyError, ValueError):
                     return self.reply('ERR x, y, z wanted', 400)
                 avoid = q.get('avoid', '0') not in ('', '0')
-                try:
-                    near = min(1500.0, max(100.0, float(q.get('mobr') or 0) or 300.0))
-                except ValueError:
-                    near = 300.0
-                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, mob_cone(q))))
+                near, cone = mob_avoid(q)
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone)))
             if u.path == '/snap':
                 if not snap_out_ok(q.get('out', '')):
                     return self.reply('ERR out must be a snap_*.jpg in a Wiz-Maxxing logs\\<PC> folder', 400)
@@ -1751,14 +1776,11 @@ class Handler(BaseHTTPRequestHandler):
                     # (the mobs kept away from: all but the quest's - asked for with avoid=1)
                     avoid, near = None, None
                     if q.get('avoid', '0') not in ('', '0'):
-                        try:
-                            near = min(1500.0, max(100.0, float(q.get('mobr') or 0) or 300.0))
-                        except ValueError:
-                            near = 300.0
+                        near, cone = mob_avoid(q)
                         mobs, _ = mobs_now(r, q.get('goal', ''), trail=True)
                         avoid = [m for m in mobs if not m['quest']]
                         MOBS_SHOWN.update(quest={m['gid'] for m in mobs if m['quest']}, near=near, avoid=True, at=time.time(),
-                                          cone=mob_cone(q))
+                                          cone=cone)
                     else:
                         MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
                     lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'))

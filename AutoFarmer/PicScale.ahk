@@ -49,6 +49,9 @@ LoadPicSets()
 ;and switches to the first set that finds one. skipCurrent: only try the other sets. True if found
 DetectPicSet(skipCurrent := false)
 	{
+	;(another set than the one in use: found twice, 3-20 s apart, before it's used - a made set's mostly see-through
+	;pictures can match something else once)
+	static cand := 0, candAt := 0
 	for i, set in PicSets
 		{
 		if (skipCurrent && i = PicSet)
@@ -61,6 +64,13 @@ DetectPicSet(skipCurrent := false)
 			ImageSearch, fx, fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % (set.gen ? "*" GenTol " *TransFF00FF " : "*3 ") file
 			if (ErrorLevel = 0)
 				{
+				if (skipCurrent && i != PicSet && !(cand = i && A_TickCount - candAt >= 2500 && A_TickCount - candAt <= 20000))
+					{
+					if (cand != i || A_TickCount - candAt > 20000)
+						cand := i, candAt := A_TickCount
+					return false
+					}
+				cand := 0
 				if (i != PicSet || !skipCurrent)
 					UsePicSet(i)
 				return true
