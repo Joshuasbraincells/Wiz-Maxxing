@@ -60,7 +60,8 @@ Mobs (the game's memory: navmem's mobs, those the caller wants avoided - not the
 Teleports
   * The zone's nav graph has links that aren't walked: a trolley, a portal, a hole down to the sewers - a link
     far longer than walking ones (JUMP_LEN), or between heights far apart and steeper than stairs (JUMP_DZ,
-    JUMP_SLOPE). The game's quest path takes
+    JUMP_SLOPE) - unless the zone's map has floor all along it, with no ledge (and, a long one, nothing solid on
+    the way): a long straight corridor is walked. The game's quest path takes
     them, even one this character can't use (locked till a quest's done) - and even one the wrong way: the
     zone's nav graph has most teleports one way only (a way out of the sewers isn't a way in), the game's quest
     helper doesn't mind which way a link goes. One taken the wrong way is routed round straight away (by the
@@ -105,7 +106,8 @@ REPLAN_Z = 250.0        # the wizard this much higher / lower than when the fiel
 EDGE_CELLS = 6          # ...or this near the window's edge
 ZONES_KEPT = 3
 JUMP_LEN = 2500.0       # a nav link longer than this, or between heights more than JUMP_DZ apart and steeper than
-JUMP_DZ = 400.0         # JUMP_SLOPE (up / across - stairs are at most ~0.65): a teleport
+JUMP_DZ = 400.0         # JUMP_SLOPE (up / across - stairs are at most ~0.65): a teleport - unless the zone's map has
+                        # floor all along it (and, a long one, nothing solid on the way): walked
 JUMP_SLOPE = 0.7
 JUMP_NEAR = 160.0       # the wizard this near a teleport's start (or at the free spot nearest it): waiting for it
 JUMP_RINGS = 30         # ...that free spot looked for this many squares round it (its start can be inside its object)
@@ -220,14 +222,14 @@ class ZoneGeo:
         return self.nav['positions'], self._adj
 
     def is_jump(self, a, b):
-        """is_jump - but a steep link (not a long one) only when its floor can't be walked: a square along it with
-        no floor, or a step of more than STEP_EDGE from one to the next (a steep slope is walked: Empyrea's
-        Aeroplains, MooShu's waterfall cave). Kept per node pair"""
+        """is_jump - but only when its floor can't be walked: a square along it with no floor, or a step of more than
+        STEP_EDGE from one to the next (a steep slope is walked: Empyrea's Aeroplains, MooShu's waterfall cave); a
+        long link also when something solid is on the way (a long straight corridor is walked: Krokotopia's Pyramid
+        - a trolley's or a portal's crosses walls or gaps). Kept per node pair"""
         if not is_jump(a, b):
             return False
         h = math.hypot(a[0] - b[0], a[1] - b[1])
-        if h > JUMP_LEN:
-            return True
+        long_link = h > JUMP_LEN
         key = tuple(round(float(c)) for c in (a[0], a[1], a[2], b[0], b[1], b[2]))
         if key in self._jcache:
             return self._jcache[key]
@@ -236,12 +238,13 @@ class ZoneGeo:
         ny = int(math.ceil((abs(a[1] - b[1]) + 4 * CELL) / CELL))
         jump = True
         try:
-            ground, H, _ = self.grids(x0, y0, nx, ny, [tuple(map(float, a)), tuple(map(float, b))])
+            ground, H, solid = self.grids(x0, y0, nx, ny, [tuple(map(float, a)), tuple(map(float, b))])
             jump, prev = False, None
             for t in np.linspace(0.0, 1.0, max(2, int(h / (CELL / 2))) + 1):
                 x, y = a[0] + t * (b[0] - a[0]), a[1] + t * (b[1] - a[1])
                 j, i = min(ny - 1, int((y - y0) // CELL)), min(nx - 1, int((x - x0) // CELL))
-                if ground[j, i] == 0 or (prev is not None and abs(H[j, i] - prev) > STEP_EDGE):
+                if (ground[j, i] == 0 or (prev is not None and abs(H[j, i] - prev) > STEP_EDGE)
+                        or (long_link and solid[j, i])):
                     jump = True
                     break
                 prev = H[j, i]
