@@ -1843,6 +1843,8 @@ ResetVariables()
 	EnchantedHits := {}
 	PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, PipSaveTarget := "", PipSaveStall := 0, PipSaveLastPips := -1
 	PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
+	;(the no-hits flee counts afresh - Flee.ahk)
+	FleeNoHits := 0, FleeHitsRound := ""
 	OwnHpPct := 0, OwnHpRound := -1
 	tower := 0  
 	hitter := 0

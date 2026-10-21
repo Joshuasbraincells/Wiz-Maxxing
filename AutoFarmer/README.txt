@@ -419,8 +419,9 @@ picture. Pick one or more and:
 	never changed by the learner itself. debug.log: "Spells: ...".
 Fleeing: out of mana (less than its cheapest hit costs - every spell costs a
 mana a pip - and no wand in hand) or out of cards (the deck used up - a hand
-read where none of the boxes looked like a card doesn't count) for two
-rounds running, the bot can only pass for the rest of the battle, so it clicks
+read where none of the boxes looked like a card doesn't count - or no hit in
+a hand of fewer than 7 cards: the deck's used up and heals and blades can't
+end the battle) for two rounds running, the bot can only pass for the rest of the battle, so it clicks
 Flee instead, drinks a potion (none left: goes and buys some) and tries again.
 PlayerStats.txt: fleeon:0 switches it off. debug.log: "fleeing: ...", "after
 fleeing: ..."; the dashboard counts them next to Passed.
