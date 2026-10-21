@@ -72,7 +72,8 @@ global PotionResting, PotionNoneAt, PotionRestFrom
 ;Called out of battle from the main loop (every few seconds at most): low health -> drink, none -> run
 PotionCheck()
 	{
-	if (A_TickCount < PotionNextCheck || PotionRecording || !VisionOn || !GameActive())
+	;(not while a dungeon run is being recorded: you're playing it - Dungeons.ahk)
+	if (A_TickCount < PotionNextCheck || PotionRecording || DgRecording || !VisionOn || !GameActive())
 		return
 	PotionNextCheck := A_TickCount + 4000
 	hp := PotionHealth()
@@ -1172,6 +1173,11 @@ PotionRecordStart()
 	{
 	if (PotionRecording)
 		return
+	if (DgRecording)
+		{
+		MsgBox, 262192, Record potion buying, A dungeon run is being recorded - finish that first (F9).
+		return
+		}
 	if (!VisionOn)
 		{
 		MsgBox, 48, Record potion buying, % "The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (Windows+1) and try again."

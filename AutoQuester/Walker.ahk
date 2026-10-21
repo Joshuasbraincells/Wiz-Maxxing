@@ -1216,7 +1216,8 @@ WalkSkipDialog()
 	Sleep, 300
 	if (Walking)
 		WalkAcceptQuest("after the dialogue")
-	WkDlgEndAt := A_TickCount, WkAcceptLooks := 0
+	;(a new offer may follow: its own clicks)
+	WkDlgEndAt := A_TickCount, WkAcceptLooks := 0, WkAcceptClicks := 0
 	WkDialog := 1, WkTalk += presses, WkSpaceAt := A_TickCount
 	WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
 	WkBestTime := A_TickCount, WkLastRead := A_TickCount
@@ -1248,13 +1249,23 @@ WalkAcceptButton()
 			}
 		if (btn = "")
 			continue
-		;(its window - the lines above the button and round it - not a friend, trade, teleport or group request or a
-		;duel; chat and the goal line elsewhere on the screen don't count)
+		;(its window: the lines just above the button and on its row, hugging it - a quest offer says so (DECLINE beside
+		;it, or quest / reward / experience / gold words); a friend, trade, teleport or group request never)
+		offer := false
 		for each, line in acceptLines
-			if (Abs(line.y + line.h / 2 - btn.y) <= GameH * 0.45 && Abs(line.x + line.w / 2 - btn.x) <= GameW * 0.3
-				&& RegExMatch(line.text, "i)friend request|be your friend|wants? to (trade|duel)|\bduel\b|invit(e|es|ed) you|teleport to|join (my|your|the|a|our) (group|team|party)|\bparty invit"))
+			{
+			cy := line.y + line.h / 2
+			if (cy < btn.y - GameH * 0.35 || cy > btn.y + GameH * 0.05 || Abs(line.x + line.w / 2 - btn.x) > GameW * 0.2)
+				continue
+			if (RegExMatch(line.text, "i)friend request|be your friend|would like to|wants? to (trade|duel|teleport|join)|invit(e|es|ed) you|teleport to|join (my|your|the|a|our) (group|team|party)|party invit"))
 				return ""
-		return btn
+			if (RegExMatch(line.text, "i)\bDECLINE\b|\bquest\b|\breward|experience|\bXP\b|\bgold\b"))
+				offer := true
+			}
+		if (offer)
+			return btn
+		;(not an offer it can tell: nothing - the next pass, or the next look)
+		continue
 		}
 	return ""
 	}

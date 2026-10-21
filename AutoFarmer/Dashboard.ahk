@@ -38,7 +38,7 @@ global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, Dash
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
-	Gui, Dash:New, +Resize +MinSize660x640 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
+	Gui, Dash:New, +Resize +MinSize740x640 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
@@ -110,7 +110,7 @@ DashInit()
 	Gui, Dash:Add, Text, x126 y182 w220 h18 vDgTimesNote, times (0 = until you stop it)
 	Gui, Dash:Add, Checkbox, x360 y182 w300 h18 vDgAvoid, Keep away from mobs on the way
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
-	Gui, Dash:Add, Text, x12 y212 w760 h44 vDgStatus, Not running.
+	Gui, Dash:Add, Text, x12 y208 w760 h52 vDgStatus, Not running.
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
 	Gui, Dash:Add, ListView, x12 y262 w760 h526 vDgList gDgListEvent AltSubmit -Multi Background111317 cDADADA, Run|Steps|Zones|X|Battles|Recorded|File
 	LV_ModifyCol(1, 300), LV_ModifyCol(2, "60 Integer"), LV_ModifyCol(3, "60 Integer"), LV_ModifyCol(4, "50 Integer"), LV_ModifyCol(5, "70 Integer")

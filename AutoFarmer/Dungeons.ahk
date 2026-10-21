@@ -22,7 +22,7 @@
 ;meanwhile), misses, seen (battles at the last look)} - "" when none
 global DgRun
 ;Recording: on, its steps so far, the last spot recorded, its zone, when the Pass button was last up
-global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt
+global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt, DgRecPrev, DgRecOut
 ;The Dungeons tab's controls (Dashboard.ahk makes them)
 global DashTabs, DgList, DgHelp, DgRecBtn, DgRecStopBtn, DgRunBtn, DgStopBtn, DgDelBtn, DgFolderBtn, DgTimes, DgTimesUD
 global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote
@@ -137,7 +137,7 @@ DgRecordStart()
 		return
 	if (Walking)
 		Walking := 0, ReleaseKeys(), SetStatus("walking off - recording a dungeon run")
-	DgRecSteps := [], DgRecZone := nav.zone, DgRecBattleAt := 0, DgRecLast := ""
+	DgRecSteps := [], DgRecZone := nav.zone, DgRecBattleAt := 0, DgRecLast := "", DgRecPrev := nav, DgRecOut := 1
 	DgRecAdd("walk", nav)
 	DgRecording := 1
 	Hotkey, ~*x, DgRecXKey, On
@@ -167,13 +167,21 @@ DgRecTickF()
 		}
 	ImageSearch, bx, by, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
 	battle := (ErrorLevel = 0)
+	;(out of battle again - the spellbook up - since the last: a new battle counts as one)
+	if (!battle)
+		{
+		ImageSearch, bx, by, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
+		if (ErrorLevel = 0)
+			DgRecOut := 1
+		}
 	nav := NavRead(400)
 	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
 		return
 	if (battle)
 		{
-		if (!DgRecBattleAt || A_TickCount - DgRecBattleAt > 15000)
+		if (DgRecOut)
 			{
+			DgRecOut := 0
 			;(where the wizard was walking when it started: the last spot, as the battle moves it into the circle)
 			last := DgRecSteps[DgRecSteps.Length()]
 			DgRecSteps.Push({kind: "fight", zone: last.zone, x: last.x, y: last.y, z: last.z})
@@ -186,11 +194,16 @@ DgRecTickF()
 	;(right after a battle the wizard stands where its circle was: carry on from there)
 	if (nav.zone != DgRecZone)
 		{
+		;(the old zone's last spot - at its doorway - unless it's the last step already: the replay walks on past it)
+		if (IsObject(DgRecPrev) && DgRecPrev.zone = DgRecZone && Sqrt((DgRecPrev.x - DgRecLast.x) ** 2 + (DgRecPrev.y - DgRecLast.y) ** 2) > 30)
+			DgRecAdd("walk", DgRecPrev)
 		DgRecZone := nav.zone
 		DebugLog("Dungeons: recording - into " nav.zone)
 		DgRecAdd("walk", nav)
+		DgRecPrev := nav
 		return
 		}
+	DgRecPrev := nav
 	if (Sqrt((nav.x - DgRecLast.x) ** 2 + (nav.y - DgRecLast.y) ** 2) >= 200 || Abs(nav.z - DgRecLast.z) > 120)
 		DgRecAdd("walk", nav)
 	}
@@ -283,13 +296,11 @@ DgRunStart(file, times, avoid)
 		MsgBox, 262192, Dungeons, % "The wizard is in " nav.zone " - the run '" d.name "' doesn't go there. Go to where it starts (" d.steps[1].zone ") and run it again."
 		return
 		}
-	DgRun.i := k
+	DgRun.i := k, DgRun.lastStep := A_TickCount, DgRun.loadTries := 0
 	DgFresh()
+	WalkNotifyClose()
 	if (!Walking)
-		{
 		Walking := 1
-		WalkNotifyClose()
-		}
 	ReleaseKeys()
 	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length() (avoid ? " (keeping away from mobs)" : ""))
 	DgShow()
@@ -298,11 +309,18 @@ DgRunStart(file, times, avoid)
 ;The step nearest the wizard in its zone (1 when it's the start's); 0 if no step is in its zone
 DgNearest(nav)
 	{
-	best := 0, bestD := ""
+	best := 0, bestD := "", inBlock := false
+	;(the first visit to this zone only - steps in a row there - so standing at the sigil starts on the way in, not
+	;on the way back out)
 	for i, s in DgRun.steps
 		{
 		if (s.zone != nav.zone)
+			{
+			if (inBlock)
+				break
 			continue
+			}
+		inBlock := true
 		d := Sqrt((s.x - nav.x) ** 2 + (s.y - nav.y) ** 2)
 		if (i = 1 && d < 300)
 			return 1
@@ -391,11 +409,23 @@ DgNext()
 	nxt := r.steps[r.i]
 	if (nxt.zone != cur.zone && cur.kind != "x")
 		{
-		;(the way the wizard walked to the last spot, 400 further on)
-		prev := r.i >= 3 ? r.steps[r.i - 2] : cur
-		dx := cur.x - prev.x, dy := cur.y - prev.y, l := Sqrt(dx * dx + dy * dy)
+		;(the way the wizard walked to the last spot - from an earlier spot in that zone some way off, not a battle's
+		;or an X's copy of it - 400 further on)
+		prev := ""
+		k := (r.i = 1 ? r.steps.Length() : r.i - 1) - 1
+		while (k >= 1 && r.steps[k].zone = cur.zone)
+			{
+			if (Sqrt((cur.x - r.steps[k].x) ** 2 + (cur.y - r.steps[k].y) ** 2) > 30)
+				{
+				prev := r.steps[k]
+				break
+				}
+			k--
+			}
+		dx := IsObject(prev) ? cur.x - prev.x : 0, dy := IsObject(prev) ? cur.y - prev.y : 0, l := Sqrt(dx * dx + dy * dy)
 		r.push := l > 1 ? {x: cur.x + dx / l * 400, y: cur.y + dy / l * 400, z: cur.z} : ""
-		r.loadUntil := A_TickCount + 10000, r.fromZone := cur.zone
+		r.loadUntil := A_TickCount + 10000, r.fromZone := cur.zone, r.loadStep := (r.i = 1 ? r.steps.Length() : r.i - 1)
+		r.loadBattles := battles
 		}
 	DgShow()
 	}
@@ -414,11 +444,29 @@ DungeonStep()
 	r := DgRun
 	if (!IsObject(r))
 		return
-	if (!Walking || !GameActive() || inbattle = 1)
+	;(paused since the last step - a battle, F8, you playing, F6, the game not in front: the clocks wait too)
+	gap := A_TickCount - r.lastStep
+	if (r.lastStep && gap > 1000)
+		{
+		r.bestAt += gap
+		if (r.loadUntil)
+			r.loadUntil += gap
+		if (r.fightUntil)
+			r.fightUntil += gap
+		}
+	r.lastStep := A_TickCount
+	;(a battle, walking off, the game not in front, the spellbook not up - a battle starting, a dialogue - or a
+	;loading screen just over: not steering)
+	;(the game's log read for a loading screen - the quest walker's look, which doesn't run meanwhile)
+	WalkZone(true)
+	loaded := WkLoading || (WkLoadedAt && A_TickCount - WkLoadedAt < 1500)
+	if (!Walking || !GameActive() || inbattle = 1 || !BotNoBattle() || loaded)
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		;(a battle, walking off, the game not in front: not getting stuck meanwhile)
+		;(a dialogue or a quest offer up: through it)
+		if (!loaded && Walking && GameActive() && inbattle != 1)
+			DgDialogs()
 		r.bestAt := A_TickCount
 		Sleep, 150
 		return
@@ -460,30 +508,55 @@ DungeonStep()
 	r.misses := 0
 	if (nav.zone != st.zone)
 		{
+		;(a battle while waiting for the load: the countdown or the walk through was cut short - tried again)
+		if (r.loadUntil && battles != r.loadBattles)
+			r.loadUntil := 1
 		;(walking through the doorway, or the sigil's loading screen - still in the zone it's leaving: a while)
 		waiting := A_TickCount < r.loadUntil && nav.zone = r.fromZone
-		;(loaded into a zone further on: on from its first step)
-		k := waiting ? "" : DgZoneAhead(nav.zone)
-		if (k)
-			{
-			DebugLog("Dungeons: in " nav.zone " - on from step " k)
-			r.i := k, r.push := "", r.loadUntil := 0
-			DgFresh()
-			DgShow()
-			return
-			}
 		if (waiting)
 			{
 			if (IsObject(r.push))
 				DgSteer(nav, r.push, 999)
-			else if (KeysDown || HeldW)
-				ReleaseKeys()
+			else
+				{
+				if (KeysDown || HeldW)
+					ReleaseKeys()
+				DgDialogs()
+				}
 			Sleep, 100
+			return
+			}
+		;(the load didn't come - still where it was: the step that should have taken the wizard on, again - twice,
+		;then it stops; never on to the way back, which would count a run that didn't happen)
+		if (r.loadUntil && nav.zone = r.fromZone && r.loadStep)
+			{
+			r.loadTries += 1
+			if (r.loadTries > 2)
+				{
+				DgStop("the way from " r.fromZone " into " st.zone " didn't load (3 tries)")
+				return
+				}
+			DebugLog("Dungeons: no loading screen into " st.zone " - step " r.loadStep " again (try " r.loadTries + 1 ")")
+			r.i := r.loadStep, r.push := "", r.loadUntil := 0
+			DgFresh()
+			DgShow()
+			return
+			}
+		;(loaded into a zone further on: on from its first step)
+		k := DgZoneAhead(nav.zone)
+		if (k && nav.zone != r.fromZone)
+			{
+			DebugLog("Dungeons: in " nav.zone " - on from step " k)
+			r.i := k, r.push := "", r.loadUntil := 0, r.loadTries := 0
+			DgFresh()
+			DgShow()
 			return
 			}
 		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone " (a potion run, a defeat, or a door that didn't load?)")
 		return
 		}
+	if (r.loadUntil)
+		r.loadTries := 0
 	r.push := "", r.loadUntil := 0, r.fromZone := ""
 	d := Sqrt((nav.x - st.x) ** 2 + (nav.y - st.y) ** 2)
 	if (d <= (st.kind = "x" ? 100 : 160))
@@ -496,6 +569,12 @@ DungeonStep()
 		r.best := d, r.bestAt := A_TickCount, r.unstuck := 0
 	if (nav.left != "" && (r.bestLeft = "" || nav.left < r.bestLeft - 40 || nav.left > r.bestLeft + 300))
 		r.bestLeft := nav.left, r.bestAt := A_TickCount, r.unstuck := 0
+	;(not getting closer for 2 s: a dialogue or a quest offer holding the wizard? - looked for every 1.5 s)
+	if (A_TickCount - r.bestAt > 2000 && DgDialogs())
+		{
+		r.bestAt := A_TickCount
+		return
+		}
 	if (A_TickCount - r.bestAt > 7000)
 		{
 		r.unstuck += 1
@@ -514,6 +593,21 @@ DungeonStep()
 		return
 		}
 	DgSteer(nav, st, d)
+	}
+
+;A dialogue up (Spaced through) or a quest offer's ACCEPT (clicked) - at most every 1.5 s. True if there was one
+DgDialogs()
+	{
+	static lookAt := 0
+	if (A_TickCount < lookAt)
+		return false
+	lookAt := A_TickCount + 1500
+	if (WalkDialogOpen())
+		{
+		WalkSkipDialog()
+		return true
+		}
+	return WalkAcceptQuest("a dungeon run")
 	}
 
 ;Steers at spot p (the route's aim when there's one): a big turn close to it on the spot, else walking on
@@ -549,8 +643,9 @@ DgArrive(st)
 		nxt := r.steps[r.i < r.steps.Length() ? r.i + 1 : 1]
 		if (nxt.zone != st.zone)
 			{
+			k := r.i
 			DgNext()
-			r.push := "", r.loadUntil := A_TickCount + 30000, r.fromZone := st.zone
+			r.push := "", r.loadUntil := A_TickCount + 30000, r.fromZone := st.zone, r.loadStep := k, r.loadBattles := battles
 			return
 			}
 		Sleep, 1200
