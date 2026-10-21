@@ -53,16 +53,29 @@ FleeCheck()
 	return true
 	}
 
-;How many cards are in hand, by the vision helper's read of it this round (-1: not read this round)
+;How many cards are in hand, by the vision helper's read of it this round - only boxes it calls cards (-1: not read
+;this round, or there were boxes where the hand should be and none was a card - the hand looked for in the wrong
+;place: can't tell; 0 only when the helper saw none at all, hand|0)
 FleeHandCount()
 	{
 	if (LastHandAnswer = "")
 		return -1
-	n := 0
+	n := 0, boxes := 0, none := 0
 	Loop, Parse, LastHandAnswer, `n, `r
+		{
 		if (InStr(A_LoopField, "card|") = 1)
-			n += 1
-	return n
+			{
+			boxes += 1
+			f := StrSplit(A_LoopField, "|")
+			if (f.Length() < 15 || f[15] != "0")
+				n += 1
+			}
+		else if (A_LoopField = "hand|0")
+			none := 1
+		}
+	if (!boxes)
+		return none ? 0 : -1
+	return n ? n : -1
 	}
 
 ;The fewest pips (= mana) a hit of this school's costs (hit1-3; PlayerStats.txt <school>.hitNpips), "" if none

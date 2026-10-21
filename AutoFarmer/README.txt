@@ -110,7 +110,9 @@ hides it; it opens on a monitor the game isn't on and remembers where you put
 it (dashboard.ini). It never takes the focus by itself. Its X (close) stops
 the bot; minimise it (or Windows+2) to just put it away. Next to STATISTICS:
 the CPU and RAM in use, every second - the bot (with its vision helper), the
-game and the whole PC (CPU share of all cores, RAM in use).
+game and the whole PC (CPU share of all cores, RAM in use). Its tabs: Bot (all
+that), Dungeons (below) and Spells (the cards it learned - see "Learned spells"
+under New cards; tray menu "Learned spells" opens it there).
 
 Settings (the dashboard's Settings button, or the tray menu "Settings..."):
 the mouse and the bot's waits, and how it plays its cards, in one window -
@@ -321,20 +323,38 @@ writes a wrong number (StatsReader.log / debug.log list every reading, and
 pictures of the two pages go to %TEMP%\Wizard101 bot rounds\stats_*.bmp).
 
 New cards (CardLearn.ahk - needs the Python vision helper):
-Every round the bot reads the hand card by card. A card it has no picture
-for, shown in colour (a greyed-out one - not enough pips - waits until it's
-castable), is learned:
+Every round the bot reads the hand card by card. Only a box that looks like a
+card is used (the edge between its picture and its text, the yellow pip digit,
+no big white patch, a type icon the helper knows): the deck's back ("Cards 6 of
+13"), the round's timer, the floor or a popup over the hand are never learned
+or discarded (vision\vision.log lists each box it turned down, and why). A
+card it has no picture for, shown in colour (a greyed-out one - not enough
+pips - waits until it's castable), is learned:
 	- its type from the icon at the bottom right of its picture
 	  (ui1.144\cardicons: damage = hits one enemy, aoe = hits all, heal,
-	  ward = a shield), its pip cost from the yellow digit
-	  (ui1.144\carddigits), its numbers from its text (OCR: "65-105" -> 65)
+	  ward = a shield or a trap, charm = a blade, manip), its pip cost from
+	  the yellow digit (ui1.144\carddigits and vision\digits - a digit read
+	  is trusted over the pips you had), its kind and numbers from its text
+	  (OCR at three sizes, two must agree: "65-105" -> 65; a misread range
+	  like "805-345" is put right when only one fix makes sense)
+	- kinds it knows: a hit on one enemy or all (with a part over time:
+	  only the part up front counts), a heal, a shield (-50%), a trap (+N%
+	  with the shield icon), a blade (+N% with the charm icon), an aura
+	  (+N% to all spells, or your school's, for some rounds) - and kinds it
+	  doesn't play: damage over time only, stun, dispel, prism (convert),
+	  "Clear", X-pip spells, weaknesses. Those are kept and recognised, never
+	  cast; one it can't be sure of is kept as "unsure" till it's seen at a
+	  size where it reads
 	- it's saved as <picture set>\learned\<id>.card.png (the whole card, for
 	  you to look at) and .png (the picture the bot looks for)
 	- it goes into a free slot (one whose picture was never cut), so the
 	  battle code uses it like the hand-cut cards: a hit -> <school>\hit1-3,
 	  only where they stay weakest to strongest (the battle casts hit3 first;
 	  hit4 only for one stronger than all, as hit4 is only cast on bosses), no
-	  pips -> wand, heal -> heal1/heal2, shield -> resources\tower. Its numbers
+	  pips -> wand, heal -> heal1/heal2, shield -> resources\tower, a trap ->
+	  resources\trap3 (only "+N% to next spell" at the % PlayerStats.txt has
+	  for trap3), an aura -> <school>\aura (only at its aura %), a blade as
+	  before (blade3, or your school's blade, at their %). Its numbers
 	  go into PlayerStats.txt (<school>.hitN, hitNpips, hitNtarget, ...) under
 	  "Cards the bot learned by itself". The damage is read at three sizes
 	  and two must agree (and make sense, low-high); if not it's written as 0,
@@ -347,23 +367,74 @@ Copies of a card shimmer a little, so a learned picture is cut solid from one
 copy and the pixels that differ in the next copies turn see-through by
 themselves. A pip cost that couldn't be read is guessed as the pips you had
 (the card was castable), and brought down whenever it shows up castable with
-fewer. learned\cards.txt lists everything learned; debug.log: "learned a new
-card ...".
+fewer - a pip digit read off the card is never changed that way.
+learned\cards.txt lists everything learned (with its name, if you gave it
+one, and its flags: tc = a treasure card, user = set by you, hold = never
+discarded...); debug.log: "learned a new card ...".
+Put right by itself, once a run, as soon as the vision helper is up and the
+bot is out of battle (nothing is ever deleted - it's moved to backups\):
+	- every learned card not checked yet is checked like a card in hand; one
+	  that isn't a card (the deck's back, the timer, an empty spot - older
+	  versions learned some) is moved out of the list, pictures and line, to
+	  backups\learned junk\. Its pips are put right from the digit too.
+	- a copy of a learned card's picture in a slot that isn't its own is
+	  taken out of that slot (what was there before put back, else the copy
+	  moved to backups\learned strays\), with that slot's lines in
+	  PlayerStats.txt.
+Stronger hits (Settings: "Make room for stronger learned hits", learnupgrade,
+on): a learned hit 15% or more stronger than the weakest of hit1-3 takes its
+place - out of battle only, never in a round. hit1-3 are then kept weakest to
+strongest (the battle casts hit3 first), the cheapest one stays when the new
+one costs more, and so does your only all-enemies hit when the new one hits
+one enemy. Only slots whose damage and pips are in PlayerStats.txt are
+moved; X-pip slots (hitNpips:0) and ones you pin with <school>.hitNkeep:1
+stay where they are; a treasure card may take a free slot but never pushes
+out a deck spell; the new card needs two OCR reads that agreed (or the
+number you typed on the Spells tab) and its pips read off it. Before anything
+moves, the three slots' pictures (every picture set's) and their
+PlayerStats.txt lines are copied to backups\hits <school> <date-time> (<card
+id>)\. Forget the new card on the Spells tab, or change its kind, and it's
+all put back while the slots still hold what it left there and you haven't
+changed their numbers since (otherwise just the new card comes out, and
+debug.log names the backup folder). <school>.learnupgrade:0
+switches it off for one school. Updates keep the pictures it moved.
+Learned spells (the dashboard's Spells tab, or tray menu "Learned spells"):
+every card the bot learned, with its kind, school, pips (3? = guessed),
+number, where it's used (or why not), the text it read, whether it's a
+treasure card, when and at what size it was learned. Pick one to see its
+picture. Pick one or more and:
+	- Change kind...: what it really is. It's taken out of its slot (a hit
+	  that made room for itself puts the hits it moved back) and gets the
+	  slot the new kind fits, if one is free. "Not used" keeps it in the list
+	  and out of use.
+	- Edit...: its name, its number (a hit's least damage, a heal, the % of a
+	  blade, trap, shield or aura) and its pips - e.g. a misread number.
+	- Forget: out of the list, its pictures to backups\learned forgotten\. A
+	  real card is learned again the next time it's in hand.
+	- Never discard: it stays in hand even when the bot doesn't play it.
+	- Show picture, Open folder, Moved away... (opens what's in backups\:
+	  non-cards, forgotten spells, the hits moved to make room), Refresh.
+	The bot makes these changes from its own loop as soon as it's out of
+	battle (the status line says when some are waiting); what you set is
+	never changed by the learner itself. debug.log: "Spells: ...".
 Fleeing: out of mana (less than its cheapest hit costs - every spell costs a
-mana a pip - and no wand in hand) or out of cards (the deck used up) for two
+mana a pip - and no wand in hand) or out of cards (the deck used up - a hand
+read where none of the boxes looked like a card doesn't count) for two
 rounds running, the bot can only pass for the rest of the battle, so it clicks
 Flee instead, drinks a potion (none left: goes and buys some) and tries again.
 PlayerStats.txt: fleeon:0 switches it off. debug.log: "fleeing: ...", "after
 fleeing: ..."; the dashboard counts them next to Passed.
 Discarding in normal battles: every round, after it's read the hand, the bot
-right-clicks away the cards it knows it never plays - learned cards it has no
-slot for (charms, globals, minions..., or one more card of a kind whose slots
-are full) - so the next round draws cards it can use; at most 3 a round. Its
-own cards stay, and so do cards it doesn't know yet (greyed out ones may be its
-own; in colour they're learned first). Spare blades and Sharpen go once they
+right-clicks away the cards it knows it never plays - learned cards of a kind
+it doesn't play (stun, dispel, damage over time...) or one more card of a kind
+whose slots are full - so the next round draws cards it can use; at most 3 a
+round. Its own cards stay (also one it learned again at another UI size: where
+the battle's own search finds one of its cards, nothing is discarded), and so
+do cards it doesn't know yet and learned ones whose kind it couldn't tell. Spare blades and Sharpen go once they
 can't stack any more, as before. PlayerStats.txt: discardunused:0 switches it
-off, discardmax: how many a round. Treasure cards it has no slot for are
-discarded too. debug.log: "Discarded learned card ...".
+off, discardmax: how many a round. Learned treasure cards are never discarded
+(that would use them up), nor spells set to Never discard on the Spells tab.
+debug.log: "Discarded learned card ... - a kind the bot doesn't play: stun".
 Learn every card (dashboard button, or the tray menu): for a deck you made
 to be learned - one of every card. Switch it on and start a battle (an easy
 one). Each round the bot learns what's in hand, right-clicks away every card

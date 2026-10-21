@@ -94,11 +94,13 @@ CfgList()
 	list.Push({key: "pipsave", label: "Save pips for a finishing hit (rounds)", kind: "num", lo: 0, hi: 20, def: 3
 		, help: "Up to this many rounds, pips are saved for a hit in hand that ends the battle once it's affordable. 0 = never."})
 	list.Push({key: "discardunused", label: "Discard cards it never plays", kind: "check", def: 1
-		, help: "Every round, cards in hand the bot doesn't play (and kinds switched off above) are discarded with a right-click so it draws ones it can use. Treasure cards among them go too."})
+		, help: "Every round, cards in hand the bot doesn't play (and kinds switched off above) are discarded with a right-click so it draws ones it can use. Not treasure cards it learned (discarding one uses it up), nor spells set to Never discard on the dashboard's Spells tab."})
 	list.Push({key: "discardmax", label: "...at most this many a round", kind: "num", lo: 0, hi: 7, def: 3
 		, help: "The most cards it never plays that are discarded in one round."})
 	list.Push({key: "discardunaffordable", label: "Discard hits it can't cast yet", kind: "check", def: 0
 		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."})
+	list.Push({key: "learnupgrade", label: "Make room for stronger learned hits", kind: "check", def: 1
+		, help: "A learned hit 15% or more stronger than your weakest in hit1-3 takes its place, out of battle; hit1-3 stay weakest to strongest (the cheapest, your only all-enemies hit, X-pip and hitNkeep:1 slots stay put). Undo: Forget it or change its kind on the Spells tab. One school off: <school>.learnupgrade:0."})
 	list.Push({key: "-", label: "ALERTS"})
 	list.Push({key: "logmirror", label: "Copy the log to OneDrive (help from another PC)", kind: "check", def: 0
 		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."})

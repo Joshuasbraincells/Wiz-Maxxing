@@ -18,19 +18,32 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              best first ("unclear": two schools too close at the best spot)
   /hand?x1=&y1=&x2=&y2=&scale=&pics=&learned=<id>:<set folder>:<slot>,...&here=<set folder for this size>
                                           -> one line per card in hand, left to right: "card|left|top|w|h|
-                                             known picture|its dist|grey|type|type dist|pips|pips score|same|liked"
+                                             known picture|its dist|grey|type|type dist|pips|pips score|same|liked|
+                                             real|tc"
                                              (known "" = none of pics; grey 1 = greyed out, can't be cast now;
                                              type = cardicons\<type>.png that matches, "" none; pips "" unread;
                                              same = the number of an unknown card further left that
                                              it is a copy of, 0 none; liked 1 = a slot's learned picture
                                              was just written - made see-through where this copy
                                              differs, or cut at this UI size into here=<set folder> -
-                                             so the plain search finds it if it looks again)
+                                             so the plain search finds it if it looks again; real 1 = the box
+                                             looks like a card (card_feats), 0 = something else where a card
+                                             was expected (the deck's back, the floor, the timer, a popup): no
+                                             learned picture names it, it's never compared, cut or made a copy
+                                             of (and a learned card whose own .card.png isn't a card is never
+                                             looked for at all); tc 1 = a lavender text box: a treasure card
+                                             (an item card, e.g. a wand's, is lavender too; a greyed one never
+                                             reads 1)
                                              &thumbs=<folder> also saves each card as it looks:
                                              <folder>\hand1.png, hand2.png... left to right (for the dashboard)
   /cut?left=&top=&scale=&out=<path>       -> saves the card at left, top: <out>.png (its picture, cut like
                                              hit1.png etc.) and .raw.png, .card.png (the whole card), .icon.png
-                                             (its type icon), .pips.png (its pip cost)
+                                             (its type icon), .pips.png (its pip cost): "OK"; when the box isn't a
+                                             card nothing is saved: "NOTCARD eTxt=.. pipYel=.. white=.. iconD=.."
+  /cardcheck?file=<a .card.png in the AutoFarmer folder>&scale=<the UI scale it was cut at>
+                                          -> "real|tc|eTxt|pipYel|white|iconD|icon|pips|pipscore" for that saved
+                                             card (the same check as /hand's real), or "fail <why>" when it can't
+                                             be looked at (never ERR)
   /usable?rel=balance\hit2.png            -> "1" if a cut picture big enough to use is there for it, else "0"
   /forget                                 -> reads the picture folders again (after pictures were added)
   /globes?left=&bottom=&scale=            -> "health|<n>" and "mana|<n>" off the globes at the game's bottom
@@ -110,7 +123,7 @@ from urllib.parse import urlparse, parse_qs
 import numpy as np
 from PIL import Image
 
-VERSION = '1'
+VERSION = '2'
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))   # the AutoFarmer folder
 PORT = 47128
 # A card counts as there when its RMS distance is under this (calibrated on saved rounds at UI 0.87-1.5:
@@ -502,6 +515,20 @@ GREY_BOX = (8.0, 18.0, 52.0, 34.0)
 # right digit 0.62+, a wrong one 0.55 at most - at other sizes the 8 px digits often go unread)
 ICON_DIST, ICON_GAP = 40.0, 8.0
 DIGIT_IOU, DIGIT_GAP = 0.6, 0.1
+# Pip digits cut from learned cards (1-bit masks, <digit>_<UI scale they were cut at>.png), next to this file
+DIGITS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'digits')
+# A box is a card (real) when all four hold (card_feats; measured on the learned cards and 60 saved battle
+# rounds at UI 0.807-1.5: real cards eTxt 1.0 (0.855 seen at UI 0.917; non-cards 0.71 at most), pipYel 0.055-0.267,
+# white 0.024 at most, iconD 69 at most;
+# the deck's back, empty spots, the floor, the timer and hint text, a popup over a card each fail one):
+# the art / text box border right across (eTxt), some yellow pip digit and not a yellow banner or the timer
+# (pipYel), no white popup over it (white), something like a type icon where it goes (iconD)
+REAL_ETXT, REAL_PIP, REAL_WHITE, REAL_ICON = 0.80, (0.04, 0.30), 0.10, 90.0
+# a treasure card: its text box is lavender, not parchment (median blue / median red: Sandstorm 1.59, deck
+# cards 0.58-0.60; an item card - the wand's Minor Clash - is lavender too, 1.59)
+TC_BR = 1.2
+TEXT_BOX = (6.0, 78.0, 58.0, 26.0)
+WHITE_BOX = (0.0, 15.0, 70.8, 60.0)
 
 
 def box(b, sc, left, top):
@@ -578,17 +605,31 @@ def yellow(p):
 
 
 def digit_masks(sc):
-    """the cut pip digits at scale sc: {digit: bool mask cropped to the digit}"""
-    out = {}
+    """the cut pip digits at scale sc: {digit: bool mask cropped to the digit}. A digit comes from a picture
+    set's carddigits (solid where it isn't magenta) or vision\\digits\\<digit>_<scale>.png (a 1-bit mask);
+    when there are several, the one cut at the UI scale nearest sc, resized to it"""
+    have = {}
     for d, dsc in LIB.sets:
         for p in glob.glob(os.path.join(d, 'carddigits', '*.png')):
             n = os.path.basename(p)[:-4]
-            if n.endswith('.raw') or n.startswith('unknown') or n in out:
+            if n.endswith('.raw') or n.startswith('unknown'):
                 continue
-            a, m = load_rgb_mask(p)
-            if abs(sc / dsc - 1) >= 0.01:
-                h, w = m.shape
-                m = np.asarray(Image.fromarray(m.astype(np.uint8) * 255).resize((max(1, round(w * sc / dsc)), max(1, round(h * sc / dsc))), Image.BILINEAR)) > 127
+            have.setdefault(n, []).append((dsc, p, False))
+    for p in glob.glob(os.path.join(DIGITS, '*.png')):
+        m = re.fullmatch(r'([0-9a-z]+)_(\d+(?:\.\d+)?)\.png', os.path.basename(p).lower())
+        if m and 0.3 <= float(m.group(2)) <= 4:
+            have.setdefault(m.group(1), []).append((float(m.group(2)), p, True))
+    out = {}
+    for n, srcs in have.items():
+        dsc, p, bits = min(srcs, key=lambda s: abs(math.log(sc / s[0])))
+        try:
+            m = np.asarray(Image.open(p).convert('L')) > 127 if bits else load_rgb_mask(p)[1]
+        except OSError:
+            continue
+        if abs(sc / dsc - 1) >= 0.01:
+            h, w = m.shape
+            m = np.asarray(Image.fromarray(m.astype(np.uint8) * 255).resize((max(1, round(w * sc / dsc)), max(1, round(h * sc / dsc))), Image.BILINEAR)) > 127
+        if m.any():
             out[n] = m
     return out
 
@@ -661,11 +702,86 @@ def is_grey(img, sc, left, top):
     return float(((p.max(axis=2) - p.min(axis=2)) <= 6).mean()) > 0.85
 
 
+def card_feats(img, sc, left, top, icon_d):
+    """what tells a card from something else in a card's place (img: the hand rectangle or a cut card; left,
+    top: where the card's top left is in it; icon_d: read_icon's distance there): {eTxt, pipYel, white,
+    iconD, br, tc} - see REAL_* and TC_BR"""
+    H, W = img.shape[:2]
+
+    def crop(b, dx=0.0, dy=0.0):
+        x1, y1, x2, y2 = box((b[0] + dx, b[1] + dy, b[2], b[3]), sc, left, top)
+        return img[max(0, y1):min(H, y2), max(0, x1):min(W, x2)]
+    # the art / text box border: the share of columns 5-65 with a sharp row change in rows 68-80
+    a, b = int(round(top + 68 * sc)), int(round(top + 80 * sc))
+    c, d = int(round(left + 5 * sc)), int(round(left + 65 * sc))
+    a, b, c, d = max(0, a), min(H - 1, b), max(0, c), min(W, d)
+    if b > a and d > c:
+        g = np.abs(np.diff(img[a:b + 1, c:d].sum(axis=2), axis=0)) > 90
+        e_txt = float(g.any(axis=0).mean())
+    else:
+        e_txt = 0.0
+    # the pip digit's yellow, the best of 3 UI px either way
+    pip = 0.0
+    for dy in (-3, 0, 3):
+        for dx in (-3, 0, 3):
+            q = crop(DIGIT_BOX, dx, dy)
+            if q.size:
+                pip = max(pip, float(yellow(q).mean()))
+    # white (a popup or the floor's glare over the card)
+    q = crop(WHITE_BOX)
+    white = float(((q.min(axis=2) > 225) & ((q.max(axis=2) - q.min(axis=2)) < 20)).mean()) if q.size else 0.0
+    # the text box's colour: lavender on a treasure card
+    q = crop(TEXT_BOX)
+    br = float(np.median(q[..., 2]) / max(1.0, float(np.median(q[..., 0])))) if q.size else 0.0
+    return dict(eTxt=e_txt, pipYel=pip, white=white, iconD=float(icon_d), br=br, tc=int(br >= TC_BR))
+
+
+def is_real(f):
+    """a card (card_feats): see REAL_*"""
+    return (f['eTxt'] >= REAL_ETXT and REAL_PIP[0] <= f['pipYel'] <= REAL_PIP[1] and f['white'] < REAL_WHITE
+            and f['iconD'] < REAL_ICON)
+
+
+def feats_text(f):
+    return f"eTxt={f['eTxt']:.2f} pipYel={f['pipYel']:.3f} white={f['white']:.3f} iconD={f['iconD']:.1f}"
+
+
+# learned card id -> its .card.png passes the card check (a learned picture cut from something that isn't a card -
+# the timer, the deck's back - is never used: until AutoFarmer moves it away it would claim real cards)
+LEARNED_OK = {}
+
+
+def learned_is_card(cid):
+    """whether learned card cid was cut from a card: its <set>\\learned\\<cid>.card.png passes is_real (looked at
+    once; True when there's no .card.png to look at)"""
+    if cid in LEARNED_OK:
+        return LEARNED_OK[cid]
+    ok = True
+    for d, sc in LIB.sets:
+        p = os.path.join(d, 'learned', cid + '.card.png')
+        if not os.path.exists(p):
+            continue
+        try:
+            img = np.asarray(Image.open(p).convert('RGB')).astype(np.float32)
+        except OSError:
+            break
+        csc = img.shape[1] / CARD_W
+        f = card_feats(img, csc, 0, 0, read_icon(img, csc, 0, 0)[1])
+        ok = is_real(f)
+        if not ok:
+            log(f'  learned/{cid}: its card picture isn\'t a card ({feats_text(f)}) - never used to name a card')
+        break
+    LEARNED_OK[cid] = ok
+    return ok
+
+
 def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thumbs=''):
     """the cards in hand, left to right (see /hand). learned: the learned cards ("<id>:<picture set
     folder>:<slot>"), each also recognised as a copy that differs a little. here: the picture set folder
     for this UI size (a card learned at another size is cut into it)"""
     img = grab(x1, y1, x2, y2, file)
+    # (a learned picture that wasn't cut from a card is never looked for: learned_is_card)
+    pics = [p for p in pics if not (p.startswith('learned/') and not learned_is_card(p[8:]))]
     known = find_cards(x1, y1, x2, y2, scale, pics, file)
     pitch, cw, ch = CARD_PITCH * scale, CARD_W * scale, CARD_H * scale
     # the hand's height is fixed (y1 is ScreenY - 75 UI px, as AutoFarmer asks); the cards' lefts come
@@ -684,11 +800,18 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
         mine = [k for k in mine if not k[0].startswith('learned/')] or mine
         best = min(mine, key=lambda k: k[3]) if mine else None
         kind, kd = read_icon(img, scale, left, top)
+        # (is it a card at all? Something else where a card goes - the deck's back, the floor, the timer
+        # when the rectangle is off - is never named by a learned picture: those were cut from cards)
+        f = card_feats(img, scale, int(round(left)), top, kd)
+        real = is_real(f)
+        if best and not real and best[0].startswith('learned/'):
+            best = None
         dx1, dy1, dx2, dy2 = box(DIGIT_BOX, scale, left, top)
         pips, ps = read_digit(img[max(0, dy1):dy2, max(0, dx1):dx2], masks)
         cards.append(dict(left=int(round(left)) + x1, top=top + y1, w=int(round(cw)), h=int(round(ch)),
                           known=best[0] if best else '', kdist=best[3] if best else 0.0,
                           grey=is_grey(img, scale, left, top), kind=kind, kinddist=kd, pips=pips, pipscore=ps,
+                          real=int(real), tc=f['tc'], feats=f,
                           art=img[max(0, box(ART_BOX, scale, left, top)[1]):box(ART_BOX, scale, left, top)[3],
                                   max(0, box(ART_BOX, scale, left, top)[0]):box(ART_BOX, scale, left, top)[2]]))
     # Copies of a card differ a little (a shimmer: a few variants, 0-17 apart over the whole picture), so a
@@ -699,13 +822,16 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
     # cut into the picture set for this size (here) - its learned picture and its slot's.
     # liked 1 = a slot's picture was just written (made see-through, or cut at this size): the battle's own
     # search finds the card if it looks again
+    # (a box that isn't a card is never compared: no learned picture is written or named from it)
     for i, c in enumerate(cards):
         c['same'], c['liked'] = 0, 0
-        if c['known'] or c['grey'] or c['art'].size == 0:
+        if c['known'] or c['grey'] or not c['real'] or c['art'].size == 0:
             continue
         bx1, by1, bx2, by2 = box(ART_BOX, scale, c['left'] - x1, c['top'] - y1)
         around = img[max(0, by1 - LIKE_PAD):by2 + LIKE_PAD, max(0, bx1 - LIKE_PAD):bx2 + LIKE_PAD]
         for ent in learned or ():
+            if not learned_is_card(ent.split(':', 1)[0]):
+                continue
             pic = learned_pic(ent, scale, here)
             if pic is None:
                 continue
@@ -747,7 +873,7 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
         # (1 = the leftmost), so it isn't learned twice
         for j in range(i):
             o = cards[j]
-            if o['known'] or o['grey'] or o['art'].size == 0:
+            if o['known'] or o['grey'] or not o['real'] or o['art'].size == 0:
                 continue
             if like(around, o['art'], np.ones(o['art'].shape[:2], bool))[0] < LIKE_DIST:
                 c['same'] = o['same'] or j + 1
@@ -842,6 +968,7 @@ def pictures_changed():
     with LIB.lock:
         LIB.sets = picture_sets()
         LIB.cache.clear()
+    LEARNED_OK.clear()
     with TPL_LOCK:
         TPL_FFT.clear()
         globals()['TPL_BYTES'] = 0
@@ -887,12 +1014,17 @@ def cut_here(art, pic, here):
 
 
 def cut_card(left, top, scale, out, file=None):
-    """saves the card whose top left is at left, top (screen): see /cut"""
+    """saves the card whose top left is at left, top (screen): see /cut. (True, card_feats), or (False,
+    card_feats) with nothing saved when the box isn't a card"""
     cw, ch = CARD_W * scale, CARD_H * scale
-    pad = round(2 * scale)
+    # (room round the card for the type icon's search, as in the hand)
+    pad = round(8 * scale)
     gx1, gy1 = int(left) - pad, int(top) - pad
     img = grab(gx1, gy1, int(round(left + cw)) + pad, int(round(top + ch)) + pad, file)
     lx, ly = left - gx1, top - gy1
+    f = card_feats(img, scale, lx, ly, read_icon(img, scale, lx, ly)[1])
+    if not is_real(f):
+        return False, f
     os.makedirs(os.path.dirname(out), exist_ok=True)
     save = lambda a, p: Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).save(p)
     ax1, ay1, ax2, ay2 = box(ART_BOX, scale, lx, ly)
@@ -903,7 +1035,45 @@ def cut_card(left, top, scale, out, file=None):
     save(img[iy1 - 1:iy2 + 2, ix1 - 1:ix2 + 2], out + '.icon.png')
     dx1, dy1, dx2, dy2 = box(DIGIT_BOX, scale, lx, ly)
     save(img[dy1:dy2, dx1:dx2], out + '.pips.png')
-    return out
+    return True, f
+
+
+def card_check(file, scale=''):
+    """/cardcheck: a saved .card.png (whole card, top left at 0, 0) looked at as /hand looks at a card:
+    "real|tc|eTxt|pipYel|white|iconD|icon|pips|pipscore", or "fail <why>" - never an error"""
+    try:
+        if not file:
+            return 'fail no file given'
+        p = file if os.path.isabs(file) else os.path.join(ROOT, file)
+        if not inside_root(p):
+            return 'fail the file must be in ' + ROOT
+        if not os.path.isfile(p):
+            return 'fail no such file'
+        try:
+            img = np.asarray(Image.open(p).convert('RGB')).astype(np.float32)
+        except OSError:
+            return "fail can't read the picture"
+        H, W = img.shape[:2]
+        if W < 20 or H < 30:
+            return f'fail too small ({W}x{H})'
+        # (the scale it was cut at; a .card.png is CARD_W x CARD_H at that scale, so its width says it too)
+        by_w = W / CARD_W
+        try:
+            sc = float(scale)
+        except ValueError:
+            sc = 0.0
+        if not (0.3 <= sc <= 4) or abs(sc / by_w - 1) > 0.05:
+            if sc:
+                log(f'/cardcheck {os.path.basename(p)}: scale {scale} but {W} px wide - {by_w:.3f} used')
+            sc = by_w
+        kind, kd = read_icon(img, sc, 0, 0)
+        f = card_feats(img, sc, 0, 0, kd)
+        dx1, dy1, dx2, dy2 = box(DIGIT_BOX, sc, 0, 0)
+        pips, ps = read_digit(img[max(0, dy1):dy2, max(0, dx1):dx2], digit_masks(sc))
+        return (f"{int(is_real(f))}|{f['tc']}|{f['eTxt']:.3f}|{f['pipYel']:.3f}|{f['white']:.3f}|{f['iconD']:.1f}|"
+                f"{kind}|{pips}|{ps:.2f}")
+    except Exception as e:  # noqa: BLE001 - answered, never counted as the helper failing
+        return 'fail ' + repr(e).replace('\n', ' ')
 
 
 # ---------------------------------------------------------------- the health and mana globes
@@ -1718,6 +1888,7 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/forget':
                 global LIB
                 LIB = Library()
+                LEARNED_OK.clear()
                 with TPL_LOCK:
                     TPL_FFT.clear()
                     globals()['TPL_BYTES'] = 0
@@ -1737,9 +1908,14 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR thumbs must be in ' + ROOT, 400)
                 cards = read_hand(x1, y1, x2, y2, scale, [p for p in q.get('pics', '').split(',') if p], q.get('file'),
                                   [e for e in q.get('learned', '').split(',') if e], q.get('here', ''), thumbs)
-                lines = ['card|{left}|{top}|{w}|{h}|{known}|{kdist:.1f}|{g}|{kind}|{kinddist:.1f}|{pips}|{pipscore:.2f}|{same}|{liked}'.format(g=int(c['grey']), **c) for c in cards]
+                lines = ['card|{left}|{top}|{w}|{h}|{known}|{kdist:.1f}|{g}|{kind}|{kinddist:.1f}|{pips}|{pipscore:.2f}|{same}|{liked}|{real}|{tc}'.format(g=int(c['grey']), **c) for c in cards]
+                # (a box that isn't a card: "!" and what it measured)
                 log(f'/hand scale {scale} {(time.perf_counter() - t0) * 1000:.0f} ms: ' + ', '.join(
-                    (c['known'].split('/')[-1] or f"?{c['kind'] or 'type?'}") + ('(grey)' if c['grey'] else '') for c in cards))
+                    (c['known'].split('/')[-1] or f"?{c['kind'] or 'type?'}") + ('(grey)' if c['grey'] else '')
+                    + ('(tc)' if c['tc'] and c['real'] else '') + ('' if c['real'] else ' !not a card (' + feats_text(c['feats']) + ')')
+                    for c in cards))
+                if cards and not any(c['real'] for c in cards):
+                    log(f'  no real card among {len(cards)} boxes - the hand rectangle may be off ({x1},{y1} {x2},{y2})')
                 # (how many: an empty hand - the deck used up - answers hand|0, not nothing)
                 lines.append(f'hand|{len(cards)}')
                 return self.reply('\n'.join(lines))
@@ -1747,9 +1923,17 @@ class Handler(BaseHTTPRequestHandler):
                 out = q['out']
                 if not os.path.abspath(out).lower().startswith(ROOT.lower()):
                     return self.reply('ERR out must be in ' + ROOT, 400)
-                cut_card(float(q['left']), float(q['top']), float(q['scale']), out, q.get('file'))
+                ok, f = cut_card(float(q['left']), float(q['top']), float(q['scale']), out, q.get('file'))
+                # (not a card: nothing saved - answered plainly, it isn't the helper failing)
+                if not ok:
+                    log(f'/cut {out}: not a card, nothing saved ({feats_text(f)})')
+                    return self.reply('NOTCARD ' + feats_text(f))
                 log(f'/cut {out}')
                 return self.reply('OK')
+            if u.path == '/cardcheck':
+                ans = card_check(q.get('file', ''), q.get('scale', ''))
+                log(f"/cardcheck {os.path.basename(q.get('file', ''))}: {ans}")
+                return self.reply(ans)
             if u.path == '/seller':
                 zone = q.get('zone', '')
                 # (the game's folder comes from its running .exe: attached first, so another install is found)

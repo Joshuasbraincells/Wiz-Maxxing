@@ -47,9 +47,10 @@ DashInit()
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	Gui, Dash:Add, Button, x640 y7 w136 h24 gDashUpdButton vDashUpdBtn, Check for updates
 	;(the button says "Checking..." a while after a click: DashUpdBusy)
-	;Two tabs: Bot (statistics, what it sees, the hand, the log) and Dungeons (Dungeons.ahk)
+	;Three tabs: Bot (statistics, what it sees, the hand, the log), Dungeons (Dungeons.ahk) and Spells (the cards
+	;the bot learned by itself: Spells.ahk)
 	Gui, Dash:Font, s9 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons
+	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells
 	Gui, Dash:Tab, 1
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y68 w86 h16, STATISTICS
@@ -115,15 +116,41 @@ DashInit()
 	Gui, Dash:Add, ListView, x12 y262 w760 h526 vDgList gDgListEvent AltSubmit -Multi Background111317 cDADADA, Run|Steps|Zones|X|Battles|Recorded|File
 	LV_ModifyCol(1, 300), LV_ModifyCol(2, "60 Integer"), LV_ModifyCol(3, "60 Integer"), LV_ModifyCol(4, "50 Integer"), LV_ModifyCol(5, "70 Integer")
 	LV_ModifyCol(6, 140), LV_ModifyCol(7, 0)
+	;The Spells tab: the cards the bot learned by itself, and your corrections (Spells.ahk)
+	Gui, Dash:Tab, 3
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y68 w400 h16, LEARNED SPELLS
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x12 y88 w760 h32 vSpHelp, Every card the bot learned by itself, and what it took it for. Pick one to see it. Change kind or Edit puts one right (applied out of battle; the learner never changes what you set). Forget: out of the list.
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x12 y124 w100 h26 gSpKindClick vSpKindBtn, Change kind...
+	Gui, Dash:Add, Button, x118 y124 w64 h26 gSpEditClick vSpEditBtn, Edit...
+	Gui, Dash:Add, Button, x188 y124 w64 h26 gSpForgetClick vSpForgetBtn, Forget
+	Gui, Dash:Add, Button, x258 y124 w96 h26 gSpHoldClick vSpHoldBtn, Never discard
+	Gui, Dash:Add, Button, x360 y124 w92 h26 gSpPicClick vSpPicBtn, Show picture
+	Gui, Dash:Add, Button, x458 y124 w86 h26 gSpFolderClick vSpFolderBtn, Open folder
+	Gui, Dash:Add, Button, x550 y124 w100 h26 gSpMovedClick vSpMovedBtn, Moved away...
+	Gui, Dash:Add, Button, x656 y124 w66 h26 gSpRefreshClick vSpRefreshBtn, Refresh
+	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
+	Gui, Dash:Add, Text, x12 y156 w760 h30 vSpStatus
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y190 w612 h598 vSpList gSpListEvent AltSubmit Background111317 cDADADA, Name|Kind|School|Pips|Value|In use|Text read|TC|Learned|Set|Id
+	LV_ModifyCol(1, 96), LV_ModifyCol(2, 84), LV_ModifyCol(3, 50), LV_ModifyCol(4, 34), LV_ModifyCol(5, 66), LV_ModifyCol(6, 112)
+	LV_ModifyCol(7, 100), LV_ModifyCol(8, 26), LV_ModifyCol(9, 96), LV_ModifyCol(10, 50), LV_ModifyCol(11, 0)
+	;(the spell picked: its picture, and what the bot took it for under it)
+	Gui, Dash:Add, Picture, x632 y190 w140 h233 Hidden vSpPreview
+	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x632 y428 w140 h360 vSpPreviewTxt, Pick a spell to see it.
 	Gui, Dash:Tab
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
 	if (earlier != "")
 		DashAppend(earlier)
 	IniRead, shown, %A_ScriptDir%\dashboard.ini, window, shown, 1
-	;(the Dungeons tab's list and status)
+	;(the Dungeons tab's list and status; the Spells tab's)
 	DgListFill()
 	DgShow()
+	SpInit()
 	if (shown)
 		DashShow()
 	SetTimer, DashRefresh, 1000
@@ -390,21 +417,29 @@ DashSee(key, text)
 	}
 
 ;The hand as the vision helper read it (/hand's answer, CardLearn.ahk): each card's name, ?<type> for one
-;the bot doesn't know, * for a greyed-out one (not enough pips)
+;the bot doesn't know, * for a greyed-out one (not enough pips). A box the helper says isn't a card (field 15 = 0:
+;the deck's back, the round's timer, the floor) is left out
 DashHandSeen(answer)
 	{
-	text := "", n := 0
+	text := "", n := 0, box := 0, notCards := 0
 	Loop, Parse, answer, `n, `r
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f.Length() < 12 || f[1] != "card")
 			continue
+		;(the helper saves every box's picture, generated\hand\hand<box>.png)
+		box += 1
+		if (f.Length() >= 15 && f[15] = "0")
+			{
+			notCards += 1
+			continue
+			}
 		known := f[6]
-		name := known = "" ? "?" (f[9] = "" ? "card" : f[9]) : InStr(known, "learned/") = 1 ? "learned" : DashShortName(SubStr(known, InStr(known, "/") + 1), SubStr(known, 1, InStr(known, "/") - 1))
+		name := known = "" ? "?" (f[9] = "" ? "card" : f[9]) : InStr(known, "learned/") = 1 ? DashLearnedName(SubStr(known, 9)) : DashShortName(SubStr(known, InStr(known, "/") + 1), SubStr(known, 1, InStr(known, "/") - 1))
 		text .= (text = "" ? "" : ", ") name (f[8] = 1 ? "*" : "")
 		n += 1
 		if (n <= 7)
-			DashHandCard(n, name, known, f[8] = 1, f[11])
+			DashHandCard(n, name, known, f[8] = 1, f[11], box)
 		}
 	;(the slots past the hand: empty)
 	Loop, % 7 - Min(n, 7)
@@ -414,17 +449,25 @@ DashHandSeen(answer)
 		GuiControl, Dash:Hide, DashCardTxt%slot%
 		}
 	FormatTime, now, , HH:mm:ss
-	GuiControl, Dash:, DashHandHead, % "HAND " now " (" n " card" (n = 1 ? "" : "s") ")   white known   yellow new to it   grey can't cast"
+	GuiControl, Dash:, DashHandHead, % "HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
 	DashSee("hand", text)
 	}
 
-;One card of the Hand section: its picture as the bot saw it (generated\hand\hand<n>.png, saved by the vision
-;helper) and under it what it took it for and the pips it read - white known, yellow unknown, grey greyed out
-DashHandCard(n, name, known, grey, pips)
+;A learned card's name in the hand: the one you gave it on the Spells tab, else "learned"
+DashLearnedName(id)
+	{
+	c := IsFunc("LearnCardOf") ? Func("LearnCardOf").Call(id) : ""
+	return (IsObject(c) && c.name != "") ? c.name : "learned"
+	}
+
+;One card of the Hand section (n: its place there): its picture as the bot saw it (generated\hand\hand<box>.png,
+;saved by the vision helper - box: the helper's count, non-cards too) and under it what it took it for and the pips it
+;read - white known, yellow unknown, grey greyed out
+DashHandCard(n, name, known, grey, pips, box := "")
 	{
 	if (!DashHwnd)
 		return
-	pic := A_ScriptDir "\generated\hand\hand" n ".png"
+	pic := A_ScriptDir "\generated\hand\hand" (box = "" ? n : box) ".png"
 	if (FileExist(pic))
 		{
 		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
@@ -487,6 +530,9 @@ DashRefresh()
 		DgShow()
 	if (!DashShown || !DashHwnd)
 		return
+	;(the Spells tab's list: again when the catalog changed - LearnSave - or a correction was applied)
+	if (SpDirty)
+		SpListFill()
 	up := (A_TickCount - DashStart) // 1000
 	upText := Format("{:02}:{:02}:{:02}", up // 3600, Mod(up // 60, 60), Mod(up, 60))
 	;What it's doing
@@ -1050,6 +1096,12 @@ DashGuiSize:
 	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DgStatus, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DgList, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 274
+	;(the Spells tab: its list takes what's left of the picture on its right)
+	GuiControl, Dash:Move, SpHelp, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, SpStatus, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, SpList, % "w" A_GuiWidth - 172 " h" A_GuiHeight - 202
+	GuiControl, Dash:Move, SpPreview, % "x" A_GuiWidth - 152 - DashTabOX
+	GuiControl, Dash:Move, SpPreviewTxt, % "x" A_GuiWidth - 152 - DashTabOX " h" Max(40, A_GuiHeight - 440)
 	;(the bottom row shares the width, each button in proportion to the width it was made with, so all six
 	;fit at any size - 620 at the least)
 	;(a label runs in the global scope: Dash-named variables only)

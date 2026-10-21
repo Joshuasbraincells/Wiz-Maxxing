@@ -310,7 +310,8 @@ UpCopy(src, dest, rollback)
 			continue
 		target := dest "\" rel
 		exists := FileExist(target) != ""
-		if (exists && UpIsMine(rel, slots))
+		;(nor one the bot took away itself, making room for a stronger learned hit: learned\slots_written.txt)
+		if ((exists && UpIsMine(rel, slots)) || (!exists && InStr(rel, "AutoFarmer\") = 1 && slots.HasKey("file:" Format("{:L}", SubStr(rel, 12)))))
 			{
 			res.kept++
 			continue
@@ -376,11 +377,14 @@ UpRollback(res, dest := "", rollback := "")
 	UpLog("put back: " res.backups.Length() " file(s) restored, " res.created.Length() " new one(s) removed")
 	}
 
-;The slots learned cards went into ("balance\hit2", ...), from this folder's and the release's catalog
+;The slots learned cards went into ("balance\hit2", ...), from this folder's and the release's catalog - and the slot
+;pictures the bot moved itself (making room for a stronger learned hit: learned\slots_written.txt next to the
+;catalog, paths in the AutoFarmer folder) as "file:<path>"
 UpLearnedSlots(files*)
 	{
 	slots := {}
 	for i, f in files
+		{
 		Loop, Read, %f%
 			{
 			if (SubStr(A_LoopReadLine, 1, 1) = ";")
@@ -389,6 +393,11 @@ UpLearnedSlots(files*)
 			if (fld.Length() >= 8 && fld[8] != "")
 				slots[Format("{:L}", fld[8])] := 1
 			}
+		SplitPath, f,, fdir
+		Loop, Read, %fdir%\slots_written.txt
+			if (Trim(A_LoopReadLine) != "")
+				slots["file:" Format("{:L}", Trim(A_LoopReadLine))] := 1
+		}
 	return slots
 	}
 
@@ -405,6 +414,9 @@ UpIsMine(rel, slots)
 		return true
 	;(a slot picture a card was learned into - in any picture set - and its solid copy)
 	if (RegExMatch(rel, "i)^AutoFarmer\\(?:ui[\d.]+\\)?(\w+\\\w+?)(?:\.raw)?\.png$", m) && slots.HasKey(Format("{:L}", m1)))
+		return true
+	;(a slot picture the bot moved there itself: learned\slots_written.txt)
+	if (InStr(rel, "AutoFarmer\") = 1 && slots.HasKey("file:" Format("{:L}", SubStr(rel, 12))))
 		return true
 	return false
 	}

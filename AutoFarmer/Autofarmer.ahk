@@ -37,6 +37,7 @@ Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Discord alerts..., MenuAlerts
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
+Menu, Tray, Add, Learned spells, MenuSpells
 Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
 Menu, Tray, Add, Check for updates, MenuUpdates
@@ -94,6 +95,11 @@ return
 
 MenuDash:
 DashToggle()
+return
+
+;The dashboard's Spells tab: the cards the bot learned by itself, and your corrections (Spells.ahk)
+MenuSpells:
+SpShowTab()
 return
 
 ;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
@@ -328,6 +334,10 @@ ResetUsed()
 TestRound:
 loop,
 {
+	;Corrections made on the dashboard's Spells tab: applied here, out of battle only - never in a round, where a hit
+	;moved to another slot would take the round's enchants and saved pips with it (Spells.ahk). With the bot off too
+	if (inbattle != 1)
+		SpApplyPending()
 	;Off (F6) - or opened by the game in standby: nothing till F6 (no battles, walking, potions or reconnecting).
 	;Opened in standby and never turned on: Wizard101 closing closes the bot too (it opens again with the game)
 	if (!BotOn)
@@ -413,6 +423,10 @@ loop,
 		CommandReload()
 		ResetVariables() 
 		ResetUsed()	
+		;(the card learner's work out of battle: its catalog checked once a run, stray copies of a learned picture put
+		;right, a stronger learned hit arranged into hit1-3 - CardLearn.ahk)
+		if (IsFunc("LearnOutOfBattle"))
+			Func("LearnOutOfBattle").Call()
 		StatsAuto()
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
 		PotionCheck()
@@ -918,7 +932,7 @@ if (feint == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap(
 											{
 											if Click("bubble", bubble, hitschool)
 												BoostRun++
-											} else if (aura == 1) && BoostOk && Stat("useaura")
+											} else if (aura == 1) && BoostOk && Stat("useaura") && (AuraRounds <= 0)
 												{
 												if Click("aura", aura, hitschool)
 													{
@@ -3071,6 +3085,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\Dungeons.ahk
+#Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk
 #Include %A_ScriptDir%\..\Watch.ahk
