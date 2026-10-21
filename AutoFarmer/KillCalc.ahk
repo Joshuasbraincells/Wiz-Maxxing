@@ -195,7 +195,7 @@ SameHealth(a, b)
 ;health on its own at both sizes. Anything that doesn't add up -> false (health unknown)
 ReadEnemyHealth()
 	{
-	EnemyHP := "", EnemyPlates := []
+	EnemyHP := "", EnemyPlates := [], EnemyPlatesAt := A_TickCount
 	BossSlot := 0
 	;platestrip is in pixels at UI scale 1: the plates grow with the UI
 	stripH := Round(Stat("platestrip") * UiScale)

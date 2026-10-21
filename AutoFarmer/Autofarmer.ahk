@@ -224,6 +224,8 @@ global BossChoosen := 0
 global BossRelX := 0, BossRelY := 0
 ;Enemy nameplates found this round, left to right ({x, y} on screen; KillCalc's ReadEnemyHealth)
 global EnemyPlates := []
+;(when they were last read - ReadEnemyHealth)
+global EnemyPlatesAt := 0
 global boosts := 0
 global afk := 0
 global bossX := 0
@@ -1685,6 +1687,10 @@ HitTarget(title, dir)
 	key := dir "." title "target"
 	if (!Stats.HasKey(key) || Stats[key] != 1)
 		return
+	;(the plates as they are now - not as they were when last read: the kill check's off for a battle you played a
+	;round in, and an enemy gone since leaves its place behind)
+	if (BossChoosen != 1 && A_TickCount - EnemyPlatesAt > 8000)
+		ReadEnemyHealth()
 	if (BossChoosen == 1)
 		tx := BossX, ty := BossY, pick := "the boss"
 	else if (EnemyPlates.Length())
