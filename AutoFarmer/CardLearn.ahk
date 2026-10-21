@@ -393,8 +393,9 @@ LearnSeenAgain(card)
 			continue
 		changed := 0, got := 0
 		;(known by its own name though it has a slot: the slot's picture isn't this card's any more - you
-		;put another there - so it's out of that slot)
-		if (c.slot != "" && "learned/" c.id = card.known)
+		;put another there - so it's out of that slot. Not while the slot's picture is still its own)
+		slotDir := A_WorkingDir (c.dir = "" ? "" : "\" c.dir)
+		if (c.slot != "" && "learned/" c.id = card.known && !LearnSameFile(slotDir "\" c.slot ".png", slotDir "\learned\" c.id ".png"))
 			{
 			DebugLog("  learned card " c.id " (" LearnDescribe(c) "): " c.slot " has another picture now - not using it there any more")
 			c.slot := "", changed := 1
@@ -724,6 +725,30 @@ LearnLoad()
 			c.type := "blade"
 		LearnedCards.Push(c)
 		}
+	;(one whose picture is still in a slot is that slot's card - its record of it can have been lost)
+	back := 0
+	for i, c in LearnedCards
+		if (c.slot = "" && (slot := LearnSlotWithPicture(c)) != "")
+			{
+			c.slot := slot, back += 1
+			DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its picture is " slot "'s - in use there again")
+			}
+	if (back)
+		LearnSave()
+	}
+
+;The slot whose picture is learned card c's own (the same file, in the picture set it was learned in) - "" none. Its
+;school's hits, wand, heals and blade, and the blades and shield every school shares
+LearnSlotWithPicture(c)
+	{
+	setDir := A_WorkingDir (c.dir = "" ? "" : "\" c.dir)
+	own := setDir "\learned\" c.id ".png"
+	if (!FileExist(own) || c.sch = "")
+		return ""
+	for i, slot in [c.sch "\hit1", c.sch "\hit2", c.sch "\hit3", c.sch "\hit4", c.sch "\wand", c.sch "\heal1", c.sch "\heal2", c.sch "\blade", "resources\blade3", "resources\tower"]
+		if (LearnSameFile(setDir "\" slot ".png", own))
+			return slot
+	return ""
 	}
 
 ;LearnedCards -> learned\cards.txt
