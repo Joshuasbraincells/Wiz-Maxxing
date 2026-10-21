@@ -900,7 +900,7 @@ WalkStep()
 		WkProgStep := A_TickCount
 		if (WkProgBest = "" || dist < WkProgBest - 30 || dist > WkProgBest + 300)
 			WkProgBest := dist, WkProgAt := A_TickCount
-		else if (A_TickCount - WkProgAt > StuckForever && WalkCommonsReset("no closer to the goal in " Round(StuckForever / 60000) " minutes of walking"))
+		else if (A_TickCount - WkProgAt > StuckForever && WalkCommonsReset("no closer to the goal in " Round(StuckForever / 60000) " minutes of walking", dist))
 			return true
 		;Got round an obstacle: clearly closer than where it got stuck. Remember which way worked there
 		if (IsObject(WkEsc))
@@ -1061,7 +1061,7 @@ WalkStep()
 			;(what the game showed, to see what held it - AutoFarmer: Windows temp, "Wizard101 bot rounds")
 			stuckPic := IsFunc("SaveRoundPicture") ? Func("SaveRoundPicture").Call() : ""
 			WalkLog("stuck: gave up after " UnstickTries " tries" (stuckPic != "" ? " (the game's picture: " stuckPic ")" : ""))
-			if (WalkCommonsReset("couldn't get round an obstacle in " UnstickTries " tries"))
+			if (WalkCommonsReset("couldn't get round an obstacle in " UnstickTries " tries", stuckAt))
 				return true
 			Walking := 0
 			ReleaseKeys()
@@ -2173,11 +2173,28 @@ WalkFoes()
 
 ;Teleports to the world's Commons (End) and starts the walk over from there (the quest arrow leads on from
 ;wherever it lands). At most once every ResetEvery. False if it didn't: too soon, in a battle, or no
-;loading screen came within 10 s (a dungeon, say)
-WalkCommonsReset(why)
+;loading screen came within 10 s (a dungeon, say) - or it's badly stuck where it was before (the same zone, the
+;goal as far - within MemNear of distance at - and the same quest line, in the last 3 hours): the teleport only
+;brings it back there (2026-10-21: Krokotopia's Throne Room, at a wall 35 from the goal, every 10 minutes for half
+;an hour), so walking goes off and a notice says so
+WalkCommonsReset(why, at := "")
 	{
+	static spots := []
 	if (!ResetTeleport || (WkResetAt && A_TickCount - WkResetAt < ResetEvery) || inbattle || !Walking || !GameActive())
 		return false
+	zone := WalkZone(true), goal := SubStr(WalkLetters(WalkGoalLine()), 1, 24)
+	for i, s in spots
+		if (s.zone = zone && zone != "" && at != "" && s.dist != "" && Abs(at - s.dist) <= MemNear && A_TickCount - s.tick < 10800000
+			&& (s.goal = "" || goal = "" || s.goal = goal))
+			{
+			Walking := 0
+			ReleaseKeys()
+			WalkLog("badly stuck (" why ") where it was at " s.time " too (" zone ", " at " from the goal) - the Commons only brings it back here: walking off")
+			SetStatus("stuck at the same place again - walking is off. Walk it past, then press F8")
+			WalkNotify("stuck", "Stuck at the same place again", "The wizard got badly stuck where it was at " s.time " too (" zone ", " at " from the goal). Teleporting to the Commons only brings it back here, so walking is off - the way on may be a door or something the bot can't open. Walk it past, then press F8.")
+			return false
+			}
+	spots.Push({zone: zone, dist: at, goal: goal, tick: A_TickCount, time: A_Hour ":" A_Min})
 	WkResetAt := A_TickCount
 	ReleaseKeys()
 	WalkLog("badly stuck (" why ") - teleporting to the Commons (End) to start over")

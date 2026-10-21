@@ -139,8 +139,10 @@ What it does
 	  has walked 3 minutes (battles, talks, collecting left out) without
 	  getting any closer to the goal: it teleports to the world's Commons
 	  (End) and walks on from there - at most once every 10 minutes. Stuck
-	  again sooner, or the teleport can't happen (a dungeon): it stops and
-	  shows the Stuck notice. ResetTeleport := 0 at the top of Walker.ahk
+	  again sooner, or the teleport can't happen (a dungeon), or badly stuck
+	  where it was before (same zone, the goal as far, the same quest line -
+	  the Commons only brings it back there, a door it can't open, say): it
+	  stops and shows the Stuck notice. ResetTeleport := 0 at the top of Walker.ahk
 	  switches the teleport off.
 	- Notices (a small window that doesn't take the focus from the game, a
 	  sound and a tray tip; on another monitor if there is one, else beside
