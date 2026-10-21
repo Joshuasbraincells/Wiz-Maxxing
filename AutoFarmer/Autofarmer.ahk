@@ -483,6 +483,7 @@ loop,
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
+		PotionRestCheck()
 		}
 	;(a dungeon run on the Dungeons tab: its way instead of the quest's - Dungeons.ahk)
 	else if (IsObject(DgRun))

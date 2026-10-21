@@ -380,16 +380,19 @@ Out of battle the bot reads your health off the red globe. Under potionat %
 battle) it drinks a potion (Ctrl+O). If health doesn't go up, you're out, and
 it goes to buy more WITH GOLD (never Crowns):
 	- By the zone's map (potionwalk:1, the default - the Settings window's
-	  "Walk to the potion seller by the map"): nothing to record. Where the
-	  potion sellers stand is in the game's own files (Hilda Brewer in Wizard
-	  City's Commons, one in the Arcanum). Out of potions in a zone with one,
-	  the bot walks to her by the zone's map (the same route planner as the
-	  quest walking), presses X at her prompt, clicks Fill All (found by the
-	  words on it - never with "Crown" round it), closes the window and drinks.
-	  From anywhere else: a Recall (Page Up) to your Mark - leave it anywhere
-	  in the Commons, it needn't be right by her - or, in Wizard City, the
-	  Commons (End). Then on with the quest from there. A buying you recorded
-	  at your Mark (below) is still used; potionwalk:0 for only that.
+	  "Walk to the potion seller by the map"): nothing to record. The only
+	  potion seller is Hilda Brewer in Wizard City's Commons (her spot is in
+	  the game's own files). Out of potions anywhere else, the bot leaves a
+	  Mark (Page Down) where it is, goes Home (the Home key - outside Wizard
+	  City) and to the Commons (End), walks to her by the zone's map (the same
+	  route planner as the quest walking), presses X at her prompt, clicks
+	  Fill All (found by the words on it - never with "Crown" round it),
+	  drinks one, Fills All again, and Recalls (Page Up) back to the Mark to
+	  carry on. In the Commons already: no Mark, no Recall. Your house must be
+	  in Wizard City (the Dorm is) - else it goes back and tells you. With no
+	  potions and none to be had it rests (no walking) till health is back.
+	  A buying you recorded at your Mark (below) is still used; potionwalk:0
+	  for only that.
 	  debug.log: "Potions: walking to the potion seller (...) by the zone's
 	  map", "Fill All at ...".
 	Or recorded, at your Mark:

@@ -37,13 +37,18 @@
 ; only). A battle, you touching the mouse or keyboard, or a loading screen that doesn't come stops it too.
 ; No route from there: it recalls back and tells you to record one.
 ;
-; By the zone's map (potionwalk:1, the default) - nothing recorded: the potion sellers' spots are in the game's
-; own files (the vision helper reads them: Hilda Brewer in Wizard City's Commons, one in the Arcanum). Out of
-; potions in a zone with one, the bot walks to her by the zone's map (the route planner, the game's memory -
-; read-only), presses X at her prompt and clicks Fill All (found by the words on it, never with "Crown" round
-; it), closes the window and drinks. Elsewhere: a Recall (Page Up) to your Mark - leave it anywhere in the
-; Commons - or in Wizard City the Commons (End), then the same. A buying you recorded at your Mark is still used
-; when there is one; anything that can't be done by the map falls back to the recorded ways below.
+; By the zone's map (potionwalk:1, the default) - nothing recorded: the potion seller's spot is in the game's own
+; files (the vision helper reads it: Hilda Brewer in Wizard City's Commons - the only one). Out of potions:
+;   1. a Mark (Page Down) where the wizard is, to come back to (not in the Commons itself)
+;   2. outside Wizard City Home (the Home key - your house in Wizard City), then the Commons (End); in Wizard City
+;      the Commons straight away
+;   3. walked to her by the zone's map (the route planner, the game's memory - read-only), X at her prompt, Fill All
+;      (found by the words on it, never with "Crown" round it), the window closed
+;   4. one drunk, then Fill All again - full again
+;   5. Recall (Page Up) to the Mark, and on from there (the quest arrow)
+; A way that doesn't get to her (no Commons after End - your house in another world?): back to the Mark, and it
+; tells you. A buying you recorded at your Mark is still used when there is one; anything that can't be done by
+; the map falls back to the recorded ways below.
 ;
 ; Recording (tray menu "Record potion buying..."): the bot recalls you to your Mark (Page Up); press X to
 ; talk, click Fill All (and whatever closes the window), then press F9. You stay at the seller.
@@ -118,6 +123,28 @@ PotionCheck()
 		PotionNoneAt := 0, PotionResting := 0
 	else
 		PotionFailUntil := A_TickCount + 10 * 60000
+	}
+
+;While resting (no walking - PotionCheck started it): health looked at every 4 s, from the main loop itself - on again
+;once it's back over potionat + 20 %, or after 10 minutes all the same; how it's going said every minute
+PotionRestCheck()
+	{
+	static saidAt := 0, lookAt := 0
+	if (!PotionResting || A_TickCount < lookAt)
+		return
+	lookAt := A_TickCount + 4000
+	hp := (VisionOn && GameActive()) ? PotionHealth() : ""
+	most := PotionMost()
+	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
+	pct := (hp != "" && most) ? 100 * hp / most : ""
+	if ((pct != "" && pct >= limit + 20) || (PotionRestFrom && A_TickCount - PotionRestFrom > 600000))
+		{
+		PotionResting := 0
+		DebugLog("Potions: " (pct != "" ? "health " hp "/" most " (" Round(pct) "%) - " : "") ((pct != "" && pct >= limit + 20) ? "back up" : "10 minutes rested") ", walking on")
+		return
+		}
+	if (A_TickCount - saidAt > 60000)
+		saidAt := A_TickCount, DebugLog("Potions: resting - health " (pct = "" ? "can't be read" : hp "/" most " (" Round(pct) "%)") ", walking on at " limit + 20 "%")
 	}
 
 ;Health off the globe, read twice the same ("" if not)
@@ -384,10 +411,12 @@ PotionAtSeller(rec)
 
 ;After buying: drinks if health is still under potionat %. False if that drink didn't work - nothing was
 ;bought (no gold, a click that missed), so PotionCheck waits 10 minutes before another run
-PotionAfterBuy()
+PotionAfterBuy(useOne := false)
 	{
 	hp := PotionHealth(), most := PotionMost()
 	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
+	;(useOne: one drunk after buying, whatever the health - unless it's nearly full: then it'd only be wasted)
+	limit := useOne ? 90 : limit
 	if (hp = "")
 		{
 		DebugLog("Potions: can't read your health after buying - not drinking")
@@ -427,7 +456,7 @@ PotionCarryOn(bought)
 		}
 	if (Walking && !afk && !loopmode && !loremode)
 		{
-		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - following the quest arrow on from your Mark")
+		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - following the quest arrow on from here")
 		return
 		}
 	why := afk ? "afk farming" : loopmode ? "mob-loop farming" : loremode ? "lore farming" : ""
@@ -1097,6 +1126,7 @@ PotionRunWalk()
 		}
 	zone := WalkZone(true)
 	s := PotionSellerIn(zone)
+	marked := false
 	if (!IsObject(s))
 		{
 		;(the ways you set up - a buying recorded at your Mark, potionmark:0's routes - and farming, which has
@@ -1108,32 +1138,33 @@ PotionRunWalk()
 			DebugLog("Potions: the game's memory can't be read (" VisionErr ") - no walking to the potion seller by the map")
 			return ""
 			}
-		marksOff := PotionOff()
-		;In Wizard City: the Commons (End) - she's there
-		if (InStr(zone, "WizardCity/") = 1)
+		;Only Wizard City's Commons has a potion seller (Hilda Brewer): a Mark here to come back to (Page Down), then
+		;outside Wizard City Home (your house in Wizard City) and the Commons (End) - in Wizard City the Commons
+		Send, {Blind}{PgDn}
+		PotionMarkZone := zone, PotionMarkAt := A_TickCount, marked := true
+		DebugLog("Potions: no potion seller in " zone " - marked this spot (Page Down) to come back to")
+		Sleep, 1500
+		if (InStr(zone, "WizardCity/") != 1)
 			{
-			DebugLog("Potions: no potion seller in " zone " - to the Commons (End)")
-			if (PotionTeleport("{End}", "the Commons"))
-				zone := WalkZone(true), s := PotionSellerIn(zone)
-			}
-		;Elsewhere: a Recall to your Mark (anywhere in the Commons) - once: a Mark that led to no seller isn't
-		;tried again till you record at it or restart the bot
-		else if (!marksOff.HasKey(who))
-			{
-			g := PotionGlobes()
-			DebugLog("Potions: no potion seller in " zone " - Recall (Page Up) to your Mark")
-			if (PotionTeleport("{PgUp}", "your Mark", Func("PotionArrivedMana").Bind(g.mana)))
+			DebugLog("Potions: Home (the Home key), then the Commons (End)")
+			if (!PotionTeleport("{Home}", "home"))
 				{
-				zone := WalkZone(true), s := PotionSellerIn(zone)
-				if (!IsObject(s))
-					marksOff[who] := zone
+				;(still here: the Mark's here too - nothing to go back to)
+				PotionMarkZone := "", PotionMarkAt := 0
+				PotionCarryOn(false)
+				return false
 				}
 			}
+		else
+			DebugLog("Potions: to the Commons (End)")
+		if (PotionTeleport("{End}", "the Commons"))
+			zone := WalkZone(true), s := PotionSellerIn(zone)
 		if (!IsObject(s))
 			{
-			DebugLog("Potions: out of potions, and no potion seller here (" zone ") - leave your Mark (Page Down) anywhere in Wizard City's Commons: the bot recalls there and walks to Hilda Brewer by the map")
-			TrayTip, Wizard101 bot, % "Out of potions, and no potion seller here.`nLeave your Mark (Page Down) anywhere in Wizard City's Commons - the bot recalls there and walks to Hilda Brewer.", 10, 2
-			AlertSend("potions", "out of potions", "No potion seller here (" zone ") - leave your Mark (Page Down) anywhere in Wizard City's Commons.")
+			DebugLog("Potions: no potion seller in " WalkZone(true) " after Home and the Commons - back to the mark. (Only Wizard City's Commons has one: is your house in another world?)")
+			TrayTip, Wizard101 bot, % "Out of potions - Home and the Commons (End) didn't lead to the potion seller (" WalkZone(true) ").`nThe bot went back to where it was. Is your house in Wizard City?", 10, 2
+			AlertSend("potions", "out of potions", "Home and the Commons didn't lead to Wizard City's potion seller (" WalkZone(true) ") - back to where it was. Is your house in Wizard City?")
+			PotionRecall()
 			PotionCarryOn(false)
 			return false
 			}
@@ -1143,15 +1174,28 @@ PotionRunWalk()
 		ReleaseKeys()
 		;(a recorded way to try, and nothing's said stop - a battle, your hands): that one. Not behind a shop's window
 		;that couldn't be closed: that stops the run (PotionCarryOn says so)
-		if (recorded && !PotionShopLeft && WalkZone(true) = s.zone && PotionOk(true, since))
+		if (!marked && recorded && !PotionShopLeft && WalkZone(true) = s.zone && PotionOk(true, since))
 			{
 			DebugLog("Potions: the walk to the potion seller didn't work - the recorded way instead")
 			return ""
 			}
+		;(marked: back to it all the same - not behind a shop's window that's still open)
+		if (marked && !PotionShopLeft)
+			PotionRecall()
 		PotionCarryOn(false)
 		return false
 		}
-	ok := PotionAfterBuy()
+	;(one drunk - then filled up again, so the run leaves her with full potions)
+	ok := PotionAfterBuy(true)
+	;(not with the shop's window still open - it couldn't be closed: PotionCarryOn says so)
+	if (ok && !PotionShopLeft && PotionOk(true, since))
+		{
+		DebugLog("Potions: filling up again after drinking one")
+		Sleep, 800
+		PotionBuyHere(s, since)
+		}
+	if (marked && !PotionShopLeft)
+		PotionRecall()
 	PotionCarryOn(ok)
 	return ok
 	}
