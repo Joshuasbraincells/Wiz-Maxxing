@@ -1592,8 +1592,10 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 OwnHealthLow()
 	{
 	global
-	local x, y, w, h, t, a, pct, limit, votes, key, n, best, bestN, zoom
+	local x, y, w, h, t, a, pct, limit, votes, key, n, best, bestN, zoom, gl
 	x := playerX - Px(8), y := playerY + Px(20), w := Px(110), h := Px(24)
+	;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
+	gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
 	;(the game's digits fool OCR now and then - B for 8, a 3 for an 8 - so it reads at four sizes and
 	;takes what at least two of them read)
 	votes := {}, best := "", bestN := 0
@@ -1603,7 +1605,7 @@ OwnHealthLow()
 		if (ErrorLevel)
 			continue
 		t := StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(t, "B", "8"), "O", "0"), "o", "0"), "S", "5"), "l", "1"), "I", "1")
-		a := ParseHealth(t)
+		a := ParseHealth(HealthDigits(t, gl))
 		if (!IsObject(a) || a.Length() != 1)
 			continue
 		key := a[1].cur "/" a[1].max, n := votes.HasKey(key) ? votes[key] + 1 : 1, votes[key] := n

@@ -273,10 +273,10 @@ ReadEnemyHealth()
 			plates.Push(owner := {name: "", health: hl, votes: []})
 		else if (!IsObject(owner.health))
 			owner.health := hl
-		;Each strip read of this health line is one vote
+		;(the strip's own read of the line only finds the plate - no vote: read plain, the red numbers on the
+		;parchment come back empty or wrong; each plate's are read below with only their red)
 		if (!IsObject(owner.votes))
 			owner.votes := []
-		owner.votes.Push(ParseHealth(hl.text))
 		}
 	;Left to right, like the slots on screen
 	Loop, % plates.Length() - 1
@@ -324,8 +324,16 @@ ReadEnemyHealth()
 			b := p.name
 			cx := b.x - b.h * 2, cy := b.y + b.h, cw := (b.w > b.h * 10 ? b.w : b.h * 10) + b.h * 4, ch := b.h * 3
 			}
-		p.votes.Push(ParseHealth(OcrRect(cx, cy, cw, ch, "en", scale1)))
-		p.votes.Push(ParseHealth(OcrRect(cx, cy, cw, ch, "en", scale2)))
+		;(only the red pixels read - the numbers; just round their glyphs when they're found, not the whole box, which
+		;can hold a bit of the plate's icon; their 3s and 5s told by their shape: HealthDigits)
+		;(looked for a good way either side: the strip's read of the line can start or end a digit or two short)
+		gl := HealthGlyphs(cx - b.h * 3, cy, cw + b.h * 6, ch)
+		;(the plate's own box kept as it is - the boss click's matched against it below)
+		gx := cx, gy := cy, gw := cw, gh := ch
+		if (IsObject(gl) && gl.Length() >= 3)
+			GlyphsBox(gl, (gl[1].y2 - gl[1].y1) // 2 + 2, gx, gy, gw, gh)
+		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, redLines, 1), gl)))
+		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, redLines, 1), gl)))
 		agreed := "", count := 0
 		for j, v in p.votes
 			{
@@ -387,6 +395,231 @@ ReadEnemyHealth()
 			}
 		}
 	return true
+	}
+
+;---- The health numbers' 3s, 5s and 8s ----
+;
+;In the plates' font a 3 has a flat top like a 5, and Windows' OCR reads 395 as 595 (or 39S) - and an 8 as a 3 now and
+;then. The numbers are pure red: their glyphs are found at 1:1, left to right (not a plate's school icon - not that
+;red), a run twice as wide as the rest split at its thinnest column (a digit touching the "/"), only the digits' height
+;kept (not a speck, nor the taller icon) with a comma joining those either side, and of them only the longest row close
+;together (not a bit of the icon a gap away). A 5 and an 8 have ink down the left side under the top (a 3 at most a
+;quarter, against over half), and only an 8 over the bottom too (all of it, against at most about half)
+
+;The pure red numbers' glyphs in the screen box, left to right: [{x1, x2, y1, y2, band, low}] (screen) - how much of the
+;glyph's left side is inked (0-1) under its top (band) and over its bottom (low). "" if it can't be captured
+HealthGlyphs(x, y, w, h)
+	{
+	px := CaptureRGB(x, y, w, h)
+	if (!IsObject(px))
+		return ""
+	inkAt := [], colInk := []
+	Loop, % w
+		colInk[A_Index] := 0
+	Loop, % w * h
+		{
+		c := px[A_Index]
+		r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
+		;(the numbers' red - not the orange-red of a school icon: its green well above its blue)
+		if (r > 110 && g < 45 && b < 45 && r - g > 80 && g - b < 18)
+			inkAt[A_Index] := 1, colInk[Mod(A_Index - 1, w) + 1] += 1
+		}
+	;Runs of inked columns, and the usual width of one
+	runs := [], start := 0, widths := ""
+	Loop, % w + 1
+		{
+		has := (A_Index <= w && colInk[A_Index])
+		if (has && !start)
+			start := A_Index
+		else if (!has && start)
+			runs.Push([start, A_Index - 1]), widths .= (widths = "" ? "" : ",") A_Index - start, start := 0
+		}
+	if (!runs.Length())
+		return []
+	Sort, widths, N D`,
+	ws := StrSplit(widths, ",")
+	med := ws[(ws.Length() + 1) // 2]
+	parts := []
+	for i, run in runs
+		{
+		a := run[1], z := run[2], wide := z - a + 1
+		;(two glyphs touching: split at the thinnest column of its middle half)
+		if (wide > 1.6 * med && wide >= 6)
+			{
+			cut := a + wide // 4
+			Loop, % (z - wide // 4) - (a + wide // 4) + 1
+				{
+				k := a + wide // 4 + A_Index - 1
+				if (colInk[k] < colInk[cut])
+					cut := k
+				}
+			parts.Push([a, cut]), parts.Push([cut + 1, z])
+			}
+		else
+			parts.Push([a, z])
+		}
+	;Each glyph's top and bottom, and the usual height
+	gl := [], heights := ""
+	for i, q in parts
+		{
+		top := 0, bottom := 0
+		Loop, % h
+			{
+			j := A_Index, row := (j - 1) * w
+			Loop, % q[2] - q[1] + 1
+				{
+				if (inkAt[row + q[1] + A_Index - 1])
+					{
+					if (!top)
+						top := j
+					bottom := j
+					break
+					}
+				}
+			}
+		if (top)
+			gl.Push({x1: q[1], x2: q[2], y1: top, y2: bottom}), heights .= (heights = "" ? "" : ",") bottom - top + 1
+		}
+	if (!gl.Length())
+		return []
+	Sort, heights, N D`,
+	hs := StrSplit(heights, ",")
+	tall := hs[(hs.Length() + 1) // 2]
+	;(the digits' own height - not a speck, nor the taller icon or a mob's name - and a comma (short, low: it joins the
+	;digits either side); then the longest row of them close together: the numbers, not a bit of the icon or anything
+	;else a gap away)
+	kept := [], gaps := "", bottoms := ""
+	for i, g in gl
+		{
+		gh := g.y2 - g.y1 + 1
+		if (gh >= 0.7 * tall && gh <= 1.35 * tall)
+			gaps .= (gaps = "" ? "" : ",") g.x2 - g.x1 + 1, bottoms .= (bottoms = "" ? "" : ",") g.y2
+		}
+	if (gaps = "")
+		return []
+	Sort, gaps, N D`,
+	Sort, bottoms, N D`,
+	gs := StrSplit(gaps, ","), bs := StrSplit(bottoms, ",")
+	near := Max(2, 0.6 * gs[(gs.Length() + 1) // 2]), base := bs[(bs.Length() + 1) // 2]
+	for i, g in gl
+		{
+		gh := g.y2 - g.y1 + 1
+		if (gh >= 0.7 * tall && gh <= 1.35 * tall)
+			g.digit := 1, kept.Push(g)
+		else if (gh < 0.6 * tall && g.y1 >= base - tall * 0.5 && g.y2 <= base + tall * 0.5)
+			g.digit := 0, kept.Push(g)
+		}
+	best := 1, bestN := 0, from := 1, n := 0
+	for i, g in kept
+		{
+		if (i > 1 && g.x1 - kept[i - 1].x2 - 1 > near)
+			from := i, n := 0
+		n += g.digit
+		if (n > bestN)
+			best := from, bestN := n, last := i
+		}
+	;(too-tall red ink beside the row or in it - a red thing under the first digits joins their columns, and they'd be
+	;left out, the number read short: none of it trusted)
+	for i, g in gl
+		if (g.y2 - g.y1 + 1 > 1.35 * tall && g.x2 >= kept[best].x1 - tall && g.x1 <= kept[last].x2 + tall)
+			return []
+	digits := []
+	Loop, % last - best + 1
+		if (kept[best + A_Index - 1].digit)
+			digits.Push(kept[best + A_Index - 1])
+	out := []
+	lowRow := Round(base - tall * 0.4)
+	for i, g in digits
+		{
+		;(a comma touching the digit: its columns, inked only low down, trimmed off its ends - else the left side measured
+		;is the comma's)
+		Loop, 2
+			{
+			trim := 0, side := A_Index
+			Loop, % g.x2 - g.x1 - 5
+				{
+				edge := side = 1 ? g.x1 + A_Index - 1 : g.x2 - A_Index + 1, high := 0
+				Loop, % lowRow - g.y1
+					{
+					if (inkAt[(g.y1 + A_Index - 2) * w + edge])
+						{
+						high := 1
+						break
+						}
+					}
+				if (high)
+					break
+				trim := A_Index
+				}
+			if (trim >= 2 && side = 1)
+				g.x1 += trim
+			else if (trim >= 2)
+				g.x2 -= trim
+			}
+		Loop, % h - g.y1 + 1
+			{
+			j := g.y1 + A_Index - 1, row := (j - 1) * w
+			Loop, % g.x2 - g.x1 + 1
+				{
+				if (inkAt[row + g.x1 + A_Index - 1])
+					{
+					g.y2 := j
+					break
+					}
+				}
+			}
+		gh := g.y2 - g.y1 + 1, gw := g.x2 - g.x1 + 1
+		;(the left 30 %: from a quarter of the way down to under half way - band - and from just over half way to
+		;three quarters - low)
+		bw := Max(1, Round(gw * 0.3)), band := low := 0
+		for k, rows in [[0.25, 0.45], [0.58, 0.75]]
+			{
+			y0 := g.y1 + Round(gh * rows[1]), y1 := g.y1 + Round(gh * rows[2]), inked := 0
+			Loop, % y1 - y0 + 1
+				{
+				row := (y0 + A_Index - 2) * w
+				Loop, % bw
+					inked += inkAt[row + g.x1 + A_Index - 1] ? 1 : 0
+				}
+			if (k = 1)
+				band := inked / (bw * (y1 - y0 + 1))
+			else
+				low := inked / (bw * (y1 - y0 + 1))
+			}
+		out.Push({x1: x + g.x1 - 1, x2: x + g.x2 - 1, y1: y + g.y1 - 1, y2: y + g.y2 - 1, band: band, low: low})
+		}
+	return out
+	}
+
+;The screen box round glyphs (HealthGlyphs), pad pixels out
+GlyphsBox(gl, pad, ByRef bx, ByRef by, ByRef bw, ByRef bh)
+	{
+	x1 := gl[1].x1, x2 := gl[gl.Length()].x2, y1 := gl[1].y1, y2 := gl[1].y2
+	for i, g in gl
+		y1 := Min(y1, g.y1), y2 := Max(y2, g.y2)
+	bx := x1 - pad, by := y1 - pad, bw := x2 - x1 + 1 + pad * 2, bh := y2 - y1 + 1 + pad * 2
+	}
+
+;An OCR'd health line (read with only its red) put right by its glyphs (HealthGlyphs): S read for 5, O for 0 and B for 8,
+;then each 3, 5 or 8 by its shape. "" when the glyphs were found and don't line up with the characters (one each), or
+;there's a 3, 5 or 8 to tell and they weren't - such a read isn't to be trusted
+HealthDigits(text, gl)
+	{
+	;(only a thousands mark between digits and spaces round the "/" taken out - anything else left in for ParseHealth to
+	;turn down, and to be counted against the glyphs)
+	t := RegExReplace(text, "(?<=[\dSsOoB])\s*[,.']\s*(?=[\dSsOoB])|\s+(?=/)|(?<=/)\s+")
+	t := RegExReplace(RegExReplace(RegExReplace(t, "[Ss]", "5"), "[Oo]", "0"), "B", "8")
+	;(every read counted against the glyphs when they were found - a digit cut off or added shows)
+	if (IsObject(gl) && gl.Length() != StrLen(t))
+		return ""
+	if (!RegExMatch(t, "[358]"))
+		return t
+	if (!IsObject(gl))
+		return ""
+	out := ""
+	Loop, Parse, t
+		out .= InStr("358", A_LoopField) ? (gl[A_Index].band < 0.4 ? "3" : gl[A_Index].low >= 0.75 ? "8" : "5") : A_LoopField
+	return out
 	}
 
 ;Minimum non-crit damage of a hit to one enemy, counting only boosts we know are applied.
