@@ -971,12 +971,13 @@ PotionToCommons(since)
 	return PotionWalkTo(door, since, true)
 	}
 ;The words firstRe (and nextRe right after it, if given) in the middle of the game window, by OCR: {x, y} (screen)
-;of their middle, or "". text: what was read there
-PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false)
+;of their middle, or "" - the first found, or with rightmost the one furthest right. text: what was read there
+PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false, rightmost := false)
 	{
 	text := OcrRect(Round(GameLeft + GameW * 0.12), Round(GameTop + GameH * 0.08), Round(GameW * 0.76), Round(GameH * 0.84), "en", 1, lines)
 	if (ErrorLevel || !IsObject(lines))
 		return ""
+	best := ""
 	for i, line in lines
 		{
 		ws := line.words
@@ -986,28 +987,34 @@ PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false)
 			{
 			if (!RegExMatch(Trim(w.text), firstRe) || (lone && ws.Length() != 1))
 				continue
+			at := ""
 			if (nextRe = "")
-				return {x: Round(w.x + w.w / 2), y: Round(w.y + w.h / 2)}
-			if (j < ws.Length() && RegExMatch(Trim(ws[j + 1].text), nextRe))
+				at := {x: Round(w.x + w.w / 2), y: Round(w.y + w.h / 2)}
+			else if (j < ws.Length() && RegExMatch(Trim(ws[j + 1].text), nextRe))
 				{
 				v := ws[j + 1]
-				return {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2)}
+				at := {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2)}
 				}
+			if (IsObject(at) && !rightmost)
+				return at
+			if (IsObject(at) && (!IsObject(best) || at.x > best.x))
+				best := at
 			}
 		}
-	return ""
+	return best
 	}
 
 ;Where the potion shop's Fill All button is, by its words - one look, Fill All, else Fill One just above it (+77 at
-;UI scale 1; Fill All is greyed once the potions are full) - or "" when neither is read. shopSeen: the shop's own
-;words read at all (its title, a Fill button)
+;UI scale 1; Fill All is greyed once the potions are full) - or "" when neither is read. The rightmost: once Fill All is
+;picked its name shows on the left too, over the cost and BUY - not a button. shopSeen: the shop's own words read at
+;all (its title, a Fill button)
 PotionShopAnchor(ByRef shopSeen := "")
 	{
 	shopText := OcrRect(Round(GameLeft + GameW * 0.12), Round(GameTop + GameH * 0.08), Round(GameW * 0.76), Round(GameH * 0.84), "en", 1, shopLines)
 	shopSeen := !ErrorLevel && RegExMatch(shopText, "i)mystical|mixtures|\bfill\b")
 	if (ErrorLevel || !IsObject(shopLines))
 		return ""
-	fillOne := ""
+	fillAll := "", fillOne := ""
 	for i, line in shopLines
 		{
 		ws := line.words
@@ -1017,14 +1024,14 @@ PotionShopAnchor(ByRef shopSeen := "")
 			{
 			if (j >= ws.Length() || !RegExMatch(Trim(w.text), "i)^fill$"))
 				continue
-			v := ws[j + 1]
-			if (RegExMatch(Trim(v.text), "i)^all[.!]?$"))
-				return {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2)}
-			if (RegExMatch(Trim(v.text), "i)^one[.!]?$") && !IsObject(fillOne))
-				fillOne := {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2) + Round(77 * UiScale)}
+			v := ws[j + 1], mid := Round((w.x + v.x + v.w) / 2)
+			if (RegExMatch(Trim(v.text), "i)^all[.!]?$") && (!IsObject(fillAll) || mid > fillAll.x))
+				fillAll := {x: mid, y: Round(w.y + w.h / 2)}
+			if (RegExMatch(Trim(v.text), "i)^one[.!]?$") && (!IsObject(fillOne) || mid > fillOne.x))
+				fillOne := {x: mid, y: Round(w.y + w.h / 2) + Round(77 * UiScale)}
 			}
 		}
-	return fillOne
+	return IsObject(fillAll) ? fillAll : fillOne
 	}
 
 ;The potion shop's close button - the red X at its bottom right corner, (235, 359) from Fill All at UI scale 1,
@@ -1169,7 +1176,8 @@ PotionBuyHere(s, since := 0)
 	DebugLog("Potions: " name "'s prompt - X")
 	Send, {Blind}x
 	Sleep, 1800
-	w := PotionFindWords("i)^fill$", "i)^all[.!]?$", seen)
+	;(the right panel's Fill All - the rightmost: once picked, its name shows on the left too)
+	w := PotionFindWords("i)^fill$", "i)^all[.!]?$", seen, false, true)
 	;(Crowns anywhere in the window: nothing clicked)
 	if (IsObject(w) && RegExMatch(seen, "i)cr[o0]wn"))
 		{
@@ -1192,11 +1200,24 @@ PotionBuyHere(s, since := 0)
 		}
 	DebugLog("Potions: Fill All at " w.x - GameLeft "," w.y - GameTop " - clicking")
 	ClickAt(w.x, w.y, 300)
+	Sleep, 1000
+	;(Fill All only picks what to buy: its BUY button - on the left, under the cost - buys it, with gold. Only with no
+	;Crown anywhere in the window nor round the button)
+	b := PotionFindWords("i)^buy[.!]?$", "", seen, true)
+	if (!IsObject(b) || RegExMatch(seen, "i)cr[o0]wn") || !PotionNoCrowns(b.x, b.y) || !PotionOk(true, since))
+		{
+		DebugLog("Potions: " (!IsObject(b) ? "no BUY button after Fill All" : RegExMatch(seen, "i)cr[o0]wn") ? """Crown"" in the shop's window - BUY not clicked" : "BUY not clicked") " (read: " SubStr(RegExReplace(seen, "\s+", " "), 1, 160) ") - not bought")
+		PotionCloseShop(since, w)
+		return false
+		}
+	RegExMatch(seen, "i)cost\s*(\d[\d,]*)", cost)
+	DebugLog("Potions: BUY at " b.x - GameLeft "," b.y - GameTop (cost1 != "" ? " (cost " cost1 " gold)" : "") " - clicking")
+	ClickAt(b.x, b.y, 300)
 	Sleep, 1200
 	;(a box asking to pay with gold: its OK / Yes - only with "gold" in it and no Crown round it)
 	c := PotionFindWords("i)^(ok|okay|yes)[.!]?$", "", seen, true)
 	;(what's on screen after it - the shop still up, a box asking to pay, or nothing: for debug.log)
-	DebugLog("Potions: after Fill All, read: " (seen = "" ? "(nothing)" : SubStr(RegExReplace(seen, "\s+", " "), 1, 200)))
+	DebugLog("Potions: after BUY, read: " (seen = "" ? "(nothing)" : SubStr(RegExReplace(seen, "\s+", " "), 1, 200)))
 	if (IsObject(c) && RegExMatch(seen, "i)gold") && !RegExMatch(seen, "i)cr[o0]wn") && PotionOk(true, since) && PotionNoCrowns(c.x, c.y))
 		{
 		DebugLog("Potions: a box asking to pay with gold - OK")
