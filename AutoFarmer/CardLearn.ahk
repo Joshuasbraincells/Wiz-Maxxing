@@ -41,8 +41,8 @@ global DiscardedUnused := 0
 
 ;---- Discarding what the bot never plays (normal battles) ----
 ;Once a round, after the hand's been read and learned (LastHandAnswer): every card in it the bot knows for sure
-;it never plays - a learned card in no slot: a charm, a global, a minion... it has no use for, a type it doesn't
-;know, or one more card of a kind whose slots are all taken - is right-clicked away, so the next round draws
+;it never plays - a learned card in no slot of a kind it knows: one more card of a kind whose slots are all taken - is
+;right-clicked away (not one of a type it doesn't know: kept), so the next round draws
 ;cards it can use. Not: its own cards (hits, heals, blades, traps... - spare blades and Sharpen have their own
 ;rule, DiscardSpare), cards it doesn't know (greyed out - they may be its own; in colour they're learned first,
 ;and go next round if they get no slot), and nothing while you're playing. At most discardmax a round
@@ -77,9 +77,11 @@ DiscardUnused()
 			}
 		pid := SubStr(c.known, 9)
 		;(put in a slot this round - the hand was read before it got one: the bot plays it now - or a blade with a slot
-		;free for it: not thrown away for a moment's failed look at the slot)
+		;free for it: not thrown away for a moment's failed look at the slot. Nor one of a type it doesn't know: some of
+		;those aren't cards at all - the round timer, the deck counter, learned by mistake - and match real ones, and some
+		;are real cards learned again at a new UI size before their type could be read)
 		lc := LearnCardOf(pid)
-		if (LearnSlotOf(pid) != "" || (IsObject(lc) && lc.type = "blade" && LearnSlotFor(lc) != ""))
+		if (LearnSlotOf(pid) != "" || !IsObject(lc) || lc.type = "" || (lc.type = "blade" && LearnSlotFor(lc) != ""))
 			{
 			i += 1
 			continue
