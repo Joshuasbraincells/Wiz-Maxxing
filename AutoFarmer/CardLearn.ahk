@@ -16,6 +16,9 @@
 ;       damage / aoe, no pips  -> <school>\wand
 ;       heal                   -> <school>\heal1, heal2
 ;       ward                   -> resources\tower (cast on yourself)
+;       blade (no icon of its own: its text, "+25% to next spell") -> resources\blade3 for Balanceblade, <school>\blade
+;                                 for one naming your school - only at the % PlayerStats.txt counts for it (blade3:,
+;                                 blade:), so the kill check never counts a boost that isn't there
 ;     copying its picture there and writing its numbers into PlayerStats.txt (<school>.hitN, hitNpips,
 ;     hitNtarget, ...), so the battle code uses it like any other card
 ;   - otherwise (no free slot, or a type it doesn't know yet) it's only kept, and recognised from then on
@@ -48,7 +51,7 @@ global DiscardedUnused := 0
 DiscardUnused()
 	{
 	global
-	local cards, f, c, i, k, o, did, most, pid, why
+	local cards, f, c, i, k, o, did, most, pid, why, lc
 	if (DiscardedUnused || LastHandAnswer = "" || !Stat("discardunused") || LearnAll)
 		return 0
 	DiscardedUnused := 1
@@ -73,8 +76,10 @@ DiscardUnused()
 			continue
 			}
 		pid := SubStr(c.known, 9)
-		;(put in a slot this round - the hand was read before it got one: the bot plays it now)
-		if (LearnSlotOf(pid) != "")
+		;(put in a slot this round - the hand was read before it got one: the bot plays it now - or a blade with a slot
+		;free for it: not thrown away for a moment's failed look at the slot)
+		lc := LearnCardOf(pid)
+		if (LearnSlotOf(pid) != "" || (IsObject(lc) && lc.type = "blade" && LearnSlotFor(lc) != ""))
 			{
 			i += 1
 			continue
@@ -104,6 +109,24 @@ LearnSlotOf(id)
 			if (c.id = id)
 				return c.slot
 	return ""
+	}
+
+;Learned card id's catalog entry ("" if it isn't one)
+LearnCardOf(id)
+	{
+	if (IsObject(LearnedCards))
+		for i, c in LearnedCards
+			if (c.id = id)
+				return c
+	return ""
+	}
+
+;A card whose icon wasn't one the helper knows (a blade's is a charm's), whose text says it's a blade: "+25% to next
+;spell" - the + often read as something else, or lost. Not a "-25%" (a weakness, a shield), nor a Sharpen (it's put
+;on a blade - its text says so)
+LearnLooksBlade(c)
+	{
+	return (c.type = "" || c.type = "blade") && RegExMatch(c.text, "i)\d{1,3}\s*%\s*to\s*next") && !RegExMatch(c.text, "-\s*\d{1,3}\s*%") && !RegExMatch(c.text, "i)blade")
 	}
 
 ;Why learned card id isn't one the bot plays (for the log)
@@ -299,6 +322,8 @@ LearnNew(card)
 		DebugLog("  the new card's numbers couldn't be read for sure (""" text """) - its damage counts as 0 for the kill check")
 	c := {id: id, sch: hitschool, type: card.type, pips: card.pips, guess: 0, value: value, target: (card.type = "damage") ? 1 : 0, slot: ""
 		, scale: Round(UiScale, 3), dir: SubStr(setDir, StrLen(A_WorkingDir) + 2), when: A_Now, text: text}
+	if (LearnLooksBlade(c))
+		c.type := "blade"
 	;(no pip digit read: it's in colour, so it costs no more than the pips you have)
 	if (c.pips = "" && PipsNow >= 0)
 		c.pips := PipsNow, c.guess := 1
@@ -497,6 +522,19 @@ LearnSlotFor(c)
 		}
 	if (c.type = "ward")
 		return LearnFree("resources\tower") ? "resources\tower" : ""
+	;(cast on yourself before a hit, as a cut one would be: Balanceblade - "+25% to next spell", no school named - as
+	;blade3, one naming your school as your school's blade; only at the % PlayerStats.txt counts for that slot - the
+	;kill check adds it - else none: kept, not used)
+	if (c.type = "blade")
+		{
+		if (RegExMatch(c.text, "i)to\s*next\s*sp"))
+			slot := "resources\blade3", want := Stat("blade3")
+		else if (sch != "" && RegExMatch(c.text, "i)to\s*next\s*" sch))
+			slot := sch "\blade", want := Stat("blade")
+		else
+			return ""
+		return (c.value != "" && c.value = want && LearnFree(slot)) ? slot : ""
+		}
 	return ""
 	}
 
@@ -643,6 +681,8 @@ LearnDescribe(c)
 		return "heals " (c.value = "" ? "?" : c.value) ", " pips
 	if (c.type = "ward")
 		return "a shield (" c.text "), " pips
+	if (c.type = "blade")
+		return "a blade (" c.text "), " pips
 	return "type unknown (""" c.text """), " pips
 	}
 
@@ -679,6 +719,9 @@ LearnLoad()
 		if (f.Length() < 12)
 			continue
 		c := {id: f[1], sch: f[2], type: f[3], pips: f[4], guess: f[5] + 0, value: f[6], target: f[7] + 0, slot: f[8], scale: f[9], dir: f[10], when: f[11], text: f[12]}
+		;(a blade learned before blades were known by their text: one now - it gets the blade slot when next in hand)
+		if (c.type = "" && LearnLooksBlade(c))
+			c.type := "blade"
 		LearnedCards.Push(c)
 		}
 	}
@@ -687,7 +730,7 @@ LearnLoad()
 LearnSave()
 	{
 	out := "; Cards AutoFarmer learned by itself (CardLearn.ahk), one per line:`r`n"
-		. "; id|school it was learned for|type (damage = one enemy, aoe = all, heal, ward; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it`r`n"
+		. "; id|school it was learned for|type (damage = one enemy, aoe = all, heal, ward, blade; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it`r`n"
 		. "; Pictures: <picture set>\learned\<id>.card.png (whole card) and .png (the picture cut from it).`r`n"
 	for i, c in LearnedCards
 		out .= c.id "|" c.sch "|" c.type "|" c.pips "|" c.guess "|" c.value "|" c.target "|" c.slot "|" c.scale "|" c.dir "|" c.when "|" c.text "`r`n"
