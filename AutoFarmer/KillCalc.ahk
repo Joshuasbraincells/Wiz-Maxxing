@@ -334,6 +334,12 @@ ReadEnemyHealth()
 			GlyphsBox(gl, (gl[1].y2 - gl[1].y1) // 2 + 2, gx, gy, gw, gh)
 		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, redLines, 1), gl)))
 		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, redLines, 1), gl)))
+		;(the two don't make two agreeing reads - one came out short: a third, at a size between)
+		got := 0
+		for j, v in p.votes
+			got += IsObject(v) ? 1 : 0
+		if (got < 2)
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", (scale1 + scale2) / 2, redLines, 1), gl)))
 		agreed := "", count := 0
 		for j, v in p.votes
 			{
@@ -401,7 +407,7 @@ ReadEnemyHealth()
 ;
 ;In the plates' font a 3 has a flat top like a 5, and Windows' OCR reads 395 as 595 (or 39S) - and an 8 as a 3 now and
 ;then. The numbers are pure red: their glyphs are found at 1:1, left to right (not a plate's school icon - not that
-;red), a run twice as wide as the rest split at its thinnest column (a digit touching the "/"), only the digits' height
+;red), a run wider than it is tall split at its thinnest column (a digit touching the "/"), only the digits' height
 ;kept (not a speck, nor the taller icon) with a comma joining those either side, and of them only the longest row close
 ;together (not a bit of the icon a gap away). A 5 and an 8 have ink down the left side under the top (a 3 at most a
 ;quarter, against over half), and only an 8 over the bottom too (all of it, against at most about half)
@@ -443,8 +449,21 @@ HealthGlyphs(x, y, w, h)
 	for i, run in runs
 		{
 		a := run[1], z := run[2], wide := z - a + 1
-		;(two glyphs touching: split at the thinnest column of its middle half)
-		if (wide > 1.6 * med && wide >= 6)
+		;(its height: the rows with ink in its columns)
+		top := 0, bottom := 0
+		Loop, % h
+			{
+			j := A_Index, row := (j - 1) * w
+			Loop, % wide
+				if (inkAt[row + a + A_Index - 1])
+					{
+					top := top ? top : j, bottom := j
+					break
+					}
+			}
+		;(two glyphs touching - a digit and the "/": wider than it is tall - a digit alone is about 0.7 of its height:
+		;split at the thinnest column of its middle half)
+		if (wide > (bottom - top + 1) && wide >= 6)
 			{
 			cut := a + wide // 4
 			Loop, % (z - wide // 4) - (a + wide // 4) + 1
