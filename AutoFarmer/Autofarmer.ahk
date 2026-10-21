@@ -277,8 +277,9 @@ BotOnShow()
 WatchShow()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
 LoadPicSets()
+;(nothing to tell the size by yet: the set this window size was last played at, else the main one)
 if (!DetectPicSet())
-	UsePicSet(1)
+	UsePicSet(PicSetForSize())
 LastBeat := 0
 SeenOut := 0
 
@@ -396,9 +397,14 @@ loop,
 		}
 	ImageSearch, roundX, roundY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
 	bookSeen := (ErrorLevel = 0)
+	;(the spellbook only proves the set right when its picture isn't too see-through to tell sizes apart)
 	if (bookSeen)
-		BookSeenAt := A_TickCount, PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
-	if (ErrorLevel = 0)
+		{
+		BookSeenAt := A_TickCount
+		if (!PicTooThin(PicPath("resources\roundfinish.png")))
+			PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
+		}
+	if (bookSeen)
 		{
 		if (!SeenOut)
 			{
@@ -447,6 +453,7 @@ loop,
 	If (startErr = 0)
 		{
 		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
+		PicRemember()
 		;A battle round is up: stop walking first (a key could still be held from the last step)
 		if (KeysDown || HeldW)
 			ReleaseKeys()

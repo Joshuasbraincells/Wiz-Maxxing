@@ -52,14 +52,25 @@ DetectPicSet(skipCurrent := false)
 	;(another set than the one in use: found twice, 3-20 s apart, before it's used - a made set's mostly see-through
 	;pictures can match something else once)
 	static cand := 0, candAt := 0
+	;(the set this window size was last played at first - generated\scales.txt)
+	want := PicScaleFor(GameW "x" GameH), order := []
 	for i, set in PicSets
+		if (want != "" && Abs(set.scale - want) < 0.002)
+			order.InsertAt(1, i)
+		else
+			order.Push(i)
+	for each, i in order
 		{
+		set := PicSets[i]
 		if (skipCurrent && i = PicSet)
 			continue
-		for each, pic in ["roundfinish", "roundstart"]
+		for each2, pic in ["roundfinish", "roundstart"]
 			{
 			file := set.dir "\resources\" pic (set.gen ? ".bmp" : ".png")
 			if (!FileExist(file))
+				continue
+			;(a made picture this see-through - the spellbook at a small UI size keeps 6-8% - matches nearly anything)
+			if (PicTooThin(file))
 				continue
 			ImageSearch, fx, fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % (set.gen ? "*" GenTol " *TransFF00FF " : "*3 ") file
 			if (ErrorLevel = 0)
@@ -78,6 +89,95 @@ DetectPicSet(skipCurrent := false)
 			}
 		}
 	return false
+	}
+
+;A made picture (.bmp, see-through magenta) under 20% solid: it matches nearly anything, so it never picks a picture
+;set nor confirms the one in use. A cut .png never counts as thin
+PicTooThin(file)
+	{
+	return PicSolidPct(file) < 20
+	}
+
+;How much of picture file is solid, in % - a made .bmp's pixels that aren't see-through magenta; 100 for anything
+;else. Kept per file and its time
+PicSolidPct(file)
+	{
+	static seen := {}
+	if (SubStr(file, -3) != ".bmp")
+		return 100
+	FileGetTime, t, %file%
+	key := file "|" t
+	if (seen.HasKey(key))
+		return seen[key]
+	f := FileOpen(file, "r")
+	if (!IsObject(f))
+		return 100
+	f.Pos := 10, off := f.ReadUInt(), f.Pos := 18, w := f.ReadInt(), h := f.ReadInt(), f.Pos := 28, bpp := f.ReadUShort()
+	if (bpp != 24 || w <= 0 || h = 0)
+		{
+		f.Close()
+		return seen[key] := 100
+		}
+	hh := Abs(h), row := ((w * 3 + 3) // 4) * 4, solid := 0
+	VarSetCapacity(buf, row * hh, 0)
+	f.Pos := off
+	f.RawRead(buf, row * hh)
+	f.Close()
+	Loop, % hh
+		{
+		r := (A_Index - 1) * row
+		Loop, % w
+			{
+			p := r + (A_Index - 1) * 3
+			if !(NumGet(buf, p, "UChar") = 0xFF && NumGet(buf, p + 1, "UChar") = 0 && NumGet(buf, p + 2, "UChar") = 0xFF)
+				solid += 1
+			}
+		}
+	return seen[key] := Round(100 * solid / (w * hh))
+	}
+
+;The UI scale a battle round's Pass button was last found with at window size size ("<w>x<h>"), from
+;generated\scales.txt ("<w>x<h>=<scale>" lines) - "" none
+PicScaleFor(size)
+	{
+	FileRead, t, % GenRoot "\scales.txt"
+	Loop, Parse, t, `n, `r
+		if (InStr(A_LoopField, size "=") = 1)
+			return SubStr(A_LoopField, StrLen(size) + 2)
+	return ""
+	}
+
+;The picture set at the UI scale remembered for this window size (PicScaleFor), else 1 (the main set)
+PicSetForSize()
+	{
+	want := PicScaleFor(GameW "x" GameH)
+	if (want != "")
+		for i, set in PicSets
+			if (Abs(set.scale - want) < 0.002)
+				return i
+	return 1
+	}
+
+;A round's Pass button was just found with the set in use: remembered for this window size (written only when it
+;changes)
+PicRemember()
+	{
+	static said := ""
+	size := GameW "x" GameH, sc := Round(PicSets[PicSet].scale, 3)
+	if (said = size "=" sc)
+		return
+	said := size "=" sc
+	if (PicScaleFor(size) != "" && Abs(PicScaleFor(size) - sc) < 0.002)
+		return
+	FileRead, t, % GenRoot "\scales.txt"
+	out := ""
+	Loop, Parse, t, `n, `r
+		if (A_LoopField != "" && InStr(A_LoopField, size "=") != 1)
+			out .= A_LoopField "`r`n"
+	FileCreateDir, %GenRoot%
+	f := FileOpen(GenRoot "\scales.txt", "w")
+	if (IsObject(f))
+		f.Write(out size "=" sc "`r`n"), f.Close()
 	}
 
 ;ImageSearch options and file for picture rel (e.g. "resources\player.png"): "*<tol> <file>", or for a
