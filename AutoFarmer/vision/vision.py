@@ -898,6 +898,10 @@ LIKE_DIST, LIKE_PAD, LIKE_PIXEL = 27.0, 3, 10.0
 # A hand-cut picture (its shimmering pixels already see-through): under LIKE_CUT that way (another card
 # came to 26 against a thin, resized one)
 LIKE_CUT = 15.0
+# A copy may make at most this share of a learned picture's solid pixels see-through, and this share of the picture
+# always stays solid (refine); when a refine was last refused per picture, to log it once in a while
+REFINE_MOST, REFINE_KEEP = 0.5, 0.25
+REFINE_SAID = {}
 
 
 def like(around, tpl, mask):
@@ -981,7 +985,18 @@ def refine(pic, diff):
         return False
     tpl, mask = pic['tpl'], pic['mask']
     keep = mask & (diff <= LIKE_PIXEL)
-    if keep.sum() == mask.sum() or keep.sum() < max(12, 0.1 * keep.size):
+    # (a copy this different is another size - or another card - not a shimmer: one copy takes away at most half
+    # of what's solid, and a quarter of the picture always stays. 2026-10-21: a 1.121 picture compared with 1.144
+    # cards lost 336 of its 418 pixels at once and never matched the card again)
+    gone = int(mask.sum() - keep.sum())
+    if gone == 0:
+        return False
+    if gone > REFINE_MOST * mask.sum():
+        if time.time() - REFINE_SAID.get(pic['name'], 0) > 600:
+            REFINE_SAID[pic['name']] = time.time()
+            log(f"  {pic['name']}: not made see-through - {gone} of its {int(mask.sum())} pixels differ in this copy (another size or card, not a shimmer)")
+        return False
+    if keep.sum() < max(12, REFINE_KEEP * keep.size):
         return False
     out = tpl.astype(np.uint8).copy()
     out[~keep] = (255, 0, 255)
