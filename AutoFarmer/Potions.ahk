@@ -39,15 +39,18 @@
 ;
 ; By the zone's map (potionwalk:1, the default) - nothing recorded: the potion seller's spot is in the game's own
 ; files (the vision helper reads it: Hilda Brewer in Wizard City's Commons - the only one). Out of potions:
-;   1. a Mark (Page Down) where the wizard is, to come back to (not in the Commons itself)
+;   1. a Mark (Page Down) where the wizard is, to come back to (not in the Commons itself, nor in your house)
 ;   2. outside Wizard City Home (the Home key - your house in Wizard City), then the Commons (End); in Wizard City
-;      the Commons straight away
+;      the Commons straight away. End (the game's GoHub) goes nowhere inside the house (the Dorm), nor with no
+;      mana (it seems to take some, as a Recall does - Home doesn't): out through the house's door first (its way
+;      out is in the zone's files - the Dorm's into Ravenwood), then End; End not taking: walked through the zone's
+;      door to the Commons (Ravenwood's)
 ;   3. walked to her by the zone's map (the route planner, the game's memory - read-only), X at her prompt, Fill All
 ;      (found by the words on it, never with "Crown" round it), the window closed
 ;   4. one drunk, then Fill All again - full again
 ;   5. Recall (Page Up) to the Mark, and on from there (the quest arrow)
 ; A way that doesn't get to her (no Commons after End - your house in another world?): back to the Mark, and it
-; tells you. A buying you recorded at your Mark is still used when there is one; anything that can't be done by
+; tells you. A Recall takes mana (up to 10): one that didn't work keeps the Mark for the next run. A buying you recorded at your Mark is still used when there is one; anything that can't be done by
 ; the map falls back to the recorded ways below.
 ;
 ; Recording (tray menu "Record potion buying..."): the bot recalls you to your Mark (Page Up); press X to
@@ -481,7 +484,14 @@ PotionRecall()
 	if (PotionMarkZone = "")
 		return
 	DebugLog("Potions: back to the mark (Page Up)")
-	if (PotionTeleport("{PgUp}", "the mark") && WalkZone(true) != PotionMarkZone)
+	g := PotionGlobes()
+	if (!PotionTeleport("{PgUp}", "the mark", Func("PotionArrivedMana").Bind(g.mana)))
+		{
+		;(kept: the next run goes back to it once it has bought)
+		DebugLog("Potions: the recall didn't work (mana " (g.mana = "" ? "?" : g.mana) " - a Recall takes up to 10) - the mark is kept for the next run")
+		return
+		}
+	if (WalkZone(true) != PotionMarkZone)
 		DebugLog("Potions: the recall went to " WalkZone(true) ", not " PotionMarkZone " where the mark was made - carrying on from here")
 	PotionMarkZone := "", PotionMarkAt := 0
 	}
@@ -762,21 +772,26 @@ PotionTurnBy(h)
 
 ;Walks to the potion seller s by the zone's map: steering at the route's aim (a point ahead on it, round walls)
 ;by the game's memory. Stuck (no closer in 6 s): backs up and turns, 3 times at most. True once within 140 of
-;her. Stops for a battle, your hands on the keys or mouse, the game's memory unreadable, or 2.5 minutes
-PotionWalkTo(s, since := 0)
+;her. Stops for a battle, your hands on the keys or mouse, the game's memory unreadable, or 2.5 minutes.
+;door: s is a way out of the zone (PotionDoor) - walked on into it: true once through it, in another zone
+PotionWalkTo(s, since := 0, door := false)
 	{
+	what := door ? "the way out" : "the potion seller"
 	;(steering by the game's memory needs its heading's sign checked - the walker does that as it walks quests)
 	if (!WkNavChecked && !WkNavTrusted)
 		{
-		DebugLog("Potions: can't walk to the potion seller by the map yet - the game's memory hasn't been checked against the quest arrow (it is after a minute of walking a quest)")
+		DebugLog("Potions: can't walk to " what " by the map yet - the game's memory hasn't been checked against the quest arrow (it is after a minute of walking a quest)")
 		return false
 		}
 	ReleaseKeys()
-	DebugLog("Potions: walking to the potion seller (" s.name ") by the zone's map - " s.zone " at " Round(s.x) ", " Round(s.y))
-	t0 := A_TickCount, best := "", bestLeft := "", bestAt := A_TickCount, unstuck := 0, said := "", misses := 0
+	DebugLog("Potions: walking to " what " (" s.name ") by the zone's map - " s.zone " at " Round(s.x) ", " Round(s.y))
+	t0 := A_TickCount, best := "", bestLeft := "", bestAt := A_TickCount, unstuck := 0, said := "", misses := 0, inSaid := false
 	since := since ? since : t0
 	Loop
 		{
+		;(a way out: its loading screen come since the walk began - through it, or stopped)
+		if (door && (through := PotionThrough(s.zone, t0)))
+			return through > 0
 		if (!PotionOk(true, since))
 			{
 			ReleaseKeys()
@@ -793,30 +808,35 @@ PotionWalkTo(s, since := 0)
 				continue
 				}
 			ReleaseKeys()
-			DebugLog("Potions: the game's memory can't be read (" VisionErr ") - not walking to the potion seller")
+			DebugLog("Potions: the game's memory can't be read (" VisionErr ") - not walking to " what)
 			return false
 			}
 		misses := 0
-		;(walked through a gateway into another zone: not where she is)
+		;(walked through a gateway into another zone: not where she is - a way out: that's it)
 		if (nav.zone != "" && nav.zone != s.zone)
 			{
+			if (door)
+				return PotionThrough(s.zone, t0, true) > 0
 			ReleaseKeys()
 			DebugLog("Potions: walked into " nav.zone " on the way to the potion seller - stopping")
 			return false
 			}
 		if (nav.ax = "" && nav.why != said)
-			said := nav.why, DebugLog("Potions: no route round walls (" nav.why ") - straight at her")
+			said := nav.why, DebugLog("Potions: no route round walls (" nav.why ") - straight at " (door ? "it" : "her"))
 		d := Sqrt((nav.x - s.x) ** 2 + (nav.y - s.y) ** 2)
-		if (d <= 140)
+		if (d <= 140 && !door)
 			{
 			ReleaseKeys()
 			DebugLog("Potions: at the potion seller (" Round(d) " away, " Round((A_TickCount - t0) / 1000) " s)")
 			return true
 			}
+		;(a way out: walked on into it - the loading screen comes once the wizard's in)
+		if (d <= 140 && !inSaid)
+			inSaid := true, DebugLog("Potions: at the way out (" Round(d) " away) - walking on into it")
 		if (A_TickCount - t0 > 150000)
 			{
 			ReleaseKeys()
-			DebugLog("Potions: not at the potion seller after 2.5 minutes (" Round(d) " away) - stopping")
+			DebugLog("Potions: " (door ? "not through the way out" : "not at the potion seller") " after 2.5 minutes (" Round(d) " away) - stopping")
 			return false
 			}
 		;(getting on: closer as the crow flies, or along the route round walls - a detour isn't being stuck)
@@ -830,7 +850,7 @@ PotionWalkTo(s, since := 0)
 			if (unstuck > 3)
 				{
 				ReleaseKeys()
-				DebugLog("Potions: stuck " Round(d) " from the potion seller (no closer after backing up 3 times) - stopping")
+				DebugLog("Potions: stuck " Round(d) " from " what " (no closer after backing up 3 times) - stopping")
 				return false
 				}
 			DebugLog("Potions: no closer in 6 s (" Round(d) " away) - backing up and turning")
@@ -868,6 +888,88 @@ PotionWalkTo(s, since := 0)
 		}
 	}
 
+;Walking through a way out of zone: 0 while there's no loading screen since t0 (or sure: the game's memory says
+;another zone already) - else the keys let go and the loading screen waited out (a minute at most): 1 once in
+;another zone, -1 if not
+PotionThrough(zone, t0, sure := false)
+	{
+	now := WalkZone(true)
+	if (!sure && !WkLoading && !(WkLoadedAt > t0 + 500) && (now = "" || now = zone))
+		return 0
+	ReleaseKeys()
+	t1 := A_TickCount
+	while (A_TickCount - t1 < 60000)
+		{
+		now := WalkZone(true)
+		if (!WkLoading && now != "" && now != zone)
+			{
+			Sleep, 2500
+			DebugLog("Potions: through the way out - in " WalkZone(true))
+			return 1
+			}
+		Sleep, 250
+		}
+	DebugLog("Potions: walked into the way out, but still in " zone " a minute on - stopping")
+	return -1
+	}
+
+;The nearest of zone's ways out whose name matches want (a regular expression): its volumes - the spheres that do
+;something when walked into, read by the vision helper from the zone's own files - not a quest's ("Activator").
+;{name, x, y, z, zone}, or ""
+PotionDoor(zone, want)
+	{
+	answer := VisionGet("/volumes?zone=" LearnUri(zone), 5000, true)
+	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
+		return ""
+	here := PotionNavTo({x: 0, y: 0, z: 0})
+	best := "", bestD := ""
+	Loop, Parse, answer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f[1] != "vol" || f.Length() < 6 || !RegExMatch(f[2], want) || InStr(f[2], "Activator"))
+			continue
+		d := IsObject(here) ? Sqrt((here.x - f[3]) ** 2 + (here.y - f[4]) ** 2) : 0
+		if (bestD = "" || d < bestD)
+			best := {name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, zone: zone}, bestD := d
+		}
+	return best
+	}
+
+;Out of the house - End goes nowhere in there (the Dorm): walked out through its way out (the Dorm's
+;"Teleport_Out", into Ravenwood). True once out, or not in a house
+PotionLeaveHouse(since)
+	{
+	zone := WalkZone(true)
+	if (!InStr(zone, "Housing"))
+		return true
+	;(a way out - not a house's own teleports between its floors: TeleportVol_To_UpperLevel ...)
+	door := PotionDoor(zone, "i)teleport_?out|exit")
+	if (!IsObject(door))
+		{
+		DebugLog("Potions: in the house (" zone "), and no way out of it found in its files - End from here all the same")
+		return true
+		}
+	DebugLog("Potions: in the house - End goes nowhere in there: out through its door first (" door.name ")")
+	return PotionWalkTo(door, since, true)
+	}
+
+;To the Commons: out of the house first, then End - End not taking (no loading screen; it seems to take mana, and
+;the run is for mana as often as not): through this zone's door to
+;the Commons, if it has one (Ravenwood's). True if it went somewhere
+PotionToCommons(since)
+	{
+	if (!PotionLeaveHouse(since))
+		return false
+	if (IsObject(PotionSellerIn(WalkZone(true))))
+		return true
+	if (PotionTeleport("{End}", "the Commons"))
+		return true
+	door := PotionDoor(WalkZone(true), "i)\(to Commons\)")
+	if (!IsObject(door) || !PotionOk(true, since))
+		return false
+	DebugLog("Potions: End went nowhere (it seems to take mana) - to the Commons through the door instead (" door.name ")")
+	return PotionWalkTo(door, since, true)
+	}
 ;The words firstRe (and nextRe right after it, if given) in the middle of the game window, by OCR: {x, y} (screen)
 ;of their middle, or "". text: what was read there
 PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false)
@@ -1127,6 +1229,13 @@ PotionRunWalk()
 	zone := WalkZone(true)
 	s := PotionSellerIn(zone)
 	marked := false
+	;(at her in the Commons already, a Mark kept from a run whose Recall didn't work: back to it after buying - not
+	;while farming here)
+	if (IsObject(s) && !(afk || loopmode || loremode) && PotionMarkKept(zone))
+		{
+		marked := true
+		DebugLog("Potions: back to the mark made before (in " PotionMarkZone ") after buying")
+		}
 	if (!IsObject(s))
 		{
 		;(the ways you set up - a buying recorded at your Mark, potionmark:0's routes - and farming, which has
@@ -1138,26 +1247,62 @@ PotionRunWalk()
 			DebugLog("Potions: the game's memory can't be read (" VisionErr ") - no walking to the potion seller by the map")
 			return ""
 			}
-		;Only Wizard City's Commons has a potion seller (Hilda Brewer): a Mark here to come back to (Page Down), then
-		;outside Wizard City Home (your house in Wizard City) and the Commons (End) - in Wizard City the Commons
-		Send, {Blind}{PgDn}
-		PotionMarkZone := zone, PotionMarkAt := A_TickCount, marked := true
-		DebugLog("Potions: no potion seller in " zone " - marked this spot (Page Down) to come back to")
-		Sleep, 1500
+		;Only Wizard City's Commons has a potion seller (Hilda Brewer). A Mark here to come back to (Page Down) - it
+		;takes mana (up to 10): only one that took (mana went down) is gone back to. On the way to her (your house,
+		;Ravenwood) no Mark: the last run's, kept when its Recall didn't work (too little mana), is gone back to
+		;instead. Then outside Wizard City Home (your house in Wizard City) and the Commons (End; out of the house
+		;through its door first - End goes nowhere in there)
+		reused := false
+		if (PotionOnRoute(zone))
+			{
+			if (PotionMarkKept(zone))
+				{
+				marked := true, reused := true
+				DebugLog("Potions: no potion seller in " zone " - back to the mark made before (in " PotionMarkZone ") after buying")
+				}
+			else
+				DebugLog("Potions: no potion seller in " zone " - no mark here, it's on the way to her (on from the Commons after buying)")
+			}
+		else
+			{
+			g := PotionGlobes()
+			Send, {Blind}{PgDn}
+			Sleep, 1500
+			;(the globe's number given a moment more to go down)
+			took := (g.mana = "")
+			Loop, 4
+				{
+				if (took || (took := PotionArrivedMana(g.mana)))
+					break
+				Sleep, 500
+				}
+			if (took)
+				{
+				PotionMarkZone := zone, PotionMarkAt := A_TickCount, marked := true
+				DebugLog("Potions: no potion seller in " zone " - marked this spot (Page Down) to come back to")
+				}
+			else
+				{
+				;(none taken, none made - and the last run's Mark is no good from here: not gone back to)
+				PotionMarkZone := "", PotionMarkAt := 0
+				DebugLog("Potions: no potion seller in " zone " - the Mark (Page Down) didn't take (mana " g.mana ": a Mark takes up to 10) - no recall after buying, on from the Commons")
+				}
+			}
 		if (InStr(zone, "WizardCity/") != 1)
 			{
 			DebugLog("Potions: Home (the Home key), then the Commons (End)")
 			if (!PotionTeleport("{Home}", "home"))
 				{
-				;(still here: the Mark's here too - nothing to go back to)
-				PotionMarkZone := "", PotionMarkAt := 0
+				;(still here: a Mark made here is here too - nothing to go back to)
+				if (!reused)
+					PotionMarkZone := "", PotionMarkAt := 0
 				PotionCarryOn(false)
 				return false
 				}
 			}
 		else
 			DebugLog("Potions: to the Commons (End)")
-		if (PotionTeleport("{End}", "the Commons"))
+		if (PotionToCommons(since))
 			zone := WalkZone(true), s := PotionSellerIn(zone)
 		if (!IsObject(s))
 			{
@@ -1195,9 +1340,27 @@ PotionRunWalk()
 		PotionBuyHere(s, since)
 		}
 	if (marked && !PotionShopLeft)
+		{
+		;(a Recall takes up to 10 mana: a run for mana gets here with none - and at full health none was drunk)
+		manaLeft := PotionGlobes().mana
+		if (ok && manaLeft != "" && manaLeft < 10 && FleeDrinkForMana(manaLeft))
+			DebugLog("Potions: mana " manaLeft " - drank one for the Recall (now " PotionGlobes().mana ")")
 		PotionRecall()
+		}
 	PotionCarryOn(ok)
 	return ok
+	}
+
+;On the way to the potion seller (your house, Ravenwood): no Mark made there - it would only lead back
+PotionOnRoute(zone)
+	{
+	return InStr(zone, "Housing") || zone = "WizardCity/WC_Ravenwood"
+	}
+
+;A Mark made by a run whose Recall didn't work (too little mana) - kept, gone back to by the next run within the hour
+PotionMarkKept(zone)
+	{
+	return PotionMarkZone != "" && PotionMarkZone != zone && A_TickCount - PotionMarkAt < 3600000
 	}
 
 ;A Recall with no loading screen (the Mark in this zone): mana went down - read twice the same (its cost)

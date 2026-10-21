@@ -184,8 +184,8 @@ pipsavehealth:50
 ; bot buys more with gold (tray menu "Record potion buying...", Potions.ahk)
 potionat:40
 ; potionwalk: 1 = out of potions, walk to the potion seller (Hilda Brewer, Wizard City's Commons) by the zone's
-; map and buy with Fill All - no recording. From another zone: a Recall (Page Up) to your Mark - leave it
-; anywhere in the Commons - or, in Wizard City, the Commons (End). A buying recorded at your Mark is still used.
+; map and buy with Fill All - no recording. From another zone: a Mark (Page Down) there, Home, out of the house's
+; door, the Commons (End), buy, one drunk, buy again, Recall (Page Up). A buying recorded at your Mark is still used.
 ; 0 = only the recorded ways (potionmark below)
 potionwalk:1
 ; potionmark: 1 = leave your Mark (Page Down) right next to the potion seller: out of potions, the bot

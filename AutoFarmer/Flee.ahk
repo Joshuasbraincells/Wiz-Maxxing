@@ -129,6 +129,7 @@ FleeRefillMana(why)
 	if (FleeDrinkForMana(before))
 		{
 		DebugLog(why ": drank a potion for mana (" (before = "" ? "?" : before) " -> " PotionGlobes().mana ")")
+		AfkRetries := 0
 		return true
 		}
 	if (A_TickCount < PotionFailUntil)
@@ -143,6 +144,7 @@ FleeRefillMana(why)
 		if ((before != "" && now != "" && now > before) || FleeDrinkForMana(now))
 			{
 			DebugLog(why ": bought potions and drank one for mana")
+			AfkRetries := 0
 			return true
 			}
 		}

@@ -389,7 +389,12 @@ it goes to buy more WITH GOLD (never Crowns):
 	  Fill All (found by the words on it - never with "Crown" round it),
 	  drinks one, Fills All again, and Recalls (Page Up) back to the Mark to
 	  carry on. In the Commons already: no Mark, no Recall. Your house must be
-	  in Wizard City (the Dorm is) - else it goes back and tells you. With no
+	  in Wizard City (the Dorm is) - else it goes back and tells you. End
+	  goes nowhere inside the Dorm, so it walks out its door to Ravenwood
+	  first (the way out is in the game's files); End going nowhere there
+	  too (it seems to take mana), it walks through Ravenwood's door to the
+	  Commons. A Recall takes mana: one that doesn't work keeps the Mark
+	  for the next run. With no
 	  potions and none to be had it rests (no walking) till health is back.
 	  A buying you recorded at your Mark (below) is still used; potionwalk:0
 	  for only that.

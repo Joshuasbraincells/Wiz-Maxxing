@@ -1181,6 +1181,45 @@ def potion_sellers(zone, game_dir=''):
     return out
 
 
+# A zone's volumes - the spheres that do something when walked into (a door's teleport, a quest's goal): from its
+# volumes.xml (read-only), each a name (hash 8b 04 e6 c6, then its length x2 in a byte - or x2+1 in a u32 - and the
+# letters) and after it the centre (hashes 28/29/2a f8 b3 7d, each then a float) and the radius (df 33 f9 3a). The
+# Dorm's way out is "Teleport_Out"; Ravenwood's door to the Commons "TeleportVol_Teleport location (to Commons)"
+VOL_NAME, VOL_X, VOL_Y, VOL_Z, VOL_R = (struct.pack('<I', h) for h in (0xc6e6048b, 0x7db3f828, 0x7db3f829, 0x7db3f82a, 0x3af933df))
+VOLUMES_SEEN = {}
+
+
+def zone_volumes(zone, game_dir=''):
+    """[(name, (x, y, z), radius), ...] - zone's volumes with a centre, kept; None when the zone's file can't be read"""
+    if zone in VOLUMES_SEEN:
+        return VOLUMES_SEEN[zone]
+    import navgeo
+    try:
+        b = navgeo.read_wad_files(navgeo.wad_path(zone, game_dir or navgeo.GAME_DIR), ['volumes.xml']).get('volumes.xml')
+    except (OSError, ValueError) as e:
+        log(f'/volumes {zone}: {e!r}')
+        return None                                    # (not kept: asked again next time)
+    b = b or b''
+    out = []
+    starts = [m.start() for m in re.finditer(re.escape(VOL_NAME), b)]
+    for i, k in enumerate(starts):
+        p = k + 4
+        if p + 4 > len(b):
+            continue
+        n, p = (b[p] >> 1, p + 1) if not b[p] & 1 else (struct.unpack_from('<I', b, p)[0] >> 1, p + 4)
+        name = b[p:p + n].decode('latin-1', 'replace').replace('|', '/').strip()
+        seg = b[p + n:starts[i + 1] if i + 1 < len(starts) else len(b)]
+
+        def num(h):
+            j = seg.find(h)
+            return struct.unpack_from('<f', seg, j + 4)[0] if 0 <= j and j + 8 <= len(seg) else None
+        x, y, z, r = num(VOL_X), num(VOL_Y), num(VOL_Z), num(VOL_R)
+        if name and None not in (x, y, z) and all(math.isfinite(v) and abs(v) < 1e6 for v in (x, y, z)):
+            out.append((name, (x, y, z), r if r is not None and math.isfinite(r) else 0.0))
+    VOLUMES_SEEN[zone] = out
+    return out
+
+
 def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None):
     """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
     bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob"""
@@ -1720,6 +1759,14 @@ class Handler(BaseHTTPRequestHandler):
                 if found is None:
                     return self.reply("ERR the zone's file can't be read")
                 return self.reply('\n'.join(f'seller|{n}|{x:.1f}|{y:.1f}|{z:.1f}' for n, (x, y, z) in found) or 'none')
+            if u.path == '/volumes':
+                zone = q.get('zone', '')
+                nm = nav_reader()
+                nm.read(path=False, wait=3.0)
+                found = zone_volumes(zone, nm.game_dir) if zone else []
+                if found is None:
+                    return self.reply("ERR the zone's file can't be read")
+                return self.reply('\n'.join(f'vol|{n}|{x:.1f}|{y:.1f}|{z:.1f}|{r:.0f}' for n, (x, y, z), r in found) or 'none')
             if u.path == '/navto':
                 try:
                     target = (float(q['x']), float(q['y']), float(q['z']))

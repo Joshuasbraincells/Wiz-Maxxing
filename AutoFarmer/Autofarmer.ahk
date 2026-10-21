@@ -312,7 +312,7 @@ global loopmode := 0
 ;Sleep timings
 global Tick := 100
 ;Why the bot is holding (afk): "mana" - it carries on by itself once there's mana again (CheckAfk)
-global AfkWhy := ""
+global AfkWhy := "", AfkRetries := 0
 ;When the picture set in use last matched (the spellbook or a round's Pass button), and at what game size
 global PicSetOkAt := 0, PicSetOkSize := ""
 global Buffer := 300
@@ -1889,12 +1889,18 @@ CheckAfk()
 	if (afk == 1)
 		{
 		;Waits for you to press w/a/s/d, checking for a disconnect every second meanwhile - held for mana: every
-		;30 s the mana globe looked at, and on by itself once there's enough for the cheapest hit (at least 3)
+		;30 s the mana globe looked at, and on by itself once there's enough for the cheapest hit (at least 3), or
+		;once the 10 minutes after a failed run to buy potions are up (checkmana tries another)
+		;(3 tries at most a hold - each a run and its alert; on again by itself once there's mana, or by your keys)
+		waitRun := (AfkWhy = "mana" && Stat("fleeon") && A_TickCount < PotionFailUntil && AfkRetries < 3)
 		Loop
 			{
 			Input , OutputVar, T1, {w} {a} {s} {d}, w, a, s, d
 			if (Errorlevel != "Timeout")
+				{
+				AfkRetries := 0
 				break
+				}
 			ReconnectCheck()
 			if (AfkWhy = "mana" && VisionOn && Mod(A_Index, 30) = 0 && GameActive())
 				{
@@ -1902,6 +1908,14 @@ CheckAfk()
 				if (afkMana != "" && afkMana + 0 >= Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit()))
 					{
 					DebugLog("no mana: the mana globe reads " afkMana " now - carrying on")
+					AfkRetries := 0
+					break
+					}
+				;(FleeAfter, right after this, tries: a potion, else a run - whether the mana picture matches or not)
+				if (waitRun && A_TickCount >= PotionFailUntil)
+					{
+					AfkRetries += 1, FleeWhy := "mana"
+					DebugLog("no mana: 10 minutes since the run to buy potions failed - trying again (" AfkRetries " of 3)")
 					break
 					}
 				}
