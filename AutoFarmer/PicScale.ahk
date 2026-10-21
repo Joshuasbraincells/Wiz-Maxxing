@@ -14,6 +14,9 @@ global GenTol, GenRoot, PassFleeDist
 global PicEnlarged
 ;The pictures PicMake has looked up (set dir|rel -> file, "" none); emptied when pictures are added
 global PicMade
+;The game window size the UI scale was last measured at (DetectUiScale, "<w>x<h>"); the size the first rounds are
+;being measured at and how many were tried (the main loop)
+global PicMeasuredSize, PicMeasureSize, PicMeasureTries
 
 ;Called by LoadPicSets
 PicScaleInit()
@@ -159,11 +162,14 @@ PicSetForSize()
 	}
 
 ;A round's Pass button was just found with the set in use: remembered for this window size (written only when it
-;changes)
+;changes) - only once the UI size was measured at this size (DetectUiScale): a made set's Pass button, mostly
+;see-through, matches at a size a little off too
 PicRemember()
 	{
 	static said := ""
 	size := GameW "x" GameH, sc := Round(PicSets[PicSet].scale, 3)
+	if (PicMeasuredSize != size)
+		return
 	if (said = size "=" sc)
 		return
 	said := size "=" sc
@@ -552,6 +558,7 @@ DetectUiScale()
 			found := PicSetFor(sc, 0)
 		}
 	DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button made at that size and a bit off matches at " fitList " - UI scale " sc " (" A_TickCount - tuneFrom " ms)")
+	PicMeasuredSize := GameW "x" GameH
 	UsePicSet(found)
 	;made now, so the round start and the spellbook are known from here on
 	PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")

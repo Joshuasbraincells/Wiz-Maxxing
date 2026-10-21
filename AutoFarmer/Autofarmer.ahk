@@ -454,6 +454,22 @@ loop,
 		}
 	If (startErr = 0)
 		{
+		;(the first round at a window size: the UI size measured from Pass and Flee before it's played - a made set's
+		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
+		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
+		pmSize := GameW "x" GameH
+		if (PicMeasuredSize != pmSize)
+			{
+			if (PicMeasureSize != pmSize)
+				PicMeasureSize := pmSize, PicMeasureTries := 0
+			if (PicMeasureTries < 3)
+				{
+				PicMeasureTries += 1, pmWas := PicSet
+				;(another set: the round start looked for again with it)
+				if (DetectUiScale() && PicSet != pmWas)
+					continue
+				}
+			}
 		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
 		PicRemember()
 		;A battle round is up: stop walking first (a key could still be held from the last step)
