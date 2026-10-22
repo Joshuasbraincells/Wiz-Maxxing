@@ -67,6 +67,20 @@ It also follows a route the helper plans round the walls over the zone's map
 (debug.log: "the game's memory ..."). navmem:0 = only the arrow on screen.
 More in ..\AutoQuester\README.txt.
 
+Faster walking with Cheat Engine's speedhack (Settings: "Walk faster with
+Cheat Engine's speedhack", off unless you switch it on): Cheat Engine - yours,
+installed and attached to Wizard101 by you - speeds the game up; the bot only
+presses its speedhack hotkeys (F13-F24, keys no keyboard has): the walking key
+while it walks, the 1x key for battles (pressed at every round), talking,
+dialogues, shops, near the goal, collecting, dungeon runs, a teleport ahead,
+getting round an obstacle, when you play, F6 and when it stops. Its turn and
+wait times are divided by the speed; above 5x turns are made at 1x. In Cheat
+Engine: Settings > Hotkeys, two "Speedhack speed" entries - the walking speed
+(speedfactor) and 1 - with "Disable when released" unticked; the tray menu's
+"Speedhack: press its ... key in 3 s" items press a key while you're in its
+hotkey box. If the wizard doesn't turn faster (Cheat Engine not attached after
+Wizard101 restarts, the key not taking) the bot stops using it for the run
+("speed: off for this run" in debug.log). Risky: KingsIsle may notice.
 Mobs (mobavoid:1, the default - Settings: "Keep away from mobs"): the helper
 also reads the zone's mobs out of the game's memory (read-only) and the route
 keeps out of what each one sees, so no battle starts on the way: Settings,

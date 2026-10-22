@@ -55,6 +55,14 @@ CfgList()
 	list.Push({key: "fleeon", label: "Flee when out of mana or cards", kind: "check", def: 1
 		, help: "Out of mana (less than the cheapest hit costs, no wand) or out of cards (none left, or the deck used up and no hit in hand), two rounds running: flee, drink a potion (or buy some), and try again."})
 	list.Push({key: "-", label: "WALKING"})
+	list.Push({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
+		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, F6, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."})
+	list.Push({key: "speedfactor", label: "...the speed its walking key sets (2 = twice as fast)", kind: "num", lo: 1, hi: 50, def: 2
+		, help: "The speed you gave Cheat Engine's walking key: the bot's turn and wait times are divided by it. 2-5 work best; above 5 turns are made at normal speed."})
+	list.Push({key: "speedkeyfast", label: "...Cheat Engine's walking key", kind: "pick", def: 2, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
+		, help: "The key you set in Cheat Engine for the walking speed."})
+	list.Push({key: "speedkeynormal", label: "...Cheat Engine's 1x key", kind: "pick", def: 1, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
+		, help: "The key you set in Cheat Engine for normal speed (1)."})
 	list.Push({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
 		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."})
 	list.Push({key: "mobshape", label: "...what they see", kind: "pick", def: 2, picks: ["A circle all round", "A semi-circle in front", "A cone in front"]

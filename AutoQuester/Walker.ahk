@@ -16,6 +16,13 @@ global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, U
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
+;Cheat Engine's speedhack (AutoFarmer's speedhack setting): the game's speed now (1 = normal - the walker's timings are
+;divided by it), when the bot last pressed one of its keys, normal speed held till (getting round an obstacle), and
+;how near the goal it goes back to normal (the arrow's number / game units)
+global SpeedNow, SpeedSentAt, WkSpeedHold, SpeedSlowDist, SpeedSlowUnits
+;Why the speedhack's off for this run ("" on - the game was seen not sped up: Cheat Engine not attached, the key not
+;taking), and how many turns in a row looked wrong (NavTurn)
+global SpeedOff, SpeedMiss
 ;A quest offer's Accept: when a dialogue was last Spaced through (its offer may follow), the looks since, the clicks
 ;on this offer and when the first was
 global WkDlgEndAt, WkAcceptLooks, WkAcceptClicks, WkAcceptAt
@@ -152,6 +159,7 @@ WalkerInit(prefix := "AutoQuester")
 	                      ;floor and obstacles); 0 = straight at where the quest arrow points, as before
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
+	SpeedNow := 1, SpeedSentAt := 0, WkSpeedHold := 0, SpeedSlowDist := 40, SpeedSlowUnits := 600, SpeedOff := "", SpeedMiss := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkPromptSkip := {}, WkPreXText := ""
@@ -297,7 +305,7 @@ WalkStep()
 	;matching well) - the heading only once the camera has settled after the last turn. Anything wrong with
 	;it: the arrow, as before
 	fair := seen && !moved && score >= 0.8
-	WalkNav(fair && A_TickCount - WkTurnAt > TurnSettle + 150 ? h : "", fair ? dist : "")
+	WalkNav(fair && A_TickCount - WkTurnAt > WalkSettle() + 150 ? h : "", fair ? dist : "")
 	;The way on is only teleports that don't take the wizard (locked till a quest's done, or only the other way)
 	;and the zone's paths have no other: walking off, and a notice - the arrow would lead back to one
 	if (WkJumpStuck = 1)
@@ -653,7 +661,7 @@ WalkStep()
 			}
 		;Walking and the arrow went: an arch, door frame or pillar between the camera and the wizard.
 		;Stopping would freeze the view with it still hidden, so keep walking for a moment
-		if (WkArrived = 0 && HeldW && !inbattle && A_TickCount - WkSeenAt < HiddenWalkTime && !(WkLastDist != "" && WkLastDist <= OnTopDist))
+		if (WkArrived = 0 && HeldW && !inbattle && A_TickCount - WkSeenAt < HiddenWalkTime / (SpeedNow ? SpeedNow : 1) && !(WkLastDist != "" && WkLastDist <= OnTopDist))
 			{
 			SetStatus("walking on - arrow hidden (behind something?)")
 			Sleep, 100
@@ -776,7 +784,7 @@ WalkStep()
 			WalkLog("push: at the goal (distance " (dist = "" ? "?" : dist) ") - walking straight on through it")
 			}
 		;(right after a turn the arrow doesn't show it yet: see TurnSettle. The game's memory does)
-		if (!WkStraight && !WkNavUse && A_TickCount - WkTurnAt < TurnSettle)
+		if (!WkStraight && !WkNavUse && A_TickCount - WkTurnAt < WalkSettle())
 			{
 			Sleep, 50
 			return true
@@ -964,7 +972,7 @@ WalkStep()
 	;degree turn showed on screen 0.35-0.47 s after the key came up), so right after a turn the arrow
 	;still shows part of it. Steering on that turns too far again - the zig-zags and circles. Wait for
 	;it, walking on (or standing) as before. (Steering by the game's memory: it knows the facing at once)
-	if (!WkNavUse && A_TickCount - WkTurnAt < TurnSettle)
+	if (!WkNavUse && A_TickCount - WkTurnAt < WalkSettle())
 		{
 		Sleep, 50
 		return true
@@ -1019,7 +1027,8 @@ WalkStep()
 		Turn(steer)
 		WkBestTime := A_TickCount
 		}
-	else if (fine && Abs(steer) > AheadAngle)
+	;(sped up, the shortest key press (30 ms) turns more than a small correction: smaller ones are left)
+	else if (fine && Abs(steer) > Max(AheadAngle, TurnRate * 30 * (SpeedNow ? SpeedNow : 1)))
 		Turn(steer)
 	WkSpins := 0
 	if (!Walking)
@@ -1391,7 +1400,7 @@ WalkTransport(dest, arrowSeen := false)
 		return true
 	Turn(60 * WkSide)
 	HoldW(1)
-	HoldFor(1000)
+	HoldFor(Round(1000 / (SpeedNow ? SpeedNow : 1)))
 	HoldW(0)
 	WkSide := -WkSide, WkBestTime := A_TickCount, WkLastRead := A_TickCount
 	return true
@@ -1752,6 +1761,9 @@ WalkerRefocusWatch()
 ;turned that far (NavTurn) - else for as long as TurnRate says
 Turn(h)
 	{
+	;(a game sped up more than 5 times turns too far in the shortest key press: turns at normal speed)
+	if (SpeedNow > 5)
+		SpeedSet(0, "a turn")
 	if (WkNavUse && NavTurn(h))
 		return
 	Critical
@@ -1761,7 +1773,7 @@ Turn(h)
 		return
 		}
 	key := h < 0 ? "a" : "d"
-	ms := Round(Abs(h) / TurnRate)
+	ms := Round(Abs(h) / (TurnRate * SpeedNow))
 	ms := ms < 30 ? 30 : ms > 800 ? 800 : ms
 	;(the game's memory readable this step but its heading's sign not checked yet: the wizard's facing before
 	;and after this turn checks it - see the end)
@@ -1794,6 +1806,9 @@ Turn(h)
 ;Back up, turn UnstickTurn degrees to one side and walk along the obstacle for walkMs
 Unstick(side, walkMs)
 	{
+	;(at normal speed - backing up, turning and walking off as measured - and for a few seconds after)
+	WkSpeedHold := A_TickCount + walkMs + 4000
+	SpeedSet(0, "getting round an obstacle")
 	BackUp(BackupTime)
 	if (!Walking || !GameActive())
 		return
@@ -1817,7 +1832,7 @@ BackUp(ms)
 	KeysDown := 1
 	Send, {Blind}{s down}
 	Critical, Off
-	HoldFor(ms)
+	HoldFor(Round(ms / SpeedNow))
 	Send, {Blind}{s up}
 	WkTurnAt := A_TickCount
 	}
@@ -1857,13 +1872,107 @@ HoldW(on)
 		HeldW := 0
 		}
 	Critical, Off
+	;(walking: Cheat Engine's speed for it, if that's on)
+	if (on && HeldW)
+		SpeedWalking()
 	}
 
-;{Blind} so an Alt/Ctrl/Shift the user is holding isn't let go
+;{Blind} so an Alt/Ctrl/Shift the user is holding isn't let go. Stopping: the game back to normal speed (Cheat Engine)
 ReleaseKeys()
 	{
 	Send, {Blind}{w up}{a up}{s up}{d up}
 	HeldW := 0, KeysDown := 0
+	SpeedSet(0, "stopped")
+	}
+
+;---- Cheat Engine's speedhack (AutoFarmer's Settings window: speedhack) ----
+;Cheat Engine (yours - installed, attached to Wizard101 and its hotkeys set by you) speeds the game up; the bot only
+;presses its hotkeys: speedkeyfast (the speed speedfactor) while walking, speedkeynormal (1x) for everything else -
+;battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, F6, and when it stops.
+;F13-F24: no keyboard has them, nothing else uses them
+
+;Whether the speedhack's on (AutoFarmer's speedhack setting; AutoQuester by itself: never)
+SpeedOn()
+	{
+	return SpeedSetting() && SpeedFactor() > 1 && SpeedOff = ""
+	}
+
+;The speedhack setting switched on (AutoFarmer's Settings window)
+SpeedSetting()
+	{
+	return IsFunc("Stat") && Func("Stat").Call("speedhack") = 1
+	}
+
+;The speed Cheat Engine's walking key sets (speedfactor, 1-50)
+SpeedFactor()
+	{
+	f := IsFunc("Stat") ? Func("Stat").Call("speedfactor") : 1
+	return (f + 0 >= 1) ? Min(f + 0, 50) : 1
+	}
+
+;Cheat Engine's key for walking (fast) or for 1x: speedkeyfast / speedkeynormal, F13-F24 (1 = F13)
+SpeedKey(fast)
+	{
+	n := IsFunc("Stat") ? Func("Stat").Call(fast ? "speedkeyfast" : "speedkeynormal") : 0
+	n := (n + 0 >= 1 && n + 0 <= 12) ? n + 0 : (fast ? 2 : 1)
+	return "F" (12 + n)
+	}
+
+;The game to walking speed (fast true, the speedhack on) or normal: Cheat Engine's key pressed when that changes.
+;force: the 1x key pressed even when it should be at 1x already (a battle round, F6 off, the bot stopping) - a press
+;Cheat Engine missed, a speed set by hand - only with the speedhack set up (never a key you didn't give it). The key is
+;held 250 ms - Cheat Engine looks at its hotkeys every 100 ms - and two presses are 400 ms apart at least (it takes no
+;second press within 350 ms). The speed counts as changed before the key goes, so F6 / F8 / exit meanwhile set it back.
+;why: for debug.log
+SpeedSet(fast, why := "", force := false)
+	{
+	want := (fast && SpeedOn()) ? SpeedFactor() : 1
+	SpeedNow := SpeedNow ? SpeedNow : 1
+	if (want = SpeedNow && !(force && want = 1 && (SpeedSentAt || SpeedSetting())))
+		return
+	key := SpeedKey(want > 1)
+	gap := SpeedSentAt ? 400 - (A_TickCount - SpeedSentAt) : 0
+	SpeedNow := want, SpeedSentAt := A_TickCount
+	Critical
+	if (gap > 0)
+		Sleep, %gap%
+	Send, {Blind}{%key% down}
+	Sleep, 250
+	Send, {Blind}{%key% up}
+	SpeedSentAt := A_TickCount
+	Critical, Off
+	WalkLog("speed: " want "x - " key (why != "" ? " (" why ")" : ""))
+	}
+
+;Walking: fast - or normal near the goal (no running past an NPC or a door), and for a while after getting round an
+;obstacle
+SpeedWalking()
+	{
+	if (!SpeedOn())
+		return SpeedSet(0)
+	if (A_TickCount < WkSpeedHold)
+		return SpeedSet(0, "getting round an obstacle")
+	;(a dungeon run, collecting round a spot, a teleport on the game's path walked into - its loading screen - or no
+	;distance to the goal known: normal speed)
+	if (IsObject(DgRun))
+		return SpeedSet(0, "a dungeon run")
+	if (WkArrived = 7)
+		return SpeedSet(0, "collecting")
+	if (WkNavJump != "")
+		return SpeedSet(0, "a teleport ahead")
+	if (WkLastDist = "" && !(WkNavOk && IsObject(WkNavObj) && WkNavObj.dist != ""))
+		return SpeedSet(0, "the distance to the goal unknown")
+	;(slowed within SpeedSlowDist / Units, fast again only half as far again past it - not on and off at the line)
+	k := (SpeedNow > 1) ? 1 : 1.5
+	if (WkLastDist != "" && WalkNear(WkLastDist, SpeedSlowDist * k, SpeedSlowUnits * k))
+		return SpeedSet(0, "near the goal")
+	SpeedSet(1, "walking")
+	}
+
+;How long the camera takes to catch up after a turn, at the game's speed now (TurnSettle at 1x)
+WalkSettle()
+	{
+	return Round(TurnSettle / (SpeedNow ? SpeedNow : 1))
 	}
 
 GameActive()
@@ -2013,7 +2122,7 @@ CollectStep(seen, h, dist)
 		return true
 		}
 	;Right after a turn the picture is still swinging round: don't steer on it yet
-	if (A_TickCount - WkTurnAt < TurnSettle)
+	if (A_TickCount - WkTurnAt < WalkSettle())
 		{
 		Sleep, 50
 		return true
@@ -2682,7 +2791,7 @@ WalkStill()
 	snap := WalkSnap()
 	result := ""
 	if (IsObject(snap) && IsObject(WkSnapPrev) && snap.Length() && snap.Length() = WkSnapPrev.Length()
-		&& nowMs - WkSnapAt <= 1500 && WkSnapAt > WkTurnAt + TurnSettle && WkSnapAt > WkWalkFrom + 200)
+		&& nowMs - WkSnapAt <= 1500 && WkSnapAt > WkTurnAt + WalkSettle() && WkSnapAt > WkWalkFrom + 200)
 		{
 		;A cell counts as changed by more than a bit of its brightness (dark places change less)
 		changedCells := 0
@@ -3206,7 +3315,7 @@ NavTurn(h)
 	Send, {Blind}{%key% down}
 	Critical, Off
 	downAt := A_TickCount, lookAt := A_TickCount, prevYaw := first.yaw, turned := 0, looks := 0, ending := ""
-	capMs := Round(Abs(h) / TurnRate * 1.6) + 300
+	capMs := Round(Abs(h) / (TurnRate * SpeedNow) * 1.6) + 300
 	capMs := capMs > NavTurnCap ? NavTurnCap : capMs
 	loop
 		{
@@ -3227,7 +3336,7 @@ NavTurn(h)
 		if (!IsObject(nav) || nav.yaw = "")
 			{
 			;(the rest by TurnRate, as Turn would)
-			rest := Round((Abs(h) - Abs(turned)) / TurnRate)
+			rest := Round((Abs(h) - Abs(turned)) / (TurnRate * SpeedNow))
 			if (rest > 0 && turned * h >= 0)
 				HoldFor(rest > 800 ? 800 : rest)
 			ending := "the memory lost"
@@ -3238,7 +3347,7 @@ NavTurn(h)
 		left := h - turned
 		;Let go now or after one more look, whichever lands nearer (within NavTurnTol): it turns on a little
 		;after the key comes up, and this look is a moment old (coast: that much more, at the rate so far)
-		rate := (took > 60 && Abs(turned) > 1) ? Abs(turned) / took : TurnRate
+		rate := (took > 60 && Abs(turned) > 1) ? Abs(turned) / took : TurnRate * SpeedNow
 		coast := rate * (lookMs / 2 + 16), shortNow := Abs(left) - coast
 		if (left * h <= 0 || shortNow <= 0 || (shortNow <= NavTurnTol && shortNow <= Abs(shortNow - rate * lookMs)))
 			break
@@ -3263,8 +3372,30 @@ NavTurn(h)
 	took := A_TickCount - downAt
 	stillTurns := ending = "not turning" ? stillTurns + 1 : 0
 	;(not turning: Wizard101's own menu may be up - keys don't reach the wizard then; closed, and tried again)
+	if (ending = "not turning")
+		HoldW(0), SpeedSet(0, "the game's menu up?")
 	if (ending = "not turning" && WalkCloseGameMenu() = 1)
 		stillTurns := 0
+	;(the speed checked by how fast the wizard turned: Cheat Engine not attached (the game restarted), the key not taking
+	;('Disable when released' ticked) - off for this run; sped up while it should be at 1x - its 1x key again)
+	if (ending = "" && took > 150 && Abs(turned) > 20 && IsFunc("SpeedSet"))
+		{
+		ratio := (Abs(turned) / took) / TurnRate
+		if (SpeedNow > 1 && ratio < SpeedNow * 0.55)
+			{
+			SpeedMiss += 1
+			if (SpeedMiss >= 2 && SpeedOff = "")
+				{
+				SpeedOff := "the wizard turned at " Round(ratio, 1) "x, not " SpeedNow "x - is Cheat Engine attached to this Wizard101, its walking key set, 'Disable when released' unticked?"
+				WalkLog("speed: off for this run - " SpeedOff)
+				SpeedSet(0, "not sped up", true)
+				}
+			}
+		else if (SpeedNow = 1 && ratio > 1.6 && SpeedSentAt && A_TickCount - SpeedSentAt > 10000)
+			SpeedSet(0, "the wizard turned at " Round(ratio, 1) "x - the 1x key again", true)
+		else
+			SpeedMiss := 0
+		}
 	if (ending = "wrong way")
 		{
 		WkNavSign := -WkNavSign, WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0
@@ -3418,9 +3549,10 @@ WalkNavSave()
 	WkNavSignSaved := WkNavSign
 	}
 
-;OnExit handler: never leave a movement key held down
+;OnExit handler: never leave a movement key held down - nor the game sped up
 WalkerQuit(reason, code)
 	{
 	ReleaseKeys()
+	SpeedSet(0, "the bot stops", true)
 	return 0
 	}

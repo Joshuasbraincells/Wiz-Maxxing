@@ -40,6 +40,8 @@ Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Learned spells, MenuSpells
 Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
+Menu, Tray, Add, Speedhack: press its walking key in 3 s (for Cheat Engine), MenuSpeedKeyFast
+Menu, Tray, Add, Speedhack: press its 1x key in 3 s (for Cheat Engine), MenuSpeedKeyNormal
 Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Open with Wizard101 (in standby - F6 starts it), MenuWatch
 Menu, Tray, Add, Read wizard stats now, MenuStats
@@ -105,6 +107,21 @@ return
 ;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
 MenuSettings:
 CfgShow()
+return
+
+;Cheat Engine's speedhack keys (F13-F24 - no keyboard has them): pressed 3 s after you pick this, so you can click into
+;Cheat Engine's hotkey box first and set them there
+MenuSpeedKeyFast:
+MenuSpeedKeyNormal:
+speedKeyName := SpeedKey(A_ThisLabel = "MenuSpeedKeyFast")
+TrayTip, Wizard101 bot, % "Click into Cheat Engine's hotkey box now - " speedKeyName " is pressed in 3 seconds.", 3, 1
+Sleep, 3000
+Send, {%speedKeyName% down}
+Sleep, 250
+Send, {%speedKeyName% up}
+;(if Cheat Engine already has it: the game's at that speed now)
+SpeedNow := (A_ThisLabel = "MenuSpeedKeyFast") ? SpeedFactor() : 1, SpeedSentAt := A_TickCount
+DebugLog("Speedhack: " speedKeyName " pressed (for Cheat Engine's hotkey box)")
 return
 
 ;The map window (Dashboard.ahk): a top-down picture of the zone, the wizard and the quest goal
@@ -419,6 +436,10 @@ loop,
 			}
 		;(the mouse, if any of this takes it - potions, stats - goes back where it was at the end: mousereturn)
 		MouseGrab()
+		;(the mob loop, lore farming, afk: they move the wizard themselves - the walker's keys let go and the game at 1x
+		;first, not after their first steps)
+		if ((afk || loopmode || loremode) && (KeysDown || HeldW || SpeedNow > 1))
+			ReleaseKeys()
 		checkafk()
 		;Fled a battle out of mana or cards (Flee.ahk): a potion first (or a run to buy some), then on as usual
 		FleeAfter()
@@ -454,6 +475,8 @@ loop,
 		}
 	If (startErr = 0)
 		{
+		;(a battle: the game at normal speed - Cheat Engine's speedhack, if walking had it on)
+		SpeedSet(0, "a battle round", true)
 		;(the first round at a window size: the UI size measured from Pass and Flee before it's played - a made set's
 		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
 		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
@@ -1035,7 +1058,10 @@ PlayerActing()
 			acting := false
 		}
 	if (acting && !logged)
+		{
 		DebugLog("You're playing - the bot waits until you've left the keyboard and mouse alone for " secs " s"), logged := 1
+		SpeedSet(0, "you're playing")
+		}
 	else if (!acting && logged)
 		{
 		DebugLog("You've stopped - the bot carries on")
@@ -1071,6 +1097,7 @@ BotToggle()
 			ReleaseKeys()
 		BlockInput, MouseMoveOff
 		DebugLog("Bot off (F6) - it does nothing till F6 again")
+		SpeedSet(0, "bot off", true)
 		TrayTip, Wizard101 bot, Off - the bot does nothing till you press F6 again., 4, 1
 		}
 	BotOnShow()
