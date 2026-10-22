@@ -513,8 +513,7 @@ DetectUiScale()
 		cutPass := set.dir "\resources\roundstart.png"
 		if (set.gen || Abs(set.scale / guess - 1) > 0.03 || !FileExist(cutPass))
 			continue
-		ImageSearch, sx, sy, passX - 110 * set.scale, passY - 45 * set.scale, passX + 110 * set.scale, passY + 45 * set.scale, *3 *TransFF00FF %cutPass%
-		if (ErrorLevel = 0)
+		if (PicPassAt(cutPass, "*3 *TransFF00FF", passX, passY, set.scale))
 			{
 			DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button cut at " Round(set.scale, 3) " matches - UI scale " Round(set.scale, 3))
 			PicMeasuredSize := GameW "x" GameH
@@ -579,8 +578,7 @@ DetectUiScale()
 		{
 		other := PicSets[found]
 		p := other.gen ? PicMake("resources\roundstart.png", other) : other.dir "\resources\roundstart.png"
-		ImageSearch, sx, sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, % (other.gen ? "*" GenTol " *TransFF00FF " : "*3 ") p
-		if (ErrorLevel != 0)
+		if (!PicPassAt(p, other.gen ? "*" GenTol " *TransFF00FF" : "*3", passX, passY, sc))
 			found := PicSetFor(sc, 0)
 		}
 	DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button made at that size and a bit off matches at " fitList " - UI scale " sc " (" A_TickCount - tuneFrom " ms)")
@@ -589,6 +587,22 @@ DetectUiScale()
 	;made now, so the round start and the spellbook are known from here on
 	PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")
 	return true
+	}
+
+;Pass button picture file (ImageSearch options opts) round where PASS was read (passX, passY, at UI scale sc) - looked
+;for up to tries times, 150 ms apart: the button's look changes for a moment now and then (2026-10-21 20:42 the cut
+;1.144 one missed once and a made 1.141 set was used instead). True if found
+PicPassAt(file, opts, passX, passY, sc, tries := 5)
+	{
+	Loop, % tries
+		{
+		if (A_Index > 1)
+			Sleep, 150
+		ImageSearch, sx, sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, %opts% %file%
+		if (ErrorLevel = 0)
+			return true
+		}
+	return false
 	}
 
 ;No picture set finds the spellbook icon (out of battle, at a UI size never seen): finds the size from
