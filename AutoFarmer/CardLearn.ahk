@@ -124,7 +124,7 @@ DiscardUnused()
 			continue
 			}
 		why := LearnWhyUnused(pid)
-		MouseMove, % Round(c.x), % Round(c.y), MouseSpeedNow()
+		MoveToCard(Round(c.x), Round(c.y))
 		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 		Click, right
 		did += 1
@@ -395,7 +395,7 @@ LearnAllRound()
 			kept += 1, i += 1
 			continue
 			}
-		MouseMove, % Round(c.x), % Round(c.y), MouseSpeedNow()
+		MoveToCard(Round(c.x), Round(c.y))
 		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 		Click, right
 		did += 1

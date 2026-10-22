@@ -1160,7 +1160,7 @@ ClickAt(x, y, after := 0)
 	{
 	;(not in a battle round: the mouse goes back where it was after the click - mousereturn)
 	ownGrab := MouseGrab()
-	MouseMove, x, y, MouseSpeedNow()
+	MoveToCard(x, y)
 	Sleep, % Stats.HasKey("clickwait") ? Stats["clickwait"] : 40
 	;(and a random bit more: clickrandom)
 	if (Stat("clickrandom") > 0)
@@ -1179,6 +1179,30 @@ ClickAt(x, y, after := 0)
 AfterClick(ms)
 	{
 	Sleep, % Round(ms * (Stats.HasKey("clickafter") ? Stats["clickafter"] : 50) / 100)
+	}
+
+;The mouse to x, y - a card in the hand from above: moved straight across the hand it passes over the cards between,
+;the game zooms each up as it's hovered, and a zoomed card covers part of its neighbour - the click lands on it
+;(2026-10-22: Sharpened Blade picked up, the click meant for the Balanceblade at the hand's end hit the greyed Sandstorm
+;beside it and the enchant dropped). So: straight up above the hand, across, a moment for the zoom to go down, then
+;down onto the card. Not on the hand's row (an enemy, Pass, yourself): straight there. Already on that card: just there
+MoveToCard(x, y)
+	{
+	top := ScreenY - Px(90), bottom := ScreenY + Px(80), above := ScreenY - Px(150)
+	if (y < top || y > bottom)
+		{
+		MouseMove, x, y, MouseSpeedNow()
+		return
+		}
+	MouseGetPos, mx, my
+	if (Abs(mx - x) > Px(20) || my < top || my > bottom)
+		{
+		if (my >= top)
+			MouseMove, mx, above, MouseSpeedNow()
+		MouseMove, x, above, MouseSpeedNow()
+		Sleep, 120
+		}
+	MouseMove, x, y, MouseSpeedNow()
 	}
 
 MouseSpeedNow()
@@ -2933,7 +2957,7 @@ DiscardCard(title, dir)
 		DebugLog("  " title " not discarded: it's a treasure card")
 		return 0
 		}
-	Mousemove, cardX + Px(5), cardY + Px(5), MouseSpeedNow()
+	MoveToCard(cardX + Px(5), cardY + Px(5))
 	s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 	Click, right
 	;(the hand has changed: a fresh look next time, not the vision helper's picture of it from before)

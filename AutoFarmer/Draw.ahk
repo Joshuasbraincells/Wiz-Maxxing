@@ -191,7 +191,7 @@ DrawMakeRoom(ans)
 	if (!IsObject(best))
 		return ""
 	x := Round(best[2] + best[4] / 2), y := Round(best[3] + best[5] * 0.6)
-	MouseMove, %x%, %y%, % MouseSpeedNow()
+	MoveToCard(x, y)
 	s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 	Click, right
 	s(Stat("discardafter"))
