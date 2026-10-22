@@ -1,2 +1,5 @@
 # Keep every file byte-for-byte (the AutoHotkey scripts are CRLF; no line-ending conversion)
 * -text
+
+# Not shipped in the release zip
+TODO.md export-ignore
