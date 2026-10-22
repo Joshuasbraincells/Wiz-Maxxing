@@ -43,6 +43,7 @@ Menu, Tray, Add, Map of the zone, MenuMap
 Menu, Tray, Add, Speedhack: press its walking key in 3 s (for Cheat Engine), MenuSpeedKeyFast
 Menu, Tray, Add, Speedhack: press its 1x key in 3 s (for Cheat Engine), MenuSpeedKeyNormal
 Menu, Tray, Add, Check for updates, MenuUpdates
+Menu, Tray, Add, Report a bug..., MenuBug
 Menu, Tray, Add, Open with Wizard101 (in standby - F6 starts it), MenuWatch
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
@@ -133,6 +134,11 @@ return
 ;starts the new one)
 MenuUpdates:
 UpdCheckNow()
+return
+
+;What went wrong, posted as an issue on GitHub (BugReport.ahk)
+MenuBug:
+BugShow()
 return
 
 MenuNothing:
@@ -3238,6 +3244,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
+#Include %A_ScriptDir%\BugReport.ahk
 #Include %A_ScriptDir%\Dungeons.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk

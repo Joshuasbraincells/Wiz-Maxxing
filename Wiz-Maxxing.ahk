@@ -8,6 +8,8 @@
 ;                            when Wizard101 starts (Watch.ahk); F6 then starts it
 ;   Wiz-Maxxing.exe /latest  only looks up the latest release, into updater.ini (the dashboard's Updates button and
 ;                            STATISTICS say from it whether a newer one is out) - nothing shown, nothing installed
+;   Wiz-Maxxing.exe /report <file>   posts a bug report as an issue on GitHub (the dashboard's Report a bug -
+;                            Updater.ahk UpReport); its answer in <file>.result
 ; AutoHotkey v1.1.
 #NoEnv
 #NoTrayIcon
@@ -22,6 +24,11 @@ if (A_Args[1] = "/watch")
 if (A_Args[1] = "/latest")
 	{
 	UpPeek()
+	ExitApp
+	}
+if (A_Args[1] = "/report")
+	{
+	UpReport(A_Args[2])
 	ExitApp
 	}
 if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))

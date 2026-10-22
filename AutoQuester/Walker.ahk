@@ -3044,7 +3044,7 @@ WalkMemLearn(zone, d, side, walkMs, worked)
 ;the camera still swinging round)
 WalkNav(hScr, dScr)
 	{
-	static navGoalKey := ""
+	static navGoalKey := "", escSaid := ""
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavRouted := 0, WkNavLeft := ""
 	WkNavJump := "", WkNavJumpAt := "", WkNavMob := ""
 	;(AutoQuester on its own has no vision helper. In a battle there's nothing to steer, and the battle
@@ -3084,6 +3084,10 @@ WalkNav(hScr, dScr)
 			;(a mob on the way it can't go round: see the mob step in WalkStep)
 			if (nav.mob != "")
 				WkNavMob := nav.mob, WkNavMobName := nav.mobname != "" ? nav.mobname : "a mob", WkNavMobAt := A_TickCount
+			;(inside a mob's ring or sight: the aim leads out of it - said once each time)
+			if (nav.escape != "" && nav.escape != escSaid)
+				WalkLog("inside " nav.escape "'s reach or sight - getting out of it (the way out nearest the quest's way), not waiting there")
+			escSaid := nav.escape
 			}
 		;How fast the wizard is moving (game units per ms): the number on screen and the memory's are read a
 		;moment apart (up to ~150 ms with the OCR), so a pair only says how the two compare when that moment's

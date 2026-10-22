@@ -21,7 +21,8 @@ AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card lear
 ## Updates
 
 Tick **GitHub updates** in Setup once per PC: it opens GitHub's token page (make a fine-grained token with
-read-only **Contents** access to this repository) and keeps the token in Windows Credential Manager. From then
+read-only **Contents** access to this repository - and **Issues: Read and write** for the dashboard's
+**Report a bug**) and keeps the token in Windows Credential Manager. From then
 on, opening **Wiz-Maxxing** checks for a newer release and asks before installing it - your PlayerStats.txt,
 learned cards, potion routes and the bot's memory are kept. The bot's tray menu has **Check for updates** too.
 

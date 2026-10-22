@@ -460,21 +460,27 @@ UpCleanup()
 
 ;---- GitHub and the token ----
 
-;GET url with the token; the answer's text, status in status (0 = no answer). Sent without waiting and
-;polled, so the time limit holds
-UpHttp(url, token, accept, ByRef status, timeoutMs := 8000)
+;GET url with the token (or method - POST - with a JSON body); the answer's text, status in status (0 = no answer).
+;Sent without waiting and polled, so the time limit holds
+UpHttp(url, token, accept, ByRef status, timeoutMs := 8000, method := "GET", body := "")
 	{
 	status := 0
 	try
 		{
 		req := ComObjCreate("WinHttp.WinHttpRequest.5.1")
-		req.Open("GET", url, true)
+		req.Open(method, url, true)
 		req.SetRequestHeader("User-Agent", "Wiz-Maxxing-updater")
 		req.SetRequestHeader("Accept", accept)
 		req.SetRequestHeader("X-GitHub-Api-Version", "2022-11-28")
 		if (token != "")
 			req.SetRequestHeader("Authorization", "Bearer " token)
-		req.Send()
+		if (body != "")
+			{
+			req.SetRequestHeader("Content-Type", "application/json")
+			req.Send(body)
+			}
+		else
+			req.Send()
 		t0 := A_TickCount
 		while (!req.WaitForResponse(0))
 			{
@@ -606,6 +612,74 @@ UpTokenTest(token)
 	{
 	UpHttp(UpApi() "/repos/" UpRepo() "/releases/latest", token, "application/vnd.github+json", status, 8000)
 	return status = 200 ? "" : status = 401 ? "GitHub doesn't accept that token (401)" : status = 404 ? "the token can't see the Wiz-Maxxing repo (404) - give it access to that repository" : status = 403 ? "GitHub refused it (403)" : status = 0 ? "no answer from GitHub (offline?)" : "GitHub answered " status
+	}
+
+;---- bug reports ----
+
+;Posts a bug report as an issue on the repo - the dashboard's "Report a bug" (BugReport.ahk) runs Wiz-Maxxing.exe
+;/report <file>. file: its first line the title, the rest the issue's text (GitHub markdown). The answer goes in
+;<file>.result: "ok|<issue number>|<its address>" or "err|<why not>". The token needs Issues: Read and write on the repo
+UpReport(file)
+	{
+	if (file = "")
+		return
+	ans := UpReportPost(file)
+	out := FileOpen(file ".result", "w", "UTF-8")
+	if (IsObject(out))
+		out.Write(ans), out.Close()
+	}
+
+UpReportPost(file)
+	{
+	src := FileOpen(file, "r", "UTF-8")
+	if (!IsObject(src))
+		return "err|the report's file couldn't be read"
+	all := StrReplace(src.Read(), "`r", ""), src.Close()
+	nl := InStr(all, "`n")
+	head := Trim(nl ? SubStr(all, 1, nl - 1) : all), text := nl ? SubStr(all, nl + 1) : ""
+	if (head = "")
+		return "err|it has no title"
+	token := UpToken()
+	if (token = "")
+		return "err|there's no GitHub token on this PC (Setup.exe: tick GitHub updates)"
+	;(GitHub takes 65536 characters at most - not cut in the middle of a character made of two)
+	cut := 65000
+	if (StrLen(text) > cut && (NumGet(text, (cut - 1) * 2, "UShort") & 0xFC00) = 0xD800)
+		cut -= 1
+	json := "{""title"": """ UpJson("Bug: " SubStr(head, 1, 200)) """, ""body"": """ UpJson(SubStr(text, 1, cut)) """, ""labels"": [""bug""]}"
+	resp := UpHttp(UpApi() "/repos/" UpRepo() "/issues", token, "application/vnd.github+json", status, 20000, "POST", json)
+	token := ""
+	if (status = 201 && RegExMatch(resp, """number"":\s*(\d+)", m))
+		{
+		RegExMatch(resp, """html_url"":\s*""([^""]+/issues/\d+)""", u)
+		UpLog("Bug report sent: issue #" m1)
+		return "ok|" m1 "|" u1
+		}
+	why := status = 401 ? "GitHub refused the token (401) - it may have expired: make a new one and add it with Setup.exe"
+		: (status = 403 && InStr(resp, "rate limit")) ? "GitHub's limit for now (403) - try again in a while"
+		: (status = 403 || status = 404) ? "the token can't make issues (" status "). github.com > Settings > Developer settings > Fine-grained tokens > the Wiz-Maxxing token > Edit > Issues: Read and write > Update, then Send again"
+		: status = 410 ? "issues are off on the repo (GitHub: the repo's Settings > General > Features > Issues)"
+		: status = 0 ? "no answer from GitHub (offline?)"
+		: "GitHub answered " status
+	UpLog("Bug report not sent: " why)
+	return "err|" why
+	}
+
+;s for a JSON string, in ASCII: backslash, quote, line ends and tabs escaped, other control characters a space, the rest
+;past ASCII as \uXXXX (so how WinHttp encodes the text doesn't matter)
+UpJson(s)
+	{
+	s := StrReplace(s, "\", "\\"), s := StrReplace(s, """", "\"""), s := StrReplace(s, "`r", "")
+	s := StrReplace(s, "`n", "\n"), s := StrReplace(s, "`t", "\t")
+	if (!RegExMatch(s, "[^\x20-\x7E]"))
+		return s
+	out := ""
+	Loop, % StrLen(s)
+		{
+		c := NumGet(s, (A_Index - 1) * 2, "UShort")
+		out .= (c >= 0x20 && c <= 0x7E) ? Chr(c) : (c < 0x20) ? " " : Format("\u{:04X}", c)
+		}
+	return out
 	}
 
 UpUnescape(s)

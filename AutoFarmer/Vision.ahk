@@ -288,7 +288,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: ""}
+		, mob: "", mx: "", my: "", mobname: "", escape: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -312,6 +312,8 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4]), nav.jump := NavNum(f[5]), nav.jx := NavNum(f[6]), nav.jy := NavNum(f[7])
 			;(8-11: a mob on the way the route can't go round - seconds waited for it, where it is, its name)
 			nav.mob := NavNum(f[8]), nav.mx := NavNum(f[9]), nav.my := NavNum(f[10]), nav.mobname := Trim(f[11])
+			;(12: inside a mob's ring or sight - its name: the aim leads out of it)
+			nav.escape := Trim(f[12])
 			}
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))

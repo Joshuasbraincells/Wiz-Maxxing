@@ -1484,11 +1484,13 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
     if res.get('aim') is None:
         return ['route|||', 'routewhy|' + (res.get('why') or '?')]
     # (fields 5-7: right at a teleport on the game's path - the seconds waited there, and where it is; 8-11: a mob
-    # on the way the route can't go round - the seconds waited for it to move off, where it is, its name)
+    # on the way the route can't go round - the seconds waited for it to move off, where it is, its name; 12: the
+    # wizard inside a mob's ring or sight - its name - the aim leads out of it)
     jump = res.get('jump')
     tail = '||' if jump is None else f"{jump:.0f}|{res['jump_at'][0]:.0f}|{res['jump_at'][1]:.0f}"
     mob = res.get('mob')
     tail += '||||' if mob is None else f"|{mob:.0f}|{res['mob_at'][0]:.0f}|{res['mob_at'][1]:.0f}|{res['mob_name'].replace('|', ' ')}"
+    tail += '|' + (res.get('escape') or '').replace('|', ' ')
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail]
 
 

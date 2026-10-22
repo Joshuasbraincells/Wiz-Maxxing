@@ -19,8 +19,9 @@ global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHands
 global DashUsageText
 ;The Settings button (Settings.ahk), left of the Map button
 global DashCfgBtn
-;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState)
-global DashUpdBtn, DashUpdBusy
+;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState); Report a
+;bug left of it (BugReport.ahk)
+global DashUpdBtn, DashUpdBusy, DashBugBtn
 ;Where the tabs' inside starts in the window (GuiControl Move places a tab's controls from there: DashGuiSize)
 global DashTabOX, DashTabOY, DashTabOW, DashTabOH
 ;The bottom row's other buttons (they share the window's width)
@@ -42,9 +43,10 @@ DashInit()
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
 	Gui, Dash:Font, s11 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Text, x12 y10 w620 h22 vDashHead, % "Wizard101 bot " BotVersion()
+	Gui, Dash:Add, Text, x12 y10 w526 h22 vDashHead, % BotVersion()
 	;(the Updates button: the heading row's right end - DashGuiSize keeps it there)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x544 y7 w88 h24 gDashBugButton vDashBugBtn, Report a bug
 	Gui, Dash:Add, Button, x640 y7 w136 h24 gDashUpdButton vDashUpdBtn, Check for updates
 	;(the button says "Checking..." a while after a click: DashUpdBusy)
 	;Three tabs: Bot (statistics, what it sees, the hand, the log), Dungeons (Dungeons.ahk) and Spells (the cards
@@ -554,7 +556,8 @@ DashRefresh()
 		doing := StatusText
 	else
 		doing := "Watching"
-	DashSet("DashHead", "Wizard101 bot " BotVersion() "  |  up " upText "  |  vision " (VisionOn ? "on" : "off") "  |  " SubStr(doing, 1, 70))
+	;(the window's title says "Wizard101 bot")
+	DashSet("DashHead", BotVersion() "  |  up " upText "  |  vision " (VisionOn ? "on" : "off") "  |  " SubStr(doing, 1, 70))
 	;The version, and whether a newer one is out (the last look-up: UpdState) - on the Updates button too
 	upd := UpdState()
 	verNote := upd.newer ? upd.latest " is out" : upd.err != "" ? "can't check" : upd.latest != "" ? "up to date" : "not checked yet"
@@ -1042,6 +1045,12 @@ DashUpdButton:
 		}
 	return
 
+;Report a bug (BugReport.ahk): what went wrong, posted as an issue on GitHub
+DashBugButton:
+	if (IsFunc("BugShow"))
+		Func("BugShow").Call()
+	return
+
 ;The Settings window (Settings.ahk): the mouse, the waits, how it plays its cards
 DashSettingsButton:
 	if (IsFunc("CfgShow"))
@@ -1082,7 +1091,8 @@ DashGuiSize:
 		GuiControl, Dash:Move, DashPauseBtn, x0 y0
 		GuiControlGet, DashTabO, Dash:Pos, DashPauseBtn
 		}
-	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 164
+	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 258
+	GuiControl, Dash:Move, DashBugBtn, % "x" A_GuiWidth - 240
 	GuiControl, Dash:Move, DashUpdBtn, % "x" A_GuiWidth - 144
 	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84 - DashTabOX
 	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166 - DashTabOX

@@ -135,22 +135,46 @@ CfgShow()
 	Gui, Cfg:New, +HwndCfgHwnd -MaximizeBox, % "Wizard101 bot " BotVersion() " - settings"
 	Gui, Cfg:Color, 1B1D22, 111317
 	Gui, Cfg:Margin, 12, 10
-	cfgX := 12, cfgY := 12, cfgBottom := 12
-	for each, cfgS in CfgList()
+	;(next to the dashboard when it's up, else in the middle of the main monitor - all of it on that monitor: the
+	;settings in columns (CfgPlace) as tall and as many as fit it, with the help line and the buttons under them; more
+	;columns than fit its width: a tab for each heading, its settings in columns inside it)
+	cfgPos := "", cfgAtX := A_ScreenWidth // 2, cfgAtY := A_ScreenHeight // 2
+	if (DashHwnd && DashShown)
 		{
-		if (cfgS.key = "|")
+		;(not a minimised dashboard's place: -32000)
+		WinGet, cfgMm, MinMax, ahk_id %DashHwnd%
+		WinGetPos, cfgDx, cfgDy, , , ahk_id %DashHwnd%
+		if (cfgDx != "" && cfgMm != -1)
+			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " ", cfgAtX := cfgDx + 30, cfgAtY := cfgDy + 60
+		}
+	DashMonitorAt(cfgAtX, cfgAtY, cfgML, cfgMT, cfgMR, cfgMB)
+	cfgMaxY := Max(300, Floor((cfgMB - cfgMT) * 96 / A_ScreenDPI) - 140)
+	;(column n's right edge: 434 + 432 (n - 1), and the window's frame)
+	cfgMaxCols := Max(1, (Floor((cfgMR - cfgML) * 96 / A_ScreenDPI) - 24 - 434) // 432 + 1)
+	cfgPlan := CfgPlace(cfgMaxY, false)
+	if (cfgPlan.cols > cfgMaxCols)
+		{
+		;(the tabs' row of buttons above the settings, its frame below them)
+		cfgPlan := CfgPlace(cfgMaxY - 10, true)
+		cfgTabNames := ""
+		for each, cfgT in cfgPlan.tabs
+			cfgTabNames .= (cfgTabNames = "" ? "" : "|") cfgT
+		Gui, Cfg:Font, s9 w600 cF2F2F2, Segoe UI
+		Gui, Cfg:Add, Tab3, % "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", %cfgTabNames%
+		}
+	cfgTab := 0
+	for each, cfgAt in cfgPlan.items
+		{
+		cfgS := cfgAt.s, cfgX := cfgAt.x, cfgY := cfgAt.y
+		if (cfgAt.tab != cfgTab)
 			{
-			cfgX := 444, cfgY := 12
-			continue
+			cfgTab := cfgAt.tab
+			Gui, Cfg:Tab, %cfgTab%
 			}
 		if (cfgS.key = "-")
 			{
-			;(a gap above a heading that isn't the first)
-			if (cfgY > 12)
-				cfgY += 8
 			Gui, Cfg:Font, s9 w600 c8AB4F8, Segoe UI
 			Gui, Cfg:Add, Text, % "x" cfgX " y" cfgY " w410 h18", % cfgS.label
-			cfgY += 26, cfgBottom := Max(cfgBottom, cfgY)
 			continue
 			}
 		cfgV := Stats.HasKey(cfgS.key) ? Stats[cfgS.key] : cfgS.def
@@ -188,11 +212,13 @@ CfgShow()
 			}
 		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV
 		CfgHelps[cfgL + 0] := cfgHelp, CfgHelps[cfgC + 0] := cfgHelp
-		cfgY += 28, cfgBottom := Max(cfgBottom, cfgY)
 		}
-	cfgY := cfgBottom + 6
+	if (cfgTab)
+		Gui, Cfg:Tab
+	cfgY := cfgPlan.bottom + (cfgTab ? 14 : 6)
 	Gui, Cfg:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, Cfg:Add, Text, x12 y%cfgY% w832 h36 vCfgHelpText, Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart.
+	cfgHelpW := 432 * cfgPlan.cols - 32
+	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart.
 	cfgY += 44
 	Gui, Cfg:Font, s9 w400 c000000, Segoe UI
 	Gui, Cfg:Add, Button, x12 y%cfgY% w90 h26 Default gCfgSave, Save
@@ -201,17 +227,51 @@ CfgShow()
 	Gui, Cfg:Add, Button, x+8 yp w90 h26 gCfgGuiClose, Close
 	Gui, Cfg:Font, s9 w400 cB9E2B9, Segoe UI
 	Gui, Cfg:Add, Text, x+14 yp+5 w370 h18 vCfgNote
-	;(next to the dashboard when it's up, else in the middle of the screen)
-	cfgPos := ""
-	if (DashHwnd && DashShown)
-		{
-		;(not a minimised dashboard's place: -32000)
-		WinGet, cfgMm, MinMax, ahk_id %DashHwnd%
-		WinGetPos, cfgDx, cfgDy, , , ahk_id %DashHwnd%
-		if (cfgDx != "" && cfgMm != -1)
-			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " "
-		}
 	Gui, Cfg:Show, % cfgPos "AutoSize", % "Wizard101 bot " BotVersion() " - settings"
+	;(all of it on that monitor - its Save button too: moved up and left as far as it needs)
+	WinGetPos, cfgWx, cfgWy, cfgWw, cfgWh, ahk_id %CfgHwnd%
+	if (cfgWx != "")
+		{
+		cfgNx := Max(cfgML, Min(cfgWx, cfgMR - cfgWw)), cfgNy := Max(cfgMT, Min(cfgWy, cfgMB - cfgWh))
+		if (cfgNx != cfgWx || cfgNy != cfgWy)
+			WinMove, ahk_id %CfgHwnd%, , %cfgNx%, %cfgNy%
+		}
+	}
+
+;Where each of CfgList's settings and headings goes in the window: {items: [{s: the setting, x, y, tab}], cols: the
+;most columns, bottom: the lowest y used, tabs: their names}. Down in columns from the top, a new one at "|" and
+;wherever the next wouldn't end above maxY (a heading goes with its first setting). tabbed: each heading starts a
+;tab of its own (named after it; the heading itself not shown), the settings under the tabs' buttons, "|" left out
+CfgPlace(maxY, tabbed)
+	{
+	top := tabbed ? 44 : 12
+	plan := {items: [], cols: 1, bottom: top, tabs: []}
+	x := 12, y := top, col := 1
+	for each, s in CfgList()
+		{
+		if (s.key = "|")
+			{
+			if (!tabbed && y > top)
+				x += 432, y := top, col += 1
+			continue
+			}
+		if (s.key = "-" && tabbed)
+			{
+			name := s.label
+			StringLower, name, name
+			plan.tabs.Push(Format("{:U}", SubStr(name, 1, 1)) SubStr(name, 2)), x := 12, y := top, col := 1
+			continue
+			}
+		if (y > top && y + (s.key = "-" ? 8 + 26 + 28 : 28) > maxY)
+			x += 432, y := top, col += 1
+		;(a gap above a heading that isn't the first)
+		if (s.key = "-" && y > top)
+			y += 8
+		plan.items.Push({s: s, x: x, y: y, tab: plan.tabs.Length()})
+		y += (s.key = "-") ? 26 : 28
+		plan.bottom := Max(plan.bottom, y), plan.cols := Max(plan.cols, col)
+		}
+	return plan
 	}
 
 ;The help for what the mouse is over: a label (SS_NOTIFY) or a control in the window

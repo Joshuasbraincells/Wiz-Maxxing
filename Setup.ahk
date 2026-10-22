@@ -641,7 +641,7 @@ SuToken()
 	if (UpToken() != "" && UpTokenTest(UpToken()) = "")
 		return SuLogLine("the saved token works")
 	Run, https://github.com/settings/personal-access-tokens/new
-	MsgBox, 64, GitHub updates, % "A GitHub page opened (sign in if it asks). Make a token there:`n`n1. Token name: Wiz-Maxxing updates`n2. Expiration: the longest it offers (or No expiration)`n3. Repository access: Only select repositories -> Wiz-Maxxing`n4. Permissions -> Repository permissions -> Contents: Read-only`n5. Generate token, then copy it`n`nClick OK, then paste it into the next box."
+	MsgBox, 64, GitHub updates, % "A GitHub page opened (sign in if it asks). Make a token there:`n`n1. Token name: Wiz-Maxxing updates`n2. Expiration: the longest it offers (or No expiration)`n3. Repository access: Only select repositories -> Wiz-Maxxing`n4. Permissions -> Repository permissions -> Contents: Read-only, and Issues: Read and write (for the dashboard's Report a bug)`n5. Generate token, then copy it`n`nClick OK, then paste it into the next box."
 	InputBox, token, GitHub updates, Paste the token (it's kept in Windows Credential Manager on this PC only):, HIDE, 560, 150
 	if (ErrorLevel || Trim(token) = "")
 		return SuLogLine("no token entered")

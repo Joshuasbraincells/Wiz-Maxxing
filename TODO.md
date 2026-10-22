@@ -10,6 +10,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 
 ## 2. Stuck: mitigate completely
 - [ ] Ranked list from the stuck analysis (workflow run wf_60d57f89-04e), then pick routes
+- [x] Inside a mob's reach or sight: walks out (the quest's side) instead of waiting there (v0.34.0)
 - [ ] Throne Room: the goal is behind a wall the zone map lacks
 - [ ] Measure it: badly-stuck count and time lost per run (07:10-09:34 run: 4 incidents)
 

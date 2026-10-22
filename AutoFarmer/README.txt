@@ -94,7 +94,10 @@ many degrees off its facing ("Caught by ..." in debug.log). Not
 the mobs the quest is about: those named in its goal line ("Defeat 3 Lost
 Souls"), or standing at its goal; and not while collecting. With no way round
 (a narrow street), the wizard stands still till the mob moves off - 25 s at
-most, then it walks on past it. The walk to the potion seller keeps away from
+most, then it walks on past it. Never inside one's reach or sight, though (a
+mob walked up, or the wizard came out of a battle there): it walks out of it
+first - along the route if that leads out, else the shortest way out (never
+nearer the mob) on the quest's side - and only then waits. The walk to the potion seller keeps away from
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
 
@@ -114,6 +117,17 @@ is in the windows' titles, the tray menu's first line and the dashboard's
 STATISTICS. Needs a GitHub token once per PC (Setup.exe, "GitHub updates").
 Your settings, learned cards, potion routes and pictures are kept.
 updater.log (next to Wiz-Maxxing.exe) says what it did.
+
+Report a bug (the dashboard's button, top right, or the tray menu): say what
+went wrong; Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with
+the version, this PC's name, the screen, what the dashboard's STATISTICS and
+WHAT IT SEES show and (ticked) the end of debug.log - anything that looks
+secret (a Discord webhook, a GitHub token, password=...) blanked out. It uses
+the updates' GitHub token, which needs Issues: Read and write as well: on
+github.com, Settings > Developer settings > Fine-grained tokens > the
+Wiz-Maxxing token > Edit > Repository permissions > Issues: Read and write >
+Update (the same token keeps working - nothing to change on the PCs). Closing
+the window keeps what you typed until it's sent.
 
 Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
 cast per card, passes, discards, kill-check hits, potions, cards learned),
