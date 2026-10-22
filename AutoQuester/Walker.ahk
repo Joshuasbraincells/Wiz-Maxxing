@@ -1203,18 +1203,29 @@ WalkSkipDialog()
 	{
 	if (KeysDown || HeldW)
 		ReleaseKeys()
-	presses := 0
+	presses := 0, acc := ""
 	Loop, 80
 		{
 		PressKey("Space"), presses += 1
 		Sleep, %SkipGap%
 		if (!Walking)
 			return false
+		;(no NEXT / DONE any more: closed - or its last page is a quest offer, its button ACCEPT)
 		if (Mod(A_Index, 4) = 0 && !WalkDialogOpen())
+			{
+			acc := WalkDialogAccept()
 			break
+			}
 		}
-	WalkLog("dialogue: skipped with " presses " Space presses")
+	WalkLog("dialogue: skipped with " presses " Space presses" (IsObject(acc) ? " - its last page a quest offer" : ""))
 	SetStatus("dialogue skipped (" presses " Space presses)")
+	if (IsObject(acc) && Walking && GameActive())
+		{
+		WalkLog("quest offer: ACCEPT in the dialogue box - clicking it at " acc.x - GameLeft "," acc.y - GameTop)
+		SetStatus("accepting the quest")
+		WalkClick(acc.x, acc.y)
+		Sleep, 700
+		}
 	;(a quest-giver's: the quest offer comes up after it - its ACCEPT clicked; looked for again a while: WalkStep)
 	Sleep, 300
 	if (Walking)
@@ -1233,7 +1244,8 @@ WalkSkipDialog()
 WalkAcceptButton()
 	{
 	;(the middle of the game, then its lower part bigger - a button's coloured letters read better larger)
-	for pass, f in [[0.8, 0.07, 0.86], [0.6, 0.45, 0.5]]
+	;(the second down to the bottom: a dialogue box's own ACCEPT is in its button row there)
+	for pass, f in [[0.8, 0.07, 0.86], [0.6, 0.45, 0.55]]
 		{
 		readW := Round(GameW * f[1]), readH := Round(GameH * f[3])
 		t := OcrRect(Round(GameLeft + (GameW - readW) / 2), Round(GameTop + GameH * f[2]), readW, readH, "en", Min(pass = 1 ? 2 : 3, 2500 / readW), acceptLines)
@@ -1254,7 +1266,9 @@ WalkAcceptButton()
 			continue
 		;(its window: the lines just above the button and on its row, hugging it - a quest offer says so (DECLINE beside
 		;it, or quest / reward / experience / gold words); a friend, trade, teleport or group request never)
-		offer := false
+		;(in the dialogue box's button row at the bottom - a quest-giver's offer as the dialogue's last page - with no
+		;request's words anywhere in what was read)
+		offer := (btn.y > GameTop + GameH * 0.85) && !RegExMatch(t, "i)friend request|be your friend|would like to|wants? to (trade|duel|teleport|join)|invit(e|es|ed) you|teleport to|join (my|your|the|a|our) (group|team|party)|party invit")
 		for each, line in acceptLines
 			{
 			cy := line.y + line.h / 2
@@ -1295,6 +1309,29 @@ WalkAcceptQuest(why)
 	Sleep, 700
 	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0
 	return true
+	}
+
+;The dialogue box's own ACCEPT - a quest-giver's offer as the dialogue's last page (Space doesn't take it, and with no
+;NEXT / DONE the box looks closed to WalkDialogOpen): {x, y} on the screen, or "" - never with "Crown" read in the box
+;or the offer's window above it
+WalkDialogAccept()
+	{
+	s := ArrowScale().scale
+	t := OcrRect(Round(GameLeft + GameW / 2 - 480 * s), Round(GameTop + GameH - 170 * s), Round(960 * s), Round(168 * s), "en", 1, lines)
+	;(nor a friend / trade / teleport / group request or a duel - as WalkAcceptButton)
+	if (ErrorLevel || !IsObject(lines) || RegExMatch(t, "i)cr[o0]wn")
+		|| RegExMatch(t, "i)friend request|be your friend|would like to|wants? to (trade|duel|teleport|join)|invit(e|es|ed) you|teleport to|join (my|your|the|a|our) (group|team|party)|party invit"))
+		return ""
+	btn := ""
+	for i, line in lines
+		for j, word in line.words
+			if (btn = "" && RegExMatch(word.text, "i)^\W*ACC?E[PF]T\W*$"))
+				btn := {x: Round(word.x + word.w / 2), y: Round(word.y + word.h / 2)}
+	if (!IsObject(btn))
+		return ""
+	;(the offer's window above the box - the quest's name, what to do, its rewards: no Crowns there either)
+	t := OcrRect(Round(GameLeft + GameW * 0.2), Round(GameTop + GameH * 0.3), Round(GameW * 0.6), Round(GameH * 0.6), "en", 1)
+	return (ErrorLevel || RegExMatch(t, "i)cr[o0]wn")) ? "" : btn
 	}
 
 ;True if a dialogue box is open at the bottom of the game: its DONE / NEXT / BACK / MORE buttons, read by OCR
