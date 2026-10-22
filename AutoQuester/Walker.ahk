@@ -15,7 +15,7 @@
 global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
-global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, TurnStopUnits, TurnStopDist, WkAcceptLook
+global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
 ;A quest offer's Accept: when a dialogue was last Spaced through (its offer may follow), the looks since, the clicks
 ;on this offer and when the first was
 global WkDlgEndAt, WkAcceptLooks, WkAcceptClicks, WkAcceptAt
@@ -43,6 +43,9 @@ global WkDialog, WkPushes, WkPushStart, WkStraight, WkStraightAt
 global WkTalkDist, WkArrDist, WkLoadAt, WkSpaceAt, WkGoneSpaces
 global WkGateAt, WkGateClicks, WkGateX, WkGateLook, WkSigilUntil, WkFarAt, WkSigilSeen
 global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkMemFile, WkEsc
+;Turns made on the spot in a row with no walking between (a route point jumping behind the wizard): after 3 the next
+;one's made walking on, so it never just spins
+global WkSpins
 ;AutoFarmer's "a battle is on" flag (blank in AutoQuester on its own): never talk or push on during a battle
 global inbattle
 ;The game's memory (AutoFarmer's NavRead, read-only; AutoQuester on its own has none): settings; this step's
@@ -95,10 +98,9 @@ WalkerInit(prefix := "AutoQuester")
 	TurnRate := 0.15     ;degrees the wizard turns per ms of holding A/D (measured: 22.5 degrees per 150 ms)
 	TurnSettle := 500    ;ms the camera takes to catch up after a turn: don't steer on the arrow before then
 	AheadAngle := 12     ;arrow within this many degrees of straight ahead: just walk
-	TurnInPlace := 60    ;arrow further off than this, close to the goal (below): stop and turn on the spot first;
-	                     ;further away it turns walking on (the game takes W and A/D at once - no stopping)
-	TurnStopUnits := 300 ;...close: this many game units from the goal by the game's memory (a walking turn circles
-	TurnStopDist := 20   ;   about 100 units wide), else this on the arrow
+	TurnInPlace := 45    ;arrow (or the route) further off than this: stop, turn on the spot, then walk straight on -
+	                     ;turning with W held swings the wizard round an arc about 100 units wide, into walls and round
+	                     ;NPCs and the goal; under it (and over AheadAngle) the small turn is made walking on
 	StuckTime := 4000    ;ms of walking without getting any closer = stuck, try to get around
 	UnstickTries := 5    ;give up after this many tries at getting round the same obstacle
 	UnreadLimit := 3000  ;ms without a readable distance before it stops and waits
@@ -176,7 +178,7 @@ WalkReset()
 	{
 	WkBestDist := "", WkBestTime := A_TickCount, WkLastRead := A_TickCount
 	WkSide := 1, WkTries := 0, WkNear := 0, WkFar := 0, WkArrived := 0, WkTalk := 0, WkPushUntil := 0
-	WkDialog := 0, WkPushes := 0, WkPushStart := 0, WkStraight := 0, WkStraightAt := 0
+	WkDialog := 0, WkPushes := 0, WkPushStart := 0, WkStraight := 0, WkStraightAt := 0, WkSpins := 0
 	WkTalkDist := "", WkArrDist := "", WkLoadAt := 0, WkSpaceAt := 0, WkGoneSpaces := 0
 	WkGateAt := 0, WkGateClicks := 0, WkGateX := 0, WkGateLook := 0, WkSigilUntil := 0, WkSigilSeen := 0
 	WkBackups := 0, WkBackupsFrom := 0
@@ -990,9 +992,12 @@ WalkStep()
 	steer := h
 	if (A_TickCount < WkBiasUntil)
 		steer := h + WkBias * (WkBiasUntil - A_TickCount) / BiasTime
-	;(a big turn close to the goal: on the spot - walking on, it would circle round the goal)
-	if (Abs(steer) > TurnInPlace && WalkNear(dist != "" ? dist : WkBestDist, TurnStopDist, TurnStopUnits))
+	;(a big turn: on the spot - walking on, it would swing round an arc into walls, round NPCs and the goal. Three in a
+	;row with no walking between: this one walking on - WkSpins)
+	WkSpins := WkSpins ? WkSpins : 0
+	if (Abs(steer) > TurnInPlace && WkSpins < 3)
 		{
+		WkSpins += 1
 		HoldW(0)
 		SetStatus("turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees")
 		Turn(steer)
@@ -1006,19 +1011,17 @@ WalkStep()
 			WkLastRead := A_TickCount
 		return true
 		}
-	;(further away: turning walking on - W stays down while A/D turns the wizard)
+	;(a small turn: walking on - W stays down while A/D turns the wizard; a big one after three on the spot too)
 	HoldW(1)
 	if (Abs(steer) > TurnInPlace)
 		{
-		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move")
+		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move (" WkSpins " turns on the spot in a row)")
 		Turn(steer)
-		;(a big turn swings the wizard round, not closer - as on the spot, it doesn't count towards stuck)
 		WkBestTime := A_TickCount
-		if (WkBestDist != "" && WkBestDist > NearDist)
-			WkLastRead := A_TickCount
 		}
 	else if (fine && Abs(steer) > AheadAngle)
 		Turn(steer)
+	WkSpins := 0
 	if (!Walking)
 		return false
 	SetStatus("walking - " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees, distance " (dist = "" ? "?" : dist) (steer != h ? " (keeping clear of the obstacle)" : "") (fine ? "" : " (talk prompt showing)")
@@ -2023,8 +2026,11 @@ CollectStep(seen, h, dist)
 		{
 		if (WkRoamLeg)
 			WalkLog("collect: " dist " away from the spot - heading back"), WkRoamLeg := 0
+		;(a big turn on the spot first, then walking - as on the way to a goal)
+		if (Abs(h) > TurnInPlace)
+			HoldW(0), Turn(h)
 		HoldW(1)
-		if (Abs(h) > AheadAngle)
+		if (Abs(h) > AheadAngle && Abs(h) <= TurnInPlace)
 			Turn(h)
 		SetStatus("collecting - back towards the spot (distance " dist ")")
 		return Walking ? true : false
