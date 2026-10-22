@@ -116,6 +116,9 @@ FleeHandHasHit()
 		if ((k = "" && f[8] = 1) || RegExMatch(k, "i)/hit[123]$") || (RegExMatch(k, "i)/hit4$") && BossChoosen == 1)
 			|| (RegExMatch(k, "i)/wand$") && Stat("usewand")) || (RegExMatch(k, "i)^resources/reshuffle$") && Stat("usereshuffle")))
 			return 1
+		;(a learned hit in no slot: cast when nothing else can go - CastLearnedHit)
+		if (InStr(k, "learned/") = 1 && Stat("learnedhits") && LearnIsHit(LearnCardOf(SubStr(k, 9))))
+			return 1
 		}
 	return n ? 0 : -1
 	}

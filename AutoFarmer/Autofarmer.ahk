@@ -881,9 +881,16 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 	{
 	if (ReadEnemyHealth())
 		{
-		;(nothing ends it now: is a hit that would worth saving pips for? KillCalc.ahk PlanPips)
+		;(nothing ends it now: one would with an enchant on it and there's none in hand - drawenchant: treasure cards
+		;drawn for one, then looked at again - Draw.ahk; still nothing: is a hit worth saving pips for? KillCalc.ahk
+		;PlanPips)
 		if (!FindLethalHit(KillHit, KillEnchant))
-			PlanPips()
+			{
+			if (DrawWouldKill() && DrawForKill())
+				FindLethalHit(KillHit, KillEnchant)
+			if (KillHit = "")
+				PlanPips()
+			}
 		}
 	ShowKillInfo()
 	DebugLog("  kill check: " HealthText() " -> " (KillHit = "" ? "no lethal hit" : KillHit (KillEnchant ? " with enchant" : "")))
@@ -1712,12 +1719,13 @@ UseHeal(title, ByRef card, dir)
 ;A hit that strikes one enemy (<school>.hitNtarget:1 in PlayerStats.txt, e.g. Scarab) waits for a target
 ;after its card is clicked: click the boss if one was picked (Alt+1), else the enemy with the least
 ;health, else the leftmost one (their nameplates along the top). All-enemy hits need nothing
-HitTarget(title, dir)
+HitTarget(title, dir, force := 0)
 	{
 	global
 	local key, i, e, pick, tx, ty
 	key := dir "." title "target"
-	if (!Stats.HasKey(key) || Stats[key] != 1)
+	;(force: a learned hit in no slot that needs a target - its card says so, not PlayerStats.txt)
+	if (!force && (!Stats.HasKey(key) || Stats[key] != 1))
 		return
 	;(the plates as they are now - not as they were when last read: the kill check's off for a battle you played a
 	;round in, and an enemy gone since leaves its place behind)
@@ -1859,8 +1867,9 @@ ResetVariables()
 	EnchantedHits := {}
 	PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, PipSaveTarget := "", PipSaveStall := 0, PipSaveLastPips := -1
 	PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
-	;(the no-hits flee counts afresh - Flee.ahk)
+	;(the no-hits flee counts afresh - Flee.ahk; treasure cards drawn for an enchant too - Draw.ahk)
 	FleeNoHits := 0, FleeHitsRound := ""
+	DrawsBattle := 0, DrawOff := "", LearnHitFails := {}
 	OwnHpPct := 0, OwnHpRound := -1
 	tower := 0  
 	hitter := 0
@@ -2753,66 +2762,12 @@ BadgeNumber(sch)
 	return 0
 	}
 
-;Looks for an enchant card in hand (Epic best). Run again after one is used, since the hand shifts
-FindEnchant()
-	{
-	global
-	enchant = 0
-	;(the vision helper, if it's running: the best enchant in hand)
-	if (VisionOn)
-		{
-		visionHit := 0
-		for each, ench in [[4, "resources", "epic"], [3, "resources", "colossal"], [2, "resources", "gargantuan"], [1, "life", "enchant"]]
-			{
-			visionHit := VisionFind(ench[2], ench[3], enchantX, enchantY)
-			if (visionHit != 0)
-				break
-			}
-		if (visionHit = 1)
-			{
-			if (ench[1] != 4 || hitter != 0)
-				enchant := ench[1]
-			return
-			}
-		if (visionHit = 0)
-			return
-		}
-	ImageSearch, enchantX, enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), % PicOpt("resources\epic.png", CardTol)
-	If (ErrorLevel = 0) && (hitter != 0)
-		{
-		enchant = 4
-		} else if (Errorlevel = 1)
-			{
-			ImageSearch, enchantX, enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), % PicOpt("resources\colossal.png", CardTol)
-			if ErrorLevel = 0
-				{
-				enchant = 3
-				} else if (ErrorLevel = 1)
-					{
-					ImageSearch, enchantX, enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), % PicOpt("resources\gargantuan.png", CardTol)
-					if (ErrorLevel = 0)
-						{
-						enchant = 2
-						} else if (Errorlevel = 1) 
-							{
-							ImageSearch, enchantX, enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), % PicOpt("life\enchant.png", CardTol)
-							if (ErrorLevel = 0)
-								{
-								enchant = 1
-								} 
-							}
-					} 
-			}
-	}
-
-;Checks a hit really got cast: once a spell is chosen the Pass button goes away. If it's still
-;there the card couldn't be cast (not enough pips), so the round tries the next option instead
-CastResult(title, ByRef hit, dir, enchanted)
+;Did the card just clicked go out? The Pass button has to stay gone for 1 s (it can blink out for a moment while
+;the hand updates) - looked at every 100 ms; still there 0.7 s after the click = the card didn't cast
+CastWentOut()
 	{
 	global
 	local passX, passY, stillThere, t0, goneFrom
-	;The Pass button has to stay gone for 1 s (it can blink out for a moment while the hand updates) - looked
-	;at every 100 ms; still there 0.7 s after the click = the card didn't cast
 	stillThere := false, goneFrom := 0, t0 := A_TickCount
 	while (A_TickCount - t0 < 2500)
 		{
@@ -2833,7 +2788,101 @@ CastResult(title, ByRef hit, dir, enchanted)
 		else if (A_TickCount - goneFrom >= 1000)
 			break
 		}
-	if (!stillThere)
+	return !stillThere
+	}
+
+;A learned hit in no slot cast (CastBestHit, when no hit1-4 went): the strongest in hand you can pay for, by a fresh
+;look at the hand (LearnHitCards) - its card clicked, then a target if it hits one enemy. Not the kill check's (it
+;knows the slots' hits only), no enchant on it. learnedhits:0 in PlayerStats.txt: never. True if it went out
+CastLearnedHit()
+	{
+	global
+	local ans, list, c
+	if (!Stat("learnedhits") || !VisionOn || hitschool = "" || PipSaveFor != "" || !IsFunc("LearnHitCards"))
+		return false
+	if (!LearnHitReady())
+		return false
+	;(the strongest first; one that doesn't go - an off-school card's power pips count 1, a guessed cost - is left for
+	;this battle till there are more pips, and the next is tried: two a round at most, each looked for afresh)
+	Loop, 2
+		{
+		ans := LearnHandRead()
+		list := LearnHitCards(ans)
+		if (!list.Length())
+			return false
+		c := list[1]
+		DebugLog("  learned hit " c.id " (" LearnDescribe(c.c) ") - in no slot: cast at " Round(c.x) - GameLeft "," Round(c.y) - GameTop)
+		ClickAt(Round(c.x), Round(c.y))
+		if (c.c.type = "damage" && c.c.target != 0)
+			HitTarget("learned hit", hitschool, 1)
+		if (CastWentOut())
+			{
+			ConsumeBoosts()
+			DashCast("learned/" c.id)
+			return true
+			}
+		LearnHitFails[c.id] := PipsNow
+		DebugLog("  learned hit " c.id " didn't cast (not enough pips?) - not tried again this battle with " PipsNow " pips or fewer")
+		CenterMouse()
+		VisionForget()
+		}
+	return false
+	}
+
+;The enchant cards it knows, the most damage added first (PlayerStats.txt enchantN - change one and the order
+;follows): [level (enchantN), picture folder, name]. 1 is the old life\enchant placeholder; Strong, Giant and
+;Monstrous (5-7) are learned from the card the first time one's in hand (CardLearn.ahk, kind "enchant")
+EnchantList()
+	{
+	list := []
+	for i, e in [[4, "resources", "epic"], [3, "resources", "colossal"], [2, "resources", "gargantuan"], [7, "resources", "monstrous"], [6, "resources", "giant"], [5, "resources", "strong"], [1, "life", "enchant"]]
+		{
+		at := 1
+		while (at <= list.Length() && Stat("enchant" list[at][1]) >= Stat("enchant" e[1]))
+			at++
+		list.InsertAt(at, e)
+		}
+	return list
+	}
+
+;Looks for an enchant card in hand - the best (EnchantList): enchant := its level, enchantX/Y where it is; 0 none.
+;Epic only once a hitter's known (as before). By the vision helper; what it can't tell (-1: not running, no picture
+;it can use) by ImageSearch. Run again after one is used, since the hand shifts
+FindEnchant()
+	{
+	global
+	local each, ench, r, unsure
+	enchant := 0, unsure := []
+	for each, ench in EnchantList()
+		{
+		if (ench[1] = 4 && hitter = 0)
+			continue
+		r := VisionOn ? VisionFind(ench[2], ench[3], enchantX, enchantY) : -1
+		if (r = 1)
+			{
+			enchant := ench[1]
+			return
+			}
+		if (r = -1)
+			unsure.Push(ench)
+		}
+	for each, ench in unsure
+		{
+		ImageSearch, enchantX, enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), % PicOpt(ench[2] "\" ench[3] ".png", CardTol)
+		if (ErrorLevel = 0)
+			{
+			enchant := ench[1]
+			return
+			}
+		}
+	}
+
+;Checks a hit really got cast: once a spell is chosen the Pass button goes away. If it's still
+;there the card couldn't be cast (not enough pips), so the round tries the next option instead
+CastResult(title, ByRef hit, dir, enchanted)
+	{
+	global
+	if (CastWentOut())
 		{
 		EnchantedHits.Delete(title)
 		ConsumeBoosts()
@@ -2878,6 +2927,12 @@ DiscardCard(title, dir)
 	Find(title, card, cardX, cardY, dir)
 	if (card != 1)
 		return 0
+	;(never a treasure card - discarding one uses it up: one drawn for an enchant (Draw.ahk) looks like the deck's)
+	if (IsFunc("DiscardIsTc") && DiscardIsTc(cardX + Px(5)))
+		{
+		DebugLog("  " title " not discarded: it's a treasure card")
+		return 0
+		}
 	Mousemove, cardX + Px(5), cardY + Px(5), MouseSpeedNow()
 	s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 	Click, right
@@ -3128,6 +3183,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\CardLearn.ahk
 #Include %A_ScriptDir%\Potions.ahk
 #Include %A_ScriptDir%\Flee.ahk
+#Include %A_ScriptDir%\Draw.ahk
 #Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk

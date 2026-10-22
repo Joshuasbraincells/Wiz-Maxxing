@@ -155,7 +155,7 @@ VisionPicList()
 	list := ""
 	for each, name in ["hit1", "hit2", "hit3", "hit4", "blade", "trap", "aura", "bubble", "convert", "wand", "heal1", "heal2"]
 		list .= hitschool "/" name ","
-	for each, name in ["sharpen", "potent", "blade3", "blade4", "trap3", "trap4", "tower", "reshuffle", "feint", "epic", "colossal", "gargantuan", "elementalblade", "elementaltrap", "spiritblade", "spirittrap"]
+	for each, name in ["sharpen", "potent", "blade3", "blade4", "trap3", "trap4", "tower", "reshuffle", "feint", "epic", "colossal", "gargantuan", "monstrous", "giant", "strong", "elementalblade", "elementaltrap", "spiritblade", "spirittrap"]
 		list .= "resources/" name ","
 	return list "life/enchant"
 	}

@@ -224,13 +224,19 @@ aura:25
 ; ^ your school aura (counted for 3 rounds after you cast it)
 ; (Your bubble/global is never counted: any global an enemy or ally casts replaces it.)
 enchant1:100
-; ^ life\enchant.png enchant (Strong = 100, Giant = 125, Monstrous = 175)
+; ^ life\enchant.png enchant (an old placeholder picture - Strong, Giant and Monstrous have their own below)
 enchant2:225
 ; ^ Gargantuan
 enchant3:275
 ; ^ Colossal
 enchant4:300
 ; ^ Epic
+enchant5:100
+; ^ Strong (resources\strong.png - learned from the card the first time it's in hand)
+enchant6:125
+; ^ Giant (resources\giant.png)
+enchant7:175
+; ^ Monstrous (resources\monstrous.png)
 
 ; ---- Read from your stats page by StatsReader.ahk (for reference) ----
 accuracy:35

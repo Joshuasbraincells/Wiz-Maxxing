@@ -116,7 +116,9 @@ DiscardUnused()
 			if (o >= c.l - 5 && o <= c.l + c.w)
 				ox := o
 		if (LearnSlotOf(pid) != "" || ox != "" || !IsObject(lc) || lc.type = "" || LearnHasFlag(lc, "hold") || LearnHasFlag(lc, "tc")
-			|| ((lc.type = "blade" || lc.type = "trap" || lc.type = "aura") && LearnSlotFor(lc) != ""))
+			|| ((lc.type = "blade" || lc.type = "trap" || lc.type = "aura" || lc.type = "enchant") && LearnSlotFor(lc) != "")
+			;(a hit of the school while no hit1-3 in hand can go: cast this round instead - LearnHitCards)
+			|| (LearnIsHit(lc) && Stat("learnedhits") && !((hit1 == 1 && Affordable("hit1")) || (hit2 == 1 && Affordable("hit2")) || (hit3 == 1 && Affordable("hit3")))))
 			{
 			i += 1
 			continue
@@ -149,6 +151,84 @@ LearnSlotOf(id)
 	}
 
 ;Learned card id's catalog entry ("" if it isn't one)
+;A learned card the battle can cast as a hit when it's in no slot (LearnHitCards): one enemy or all, of the school
+;the bot hits with
+LearnIsHit(c)
+	{
+	return IsObject(c) && (c.type = "damage" || c.type = "aoe") && c.sch = hitschool && hitschool != ""
+	}
+
+;The learned hits in no slot in hand answer (a /hand read) that can go now - in colour, a card, of the school, pips
+;you have (pips unread: tried - the cast's check tells), not one that didn't go this battle with as many pips as now
+;(LearnHitFails: an off-school card's power pips count 1 in the game, 2 here), strongest first (LearnHitRank): [{x,
+;y (where to click it), id, c (its catalog entry)}]
+LearnHitCards(answer)
+	{
+	list := []
+	if (answer = "" || !IsObject(LearnedCards) || !Stat("learnedhits"))
+		return list
+	if (!IsObject(LearnHitFails))
+		LearnHitFails := {}
+	Loop, Parse, answer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f.Length() < 12 || f[1] != "card" || f[8] = 1 || (f.Length() >= 15 && f[15] = "0") || InStr(f[6], "learned/") != 1)
+			continue
+		c := LearnCardOf(SubStr(f[6], 9))
+		if (!LearnIsHit(c))
+			continue
+		;(the cost: its pips read - 0 on a hit is X-pip, all you have, at least one)
+		if (PipsNow >= 0 && c.pips != "" && !c.guess && PipsNow < Max(c.pips, 1))
+			continue
+		if (LearnHitFails.HasKey(c.id) && PipsNow <= LearnHitFails[c.id])
+			continue
+		e := {x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.45, id: c.id, c: c, rank: LearnHitRank(c)}
+		at := 1
+		while (at <= list.Length() && list[at].rank >= e.rank)
+			at++
+		list.InsertAt(at, e)
+		}
+	return list
+	}
+
+;How strong a learned hit is, to cast the strongest first: its damage when it's sure (two reads agreed), else its pips
+;when read (a guess says nothing), else 0 - one key for all, so the order holds
+LearnHitRank(c)
+	{
+	v := LearnValueKnown(c)
+	if (v != "")
+		return 100000 + v
+	return (c.pips != "" && !c.guess) ? c.pips + 0 : 0
+	}
+
+;A learned hit in no slot in this round's hand read (LastHandAnswer) that can go now - for "is there a hit to cast"
+;(CardHitReady). Not once the round's discarded something: that read's out of date
+;Learned hits in no slot that didn't go this battle: id -> the pips there were then (ResetVariables empties it)
+global LearnHitFails
+
+LearnHitReady()
+	{
+	global Discards
+	return !Discards && LearnHitCards(LastHandAnswer).Length() > 0
+	}
+
+;A fresh look at the hand, as LearnCards' (learned cards known by their pictures) but writing no thumbnails and
+;cutting nothing new - the hand may have re-centred since the round's read. "" if the helper didn't answer
+LearnHandRead()
+	{
+	if (!VisionOn || hitschool = "" || !IsObject(LearnedCards))
+		return ""
+	learnedList := "", learnedPics := ""
+	for i, c in LearnedCards
+		if (c.sch = hitschool || InStr(c.slot, "resources\") = 1)
+			{
+			learnedList .= c.id ":" c.dir ":" c.slot ","
+			if (c.slot = "")
+				learnedPics .= ",learned/" c.id
+			}
+	return VisionGet("/hand?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList() learnedPics "&learned=" LearnUri(learnedList), 3000)
+	}
+
 LearnCardOf(id)
 	{
 	if (IsObject(LearnedCards))
@@ -556,6 +636,12 @@ LearnKindOf(text, icon, sch := "")
 		return {kind: "prism", value: "", extra: ""}
 	if (RegExMatch(low, "\bc[l1]ear\b"))
 		return {kind: "clear", value: "", extra: ""}
+	;(a damage enchant - Strong, Giant, Monstrous, Gargantuan, Colossal, Epic: "+175 [fist] to 1 spell" - a number that
+	;isn't a % (OCR: "0175", "t175"), "spell" with no "next" / "all" / "enemies" / range / "per pip": the damage it adds,
+	;when it's one PlayerStats.txt knows (enchantN) - Epic's accuracy % besides is allowed)
+	if (icon != "heal" && icon != "ward" && RegExMatch(low, "\bsp\S{0,2}ll\b") && !RegExMatch(low, "n[eo]?xt|a[l1][l1]\s*(sp|en)|en[e3]m|\d\s*-\s*\d|per\s*p")
+		&& RegExMatch(t, "(?<![\d%])0?(\d{2,3})(?!\s*%|\d)", em) && LearnEnchantLevel(sch, em1 + 0))
+		return {kind: "enchant", value: em1 + 0, extra: ""}
 	if ((icon = "damage" || icon = "aoe" || icon = "") && !hasPct)
 		{
 		at := RegExMatch(t, "i)over\s*\d|(?<![a-z])o\S{0,2}r\s*\d|\(\s*\S{0,2}\s*\d\s*\)|r[o0]unds?\b|\brds\b")
@@ -769,7 +855,7 @@ LearnSeenAgain(card)
 		;run at each UI size, two cards a round at most - never one you set on the Spells tab)
 		rk := c.id "|" Round(UiScale, 2)
 		if (!LearnHasFlag(c, "user") && LearnRereadsLeft > 0 && !reread.HasKey(rk)
-			&& (c.type = "" || c.text = "" || ((c.type = "damage" || c.type = "aoe" || c.type = "heal") && (c.value = "" || !LearnHasFlag(c, "two")))))
+			&& (c.type = "" || c.text = "" || ((c.type = "damage" || c.type = "aoe" || c.type = "heal" || c.type = "enchant") && (c.value = "" || !LearnHasFlag(c, "two")))))
 			{
 			reread[rk] := 1, LearnRereadsLeft -= 1
 			r := LearnReadCard(card, card.type != "" ? card.type : LearnIconOf(c), c.sch)
@@ -846,6 +932,10 @@ LearnPlace(c)
 		if (A_LoopFileFullPath = setDir || !LearnIsSet(A_LoopFileName) || !FileExist(A_LoopFileFullPath "\learned\" c.id ".png"))
 			continue
 		other := A_LoopFileFullPath "\" slot
+		;(a real picture there - cut at that size: an enchant's slot is handed out while one's cut at another size -
+		;stays; the card's own there is used by the helper as its learned picture anyway)
+		if (LearnRealPic(other ".png"))
+			continue
 		SplitPath, other,, otherDir
 		FileCreateDir, %otherDir%
 		if (FileExist(other ".png"))
@@ -916,7 +1006,41 @@ LearnSlotFor(c)
 		return (c.value != "" && RegExMatch(c.text, "i)to[\s/]*next[\s/]*sp") && c.value = LearnStatOf(sch, "trap3") && LearnFree("resources\trap3")) ? "resources\trap3" : ""
 	if (kd = "aura")
 		return (c.value != "" && sch != "" && c.value = LearnStatOf(sch, "aura") && LearnFree(sch "\aura")) ? sch "\aura" : ""
+	;(an enchant: the slot whose enchantN is its number - the kill check adds that - with no picture of its own in the
+	;card's picture set: one cut at another size doesn't count, it didn't know this card or the card wouldn't be learned)
+	if (kd = "enchant")
+		{
+		v := LearnValueKnown(c), lv := (v != "") ? LearnEnchantLevel(sch, v) : 0
+		if (!lv)
+			return ""
+		for i, e in EnchantList()
+			if (e[1] = lv)
+				slot := e[2] "\" e[3]
+		return (LearnFree(slot) || !LearnRealPic(A_WorkingDir (c.dir = "" ? "" : "\" c.dir) "\" slot ".png")) ? slot : ""
+		}
 	return ""
+	}
+
+;Learned enchant c in the slot for its number (EnchantList's picture for its level)
+LearnEnchantSlotOk(c)
+	{
+	lv := LearnEnchantLevel(c.sch, c.value)
+	for i, e in EnchantList()
+		if (e[1] = lv)
+			return c.slot = e[2] "\" e[3]
+	return false
+	}
+
+;The enchant level (PlayerStats.txt enchantN, EnchantList) whose damage is v for school sch's wizard - the new ones
+;(Strong, Giant, Monstrous: 5-7) before the old life\enchant placeholder (1); 0 none
+LearnEnchantLevel(sch, v)
+	{
+	if (v = "" || v + 0 < 10)
+		return 0
+	for i, lv in [4, 3, 2, 7, 6, 5, 1]
+		if (LearnStatOf(sch, "enchant" lv) = v + 0)
+			return lv
+	return 0
 	}
 
 ;PlayerStats.txt's key for school sch's wizard (<sch>.key), else the plain key - not the school fought as now; "" none
@@ -1487,7 +1611,8 @@ LearnReconcile()
 ;The slots a learned card of school sch can be in
 LearnSlotNames(sch)
 	{
-	return [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", "resources\blade3", "resources\trap3", "resources\tower"]
+	return [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", "resources\blade3", "resources\trap3", "resources\tower"
+		, "resources\strong", "resources\giant", "resources\monstrous", "resources\gargantuan", "resources\colossal", "resources\epic"]
 	}
 
 ;---- Making room in hit1-3 for a stronger learned hit ----
@@ -2082,6 +2207,7 @@ LearnTypes()
 			, {kind: "blade", label: "Blade", played: 1, menu: 1}
 			, {kind: "trap", label: "Trap", played: 1, menu: 1}
 			, {kind: "aura", label: "Aura", played: 1, menu: 1}
+			, {kind: "enchant", label: "Enchant (+N damage on a hit)", played: 1, menu: 1}
 			, {kind: "dot", label: "Damage over time", played: 0, menu: 1}
 			, {kind: "stun", label: "Stun", played: 0, menu: 1}
 			, {kind: "dispel", label: "Dispel", played: 0, menu: 1}
@@ -2157,6 +2283,9 @@ LearnEdit(id, name, value, pips)
 			fits := LearnHitFits(c, hn1)
 		else if ((c.type = "blade" || c.type = "trap" || c.type = "aura") && c.value = "")
 			fits := false
+		;(an enchant's slot goes by its number - the kill check adds that slot's enchantN)
+		else if (c.type = "enchant")
+			fits := LearnEnchantSlotOk(c)
 		if (fits)
 			LearnStats(c)
 		else if (LearnUnplace(c, "its numbers were changed on the Spells tab") && VisionOn)
@@ -2221,6 +2350,8 @@ LearnDescribe(c)
 		d := "a trap (" (c.value != "" ? "+" c.value "%" : c.text) ")"
 	else if (kd = "aura")
 		d := "an aura (+" v "% for 4 rounds)"
+	else if (kd = "enchant")
+		d := "an enchant (+" v " damage on a hit)"
 	else if (kd = "dot")
 		d := "damage over time" (dt != "" ? " (" dt ")" : "")
 	else if (kd = "stun")

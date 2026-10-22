@@ -87,6 +87,8 @@ CfgList()
 		, help: "Off: Tower Shield isn't played (with Discard cards it never plays on, it's discarded)."})
 	list.Push({key: "usereshuffle", label: "Use Reshuffle", kind: "check", def: 1
 		, help: "Off: Reshuffle isn't played (with Discard cards it never plays on, it's discarded)."})
+	list.Push({key: "drawenchant", label: "Draw treasure cards for an enchant that kills", kind: "check", def: 0
+		, help: "No hit in hand ends the battle, but one would with an enchant on it (any - Strong's +100 counted) and there's none in hand: Draw from your treasure-card deck till one comes. Draw is greyed out with 7 cards, so one card is discarded first - never a treasure card, the hit, or an enchant. Then the kill check again: the hit goes enchanted if it kills; else the enchant's kept. At most 3 draws a round, 6 a battle."})
 	list.Push({key: "reboost", label: "Boost again after each hit", kind: "check", def: 0
 		, help: "After each hit its blades and traps may be cast again for the next one. Off: each is cast once a battle."})
 	list.Push({key: "solotraps", label: "I fight bosses alone (count traps)", kind: "check", def: 0
@@ -397,6 +399,8 @@ CardHitReady()
 	{
 	return (hit4 == 1 && BossChoosen = 1 && CardHitCanGo("hit4")) || (hit3 == 1 && CardHitCanGo("hit3"))
 		|| (hit2 == 1 && CardHitCanGo("hit2")) || (hit1 == 1 && CardHitCanGo("hit1"))
+		;(a learned hit in no slot: cast when none of these can go - CastLearnedHit)
+		|| (PipsNow >= 0 && PipSaveFor = "" && LearnHitReady())
 	}
 
 ;(pips unknown - your nameplate not found - isn't "can pay": boosting isn't held back for a hit that may not go)
@@ -405,7 +409,8 @@ CardHitCanGo(name)
 	return PipsNow >= 0 && Affordable(name) && (PipSaveFor = "" || PipSaveFor = name)
 	}
 
-;The biggest hit in hand it can cast (hit4 only on a picked boss) - not the wand's. True if one was cast
+;The biggest hit in hand it can cast (hit4 only on a picked boss) - not the wand's - else a learned hit in no slot
+;(CastLearnedHit). True if one was cast
 CastBestHit()
 	{
 	global
@@ -413,6 +418,7 @@ CastBestHit()
 		|| ((hit3 == 1) && UseHit("hit3", hit3, hitschool))
 		|| ((hit2 == 1) && UseHit("hit2", hit2, hitschool))
 		|| ((hit1 == 1) && UseHit("hit1", hit1, hitschool))
+		|| CastLearnedHit()
 		{
 		BoostRun := 0
 		return true

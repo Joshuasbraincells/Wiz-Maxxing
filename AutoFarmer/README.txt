@@ -269,6 +269,21 @@ the enchant if it doesn't need it) instead of putting up more blades and
 traps. A hit on one enemy (<school>.hitNtarget:1) only counts when one enemy
 is left. If it can't read the
 health, or no hit is enough yet, it plays exactly like before.
+	- Draw treasure cards for an enchant that kills (the Settings window, off
+	  unless you switch it on): when no hit ends the battle but one would with
+	  an enchant on it (any - Strong's +100 counted, drawneed) and there's none
+	  in hand, it draws from your treasure-card deck (DRAW, between Pass and
+	  Flee) till an enchant comes, then runs the kill check again. Draw is
+	  greyed out with 7 cards, so one card it knows is discarded first - never
+	  a treasure card, a card it doesn't know or a greyed one, the hit, an
+	  enchant, or one you said never to discard. At most drawround (3) draws a
+	  round, drawmax (6) a battle; Draw greyed out with room in hand (no treasure
+	  cards left): not again for 30 minutes. Never with "Crown" read by the
+	  buttons, nor while you play. debug.log: "draw: ...".
+	- Enchants: Epic, Colossal, Gargantuan, Monstrous, Giant and Strong (the
+	  damage each adds: enchant4, 3, 2, 7, 6, 5 in PlayerStats.txt) - the best
+	  in hand goes on the hit. Monstrous, Giant and Strong are learned from the
+	  card ("+175 to 1 spell") the first time one's in hand.
 	- Turn on Options > Gameplay Options > "2D Combat Display" in Wizard101,
 	  that's what shows the enemy nameplates.
 	- Needs Windows 10 or 11 (it uses the OCR built into Windows).
@@ -425,6 +440,12 @@ end the battle) for two rounds running, the bot can only pass for the rest of th
 Flee instead, drinks a potion (none left: goes and buys some) and tries again.
 PlayerStats.txt: fleeon:0 switches it off. debug.log: "fleeing: ...", "after
 fleeing: ..."; the dashboard counts them next to Passed.
+Learned hits in no slot: the bot casts by slot (hit1-4), and a treasure card
+never gets one - so when no hit1-3 can go, it casts the strongest learned hit
+in hand you can pay for (e.g. a Sandstorm treasure card), a target for a
+one-enemy hit; one that doesn't go isn't tried again that battle till there
+are more pips. Not thrown away while no hit1-3 can go. learnedhits:0 in
+PlayerStats.txt switches it off.
 Discarding in normal battles: every round, after it's read the hand, the bot
 right-clicks away the cards it knows it never plays - learned cards of a kind
 it doesn't play (stun, dispel, damage over time...) or one more card of a kind
