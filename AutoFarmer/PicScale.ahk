@@ -14,9 +14,10 @@ global GenTol, GenRoot, PassFleeDist
 global PicEnlarged
 ;The pictures PicMake has looked up (set dir|rel -> file, "" none); emptied when pictures are added
 global PicMade
-;The game window size the UI scale was last measured at (DetectUiScale, "<w>x<h>"); the size the first rounds are
-;being measured at and how many were tried (the main loop)
-global PicMeasuredSize, PicMeasureSize, PicMeasureTries
+;The game window size the UI scale was last measured at (DetectUiScale, or a cut Pass button matched at the round
+;start: "<w>x<h>"); the size the first rounds are being measured at and how many were tried (the main loop); why
+;DetectUiScale last gave up
+global PicMeasuredSize, PicMeasureSize, PicMeasureTries, PicMeasureWhy
 
 ;Called by LoadPicSets
 PicScaleInit()
@@ -470,12 +471,14 @@ DetectUiScale()
 	;Cheap look first: Pass and Flee are pure yellow words left and right of the middle (clear of the
 	;middle, where the yellow quest arrow is)
 	top := GameTop + Round(GameH * 0.45), bottom := GameTop + Round(GameH * 0.8)
+	PicMeasureWhy := "no pure yellow words (Pass / Flee) on the screen"
 	PixelSearch, yx, yy, GameLeft + Round(GameW * 0.2), top, GameLeft + Round(GameW * 0.45), bottom, 0xFFFF00, 0, Fast RGB
 	if (ErrorLevel)
 		return false
 	PixelSearch, yx, yy, GameLeft + Round(GameW * 0.55), top, GameLeft + Round(GameW * 0.8), bottom, 0xFFFF00, 0, Fast RGB
 	if (ErrorLevel)
 		return false
+	PicMeasureWhy := "OCR didn't work"
 	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, lines)
 	if (ErrorLevel || !IsObject(lines))
 		return false
@@ -491,14 +494,36 @@ DetectUiScale()
 			else if (!IsObject(flee) && looksLike.Call(t, "FLEE"))
 				flee := word
 			}
+	PicMeasureWhy := "PASS and FLEE not both read" (IsObject(pass) ? " (PASS read)" : IsObject(flee) ? " (FLEE read)" : "")
 	if (!IsObject(pass) || !IsObject(flee))
 		return false
 	passX := pass.x + pass.w / 2, passY := pass.y + pass.h / 2, fleeX := flee.x + flee.w / 2
+	PicMeasureWhy := "PASS and FLEE read, but not level or not round the middle"
 	if (Abs(passY - (flee.y + flee.h / 2)) > GameH * 0.02 || Abs((passX + fleeX) / 2 - ScreenX) > GameW * 0.03)
 		return false
 	guess := (fleeX - passX) / PassFleeDist
+	PicMeasureWhy := "PASS and FLEE " Round(fleeX - passX) " px apart: no UI size"
 	if (guess < 0.5 || guess > 3)
 		return false
+	;A cut set within 3% of the guess whose own Pass button (cut at its size: it only matches nearly pixel for pixel,
+	;*3) is the one on screen: that's the size - exact, and quicker than making the button at sizes round the guess
+	;(that missed at 1.141 twice and once came to 1.118 for a 1.144 screen)
+	for i, set in PicSets
+		{
+		cutPass := set.dir "\resources\roundstart.png"
+		if (set.gen || Abs(set.scale / guess - 1) > 0.03 || !FileExist(cutPass))
+			continue
+		ImageSearch, sx, sy, passX - 110 * set.scale, passY - 45 * set.scale, passX + 110 * set.scale, passY + 45 * set.scale, *3 *TransFF00FF %cutPass%
+		if (ErrorLevel = 0)
+			{
+			DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button cut at " Round(set.scale, 3) " matches - UI scale " Round(set.scale, 3))
+			PicMeasuredSize := GameW "x" GameH
+			UsePicSet(i)
+			PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")
+			return true
+			}
+		}
+	PicMeasureWhy := "no Pass button picture to measure with"
 	;Fine-tune: the Pass button made at sizes from 3% under the guess to 3% over, 1% apart, looked for
 	;around where OCR saw it. It matches over a range of sizes (a little off still fits); the middle of
 	;that range is the size (more tolerance only if it matches at none)
@@ -540,6 +565,7 @@ DetectUiScale()
 		}
 	for step, fitTol in fits
 		fitList .= (fitList = "" ? "" : ", ") (step > 0 ? "+" : "") step "%: *" fitTol
+	PicMeasureWhy := "the Pass button made at that size doesn't match"
 	if (best = "")
 		{
 		DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "), but the Pass button made at that size doesn't match")

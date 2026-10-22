@@ -460,14 +460,30 @@ loop,
 		pmSize := GameW "x" GameH
 		if (PicMeasuredSize != pmSize)
 			{
-			if (PicMeasureSize != pmSize)
-				PicMeasureSize := pmSize, PicMeasureTries := 0
-			if (PicMeasureTries < 3)
+			;(the Pass button just found is a cut picture - it only matches nearly pixel for pixel, *3: that's the size.
+			;A made one is mostly see-through and matches at a size a little off too)
+			pmPic := PicPath("resources\roundstart.png")
+			if (SubStr(pmPic, -3) = ".png")
 				{
-				PicMeasureTries += 1, pmWas := PicSet
-				;(another set: the round start looked for again with it)
-				if (DetectUiScale() && PicSet != pmWas)
-					continue
+				PicMeasuredSize := pmSize
+				DebugLog("UI size: the Pass button cut at " Round(PicSets[PicSet].scale, 3) " matches - that's the size (" pmSize ")")
+				}
+			else
+				{
+				if (PicMeasureSize != pmSize)
+					PicMeasureSize := pmSize, PicMeasureTries := 0
+				if (PicMeasureTries < 3)
+					{
+					PicMeasureTries += 1, pmWas := PicSet, PicMeasureWhy := ""
+					;(another set: the round start looked for again with it)
+					if (DetectUiScale())
+						{
+						if (PicSet != pmWas)
+							continue
+						}
+					else
+						DebugLog("UI size: not measured this round - " PicMeasureWhy " (try " PicMeasureTries " of 3)")
+					}
 				}
 			}
 		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
