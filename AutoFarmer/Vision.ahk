@@ -288,7 +288,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: "", escape: ""}
+		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -315,6 +315,9 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			;(12: inside a mob's ring or sight - its name: the aim leads out of it)
 			nav.escape := Trim(f[12])
 			}
+		;(the mob whose ring or sight the arrow's straight way comes into, and backing up would - moves off the route)
+		else if (f[1] = "blind" && withRoute)
+			nav.blindahead := Trim(f[2]), nav.blindback := Trim(f[3]), nav.blindin := Trim(f[4])
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
 		else if (f[1] = "path" && withPath)

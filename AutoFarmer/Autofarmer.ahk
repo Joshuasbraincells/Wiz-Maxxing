@@ -1152,9 +1152,9 @@ WatchShow()
 	}
 
 ;For the walker: no battle on - the spellbook (it only shows out of battle) seen in the last 2 s
-BotNoBattle()
+BotNoBattle(since := 0)
 	{
-	return A_TickCount - BookSeenAt < 2000
+	return BookSeenAt > since && A_TickCount - BookSeenAt < 2000
 	}
 
 ;"Wait while I play" (tray menu, dashboard button): handsoffon in PlayerStats.txt, on unless it's 0

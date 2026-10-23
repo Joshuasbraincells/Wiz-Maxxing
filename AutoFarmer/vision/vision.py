@@ -1153,6 +1153,89 @@ def read_globes(left, bottom, scale, file=None):
     return out
 
 
+# ---------------------------------------------------------------- quest markers over NPCs
+# An NPC a quest has something for wears a marker over its head: a gold "?" (or "!") in a red swirl, its name in bright
+# green under it (measured 2026-10-22 at 2560x1440, UI 1.144: Shalek the Wise's - gold 56x83 px with its dot, the red
+# swirl round it, the name's green letters right under). Found by colour: gold blobs (the hook and dot merged) with red
+# round them; the green under one is its name - its rectangle sent back for the walker to read (Windows OCR)
+QM_GOLD_MIN = 30        # a marker: at least 4 times this many gold pixels (one about 12 px tall on the screen at the least)
+
+
+def _qm_blobs(mask):
+    """the 8-connected blobs of a small boolean mask: [(count, y1, x1, y2, x2)]"""
+    pts = set(map(tuple, np.argwhere(mask)))
+    out = []
+    while pts:
+        seed = pts.pop()
+        stack, n, y1, x1, y2, x2 = [seed], 0, seed[0], seed[1], seed[0], seed[1]
+        while stack:
+            y, x = stack.pop()
+            n += 1
+            y1, x1, y2, x2 = min(y1, y), min(x1, x), max(y2, y), max(x2, x)
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    q = (y + dy, x + dx)
+                    if q in pts:
+                        pts.remove(q)
+                        stack.append(q)
+        out.append((n, y1, x1, y2, x2))
+    return out
+
+
+def find_qmarks(x1, y1, x2, y2, file=None):
+    """the quest markers in the rectangle: [{'kind': '?' or '!', 'x', 'y', 'w', 'h' (the gold, screen pixels),
+    'label': (x, y, w, h) of the green name under it, or None}], biggest first. kind: the gold's top part wide (a "?"'s
+    hook) or narrow (a "!"'s bar)"""
+    a = grab(x1, y1, x2, y2, file)
+    R, G, B = a[..., 0], a[..., 1], a[..., 2]
+    gold = (R >= 200) & (G >= 150) & (B <= 110) & (R - B >= 110) & (G - B >= 70)
+    red = (R >= 160) & (G <= 80) & (B <= 80)
+    green = (G >= 180) & (R <= 150) & (B <= 150) & (G - R >= 80) & (G - B >= 80)
+    # (in 4 x 4 blocks - any gold in one counts - grown a block: the "?"'s dot joins its hook; a quarter the size, the
+    # blobs found quickly)
+    hq, wq = gold.shape[0] // 4, gold.shape[1] // 4
+    g4 = gold[:hq * 4, :wq * 4].reshape(hq, 4, wq, 4).any(axis=(1, 3))
+    pad = np.pad(g4, 1)
+    grown = np.zeros_like(g4)
+    for dy in (0, 1, 2):
+        for dx in (0, 1, 2):
+            grown |= pad[dy:dy + hq, dx:dx + wq]
+    out = []
+    for n, by1, bx1, by2, bx2 in _qm_blobs(grown):
+        gy1, gx1, gy2, gx2 = by1 * 4, bx1 * 4, by2 * 4 + 4, bx2 * 4 + 4
+        gh, gw = gy2 - gy1, gx2 - gx1
+        if gh < 12 or gh > 400 or gw > 3 * gh or gh > 3 * gw + 20:
+            continue
+        cnt = int(gold[gy1:gy2, gx1:gx2].sum())
+        if cnt < QM_GOLD_MIN * 4:
+            continue
+        # (its red swirl: round the gold, half its size again each way)
+        ry1, ry2 = max(0, gy1 - gh // 2), min(a.shape[0], gy2 + gh // 2)
+        rx1, rx2 = max(0, gx1 - gw // 2), min(a.shape[1], gx2 + gw // 2)
+        if red[ry1:ry2, rx1:rx2].sum() < 0.25 * cnt:
+            continue
+        # (a "?": its top half's gold spans most of its height across; a "!": a narrow bar)
+        top = gold[gy1:gy1 + gh // 2, gx1:gx2]
+        cols = np.nonzero(top.any(axis=0))[0]
+        span = (cols[-1] - cols[0] + 1) if len(cols) else 0
+        # (cut off at the top of the rectangle - an NPC at talk range: its top half isn't the hook - a "?")
+        kind = '?' if by1 == 0 or span >= 0.45 * gh else '!'
+        # (its name: green letters under it, starting within half its height, up to its height down, 5 times its
+        # width either side)
+        ly1, ly2 = gy2, min(a.shape[0], gy2 + max(gh, 30))
+        lx1, lx2 = max(0, (gx1 + gx2) // 2 - 5 * max(gw, 20)), min(a.shape[1], (gx1 + gx2) // 2 + 5 * max(gw, 20))
+        gm = green[ly1:ly2, lx1:lx2]
+        label = None
+        if gm.sum() >= 40:
+            ys, xs = np.nonzero(gm)
+            if ys.min() <= gh // 2 + 6:
+                label = (x1 + lx1 + int(xs.min()) - 4, y1 + ly1 + int(ys.min()) - 4,
+                         int(xs.max() - xs.min()) + 9, int(ys.max() - ys.min()) + 9)
+        out.append({'kind': kind, 'x': x1 + gx1, 'y': y1 + gy1, 'w': gw, 'h': gh, 'label': label, 'gold': cnt})
+    out.sort(key=lambda m: -m['h'])
+    return out
+
+
 # ---------------------------------------------------------------- walking: the game's memory and the zone map
 
 # Where the wizard and the quest goal are comes from the game's memory, read-only (vision\navmem.py: it opens
@@ -1481,8 +1564,18 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
     except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
         log(f'route: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
+    # (blind|ahead|behind|in: the mob whose ring or sight the straight line to the quest's target - the arrow's way -
+    # comes into, backing up would, the wizard's in now: for the walker's moves off the route; names, empty none)
+    blind = []
+    if avoid:
+        try:
+            import navroute
+            a, b, c = router(game_dir).blind(r, avoid, mob_near or navroute.MOB_NEAR, cone or navroute.MOB_CONE)
+            blind = ['blind|' + '|'.join(s.replace('|', ' ') for s in (a, b, c))]
+        except Exception as e:  # noqa: BLE001 - no check: as before
+            log(f'blind: {e!r}')
     if res.get('aim') is None:
-        return ['route|||', 'routewhy|' + (res.get('why') or '?')]
+        return ['route|||', 'routewhy|' + (res.get('why') or '?')] + blind
     # (fields 5-7: right at a teleport on the game's path - the seconds waited there, and where it is; 8-11: a mob
     # on the way the route can't go round - the seconds waited for it to move off, where it is, its name; 12: the
     # wizard inside a mob's ring or sight - its name - the aim leads out of it)
@@ -1491,7 +1584,7 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
     mob = res.get('mob')
     tail += '||||' if mob is None else f"|{mob:.0f}|{res['mob_at'][0]:.0f}|{res['mob_at'][1]:.0f}|{res['mob_name'].replace('|', ' ')}"
     tail += '|' + (res.get('escape') or '').replace('|', ' ')
-    return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail]
+    return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
 
 
 def nav_lines(r, with_path):
@@ -1911,6 +2004,15 @@ class Handler(BaseHTTPRequestHandler):
                     globals()['TPL_BYTES'] = 0
                 log('pictures read again: ' + ', '.join(f'{os.path.basename(d) or "main"}={sc}' for d, sc in LIB.sets))
                 return self.reply('OK')
+            if u.path == '/qmark':
+                # (qmark|kind|x|y|w|h|label x|y|w|h - the label's fields empty when no green name was found under it)
+                x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))
+                t0 = time.perf_counter()
+                found = find_qmarks(x1, y1, x2, y2, q.get('file'))
+                log(f'/qmark {(time.perf_counter() - t0) * 1000:.0f} ms: ' + (', '.join(
+                    f"{m['kind']} {m['w']}x{m['h']} at {m['x']},{m['y']}" + ('' if m['label'] else ' (no name)') for m in found) or 'none'))
+                return self.reply('\n'.join('qmark|{kind}|{x}|{y}|{w}|{h}|'.format(**m) + ('|'.join(map(str, m['label'])) if m['label'] else '|||')
+                                            for m in found) or 'none')
             if u.path == '/globes':
                 hp, mp = read_globes(float(q['left']), float(q['bottom']), float(q['scale']), q.get('file'))
                 return self.reply(f'health|{hp}\nmana|{mp}')

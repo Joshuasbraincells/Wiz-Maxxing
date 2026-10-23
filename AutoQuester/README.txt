@@ -78,6 +78,13 @@ What it does
 	  it has never been in), it uses it the second time it ends up there
 	  without having got any closer. The same boat isn't used twice within 10
 	  minutes. Zone names it has seen are kept in resources\known_zones.txt.
+	- An NPC wearing a quest marker - a gold "?" in a red swirl over its head,
+	  its name in green under it: another goal of this quest, or another
+	  quest's: when its "Press X" prompt shows on the way, X is pressed (with
+	  AutoFarmer's vision helper: the marker found by its colours, the green
+	  name read and matched to the prompt's). A "!" (a new quest offered)
+	  isn't followed, nor an NPC whose marker is off the screen (behind the
+	  camera).
 	- No arrow on screen (a battle, a loading screen, a dialogue box): it lets
 	  go of the keys and waits. AutoFarmer can handle the battle meanwhile;
 	  AutoQuester carries on when the arrow comes back. Still no arrow 4

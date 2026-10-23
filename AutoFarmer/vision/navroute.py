@@ -138,6 +138,8 @@ ESC_REACH = 700.0       # the wizard inside a mob's ring or sight: a way out loo
 ESC_RAYS = 48           # ...along this many straight lines...
 ESC_MARGIN = 2 * CELL   # ...to a spot this much clear of every ring and sight...
 ESC_SLACK = (1.5, 4 * CELL)   # ...those up to this much longer than the shortest (times, or plus) taken as short
+BLIND_AHEAD = 500.0     # the walker's moves off the route: the straight line to the quest's target looked along this far...
+BLIND_BACK = 300.0      # ...and backing up straight, this far (blind)
 
 DIRS = [(-1, 0, 1.0), (1, 0, 1.0), (0, -1, 1.0), (0, 1, 1.0),
         (-1, -1, math.sqrt(2)), (-1, 1, math.sqrt(2)), (1, -1, math.sqrt(2)), (1, 1, math.sqrt(2))]
@@ -826,7 +828,7 @@ class Planner:
         self._round = None                   # the last _path_round: (key, answer)
         self.jwait = None                    # waiting at one: {'key', 'waited', 'last'}
         self.mwait = None                    # waiting for mobs to move off the way: {'waited', 'last', 'gids', 'left'}
-        self.escaped = None                  # just got out of a mob's reach: (when, {its gid})
+        self.escaped = None                  # just got out of a mob's reach: (when, {its gid}, the way out's angle or None)
         self.mob_ignored = {}                # mobs waited for too long: gid -> when (not avoided for MOB_IGNORE)
         self.pose_stale = None               # the field a mob on the way isn't where (or facing as) it has it: a new one
 
@@ -1176,12 +1178,14 @@ class Planner:
         # inside a mob's ring or sight now: out of it - no wait for a mob while in one (_escape), unless there's no way
         # out at all. Not while at a teleport: it's about to take the wizard. (One just got out of counts a little
         # further out for 2 s: the way out ends clear of it)
-        recent = self.escaped[1] if self.escaped is not None and now - self.escaped[0] < 2.0 else ()
-        esc = self._escape(f, pos, pts, mobs, mob_near, cone, recent) if mobs and waited is None else None
+        fresh = self.escaped is not None and now - self.escaped[0] < 2.0
+        recent, prev_dir = (self.escaped[1], self.escaped[2]) if fresh else ((), None)
+        esc = self._escape(f, pos, pts, mobs, mob_near, cone, recent, prev_dir) if mobs and waited is None else None
         escaping = esc is not None and esc[0] != 'none'
         if escaping:
             out['escape'] = esc[1].get('name') or 'a mob'
-            self.escaped = (now, {esc[1].get('gid')})
+            self.escaped = (now, {esc[1].get('gid')},
+                            math.atan2(esc[2][1] - pos[1], esc[2][0] - pos[0]) if esc[0] == 'spot' else prev_dir)
             if esc[0] == 'spot':
                 out['aim'], out['route'] = esc[2], [(pos[0], pos[1]), esc[2]]
                 self.last = (time.time(), zone, out['route'], esc[2])
@@ -1231,7 +1235,8 @@ class Planner:
     @staticmethod
     def _zone_clear(f, X, Y, mobs, mob_near, cone, z, margin):
         """for each world point (arrays X, Y): clear of every mob on the wizard's storey - further than mob_near +
-        margin from it, and out of its sight cone (grown by margin, and 15 degrees) or behind a wall from it"""
+        margin from it, and out of its sight cone (grown by margin, and 15 degrees) or behind a wall from it (field
+        f's walls; no field: walls not known, its sight counts)"""
         ok = np.ones(X.shape, dtype=bool)
         sight = cone[1] if cone and cone[0] > 0 else 0.0
         for m in mobs:
@@ -1247,7 +1252,9 @@ class Planner:
                 fx, fy = -math.sin(m['yaw']), -math.cos(m['yaw'])
                 ang = np.degrees(np.arccos(np.clip((dx * fx + dy * fy) / np.maximum(d, 1e-6), -1.0, 1.0)))
                 seen &= ang <= cone[0] / 2 + 15
-            if seen.any():
+            if seen.any() and f is None:
+                ok &= ~seen
+            elif seen.any():
                 jj = np.floor((Y[seen] - f.y0) / CELL).astype(int)
                 ii = np.floor((X[seen] - f.x0) / CELL).astype(int)
                 sub = seen.copy()
@@ -1255,10 +1262,55 @@ class Planner:
                 ok &= ~sub
         return ok
 
-    def _escape(self, f, pos, pts, mobs, mob_near, cone, recent=()):
+    def blind(self, r, mobs, mob_near=MOB_NEAR, cone=MOB_CONE):
+        """for the walker's moves that don't follow the route (no route yet, the arrow steered by, backing up to find
+        the arrow): (the first mob whose ring or sight the straight line to the quest's target - the way the arrow
+        points - comes into within BLIND_AHEAD (no further than the target), the first one backing up straight
+        BLIND_BACK would come into, a mob the wizard's in the reach or sight of now) - their names, '' none. Mobs the
+        wizard's in already, or given up waiting for, don't count for the first two"""
+        if r is None or r.get('pos') is None or not mobs:
+            return '', '', ''
+        pos = tuple(r['pos'])
+        z = pos[2]
+        mobs = [m if m.get('gid') not in self.mob_ignored else dict(m, sees=False) for m in mobs
+                if self.mob_ignored.get(m.get('gid'), (0.0, 'cone'))[1] != 'ring']
+        f = self.field
+        if f is None or f.zone != r.get('zone') or f.D is None:
+            f = None
+        hx, hy = np.array([pos[0]]), np.array([pos[1]])
+        storey = [m for m in mobs if abs(m['pos'][2] - z) <= FLOOR_BAND]
+        live = [m for m in storey if self._zone_clear(f, hx, hy, [m], mob_near, cone, z, 0.0)[0]]
+        inside = next((m.get('name') or 'a mob' for m in storey if m not in live), '')
+
+        def first(dx, dy, length):
+            """the first of live whose ring or sight the line from pos along dx, dy comes into within length"""
+            L = math.hypot(dx, dy)
+            if L < 1e-6 or not live:
+                return ''
+            s = np.arange(1, int(length / CELL) + 1) * CELL
+            X, Y = pos[0] + dx / L * s, pos[1] + dy / L * s
+            best = None
+            for m in live:
+                bad = ~self._zone_clear(f, X, Y, [m], mob_near, cone, z, 0.0)
+                if bad.any() and (best is None or int(bad.argmax()) < best[0]):
+                    best = (int(bad.argmax()), m)
+            return '' if best is None else (best[1].get('name') or 'a mob')
+        t = r.get('target')
+        ahead = ''
+        if t is not None:
+            tl = math.hypot(t[0] - pos[0], t[1] - pos[1])
+            ahead = first(t[0] - pos[0], t[1] - pos[1], min(BLIND_AHEAD, tl + CELL))
+        yaw = r.get('yaw')
+        # (backing up: the other way than it faces - facing is -sin, -cos of its yaw)
+        back = first(math.sin(yaw), math.cos(yaw), BLIND_BACK) if yaw is not None else ''
+        return ahead, back, inside
+
+    def _escape(self, f, pos, pts, mobs, mob_near, cone, recent=(), prev_dir=None):
         """the wizard inside a mob's ring (mob_near) or sight cone now - on its storey; its sight not behind a wall
         (field f's); one in recent (just got out of) counts a little further out (half ESC_MARGIN, its sight a tenth
-        longer and wider) so the way out ends clear of it, not on its edge. None: not in one. Else:
+        longer and wider) so the way out ends clear of it, not on its edge; prev_dir (radians, the way out the last
+        ask took): kept to while one within 30 degrees of it is as short - no turning from side to side in it. None:
+        not in one. Else:
         ('route', mob) - the route (pts) leads out: clear of every ring and sight before it comes nearer a mob it's
         in or into the ring or sight of another; ('spot', mob, (x, y)) - a way out: along ESC_RAYS straight lines from
         the wizard - no wall, no ledge, never into a mob's ring (nor nearer one it's in), nor into the sight of one
@@ -1348,6 +1400,9 @@ class Planner:
             short = min(o[0] for o in outs)
             short = max(short * ESC_SLACK[0], short + ESC_SLACK[1])
             near = [o for o in outs if o[0] <= short]
+            if prev_dir is not None:
+                same = [o for o in near if abs((float(ang[o[2]]) - prev_dir + math.pi) % (2 * math.pi) - math.pi) <= math.radians(30)]
+                near = same or near
             fin = [o for o in near if np.isfinite(o[1])]
             best = min(fin, key=lambda o: (o[1], o[0])) if fin else min(near, key=lambda o: o[0])
             return 'spot', nearest, (float(X[best[2], best[3]]), float(Y[best[2], best[3]]))

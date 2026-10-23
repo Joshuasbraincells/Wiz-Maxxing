@@ -17,6 +17,7 @@
 ;    lineRects  : (out) [{text, x, y, w, h, words}, ...] one per recognized line, SCREEN coordinates;
 ;                 words = [{text, x, y, w, h}, ...] each word's own box in that line.
 ;    redOnly    : 1 = OCR only the reddish pixels (as black on white), e.g. red health numbers.
+;                 5 = only the bright green ones (an NPC's name under a quest marker).
 ;                 2 = OCR only the dark ink (as black on white), e.g. numbers on the Spellbook's parchment.
 ;                 3 = only the white pixels, e.g. a spell card's name (white letters, dark outline).
 ;                 4 = only the yellow pixels, e.g. a spell card's pip cost.
@@ -170,6 +171,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                         keep := (redOnly = 2) ? (cr < 90 && cg < 90 && cb < 90)
                               : (redOnly = 3) ? (cr > 195 && cg > 195 && cb > 195)
                               : (redOnly = 4) ? (cr > 170 && cg > 140 && cb < 130 && cr - cb > 70)
+                              : (redOnly = 5) ? (cg > 170 && cg - cr > 70 && cg - cb > 70)
                               : (cr > 100 && cr - cg > 45 && cr - cb > 30)
                         NumPut(keep ? 0 : 0xFFFFFF, px + 0, "UInt")
                     }

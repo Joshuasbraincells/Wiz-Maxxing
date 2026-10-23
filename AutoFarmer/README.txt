@@ -97,7 +97,12 @@ Souls"), or standing at its goal; and not while collecting. With no way round
 most, then it walks on past it. Never inside one's reach or sight, though (a
 mob walked up, or the wizard came out of a battle there): it walks out of it
 first - along the route if that leads out, else the shortest way out (never
-nearer the mob) on the quest's side - and only then waits. The walk to the potion seller keeps away from
+nearer the mob) on the quest's side - backing straight out when the way out is
+behind, never standing still turning in it - and only then waits. A battle
+starting (the wizard held or turned by the game) no longer stops it steering
+by the game's memory; while it doesn't, it keeps to the route by the arrow, and
+with no route at all it won't walk the arrow's straight way into a mob's reach
+(20 s at most) or back up into one. The walk to the potion seller keeps away from
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
 
