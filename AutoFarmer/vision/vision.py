@@ -2260,7 +2260,7 @@ class Handler(BaseHTTPRequestHandler):
                     else:
                         MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
                     try:
-                        arc_r = min(400.0, max(0.0, float(q.get('arcr') or 0)))
+                        arc_r = min(1200.0, max(0.0, float(q.get('arcr') or 0)))
                     except ValueError:
                         arc_r = 0.0
                     lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'), arc_r)

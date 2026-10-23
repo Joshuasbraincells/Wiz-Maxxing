@@ -17,6 +17,8 @@ global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, U
 ;walls, the most with nothing said about it, the "just walk" band by memory; the wizard's turning circle (game units,
 ;learned from its walking speed: WkWalkSpeed, game units per ms at 1x); when W last came up; the once-a-minute counts
 global SpotTurnMem, ArcBlind, AheadMem, TurnRadius, WkWalkSpeed, WkWUpAt, WkMet, WkMetAt
+;(the last walking-speed readings the turning circle's worked out from - at 1x only)
+global WkWalkSamples
 ;Arriving at the closest approach: the nearest the game's memory had it to this goal, and the goal that's for
 global WkPassMin, WkPassKey, WkPassAt
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
@@ -137,7 +139,9 @@ WalkerInit(prefix := "AutoQuester")
 	SpotTurnMem := 100   ;by the game's memory on the route: a turn up to this made walking on when the helper says the
 	                     ;arc round the wizard's turning circle is clear of the walls (and the aim's outside it)
 	ArcBlind := 60       ;...by memory with nothing said about the arc: up to this (its bulge stays inside the walls' margin)
-	TurnRadius := 60     ;the wizard's turning circle (game units) till it's worked out from its walking speed
+	TurnRadius := 400    ;the wizard's turning circle (game units) till it's worked out from its walking speed at 1x -
+	                     ;about 1000 units a second over about 145 degrees a second (measured 2026-10-23, Celestia):
+	                     ;a wide one, so till then it's taken as that
 	TurnInPlace := 45    ;arrow (or the route) further off than this: stop, turn on the spot, then walk straight on -
 	                     ;turning with W held swings the wizard round an arc about 100 units wide, into walls and round
 	                     ;NPCs and the goal; under it (and over AheadAngle) the small turn is made walking on
@@ -196,7 +200,8 @@ WalkerInit(prefix := "AutoQuester")
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
-	WkWalkSpeed := "", WkWUpAt := 0, WkFrontLook := 0, WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0}, WkMetAt := A_TickCount
+	WkWalkSpeed := "", WkWalkSamples := [], WkWUpAt := 0, WkFrontLook := 0, WkMetAt := A_TickCount
+	WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0}
 	WkPassMin := "", WkPassKey := ""
 	WkPromptSkip := {}, WkPreXText := "", WkQmLooked := {}, WkQmTalked := {}
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
@@ -2237,7 +2242,7 @@ ReleaseKeys(keepSpeed := false)
 WalkMetW(down)
 	{
 	if (!IsObject(WkMet))
-		WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0}
+		WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0}
 	if (down)
 		WkMet.wfrom := A_TickCount
 	else
@@ -2248,15 +2253,24 @@ WalkMetW(down)
 		}
 	}
 
-;Once a minute, after walking: how smooth it was - W held, stops, turns on the spot and walking on, speed keys pressed
+;Once a minute, after walking: how smooth it was - W held (of the time it was out to walk: walking, pushing on, collecting -
+;not battles, talks, waits at a sigil or gate, the game behind another window, you playing), stops, turns on the spot and
+;walking on, speed keys pressed; the walking speed and turning circle learned. Each step: its time counted
 WalkMetrics()
 	{
-	if (!IsObject(WkMet) || A_TickCount - WkMetAt < 60000)
+	if (!IsObject(WkMet))
 		return
-	span := A_TickCount - WkMetAt, held := WkMet.wms + (WkMet.wfrom ? A_TickCount - WkMet.wfrom : 0)
-	if (held > 3000)
-		WalkLog("the last minute: W held " Round(100 * held / span) "%, " WkMet.stops " stops, " WkMet.spot " turns on the spot, " WkMet.walkturns " turns walking on, " WkMet.keys " speed keys" (WkWalkSpeed != "" ? " (turning circle " Round(TurnRadius) ")" : ""))
-	WkMet.wms := 0, WkMet.stops := 0, WkMet.spot := 0, WkMet.walkturns := 0, WkMet.keys := 0
+	gap := WkMet.last ? A_TickCount - WkMet.last : 0
+	if (gap > 0 && gap < 2000 && Walking && GameActive() && !PlayerActive && (WkArrived = 0 || WkArrived = 3 || WkArrived = 7))
+		WkMet.act += gap
+	WkMet.last := A_TickCount
+	if (A_TickCount - WkMetAt < 60000)
+		return
+	held := WkMet.wms + (WkMet.wfrom ? A_TickCount - WkMet.wfrom : 0)
+	if (held > 3000 && WkMet.act > 5000)
+		WalkLog("the last minute: W held " Min(100, Round(100 * held / WkMet.act)) "% of " Round(WkMet.act / 1000) " s out walking, " WkMet.stops " stops, " WkMet.spot " turns on the spot, " WkMet.walkturns " turns walking on, " WkMet.keys " speed keys"
+			. (WkWalkSpeed != "" ? " (walks " Round(WkWalkSpeed * 1000) " a second at 1x, turning circle " Round(TurnRadius) ")" : " (turning circle " TurnRadius " till it's measured at 1x)"))
+	WkMet.wms := 0, WkMet.stops := 0, WkMet.spot := 0, WkMet.walkturns := 0, WkMet.keys := 0, WkMet.act := 0
 	if (WkMet.wfrom)
 		WkMet.wfrom := A_TickCount
 	WkMetAt := A_TickCount
@@ -2265,7 +2279,7 @@ WalkMetrics()
 ;The wizard's turning circle for the helper's arc look (game units, a fifth more to be safe)
 WalkTurnRadius()
 	{
-	return Round((TurnRadius ? TurnRadius : 60) * 1.2)
+	return Round((TurnRadius ? TurnRadius : 400) * 1.2)
 	}
 
 ;---- Cheat Engine's speedhack (AutoFarmer's Settings window: speedhack) ----
@@ -3497,13 +3511,28 @@ WalkNav(hScr, dScr)
 		if (IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500 && A_TickCount > WkNavPrev.at)
 			navSpeed := Sqrt((nav.x - WkNavPrev.x) ** 2 + (nav.y - WkNavPrev.y) ** 2) / (A_TickCount - WkNavPrev.at)
 		WkNavPrev := {x: nav.x, y: nav.y, at: A_TickCount}
-		;(walking straight on - W held a second, no turn just now: its speed at 1x, and from it the turning circle -
-		;speed over turn rate - the helper's arc look goes by)
-		if (navSpeed != "" && navSpeed > 0.02 && HeldW && A_TickCount - WkWalkFrom > 1000 && A_TickCount - WkTurnAt > 700 && SpeedNow)
+		;(walking straight on at 1x - W held a second, no turn just now, no speed key just pressed: Cheat Engine missing a
+		;press would make a 2x reading wrong - its speed, and from it the turning circle - speed over turn rate - the
+		;helper's arc look goes by. Off the last 15 readings, the upper quarter: brushing a wall or being pulled into a
+		;battle doesn't shrink or swell it)
+		if (navSpeed != "" && navSpeed > 0.02 && navSpeed < 3 && HeldW && SpeedNow = 1 && A_TickCount - WkWalkFrom > 1000 && A_TickCount - WkTurnAt > 700
+			&& (!SpeedSentAt || A_TickCount - SpeedSentAt > 1500))
 			{
-			wsNow := navSpeed / SpeedNow
-			WkWalkSpeed := (WkWalkSpeed = "") ? wsNow : WkWalkSpeed * 0.8 + wsNow * 0.2
-			TurnRadius := Min(200, Max(30, WkWalkSpeed / (TurnRate * 0.0174533)))
+			if (!IsObject(WkWalkSamples))
+				WkWalkSamples := []
+			WkWalkSamples.Push(navSpeed)
+			if (WkWalkSamples.Length() > 15)
+				WkWalkSamples.RemoveAt(1)
+			if (WkWalkSamples.Length() >= 5)
+				{
+				wsSorted := ""
+				for each, wsV in WkWalkSamples
+					wsSorted .= (wsSorted = "" ? "" : "`n") Format("{:012.6f}", wsV)
+				Sort, wsSorted
+				wsList := StrSplit(wsSorted, "`n")
+				WkWalkSpeed := wsList[Ceil(wsList.Length() * 0.75)] + 0
+				TurnRadius := Min(900, Max(60, WkWalkSpeed / (TurnRate * 0.0174533)))
+				}
 			}
 		WalkNavMoveCheck(nav)
 		;(how the arrow's distance compares with the memory's differs from zone to zone - 41 in one, about 100
