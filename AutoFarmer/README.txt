@@ -86,9 +86,11 @@ turns the wizard is measured on the first turn), out of battle, Wizard101 in
 front, you away from the keyboard and mouse 3 s, at 5x or less, no window
 over the middle of the game (its words: Crowns, shop, quest...). You touching
 the keyboard or mouse mid-turn ends it there, the mouse left to you. Anything
-not sure, and every turn on the spot: A/D as before. The mouse not turning the
-wizard three times: left alone for 10 minutes. debug.log: "mouse steering:
-...". Once a minute after walking, debug.log says how smooth it was: "Walk: the
+not sure, and every turn on the spot: A/D as before. Not in the first 0.6 s
+after setting off (the right button turns the wizard while he runs). The mouse
+not turning the wizard three times: left alone for 10 minutes. debug.log:
+"mouse steering: ..." (when it doesn't turn him: where the cursor was before
+and after the slide, and whether it showed). Once a minute after walking, debug.log says how smooth it was: "Walk: the
 last minute: W held N% of N s out walking, N stops, N turns on the spot, N
 turns walking on (N by the mouse), N speed keys".
 
@@ -441,6 +443,12 @@ health, or no hit is enough yet, it plays exactly like before.
 	  card ("+175 to 1 spell") the first time one's in hand.
 	- Turn on Options > Gameplay Options > "2D Combat Display" in Wizard101,
 	  that's what shows the enemy nameplates.
+	- The health numbers (the enemies' and your own) are read by the vision
+	  helper by their digits' shape - the cut pictures in ui1.144\platedigits
+	  (one of each digit and "/", cut at 1440p; they read other sizes too) -
+	  and only when that can't read them for sure by Windows' OCR, which misses
+	  the red numbers more often than not at 1440p. debug.log: "own health:
+	  couldn't read it for sure (by shape: <why>)".
 	- Needs Windows 10 or 11 (it uses the OCR built into Windows).
 	- Open PlayerStats.txt and set your damage %, and the damage of the hit
 	  spells in your deck. The numbers in there are only guesses.

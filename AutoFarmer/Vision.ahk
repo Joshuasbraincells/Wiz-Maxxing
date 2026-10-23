@@ -18,6 +18,8 @@ global VisionOn := 0, VisionPid := 0, VisionFails := 0, VisionCards := "", Visio
 ;The helper's folder ("" = vision\ next to the script) and port (tests use another one, so they don't stop
 ;the bot's own helper); why the last VisionGet got nothing
 global VisionDir := "", VisionPort := 47128, VisionErr
+;Why the last VisionPlate read nothing
+global VisionPlateWhy
 
 ;Starts the helper (after stopping one left over from before) and waits up to 8 s for it to answer
 VisionStart()
@@ -223,6 +225,24 @@ VisionBadge(x1, y1, x2, y2, ByRef bx, ByRef by, nearX := 0, nearY := 0)
 			sch := p[1], bx := p[2] + 0, by := p[3] + 0, bestFar := far
 		}
 	return sch
+	}
+
+;A name plate's red health numbers in the rectangle, read by the helper by their shape (its /plate - Windows' OCR
+;misses them more often than not at 1440p): {cur, max, worst} (worst: the least like its cut picture of the glyphs,
+;0-0.3), or "" - why in VisionPlateWhy
+VisionPlate(x1, y1, x2, y2)
+	{
+	VisionPlateWhy := ""
+	if (!VisionOn)
+		{
+		VisionPlateWhy := "the vision helper isn't running"
+		return ""
+		}
+	answer := VisionGet("/plate?x1=" Round(x1) "&y1=" Round(y1) "&x2=" Round(x2) "&y2=" Round(y2), 1500)
+	if (RegExMatch(answer, "^health\|(\d+)\|(\d+)\|([\d.]+)", m) && m2 > 0)
+		return {cur: m1 + 0, max: m2 + 0, worst: m3 + 0}
+	VisionPlateWhy := answer = "" ? (VisionErr = "" ? "no answer" : VisionErr) : RegExReplace(Trim(answer, " `r`n"), "^none\|")
+	return ""
 	}
 
 ;---- The game's memory: where the wizard is and where the quest arrow points (for Walker.ahk) ----

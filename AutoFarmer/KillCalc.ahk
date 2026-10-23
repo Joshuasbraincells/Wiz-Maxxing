@@ -330,13 +330,20 @@ ReadEnemyHealth()
 		;(only the red pixels read - the numbers; just round their glyphs when they're found, not the whole box, which
 		;can hold a bit of the plate's icon; their 3s and 5s told by their shape: HealthDigits)
 		;(looked for a good way either side: the strip's read of the line can start or end a digit or two short)
-		gl := HealthGlyphs(cx - b.h * 3, cy, cw + b.h * 6, ch)
+		;(by the helper first, by the digits' shape - VisionPlate: two votes; else OCR)
+		vp := VisionPlate(cx - b.h * 3, cy, cx + cw + b.h * 3, cy + ch)
+		if (IsObject(vp))
+			p.votes.Push([{cur: vp.cur, max: vp.max}]), p.votes.Push([{cur: vp.cur, max: vp.max}])
+		gl := IsObject(vp) ? "" : HealthGlyphs(cx - b.h * 3, cy, cw + b.h * 6, ch)
 		;(the plate's own box kept as it is - the boss click's matched against it below)
 		gx := cx, gy := cy, gw := cw, gh := ch
 		if (IsObject(gl) && gl.Length() >= 3)
 			GlyphsBox(gl, (gl[1].y2 - gl[1].y1) // 2 + 2, gx, gy, gw, gh)
-		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, redLines, 1), gl)))
-		p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, redLines, 1), gl)))
+		if (!IsObject(vp))
+			{
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, redLines, 1), gl)))
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, redLines, 1), gl)))
+			}
 		;(the two don't make two agreeing reads - one came out short: a third, at a size between)
 		got := 0
 		for j, v in p.votes
@@ -629,7 +636,8 @@ HealthDigits(text, gl)
 	{
 	;(only a thousands mark between digits and spaces round the "/" taken out - anything else left in for ParseHealth to
 	;turn down, and to be counted against the glyphs)
-	t := RegExReplace(text, "(?<=[\dSsOoB])\s*[,.']\s*(?=[\dSsOoB])|\s+(?=/)|(?<=/)\s+")
+	;(and an "r" for a comma - 1440p, 2026-10-23: 2r848/3r153)
+	t := RegExReplace(text, "(?<=[\dSsOoB])\s*[,.']\s*(?=[\dSsOoB])|(?<=[\dSsOoB])r(?=[\dSsOoB]{3}(?![\dSsOoB]))|\s+(?=/)|(?<=/)\s+")
 	t := RegExReplace(RegExReplace(RegExReplace(t, "[Ss]", "5"), "[Oo]", "0"), "B", "8")
 	;(every read counted against the glyphs when they were found - a digit cut off or added shows)
 	if (IsObject(gl) && gl.Length() != StrLen(t))

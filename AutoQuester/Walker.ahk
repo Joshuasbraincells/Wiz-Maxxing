@@ -212,7 +212,9 @@ WalkerInit(prefix := "AutoQuester")
 	WkPromptSkip := {}, WkPreXText := "", WkQmLooked := {}, WkQmTalked := {}
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
 	WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := 0, WkBlindAt := 0, WkBlindBackSaid := 0, WkBlindMob := ""
-	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0
+	;(0, not blank: A_TickCount - "" is blank, and blank < 5000 holds - WalkCloseWindow never looked, 2026-10-23 15:02, a
+	;potion shop left open held the wizard; blank > 1500 doesn't - the party leader never waited for followers)
+	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0, WkCloseLook := 0, WkNavEscAt := 0
 	WkCollect := "", WkGoalReadAt := 0, WkAfterXLooked := 0, WkGoalLine := "", WkGoalLineAt := 0, WkRealSeenAt := 0, WkArrowAtX := 0
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
 	WkResetAt := 0
@@ -1154,7 +1156,10 @@ WalkStep()
 	;(by the mouse - MouseSteer.ahk: the wizard turned at once, walking on, its arc looked at for the mouse's small circle:
 	;up to 150 degrees with it clear, 100 with nothing said; the arc looked at for the mouse's circle is no use to A/D's)
 	;(only once a count's worth is measured - the measuring isn't for a big turn walking on)
+	;(and only with the wizard running a moment already - MouseSteerWhyNot's "just set off": a big turn from standing goes
+	;the counted way, on the spot)
 	msWalk := WkNavUse && steer = h && !escaping && Abs(steer) > TurnInPlace && WkArcMouse && MsK != ""
+		&& HeldW && WkWalkFrom && A_TickCount - WkWalkFrom >= 600
 		&& ((arcOk = 1 && Abs(steer) <= 150) || (arcOk = "" && Abs(steer) <= 100)) && MouseSteerWhyNot(false) = ""
 	walkTurn := msWalk || (WkNavUse && steer = h && SpeedNow <= 5 && Abs(steer) <= SpotTurnMem
 		&& ((arcOk = 1 && !WkArcMouse) || (arcOk = "" && Abs(steer) <= ArcBlind)))
@@ -2093,7 +2098,13 @@ WalkCloseWindow(why, now := false)
 	if (ErrorLevel)
 		return false
 	cwT := OcrRect(GameLeft, GameTop, GameW, GameH)
-	if (!ErrorLevel && RegExMatch(cwT, "i)cr[o0]wn"))
+	;(not read: not clicked - Crowns can't be ruled out)
+	if (ErrorLevel)
+		{
+		WalkLog(why " - a window's close button is there, but the game couldn't be read for Crowns: not clicked")
+		return false
+		}
+	if (RegExMatch(cwT, "i)cr[o0]wn"))
 		{
 		WalkLog(why " - a window's close button is there, but Crowns are in sight: not clicked")
 		WalkNotify("window", "A window is open", "A window is open over the game (" why ") and Crowns are in sight, so the bot doesn't click its close button. Close it yourself.")

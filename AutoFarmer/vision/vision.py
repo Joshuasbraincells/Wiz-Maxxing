@@ -48,6 +48,9 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /forget                                 -> reads the picture folders again (after pictures were added)
   /globes?left=&bottom=&scale=            -> "health|<n>" and "mana|<n>" off the globes at the game's bottom
                                              left (n "" if it can't be read for sure)
+  /plate?x1=&y1=&x2=&y2=                  -> a name plate's red health numbers in the rectangle, read by their shape
+                                             (the cut pictures in ui<scale>\platedigits): "health|cur|max|worst glyph's
+                                             distance", or "none|<why>" when they can't be read for sure
   /nav[?path=1][&route=1]                 -> where the wizard and its quest goal are, read from the game's memory
                                              (read-only, see vision\navmem.py), one line each:
                                                ok|1
@@ -109,7 +112,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              file: the overlay on a blank background. "ERR <why>" as /nav, or when the
                                              wizard's position can't be read
   /quit                                   -> stops
-Add &file=<path> to /cards, /badge, /hand or /cut to look at a saved screenshot instead of the screen (for
+Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
 
 Only numpy and Pillow (katsuba is used for a zone .wad only if installed and the built-in reader can't read
@@ -1153,6 +1156,186 @@ def read_globes(left, bottom, scale, file=None):
     return out
 
 
+# ---------------------------------------------------------------- the name plates' health numbers
+
+# Windows' OCR misses the plates' red numbers more often than not at 1440p (2026-10-23: 1 of 48 sizes and boxes read
+# 2,848/3,153, and a comma comes back as "r"). They're one bold font, so they're read by shape: the red ink (the
+# numbers' pure red, as KillCalc.ahk HealthGlyphs), the commas (short ink sitting on the line) set aside, and the line
+# cut into the windows that cost least - a window costs the pixels it doesn't share with the cut digit or "/" it's
+# likest (both at 10 x 14, plus its width/height ratio's difference) plus PLATE_GLYPH*H*H a glyph; a column left out
+# costs its ink. Taller than the digits' band: a "/" (the digits never are). Read for sure: every glyph under
+# PLATE_WORST, one "/", and the commas where a thousands mark goes. The cut pictures are each glyph's band rows (cut at
+# 1440p, UI 1.144, H 15: they read 1280x1024's H 11 too)
+PLATE_NORM = (10, 14)
+PLATE_GLYPH = 0.05
+PLATE_WORST = 0.3
+PLATE_CACHE = {}
+
+
+def plate_ink(a):
+    """the numbers' pure red (not a school icon's orange-red: its green well above its blue)"""
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    return (r > 110) & (g < 45) & (b < 45) & (r - g > 80) & (g - b < 18)
+
+
+def ink_runs(m):
+    """runs of inked columns: [(first, last)]"""
+    cols = np.concatenate([[False], m.any(axis=0), [False]]).astype(np.int8)
+    d = np.diff(cols)
+    return list(zip(np.nonzero(d == 1)[0], np.nonzero(d == -1)[0] - 1))
+
+
+def area_matrix(n, k):
+    """k x n: each of k cells the mean of its share of n pixels (a box filter - the same for the cut pictures and
+    the line's windows)"""
+    m = np.zeros((k, n))
+    for i in range(k):
+        a, b = i * n / k, (i + 1) * n / k
+        for j in range(int(a), min(n, int(np.ceil(b)))):
+            m[i, j] = min(b, j + 1) - max(a, j)
+        m[i] /= max(1e-9, m[i].sum())
+    return m
+
+
+def plate_digits():
+    """the cut plate glyphs: (chars, their pictures at PLATE_NORM as rows, their width/height ratios) - each picture
+    a band of one glyph, ink white; <digit>_<n>.png or slash_<n>.png"""
+    key = tuple(d for d, sc in LIB.sets)
+    if key in PLATE_CACHE:
+        return PLATE_CACHE[key]
+    cw, ch = PLATE_NORM
+    chars, pics, ratios = [], [], []
+    for d, sc in LIB.sets:
+        for p in sorted(glob.glob(os.path.join(d, 'platedigits', '*.png'))):
+            name = os.path.basename(p)
+            c = '/' if name.lower().startswith('slash') else name[0]
+            try:
+                m = np.asarray(Image.open(p).convert('L')) > 127
+            except OSError:
+                continue
+            if c not in '0123456789/' or not m.any():
+                continue
+            chars.append(c)
+            pics.append((area_matrix(m.shape[0], ch) @ m.astype(float) @ area_matrix(m.shape[1], cw).T).ravel())
+            ratios.append(m.shape[1] / m.shape[0])
+    out = (chars, np.array(pics).reshape(len(pics), cw * ch), np.array(ratios))
+    PLATE_CACHE[key] = out
+    return out
+
+
+def read_plate(a, cut):
+    """(cur, max, worst glyph's distance) of the red health numbers in picture a, or (None, None, why)"""
+    chars, pics, ratios = cut
+    if not chars:
+        return None, None, 'no cut plate digits (platedigits)'
+    if not {'/', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9'} <= set(chars):
+        return None, None, 'the cut plate digits are missing ' + ''.join(sorted(set('/0123456789') - set(chars)))
+    m = plate_ink(a)
+    runs = ink_runs(m)
+    tops, bottoms = [], []
+    for s, e in runs:
+        ys = np.nonzero(m[:, s:e + 1].any(axis=1))[0]
+        if ys[-1] - ys[0] >= 7:
+            tops.append(ys[0])
+            bottoms.append(ys[-1])
+    if not tops:
+        return None, None, 'no red numbers'
+    t, b = int(np.median(tops)), int(np.median(bottoms))
+    H = b - t + 1
+    if H < 8:
+        return None, None, f'too small ({H} px)'
+    # (only the line's own rows from here: red under it - the school badge, the pips - would join a comma to its digits)
+    r0, r1 = max(0, t - int(np.ceil(0.3 * H))), min(m.shape[0], b + int(np.ceil(0.45 * H)) + 1)
+    m, t, b = m[r0:r1], t - r0, b - r0
+    if H > 0.75 * a.shape[0]:
+        return None, None, f'too tall ({H} px)'
+    # (red on the line at the box's edge: a glyph cut by the box - a first digit lost reads 848 for 2,848, and no comma
+    # check can tell; the bot's boxes leave room either side)
+    edge = int(np.ceil(0.5 * H))
+    if m[t:b + 1, :edge].any() or m[t:b + 1, -edge:].any():
+        return None, None, 'red at the box edge (a glyph cut)'
+    runs = ink_runs(m)
+    # (commas - short ink sitting on the line - set aside, where they are kept)
+    mm, commas = m.copy(), []
+    for s, e in runs:
+        ys = np.nonzero(m[:, s:e + 1].any(axis=1))[0]
+        if ys[-1] - ys[0] + 1 < 0.6 * H and ys[0] > t + 0.5 * H and e - s + 1 <= 0.45 * H:
+            mm[:, s:e + 1] = False
+            commas.append((s + e) / 2)
+    band, W = mm[t:b + 1].astype(float), mm.shape[1]
+    colink = band.sum(axis=0)
+    beyond = mm[:t].sum(axis=0) + mm[b + 1:].sum(axis=0)
+    cw, ch = PLATE_NORM
+    # (the rows' box filter once - each window then only its columns': H out of the windows' sums)
+    rows = area_matrix(H, ch) @ band                                                # (14, W)
+    lo, hi = max(3, int(0.3 * H)), int(1.0 * H)
+    # cost[(x, w)] = (cost, char, distance) of the likeliest glyph in the window x..x+w-1
+    best_at = {}
+    slash = np.array([c == '/' for c in chars])
+    for w in range(lo, hi + 1):
+        if w > W:
+            break
+        rx = area_matrix(w, cw)
+        ink_n = np.convolve(colink, np.ones(w), 'valid')                          # (W-w+1,)
+        wins = np.lib.stride_tricks.sliding_window_view(rows, w, axis=1)          # (14, W-w+1, w)
+        canon = np.einsum('inw,jw->nij', wins, rx).reshape(-1, cw * ch)           # (W-w+1, 140)
+        d = np.abs(canon[:, None, :] - pics[None, :, :]).mean(axis=2) + 0.6 * np.abs(w / H - ratios)[None, :]
+        ext = np.convolve(beyond, np.ones(w), 'valid')                             # ink above/below the band
+        cost = d * w * H + PLATE_GLYPH * H * H
+        cost += np.where(slash[None, :], np.where(ext[:, None] == 0, 0.15 * w * H, 0), ext[:, None])
+        k = np.argmin(cost, axis=1)
+        for x in np.nonzero(ink_n > 0)[0]:
+            best_at[(int(x), w)] = (float(cost[x, k[x]]), chars[k[x]], float(d[x, k[x]]))
+    INF = float('inf')
+    best, back = [0.0] + [INF] * W, [None] * (W + 1)
+    for x in range(W):
+        if best[x] == INF:
+            continue
+        s = best[x] + colink[x] + beyond[x]
+        if s < best[x + 1]:
+            best[x + 1], back[x + 1] = s, (x, None, 0.0)
+        for w in range(lo, hi + 1):
+            g = best_at.get((x, w))
+            if g and best[x] + g[0] < best[x + w]:
+                best[x + w], back[x + w] = best[x] + g[0], (x, g[1], g[2])
+    glyphs, x = [], W
+    while x > 0:
+        px, c, dd = back[x]
+        if c:
+            glyphs.append((px, x - 1, c, dd))
+        x = px
+    glyphs.reverse()
+    if not glyphs:
+        return None, None, 'no glyphs'
+    text = ''.join(g[2] for g in glyphs)
+    worst = max(g[3] for g in glyphs)
+    if worst >= PLATE_WORST:
+        return None, None, f'"{text}" not clear (a glyph {worst:.2f} off)'
+    mt = re.fullmatch(r'([1-9]\d{0,5}|0)/([1-9]\d{0,5})', text)
+    if not mt:
+        return None, None, f'"{text}" is no cur/max'
+    # (the commas where thousands marks go, and nowhere else: a digit dropped or added shows)
+    slash_i = text.index('/')
+    for part, first in ((mt.group(1), 0), (mt.group(2), slash_i + 1)):
+        want = {first + len(part) - 3 * k for k in range(1, (len(part) - 1) // 3 + 1)}   # glyph index after each mark
+        for k in range(first + 1, first + len(part)):
+            gap = (glyphs[k - 1][1] + glyphs[k][0]) / 2
+            has = any(glyphs[k - 1][1] - 1 <= c <= glyphs[k][0] + 1 for c in commas)
+            if has != (k in want):
+                return None, None, f'"{text}": a comma {"missing" if k in want else "where none goes"} at {gap:.0f}'
+    cur, most = int(mt.group(1)), int(mt.group(2))
+    if cur > most:
+        return None, None, f'"{text}": more than its most'
+    return cur, most, worst
+
+
+def plate_health(x1, y1, x2, y2, file=None):
+    """/plate: (cur, max, worst) or (None, None, why)"""
+    if x2 - x1 < 8 or y2 - y1 < 8 or x2 - x1 > 1200 or y2 - y1 > 200:
+        return None, None, 'a box of no use'
+    return read_plate(grab(x1, y1, x2, y2, file).astype(int), plate_digits())
+
+
 # ---------------------------------------------------------------- enemy spells (enemies.py)
 ENEMY = {'wiki': None, 'casts': None, 'battle': None, 'key': None}
 
@@ -2142,6 +2325,7 @@ class Handler(BaseHTTPRequestHandler):
                 global LIB
                 LIB = Library()
                 LEARNED_OK.clear()
+                PLATE_CACHE.clear()
                 with TPL_LOCK:
                     TPL_FFT.clear()
                     globals()['TPL_BYTES'] = 0
@@ -2173,6 +2357,17 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/globes':
                 hp, mp = read_globes(float(q['left']), float(q['bottom']), float(q['scale']), q.get('file'))
                 return self.reply(f'health|{hp}\nmana|{mp}')
+            if u.path == '/plate':
+                x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))
+                # (a reader's slip answered as "can't read" - OCR then - not as ERR, which counts against the helper)
+                try:
+                    cur, most, worst = plate_health(x1, y1, x2, y2, q.get('file'))
+                except Exception as e:  # noqa: BLE001
+                    log('/plate failed: ' + repr(e))
+                    cur, most, worst = None, None, 'failed: ' + repr(e)
+                if cur is None:
+                    return self.reply('none|' + str(worst).replace('\n', ' '))
+                return self.reply(f'health|{cur}|{most}|{worst:.3f}')
             if u.path == '/usable':
                 return self.reply('1' if LIB.usable(q['rel'].replace('/', os.sep)) else '0')
             if u.path == '/hand':

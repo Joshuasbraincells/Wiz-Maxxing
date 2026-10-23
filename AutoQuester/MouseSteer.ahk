@@ -31,6 +31,9 @@ MouseSteerWhyNot(needW := true)
 		return "off for now (the mouse didn't turn the wizard)"
 	if (!Walking || (needW && !HeldW) || inbattle)
 		return "not walking"
+	;(the wizard running already - the right button turns him while he runs; standing, it turns the camera)
+	if (needW && WkWalkFrom && A_TickCount - WkWalkFrom < 600)
+		return "just set off"
 	if (!GameActive())
 		return "Wizard101 not in front"
 	if (!WkNavUse || !WkNavOk)
@@ -89,16 +92,22 @@ MouseSteerYaw()
 	return (IsObject(nav) && nav.yaw != "") ? nav.yaw : ""
 	}
 
-;The mouse slid c counts sideways (+ right), in steps of at most 20 (Windows' pointer speed works on each step)
+;The mouse slid c counts sideways (+ right), in steps of at most 8, 2 ms apart - as a mouse sends them (Windows' pointer
+;speed works on each step). With the right button held the game hides the cursor and puts it back where it was pressed
+;every 25-40 ms, turning by how far it went meanwhile (watched 2026-10-23 on a drag of yours)
 MouseSteerMove(c)
 	{
 	left := c
+	DllCall("winmm\timeBeginPeriod", "UInt", 1)
 	while (left != 0)
 		{
-		d := left > 20 ? 20 : left < -20 ? -20 : left
+		d := left > 8 ? 8 : left < -8 ? -8 : left
 		DllCall("mouse_event", "UInt", 0x0001, "Int", d, "Int", 0, "UInt", 0, "UPtr", 0)
 		left -= d
+		if (left != 0)
+			DllCall("Sleep", "UInt", 2)
 		}
+	DllCall("winmm\timeEndPeriod", "UInt", 1)
 	}
 
 ;The right button down (1) or up (0) where the mouse is
@@ -118,6 +127,15 @@ MouseSteerTurned(yaw, yaw0)
 MouseSteerYours(from)
 	{
 	return A_TimeIdlePhysical < A_TickCount - from || !GameActive()
+	}
+
+;Where the cursor is and whether it shows: "x,y shown" / "x,y hidden" (screen), "?" not known
+MouseSteerCursor()
+	{
+	VarSetCapacity(ci, 16 + A_PtrSize, 0), NumPut(16 + A_PtrSize, ci, 0, "UInt")
+	if (!DllCall("GetCursorInfo", "Ptr", &ci))
+		return "?"
+	return NumGet(ci, 8 + A_PtrSize, "Int") "," NumGet(ci, 12 + A_PtrSize, "Int") (NumGet(ci, 4, "UInt") & 1 ? " shown" : " hidden")
 	}
 
 ;Said in debug.log at most once a minute for the same thing
@@ -143,7 +161,7 @@ MouseTurn(h)
 	why := MouseSteerWhyNot()
 	if (why != "")
 		{
-		if (why != "not walking" && why != "off")
+		if (why != "not walking" && why != "off" && why != "just set off")
 			MouseSteerNote("not now - " why)
 		return ""
 		}
@@ -166,7 +184,10 @@ MouseTurn(h)
 	try
 		{
 		MouseSteerButton(1)
-		Sleep, 30
+		Sleep, 60
+		;(where the cursor is and whether it shows, before the slide and after: the game hiding it or putting it back
+		;says it took the drag - for debug.log when the mouse doesn't turn him)
+		msCur0 := MouseSteerCursor()
 		;(how far a count turns it, not known: a few counts at a time, more each look, the way it should turn - mouse
 		;right taken to turn it right till it's seen)
 		if (MsK = "")
@@ -198,7 +219,7 @@ MouseTurn(h)
 			if (MsK = "" && msY != "" && !msUser)
 				{
 				MsFails := (MsFails ? MsFails : 0) + 1
-				MouseSteerNote("the mouse didn't turn the wizard (" Abs(sent) " counts, " Round(turned) " degrees) - A/D" (MsFails >= 3 ? ", and the mouse left alone for 10 minutes" : ""))
+				MouseSteerNote("the mouse didn't turn the wizard (" Abs(sent) " counts, " Round(turned, 1) " degrees; the cursor " msCur0 " before the slide, " MouseSteerCursor() " after) - A/D" (MsFails >= 3 ? ", and the mouse left alone for 10 minutes" : ""))
 				if (MsFails >= 3)
 					MsFails := 0, MsOffUntil := A_TickCount + 600000
 				}

@@ -242,7 +242,7 @@ global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 global BookSeenAt := 0
 ;When a battle round's Pass button was last seen, when the mouse was last moved onto the scene for one that wasn't, and
 ;how many times since (a button shown as hovered: see the main loop)
-global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0
+global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0, PassNudgeSaidAt := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 ;Boost cards cast since the last hit (Settings.ahk CardBoostOk: boostmax)
@@ -597,14 +597,14 @@ loop,
 	;In a battle (no spellbook since one) and no round seen for 15 s: Wizard101 draws a button as hovered - white, not
 	;yellow - when the mouse last left the game from it (a jump to another monitor never crosses the game), and the Pass
 	;button isn't known by its picture then (2026-10-23 06:35: a whole battle left to auto-pass). You away, the game in
-	;front: the mouse moved onto the scene - every 15 s, said the first time and then every 4th
+	;front: the mouse moved onto the scene - every 15 s, said at most once in 5 minutes (a round's spells take 15 s and more)
 	if (!bookSeen && inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000 && A_TickCount - PassNudgeAt > 15000
 		&& GameActive() && A_TimeIdlePhysical > 5000)
 		{
 		PassNudgeAt := A_TickCount, PassNudges += 1
 		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
-		if (Mod(PassNudges, 4) = 1)
-			DebugLog("In a battle, no round seen for " Round((A_TickCount - PassSeenAt) / 1000) " s - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known)")
+		if (A_TickCount - PassNudgeSaidAt > 300000)
+			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen for " Round((A_TickCount - PassSeenAt) / 1000) " s - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
 		}
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).
@@ -1887,11 +1887,17 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 				}
 	}	
 	
-;A name plate's health - the red cur/max under its name (nx, ny: where the name starts) - read by OCR at four sizes,
-;what at least two of them agree on: {cur, max, votes} ("" not read for sure). Yours (OwnHealthLow), an ally's (Party.ahk)
+;A name plate's health - the red cur/max under its name (nx, ny: where the name starts) - read by the helper by its
+;digits' shape (VisionPlate: 3 votes, 2 when a glyph's only fairly like its picture), else by OCR at four sizes, what at
+;least two of them agree on: {cur, max, votes} ("" not read for sure). Yours (OwnHealthLow), an ally's (Party.ahk)
 PlateHealth(nx, ny)
 	{
-	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines, phW
+	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines, phW, vp
+	;(2026-10-23, 1440p: OCR read 2,848/3,153 at 1 of its 8 tries - none of the round's 4 reads of yours came out)
+	;(the box ends above the pips - a Balance pip's red joins the digits: from ny + Px(50))
+	vp := VisionPlate(nx - Px(22), ny + Px(10), nx + Px(165), ny + Px(43))
+	if (IsObject(vp))
+		return {cur: vp.cur, max: vp.max, votes: vp.worst < 0.2 ? 3 : 2}
 	;(110 wide first; not read: 150 - a four-figure health, 1,772/3,153, runs past 110 and its last figure is cut, never
 	;read: 2026-10-23 - the wider box takes in more of what's round it, so it's only the second try)
 	for each, phW in [110, 150]
@@ -1938,7 +1944,7 @@ OwnHealthLow(quiet := false)
 	r := PlateHealth(playerX, playerY)
 	if (!IsObject(r))
 		{
-		DebugLog("  own health: couldn't read it for sure")
+		DebugLog("  own health: couldn't read it for sure" (VisionPlateWhy != "" ? " (by shape: " SubStr(VisionPlateWhy, 1, 80) ")" : ""))
 		return false
 		}
 	cur := r.cur, most := r.max, bestN := r.votes
