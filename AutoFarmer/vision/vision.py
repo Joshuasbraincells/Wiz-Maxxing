@@ -1099,7 +1099,9 @@ def card_check(file, scale=''):
 # Where the numbers on the globes are, in UI-scale-1 pixels from the game's bottom left: (x, how far up
 # their top is, w, h) - measured at UI 1.144 / 1440p
 GLOBE_HEALTH = (24.0, 131.0, 100.0, 34.0)
-GLOBE_MANA = (118.0, 92.0, 46.0, 30.0)
+# (mana from x 103, not 118: a three-figure mana - 370, 408 - starts left of where a two-figure one does, and its first
+# figure was cut off - "no mana? ... the mana globe's number can't be read", 2026-10-23)
+GLOBE_MANA = (103.0, 92.0, 66.0, 30.0)
 # a digit is the cut one it's closest to, if under this (mean pixel difference at 10 x 14, plus half the
 # width/height ratio's difference); saved shots: right 0-0.2, wrong 0.3+
 GLOBE_DIGIT = 0.3
@@ -1122,7 +1124,7 @@ def read_number(a, cut):
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     m = (r > 190) & (g > 0.82 * r) & (b < 0.55 * r)
     cols = m.any(axis=0)
-    text, x = '', 0
+    spans, x = [], 0
     while x < m.shape[1]:
         if not cols[x]:
             x += 1
@@ -1130,7 +1132,20 @@ def read_number(a, cut):
         s = x
         while x < m.shape[1] and cols[x]:
             x += 1
+        ys = np.nonzero(m[:, s:x].any(axis=1))[0]
+        spans.append((s, x, ys.min(), ys.max()))
+    # (each kept to the rows the digits share - the mana globe's yellow glow under the health's last figure joins it,
+    # 33 rows against 28: 5926 wasn't read, 2026-10-18. The rows from the digit-tall ones, two or more of them)
+    tall = [sp for sp in spans if 0.3 * m.shape[0] <= sp[3] - sp[2] + 1 < m.shape[0] - 1]
+    top = int(np.median([sp[2] for sp in tall])) if len(tall) >= 2 else 0
+    bottom = int(np.median([sp[3] for sp in tall])) if len(tall) >= 2 else m.shape[0] - 1
+    text = ''
+    for s, x, y1, y2 in spans:
         blob = m[:, s:x]
+        if len(tall) >= 2:
+            blob = blob[max(y1, top):min(y2, bottom) + 1]
+            if not blob.size or not blob.any():
+                continue
         ys = np.nonzero(blob.any(axis=1))[0]
         blob = blob[ys.min():ys.max() + 1]
         # (specks of the background, and anything as tall as the whole box isn't a digit)
