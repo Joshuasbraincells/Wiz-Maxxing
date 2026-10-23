@@ -17,6 +17,8 @@
 ;slot's name ({slot: name}), the slot a name line is for, the casts ([{round, slot, spell}]), the last round resolved,
 ;when it was last read
 global BlPos, BlHead, BlDuel, BlNames, BlSub, BlCasts, BlRound, BlReadAt
+;The battle's last phase by the log (kPhase_Planning: a round up for your cards; kPhase_Execution: the spells) and when
+global BlPhase, BlPhaseAt
 ;Your own wizard's name: the one wizard on your side of a battle with no other (learned this run - party.ini [me] keeps
 ;the last for the next), and the character it's for (the game's log's CharID - another character logged in: not its)
 global BlMe, BlMeChar
@@ -68,13 +70,32 @@ BattleLogRead(force := false)
 		BattleLogLine(A_LoopField)
 	}
 
+;A battle on by the game's log: a combat phase in the last minute and the spellbook (it shows only out of battle) not
+;seen since - one whose round the bot hasn't seen yet counts (2026-10-23 17:22: its Pass drawn hovered, the walker took
+;it for no arrow out of battle and pressed Escape: the game's menu over the round)
+BattleLogInBattle()
+	{
+	return BlPhaseAt && A_TickCount - BlPhaseAt < 60000 && BookSeenAt < BlPhaseAt
+	}
+
+;A round up for your cards by the game's log - its planning phase begun at least ms ago (and 90 s at most), in a battle
+;(BattleLogInBattle)
+BattleLogPlanning(ms)
+	{
+	return BlPhase = "kPhase_Planning" && BlPhaseAt && A_TickCount - BlPhaseAt >= ms && A_TickCount - BlPhaseAt < 90000 && BookSeenAt < BlPhaseAt
+	}
+
 ;One line of the game's log, for the battle
 BattleLogLine(blLine)
 	{
 	if (!InStr(blLine, "Combat") && !InStr(blLine, "Subcircle"))
 		return
+	;(out of the battle - fled: no phase line follows)
+	if (InStr(blLine, "MSG_CombatRemove(Local Player)"))
+		BlPhase := "", BlPhaseAt := 0
 	if (RegExMatch(blLine, "Duel (\d+): MSG_CombatPhase\((kPhase_\w+)\)", blM))
 		{
+		BlPhase := blM2, BlPhaseAt := A_TickCount
 		if (blM1 != BlDuel)
 			BlDuel := blM1, BlNames := {}, BlCasts := [], BlRound := 0, BlSub := ""
 		;(each planning phase names those still in the circle - one that died isn't: the names afresh)

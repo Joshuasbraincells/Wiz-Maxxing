@@ -441,7 +441,8 @@ WalkStep()
 	;covers the arrow, not the memory; the notice only when nothing stands in for it either)
 	if ((seen || WkNavD != "") && dist != "")
 		WkLastDist := dist, WkLastDistAt := A_TickCount
-	if (arrowSeen || inbattle || WkLoading || inbattle = "")
+	;(a battle by the game's log counts too - its first round not seen yet: no Escape over it, no notice)
+	if (arrowSeen || inbattle || WkLoading || inbattle = "" || (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call()))
 		{
 		WkNoArrowFrom := 0, WkNoGuideFrom := 0
 		if (arrowSeen)
@@ -2575,8 +2576,10 @@ CollectCheck(dist)
 	text := WalkGoalText()
 	if (text = "")
 		return false
+	;(the goal of before changed or not - by the game's memory's goal id, else the goal line read twice alike)
+	changed := IsObject(WkCollect) ? CollectGoalChanged(text) : true
 	;(the goal it gave up on has changed: the quest moved on - walk on)
-	if (IsObject(WkCollect) && WkCollect.gaveUp && !CollectSameGoal(text, WkCollect.text))
+	if (IsObject(WkCollect) && WkCollect.gaveUp && changed)
 		{
 		WalkLog("collect: the goal is now '" text "' (was '" WkCollect.text "') - walking on")
 		WkCollect := ""
@@ -2585,9 +2588,9 @@ CollectCheck(dist)
 			WkArrived := 0, WkFar := 0, WkArrDist := "", WkBestDist := "", WkBestTime := A_TickCount, WkTries := 0
 		}
 	;(a goal it gave up on - no progress for CollectStall, or CollectMax in all - without it changing: leave it be)
-	if (IsObject(WkCollect) && WkCollect.gaveUp && CollectSameGoal(text, WkCollect.text))
+	if (IsObject(WkCollect) && WkCollect.gaveUp)
 		return false
-	if (IsObject(WkCollect) && CollectSameGoal(text, WkCollect.text))
+	if (IsObject(WkCollect) && !changed)
 		{
 		WkCollect.sureAt := A_TickCount
 		StartCollect(WkCollect.text, "same goal as before")
@@ -2596,7 +2599,7 @@ CollectCheck(dist)
 	if (!CollectGoal(text))
 		return false
 	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0
-		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount}
+		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: ""}
 	WalkNotifyClose("collect")
 	StartCollect(text, "a goal to collect / defeat things")
 	return true
@@ -2636,7 +2639,7 @@ CollectStep(seen, h, dist)
 		{
 		WkGoalReadAt := A_TickCount
 		text := WalkGoalText()
-		if (text != "" && !CollectSameGoal(text, WkCollect.text))
+		if (CollectGoalChanged(text))
 			{
 			WalkLog("collect: the goal is now '" text "' (was '" WkCollect.text "') - following the arrow again")
 			WkCollect := ""
@@ -2780,6 +2783,39 @@ CollectCount(text)
 	{
 	;(a number above the total is a misread)
 	return (RegExMatch(text, "i)(\d+)\s*(?:of|/)\s*(\d+)", cnt) && cnt1 + 0 <= cnt2 + 0) ? cnt1 + 0 : ""
+	}
+
+;The quest goal's id off the game's memory (read-only) - "" when it isn't read for sure
+CollectGoalId()
+	{
+	return (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
+	}
+
+;The goal collecting is for has changed (the quest moved on): by the game's memory's goal id when it's known both then
+;and now - a slip in the goal line's OCR is no change (2026-10-23: "D op gentrvand Collect PTta19iece urvey" for "Defeat
+;Optio Agenor and Collect Portal Piece in Survey Camp" left the collecting); else by the goal line, a new one read twice
+;alike, 4 s apart. text: the goal line now ("" not read)
+CollectGoalChanged(text)
+	{
+	gid := CollectGoalId()
+	;(the id missed when collecting began: taken from a read whose line is the same goal)
+	if (WkCollect.goalid = "" && gid != "" && text != "" && CollectSameGoal(text, WkCollect.text))
+		WkCollect.goalid := gid
+	;(compared as text - a 64-bit id as a number can lose its last figures; a line read wrong meanwhile forgotten)
+	if (gid != "" && WkCollect.goalid != "")
+		{
+		WkCollect.newText := ""
+		return gid "|" != WkCollect.goalid "|"
+		}
+	if (text = "" || CollectSameGoal(text, WkCollect.text))
+		{
+		WkCollect.newText := ""
+		return false
+		}
+	if (WkCollect.newText != "" && CollectSameGoal(text, WkCollect.newText))
+		return true
+	WkCollect.newText := text
+	return false
 	}
 
 ;True if two goal lines are the same goal: the same letters (bar a few OCR slips), not counting the

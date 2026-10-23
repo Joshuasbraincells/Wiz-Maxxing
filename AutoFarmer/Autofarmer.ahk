@@ -597,14 +597,18 @@ loop,
 	;In a battle (no spellbook since one) and no round seen for 15 s: Wizard101 draws a button as hovered - white, not
 	;yellow - when the mouse last left the game from it (a jump to another monitor never crosses the game), and the Pass
 	;button isn't known by its picture then (2026-10-23 06:35: a whole battle left to auto-pass). You away, the game in
-	;front: the mouse moved onto the scene - every 15 s, said at most once in 5 minutes (a round's spells take 15 s and more)
-	if (!bookSeen && inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000 && A_TickCount - PassNudgeAt > 15000
+	;front: the mouse moved onto the scene - every 15 s, said at most once in 5 minutes (a round's spells take 15 s and more).
+	;A battle's first round too: by the game's log, its planning phase up 4 s and no round seen (2026-10-23 17:22: a
+	;first round's Pass drawn hovered, not one round of the battle seen till 17:25)
+	;(only before a round of the battle's been seen: after the bot's own, a party's planning goes on while the others choose)
+	passLog := inbattle != 1 && BattleLogPlanning(4000)
+	if (!bookSeen && ((inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000) || passLog) && A_TickCount - PassNudgeAt > 15000
 		&& GameActive() && A_TimeIdlePhysical > 5000)
 		{
 		PassNudgeAt := A_TickCount, PassNudges += 1
 		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
 		if (A_TickCount - PassNudgeSaidAt > 300000)
-			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen for " Round((A_TickCount - PassSeenAt) / 1000) " s - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
+			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen " (passLog ? "though the game's log says one is up (" Round((A_TickCount - BlPhaseAt) / 1000) " s)" : "for " Round((A_TickCount - PassSeenAt) / 1000) " s") " - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
 		}
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).
