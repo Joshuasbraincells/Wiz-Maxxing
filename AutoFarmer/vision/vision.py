@@ -2292,7 +2292,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if u.path == '/party':
                 # (AutoFarmer's party settings and state in - role, name, leader, port, battle, hp, ready, walk, bot,
-                # hold; the party as this PC sees it out: party|.., me|.., leader|.., member|.. - party.py)
+                # hold, brole, wiz, school, hits, hitr; the party as this PC sees it out: party|.., me|.., leader|..,
+                # member|.. - party.py)
                 return self.reply('\n'.join(party().update(q)))
             if u.path in ('/cards', '/badge'):
                 x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))

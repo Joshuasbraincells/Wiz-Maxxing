@@ -1,6 +1,8 @@
 """Party: up to 4 wizards, one per PC on the same home network - the leader quests, the followers go where it goes
 (TODO goal 1). State only: where each wizard is and what it's doing - nothing one bot sends can make another press,
-click, buy or type anything.
+click, buy or type anything. Its battle part (hitter, blader, healer), its wizard's in-game name, school and hits steer
+one thing: a blader's or healer's boosts go to the hitter's plate - found on its own screen by that name, among the
+names the game's own log gives for its own side.
 
   * Each bot's helper reads its own wizard's zone and position (the game's memory, read-only) every BEAT s, and keeps
     what its AutoFarmer says (/party: in battle, health %, ready, walking, bot on, why it's holding).
@@ -31,6 +33,8 @@ MAX_FOLLOWERS = 3
 NAME_RE = re.compile(r"^[\w .'-]{1,24}$")
 ZONE_RE = re.compile(r"^[\w/\\ .'-]{1,120}$")
 HOLD_RE = re.compile(r"^[\w .,'()/-]{0,80}$")
+ROLES = ('hitter', 'blader', 'healer')
+SCHOOLS = ('storm', 'fire', 'myth', 'balance', 'ice', 'life', 'death')
 
 
 def _f(v):
@@ -61,6 +65,34 @@ def clean_state(q):
     s['hp'] = None if hp is None or not 0 <= hp <= 100 else round(hp)
     hold = (q.get('hold') or '').strip()
     s['hold'] = hold if HOLD_RE.match(hold) else ''
+    # (its battle part, its wizard's in-game name, its school, its hits and the log's round of the last - a blader's or
+    # healer's boosts go to the hitter's plate, found on its own screen by that name among its own side's in the log)
+    brole = str(q.get('brole') or '').strip()
+    s['brole'] = brole if brole in ROLES else ''
+    wiz = str(q.get('wiz') or '').strip()
+    s['wiz'] = wiz if NAME_RE.match(wiz) else ''
+    sch = str(q.get('school') or '').strip().lower()
+    s['school'] = sch if sch in SCHOOLS else ''
+    for k in ('hits', 'hitr'):
+        v = _f(q.get(k))
+        s[k] = int(v) if v is not None and 0 <= v < 1e6 else None
+    return s
+
+
+def clean_peer(d):
+    """the leader's state as a follower got it (its answer: each field checked again - nothing in it reaches AutoFarmer
+    unchecked)"""
+    d = d if isinstance(d, dict) else {}
+    s = clean_state({k: str(v) for k, v in d.items() if isinstance(v, (str, int, float))})
+    door = d.get('door')
+    if isinstance(door, dict):
+        z, to = str(door.get('zone') or ''), str(door.get('to') or '')
+        s['door'] = {'zone': z if ZONE_RE.match(z) else '', 'to': to if ZONE_RE.match(to) else '',
+                     **{k: _f(door.get(k)) for k in ('x', 'y', 'z', 'dx', 'dy')}}
+    else:
+        s['door'] = None
+    b = d.get('bspot')
+    s['bspot'] = tuple(_f(v) for v in b[:3]) if isinstance(b, (list, tuple)) and len(b) >= 3 else None
     return s
 
 
@@ -197,7 +229,8 @@ class Party:
             others = [dict(v, age=round((now - v['at']) * 1000)) for k, v in self.members.items() if k != fid]
         me = self._me()
         return {'v': 1, 'leader': me, 'others': [{k: o.get(k) for k in
-                ('name', 'zone', 'x', 'y', 'z', 'battle', 'hp', 'ready', 'walk', 'age')} for o in others]}
+                ('name', 'zone', 'x', 'y', 'z', 'battle', 'hp', 'ready', 'walk', 'age', 'brole', 'wiz', 'school', 'hits',
+                 'hitr')} for o in others]}
 
     def _beat_out(self):
         """a follower's beat to the leader (its own thread); a failure backs off and says why"""
@@ -229,8 +262,18 @@ class Party:
             if r.status != 200:
                 raise OSError(f'the leader answered {r.status}')
             d = json.loads(body.decode('utf-8'))
+            if not isinstance(d, dict):
+                raise ValueError('not an object')
             with self.lock:
-                self.leader = dict(d.get('leader') or {}, at=time.time(), others=d.get('others') or [])
+                others = []
+                got = d.get('others') if isinstance(d.get('others'), list) else []
+                for o in got[:MAX_FOLLOWERS]:
+                    if isinstance(o, dict):
+                        c = clean_state({k: str(v) for k, v in o.items() if isinstance(v, (str, int, float))})
+                        age = _f(o.get('age'))
+                        c['age'] = int(age) if age is not None and 0 <= age < 1e6 else ''
+                        others.append(c)
+                self.leader = dict(clean_peer(d.get('leader')), at=time.time(), others=others)
                 self.state, self.why, self.fails = 'following', '', 0
         except socket.timeout:
             self._fail('no answer - is that PC\'s bot the leader, and its firewall letting Python in (Private networks)?')
@@ -238,7 +281,7 @@ class Party:
             self._fail('refused - that PC\'s bot isn\'t set to Leader, or the port is wrong')
         except OSError as e:
             self._fail(f'can\'t reach it ({e.strerror or e})')
-        except ValueError:
+        except (ValueError, http.client.HTTPException):
             self._fail('its answer couldn\'t be read')
 
     def _fail(self, why):
@@ -315,11 +358,17 @@ class Party:
                     num(L.get('yaw'), 4), L.get('battle', '0'), num(L.get('hp')), L.get('ready', '0'), L.get('walk', '0'),
                     str(age), dist, d.get('zone', ''), num(d.get('x')), num(d.get('y')), num(d.get('z')),
                     num(d.get('dx'), 3), num(d.get('dy'), 3), d.get('to', ''), num(b[0]), num(b[1]), num(b[2]),
-                    L.get('hold') or '']))
+                    L.get('hold') or '', L.get('brole') or '', L.get('wiz') or '', L.get('school') or '',
+                    num(L.get('hits')), num(L.get('hitr'))]))
+                # (the other followers: as the leader's own rows below - walk, loading and hold where it doesn't say)
                 for o in L.get('others') or []:
+                    # (its age as the leader last heard it, and since that answer: a leader gone quiet takes them along)
+                    oa = o.get('age')
                     out.append('member|' + '|'.join([o.get('name') or '', o.get('zone') or '', num(o.get('x')),
                                num(o.get('y')), num(o.get('z')), o.get('battle', '0'), num(o.get('hp')),
-                               o.get('ready', '0'), str(o.get('age', '')), '']))
+                               o.get('ready', '0'), str(oa + age) if isinstance(oa, int) else '', '', o.get('walk', '0'), '0', '',
+                               o.get('brole') or '', o.get('wiz') or '', o.get('school') or '', num(o.get('hits')),
+                               num(o.get('hitr'))]))
             elif role == 'leader':
                 for v in self.members.values():
                     dist = ''
@@ -328,5 +377,6 @@ class Party:
                     out.append('member|' + '|'.join([v.get('name') or '', v.get('zone') or '', num(v.get('x')),
                                num(v.get('y')), num(v.get('z')), v.get('battle', '0'), num(v.get('hp')),
                                v.get('ready', '0'), str(round((now - v['at']) * 1000)), dist, v.get('walk', '0'),
-                               v.get('loading', '0'), v.get('hold') or '']))
+                               v.get('loading', '0'), v.get('hold') or '', v.get('brole') or '', v.get('wiz') or '',
+                               v.get('school') or '', num(v.get('hits')), num(v.get('hitr'))]))
         return out

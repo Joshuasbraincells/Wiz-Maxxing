@@ -149,11 +149,35 @@ in the zone, then on the way it was going). Set each wizard's party name, and on
 each follower the leader PC's name or IP, with Party... (kept in party.ini). The
 leader's PC asks once to let Python through Windows' firewall - allow it on
 Private networks (the home network has to be set to Private). The bots share
-only where each wizard is and what it's doing - nothing one sends makes another
-press or click anything. Still to come: teleport to friend when the leader is
-somewhere a door doesn't lead (the follower waits and says so), and battle roles.
-In a battle with more than one of your wizards, a bot doesn't save the school it
-read for its character (which name plate is its own isn't sure yet).
+where each wizard is and what it's doing, and each one's battle part, its
+wizard's name, school and hits. Nothing one sends makes another press anything:
+a blader's boosts go to the hitter's plate as its own screen shows it, found by
+the name the game's own log gives for its side. Still to come: teleport to
+friend when the leader is somewhere a door doesn't lead (the follower waits and
+says so).
+	- Your own plate in a party battle: found by your wizard's name (learned
+	  from a battle with no other wizard on your side - the game's log; one
+	  such battle first), read off the plates along the bottom.
+	- Battle roles (Settings > PARTY, "...in a party battle this wizard is
+	  the"): Hitter plays as now. Blader puts its blades on the party's hitter
+	  (the wizard set to Hitter - the leader's first -, else the leader), its
+	  traps on the enemy the hitter goes for (the least health), casts them
+	  again after each of the hitter's hits (once that round's out, by the
+	  game's log), Tower Shield on the hitter, and hits only for a kill or with
+	  nothing else to do. Healer heals whichever of you is lowest under 'Heal
+	  under this %' (its plate read like yours), shields them, else boosts as a
+	  blader. Your school's own blade, trap and bubble only go on a hitter of
+	  your school; a support's aura isn't cast. One school's wizard its own
+	  part: <school>.partybattle:2 in PlayerStats.txt. Not sure (the party off,
+	  no hitter on your side heard from in 5 s, its plate not read, dual mode):
+	  it hits, as ever - debug.log says why once a battle.
+	- A heal on an ally that went out without asking who: one whose learned
+	  text says it heals all of you is kept as <school>.healNtarget:2 (still
+	  used for an ally); one that heals only you as :0, not tried on an ally
+	  again (set :2 yourself for a heal picture you cut).
+	- Alt+2 on a plate (a friend's wizard without the bot): the boosts go there
+	  that battle; your own cards are still looked for in your school.
+	- Ice's blades and traps are elemental now (they were taken for spirit).
 
 Report a bug (the dashboard's button, top right, or the tray menu): say what
 went wrong; Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with

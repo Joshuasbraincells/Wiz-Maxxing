@@ -49,7 +49,8 @@ FleeCheck()
 		if (mana != "")
 			FleeNoMana := (mana + 0 < cheapest) ? FleeNoMana + 1 : 0
 		}
-	why := FleeNoCards >= 2 ? "no cards left (the deck's used up)" : FleeNoHits >= 2 ? "no hits left (the deck's used up: " cards " card(s) in hand, none a hit)" : FleeNoMana >= 2 ? "out of mana (" mana ", the cheapest hit costs " cheapest ")" : ""
+	;(no hits left: not a party battle's blader or healer - it's there for its boosts, the hitter hits)
+	why := FleeNoCards >= 2 ? "no cards left (the deck's used up)" : (FleeNoHits >= 2 && !PartySupport()) ? "no hits left (the deck's used up: " cards " card(s) in hand, none a hit)" : FleeNoMana >= 2 ? "out of mana (" mana ", the cheapest hit costs " cheapest ")" : ""
 	if (why = "")
 		return false
 	w := FleeWord()

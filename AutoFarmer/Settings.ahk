@@ -140,6 +140,8 @@ CfgList()
 		, help: "The leader stops while a follower is farther than this (game units), in another zone, loading or not ready."})
 	list.Push({key: "partywaitmax", label: "...but for at most (s, 0 = no waiting)", kind: "num", lo: 0, hi: 900, def: 60
 		, help: "How long the leader waits for one follower; after that it walks on without it till it's been near again."})
+	list.Push({key: "partybattle", label: "...in a party battle this wizard is the", kind: "pick", def: 1, picks: ["Hitter - plays as now", "Blader - boosts the party's hitter", "Healer - heals the party, else boosts"]
+		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. Alt+2 on a plate: the boosts go there (a friend without the bot)."})
 	return list
 	}
 
@@ -151,7 +153,7 @@ CfgSimpleKeys()
 		{
 		keys := {}
 		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "speedhack"
-			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole"]
+			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}
 	return keys

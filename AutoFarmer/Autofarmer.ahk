@@ -246,6 +246,23 @@ global PipsNow := -1
 global BoostRun := 0
 global BossMax := 0
 global DualBattle := 0
+;Party battle roles (Party.ahk PartyBattleRole): this wizard's part this round ("hitter" - plays as ever -, "blader",
+;"healer"); who the boosts go to - its school, wizard's name, slot (hammerX/Y its plate) -, the school of Alt+2's pick;
+;the blade and trap kind for it (SchoolGroup)
+global BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := 0, ManualSchool := "", HammerGroup := ""
+;Your side's name plates this round ({slot: {name, x, y, me}} - EnemySpells.ahk ReadSidePlates, once a round: the round
+;it was read for) and your slot; the healer's ally lowest on health (its plate, %, name; the round read)
+global SidePlates := {}, SidePlatesKey := "", MySlot := 0
+global PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := "", PartyLowKey := ""
+;Your hits (shared: a support's blades on you are spent when it goes up) and the log's round of the last; the hitter's
+;as last seen, in which battle, and the round its new hit goes out in (blades cast again once it's resolved: Party.ahk
+;PartyReblade); your school (shared)
+global PartyHits := 0, PartyHitR := 0, PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyMySchool := ""
+;A support's boosts: the round (the log's) each used flag's cast went out in ({n: round}), the battle that's for, the
+;round this round's cast goes out in (Party.ahk PartyNoteBoosts)
+global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := ""
+;Where traps go this round: on (the boss picked with Alt+1, or a party support's pick) and where
+global TrapOn := 0, TrapAtX := 0, TrapAtY := 0
 LoadStats()
 
 ;Misc Initilization
@@ -643,6 +660,9 @@ global playerX := 0
 global playerY := 0
 global player := 1
 
+;(the game's log read now: a battle's first round names its wizards only as the Pass button comes up - the loop's last
+;read, at most every 500 ms, can be from before; only what's new is read)
+BattleLogRead(true)
 ;(more than one of your wizards in the battle - a party: your plate by your name, EnemySpells.ahk PlayerPlateByName)
 global PlateByName := 0
 if (PlayerPlateByName(pbnX, pbnY))
@@ -674,8 +694,9 @@ global school := ""
 global schoolX := 0
 global schoolY := 0
 
+;(the badge nearest your plate - it's left of your name: a party battle's next plate is ~300 px on, past the box)
 if (player == 1)
-	school := BestBadge(playerX - Px(100), playerY - Px(100), playerX + Px(250), playerY + Px(250), schoolX, schoolY)
+	school := BestBadge(playerX - Px(100), playerY - Px(100), playerX + Px(250), playerY + Px(250), schoolX, schoolY, playerX - Px(45), playerY + Px(15))
 
 ;Checks who's hammer
 TestHammer:
@@ -687,8 +708,13 @@ global hammerY := 0
 global hitterX := 0
 global hitterY := 0
 
-;(the school whose badge matches best: a badge made at another size roughly matches the others too)
-if (Manual != 1)
+;(the school whose badge matches best: a badge made at another size roughly matches the others too) - your own: the
+;cards are looked for in your school's pictures whoever the boosts go to (Alt+2's pick, or a party battle's hitter -
+;after). Your plate found by your name (a party battle): its badge, read by it - the helper's one-badge-a-school answer
+;could be a teammate's of the same school
+if (PlateByName && BadgeNumber(school))
+	hitschool := school, hitterX := schoolX, hitterY := schoolY, hitter := BadgeNumber(school)
+else
 	{
 	hitschool := BestBadge(GameLeft, GameTop + GameH * 3 // 4, GameRight, GameBottom, hitterX, hitterY, playerX, playerY)
 	hitter := BadgeNumber(hitschool)
@@ -700,7 +726,7 @@ hammerY = %hitterY%
 ;No school badge found on the name plates - your plate in another slot can show none (seen with a 1280x1024
 ;window, the left plate): the school this character was seen fighting with before (resources\characters.txt,
 ;by its CharID in the game's log), and your own plate - found by your name - as the hitter's (a solo battle)
-if (hitter = 0) && (Manual != 1) && (player == 1)
+if (hitter = 0) && (player == 1)
 	{
 	knownSchool := StatsSchoolOf(StatsCharID())
 	if (BadgeNumber(knownSchool))
@@ -716,7 +742,7 @@ if (hitter = 0) && (Manual != 1) && (player == 1)
 ;A character the bot has no pictures for (no school icon it knows on the screen, e.g. a new wizard of
 ;another school): leave the round to you rather than passing it, and keep a picture of the round so
 ;that character's name, school icon and cards can be cut from it
-if (hitter = 0) && (Manual != 1)
+if (hitter = 0)
 	{
 	BlockInput, MouseMoveOff
 	savedTo := SaveRoundPicture()
@@ -737,12 +763,21 @@ if (hitter = 0) && (Manual != 1)
 		}
 	Goto, TestRound
 	}
+
+;Who the boosts go to: you - as found above -, the plate picked with Alt+2, or a party battle's hitter (Party.ahk
+;PartyBattleRole: this wizard a blader or healer); its school picks the elemental / spirit blade and trap (SchoolGroup -
+;Ice is elemental)
+HammerSchool := hitschool
+if (Manual = 1)
+	hammerX := ManualX, hammerY := ManualY, HammerSchool := ManualSchool != "" ? ManualSchool : hitschool
+PartyBattleRole()
+HammerGroup := SchoolGroup(HammerSchool)
 	
-if (hitschool = "balance")
+if (HammerGroup = "balance" || HammerGroup = "")
 	{
 	blade2 := 0
 	trap2 := 0
-	} else if (hitter <= 2)
+	} else if (HammerGroup = "elemental")
 	{
 	if Tri("elemental", "blade")
 		{
@@ -750,7 +785,7 @@ if (hitschool = "balance")
 		} else if (Tri("elemental", "trap"))
 			{
 			trap2 := 1
-			} else 
+			} else
 				{
 				blade2 := 0
 				trap2 := 0
@@ -763,19 +798,13 @@ if (hitschool = "balance")
 			} else if (Tri("spirit", "trap"))
 				{
 				trap2 := 1
-				} else 
+				} else
 					{
 					blade2 := 0
 					trap2 := 0
 					}
-		}	
+		}
 
-if (Manual = 1)
-	{
-	hammerX = %ManualX%
-    hammerY = %ManualY%
-	}
-	
 ;Looks at the hand (and again after discarding, since the cards shift)
 if (!RoundAgain)
 	Discards := 0
@@ -856,14 +885,27 @@ if (hitter != 0)
 	Find("heal2", heal2, heal2X, heal2Y, hitschool)
 	}
 
+;(the boosts going to another school's wizard - Alt+2's pick, a party battle's hitter: your school's blade, trap and
+;bubble only boost your school's hits - not cast; a blader's or healer's aura only boosts itself)
+if (HammerSchool != hitschool)
+	blade := 0, trap := 0, bubble := 0
+if (PartySupport())
+	aura := 0
+
 ;How many pips you have (the game doesn't grey out cards you can't afford)
 PipsNow := PipValue()
 DebugLog("  pips=" PipsNow)
-DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant)
+DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant
+	. (PartySupport() ? " | " BattleRole ": the boosts to " HammerName " (" (HammerSchool = "" ? "school not known" : HammerSchool) ")" : ""))
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the
 ;hitter can be an ally)
 if (PlateByName || !PlayerPlates2())
+	{
 	StatsNoteSchool(school)
+	;(and the party's told it: Party.ahk)
+	if (BadgeNumber(school))
+		PartyMySchool := school
+	}
 DebugLog("  cards: hit1-4=" hit1 hit2 hit3 hit4 " wand=" wand " heal1-2=" heal1 heal2 " blade=" blade " blade2=" blade2 " blade3=" blade3 " blade4=" blade4 " sharpen=" sharpen " trap=" trap " trap2=" trap2 " trap3=" trap3 " potent=" potent " feint=" feint " aura=" aura " bubble=" bubble " convert=" convert " tower=" tower " reshuffle=" reshuffle)
 
 ;Cards in hand the bot has no picture for yet: learned (CardLearn.ahk); one that went into a free slot is
@@ -949,7 +991,8 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 			{
 			if (DrawWouldKill() && DrawForKill())
 				FindLethalHit(KillHit, KillEnchant)
-			if (KillHit = "")
+			;(a blader's or healer's pips are for its boosts: no saving them for a hit)
+			if (KillHit = "" && !PartySupport())
 				PlanPips()
 			}
 		}
@@ -976,6 +1019,10 @@ if (hitter != 0) && (!PlayerTookRound) && (playerX != "") && EnemyDanger()
 		Goto, EndRound
 	}
 
+;A party battle's healer (Party.ahk): the ally lowest on health - under healat % and lower than you - healed first
+if (BattleRole = "healer") && ((heal1 == 1) || (heal2 == 1)) && PartyHealAlly()
+	Goto, EndRound
+
 ;Low on health (under healat % of it, PlayerStats.txt): a healing card on yourself before anything else
 if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 	{
@@ -984,6 +1031,10 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 	if (heal2 == 1) && UseHeal("heal2", heal2, hitschool)
 		Goto, EndRound
 	}
+
+;(the healer: Tower Shield on the ally that's low, else on the hitter - Party.ahk PartyShield)
+if (BattleRole = "healer") && PartyShield()
+	Goto, EndRound
 
 ;How it plays its cards (the Settings window: cardlogic, boostmax, use...): hit first - before any boost - when
 ;the card logic says so (Settings.ahk CardHitFirst); boosts only up to boostmax before a hit it can cast
@@ -997,36 +1048,43 @@ if (!BotOn)
 	BlockInput, MouseMoveOff
 	Goto, TestRound
 	}
+;(a blader or healer: no hit first, no boost limit - boosting is what it's for)
 HitsTried := 0
-if CardHitFirst()
+if (!PartySupport()) && CardHitFirst()
 	{
 	HitsTried := 1
 	if CastBestHit()
 		Goto, EndRound
 	}
-BoostOk := CardBoostOk()
+BoostOk := PartySupport() ? 1 : CardBoostOk()
+
+;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
+;PartyTrapTarget); else none
+TrapOn := (BossChoosen == 1), TrapAtX := bossX, TrapAtY := bossY
+if (!TrapOn && PartySupport() && PartyTrapTarget(TrapAtX, TrapAtY))
+	TrapOn := 1
 
 ;Automatic Battle code
-if (feint == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("feint", feint, Used1, Used2, "resources")
+if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("feint", feint, Used1, Used2, "resources")
 	{
 	BoostRun++
 	Goto, EndRound
 	} else if (convert == 1) && (NeedsConvert == 1) && (BossChoosen == 1) && UseConvert("convert", convert, hitschool)
 		{
 		Goto, EndRound
-		} else if (trap == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used3, used4, hitschool)
+		} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used3, used4, hitschool)
 			{
 			BoostRun++
 			Goto, EndRound
-			} else if (trap2 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap(traptype, %traptype%, used5, used6, "resources")
+			} else if (trap2 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(traptype, %traptype%, used5, used6, "resources")
 				{
 				BoostRun++
 				Goto, EndRound
-				} else if (trap3 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap3", trap3, used7, used8, "resources")
+				} else if (trap3 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap3", trap3, used7, used8, "resources")
 					{
 					BoostRun++
 					Goto, EndRound
-					} else if (trap4 == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap("trap4", trap4, used9, used10, "resources")
+					} else if (trap4 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap4", trap4, used9, used10, "resources")
 						{
 						BoostRun++
 						Goto, EndRound
@@ -1057,7 +1115,10 @@ if (feint == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap(
 													AuraRounds := 4
 													BoostRun++
 													}
-												} else if (!HitsTried) && CastBestHit()
+												} else if (BattleRole = "blader") && PartyShield()
+													{
+													Goto, EndRound
+													} else if (!HitsTried) && CastBestHit()
 													{
 													Goto, EndRound
 													} else if (wand == 1) && Stat("usewand") && UseHit("wand", wand, hitschool)
@@ -1069,8 +1130,15 @@ if (feint == 1) && (BossChoosen == 1) && BoostOk && Stat("usetraps") && UseTrap(
 															UseOnSelf("tower", tower, "resources")
 															} else if (reshuffle == 1) && Stat("usereshuffle")
 																{
-																UseOnHammer("reshuffle", reshuffle, "resources")
-																ResetUsed()
+																;(a party battle's blader or healer: on itself - hammerX/Y is the hitter's
+																;plate; its boosts on the hitter are cast again by Party.ahk, not here)
+																if (PartySupport())
+																	UseOnSelf("reshuffle", reshuffle, "resources")
+																else
+																	{
+																	UseOnHammer("reshuffle", reshuffle, "resources")
+																	ResetUsed()
+																	}
 																} else if Click("pass", pass, "resources")
 																	{
 																	Goto, EndRound
@@ -1595,17 +1663,19 @@ UseOnSelf(ByRef title, ByRef card, ByRef dir)
 		}
 	}
 	
-UseOnHammer(ByRef title, ByRef card, ByRef dir) 
+;The card, then the hitter's plate (hammerX, hammerY) - or tx, ty (a party battle's ally). True if the card was in hand
+UseOnHammer(ByRef title, ByRef card, ByRef dir, tx := "", ty := "")
 	{
 	global
 	Find(title, card, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
-	
+
 	if (card == 1)
 		{
 		ClickAt(foundX, foundY, 150)
-		ClickAt(hammerX, hammerY, 150)
+		ClickAt(tx != "" ? tx : hammerX, ty != "" ? ty : hammerY, 150)
 		}
+	return card == 1
 	}
 	
 UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir) 
@@ -1679,7 +1749,7 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 	
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
 	Find("potent", potent, PotentX, PotentY, "resources")
-	if (BossChoosen == 1) && (potent == 1) && (trap == 1) && (Use1 != 1)
+	if (TrapOn == 1) && (potent == 1) && (trap == 1) && (Use1 != 1)
 		{
 		boostX := PotentX
 		ClickAt(potentX, potentY, 150)
@@ -1693,12 +1763,14 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 			ErrorBox("UseTrap", dir, title)
 			}
 		ClickAt(foundX, foundY, 150)
-		ClickAt(bossX, bossY, 200)
+		ClickAt(TrapAtX, TrapAtY, 200)
 		boosts++
 		Use1 := 1
-		AddBoost(BossTraps, title, Stat("potent"))
+		;(the kill check counts the boss's traps - a party support's on another enemy aren't)
+		if (BossChoosen == 1)
+			AddBoost(BossTraps, title, Stat("potent"))
 		return true
-		} else if (BossChoosen == 1) && (trap == 1) && (Use2 != 1)
+		} else if (TrapOn == 1) && (trap == 1) && (Use2 != 1)
 			{
 			n := PicPath(dir "\" title ".png")
 			;If the card can't be found again, click where it was
@@ -1711,10 +1783,11 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 				ErrorBox("UseTrap", dir, title)
 				}
 			ClickAt(foundX, foundY, 150)
-			ClickAt(bossX, bossY, 200)
+			ClickAt(TrapAtX, TrapAtY, 200)
 			boosts++
 			Use2 := 1
-			AddBoost(BossTraps, title, 0)
+			if (BossChoosen == 1)
+				AddBoost(BossTraps, title, 0)
 			return true
 			} else 
 				{
@@ -1797,21 +1870,12 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 				}
 	}	
 	
-;Your own health off your name plate (the red cur/max under your name), read by OCR at two sizes that
-;must agree. True if it's under healat % (PlayerStats.txt, default 40). Logged each round it's read
-;quiet: only read (and logged) - not a heal's question (EnemySpells.ahk's look). Read once a round: a second ask in the same
-;round (within 15 s) uses that reading (OwnHpCur, OwnHpMax, OwnHpVotes)
-OwnHealthLow(quiet := false)
+;A name plate's health - the red cur/max under its name (nx, ny: where the name starts) - read by OCR at four sizes,
+;what at least two of them agree on: {cur, max, votes} ("" not read for sure). Yours (OwnHealthLow), an ally's (Party.ahk)
+PlateHealth(nx, ny)
 	{
-	global
-	local x, y, w, h, t, a, pct, limit, votes, key, n, best, bestN, zoom, gl, cur, most
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
-	if (OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 15000 && OwnHpWin = WinExist("A"))
-		{
-		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
-		Goto, OwnHealthLowRead
-		}
-	x := playerX - Px(8), y := playerY + Px(20), w := Px(110), h := Px(24)
+	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines
+	x := nx - Px(8), y := ny + Px(20), w := Px(110), h := Px(24)
 	;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
 	gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
 	;(the game's digits fool OCR now and then - B for 8, a 3 for an 8 - so it reads at four sizes and
@@ -1819,7 +1883,7 @@ OwnHealthLow(quiet := false)
 	votes := {}, best := "", bestN := 0
 	for each, zoom in [2, 3, 4, 5]
 		{
-		t := OcrRect(x, y, w, h, "en", zoom, ownLines, 1)
+		t := OcrRect(x, y, w, h, "en", zoom, phLines, 1)
 		if (ErrorLevel)
 			continue
 		t := StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(t, "B", "8"), "O", "0"), "o", "0"), "S", "5"), "l", "1"), "I", "1")
@@ -1830,12 +1894,32 @@ OwnHealthLow(quiet := false)
 		if (n > bestN)
 			best := a, bestN := n
 		}
-	if (bestN < 2)
+	if (bestN < 2 || best[1].max <= 0)
+		return ""
+	return {cur: best[1].cur, max: best[1].max, votes: bestN}
+	}
+
+;Your own health off your name plate (the red cur/max under your name), read by OCR at two sizes that
+;must agree. True if it's under healat % (PlayerStats.txt, default 40). Logged each round it's read
+;quiet: only read (and logged) - not a heal's question (EnemySpells.ahk's look). Read once a round: a second ask in the same
+;round (within 15 s) uses that reading (OwnHpCur, OwnHpMax, OwnHpVotes)
+OwnHealthLow(quiet := false)
+	{
+	global
+	local pct, limit, bestN, cur, most, r
+	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	if (OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 15000 && OwnHpWin = WinExist("A"))
+		{
+		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
+		Goto, OwnHealthLowRead
+		}
+	r := PlateHealth(playerX, playerY)
+	if (!IsObject(r))
 		{
 		DebugLog("  own health: couldn't read it for sure")
 		return false
 		}
-	a := best, cur := a[1].cur, most := a[1].max
+	cur := r.cur, most := r.max, bestN := r.votes
 	;(your most health, for the potions out of battle)
 	PotionNoteMax(most)
 	OwnHpCur := cur, OwnHpMax := most, OwnHpAt := A_TickCount, OwnHpVotes := bestN, OwnHpWin := WinExist("A")
@@ -1860,10 +1944,14 @@ OwnHealthLowRead:
 	}
 
 ;A healing card on yourself: the card, then your own name plate (a heal for one wizard asks who; one that
-;heals only you or everyone doesn't, and the extra click does nothing). True if it was cast
-UseHeal(title, ByRef card, dir)
+;heals only you or everyone doesn't, and the extra click does nothing). tx, ty: an ally's plate instead (a party
+;battle's healer) - a heal that went out with the card's click, not asking who: one that heals all of you (its learned
+;text says "all") kept as <school>.healNtarget:2, still used on an ally; one that heals only you :0, not used on an ally
+;again (a heal slot learned afresh asks again: CardLearn.ahk). True if it was cast
+UseHeal(title, ByRef card, dir, tx := "", ty := "")
 	{
 	global
+	local lc, allOf
 	Find(title, card, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
 	if (card != 1)
@@ -1874,7 +1962,24 @@ UseHeal(title, ByRef card, dir)
 		return false
 		}
 	ClickAt(foundX, foundY, 300)
-	ClickAt(playerX, playerY)
+	if (tx = "")
+		ClickAt(playerX, playerY)
+	else if (Stats[dir "." title "target"] = 2)
+		DebugLog("  " title " heals all of you - the ally too")
+	else if (!TargetPending())
+		{
+		lc := IsFunc("LearnCardInSlot") ? Func("LearnCardInSlot").Call(dir "\" title) : ""
+		allOf := IsObject(lc) && RegExMatch(lc.text, "i)\ba[l1][l1]\b")
+		StatsSet([[dir "." title "target", allOf ? 2 : 0]])
+		DebugLog("  " title " went out without asking who - " (allOf ? "it heals all of you: still used on an ally (" dir "." title "target:2)" : "it heals only you: not used on an ally again (" dir "." title "target:0)"))
+		}
+	else
+		{
+		if (!Stats.HasKey(dir "." title "target"))
+			StatsSet([[dir "." title "target", 1]])
+		TargetClick(tx, ty)
+		DebugLog("  " title ": the ally's plate clicked at " tx - GameLeft "," ty - GameTop)
+		}
 	;(a heal: the blades and traps out stay - the kill check still counts them)
 	return CastResult(title, card, dir, 0, false)
 	}
@@ -2046,6 +2151,11 @@ ResetVariables()
 	schoolY := 0
 	bladetype := ""
 	traptype := ""
+	;(a party battle's roles - and Alt+2's pick, for that battle only)
+	BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := 0, HammerGroup := "", SidePlatesKey := "", MySlot := 0
+	PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyLowKey := "", PartyLowX := "", PartyLowY := "", TrapOn := 0
+	PartyFlagDuel := "", PartyFlagRound := {}, PartyCastRound := ""
+	Manual := 0, ManualSchool := ""
 	bossX := 0
 	bossY := 0
 	AppliedBlades := {}
@@ -2431,8 +2541,9 @@ if ((on == 1) && (inbattle == 1))
 			{
 			Manual = 1
 			MouseGetPos, ManualX, ManualY
-			hitschool := BestBadge(ManualX - Px(75), ManualY - Px(75), ManualX + Px(75), ManualY + Px(75), schoolX, schoolY)
-			hitter := BadgeNumber(hitschool)
+			;(its school - the blade and trap kind for it; your own school - the cards looked for - stays yours)
+			ManualSchool := BestBadge(ManualX - Px(75), ManualY - Px(75), ManualX + Px(75), ManualY + Px(75), manualBX, manualBY, ManualX, ManualY)
+			DebugLog("Alt+2: the boosts go to the plate at " ManualX - GameLeft "," ManualY - GameTop " (" (ManualSchool = "" ? "its school not read" : ManualSchool) ") this battle")
 			Gui, 1:Destroy
 			BlockInput, MouseMove
 			CenterMouse()
@@ -2925,6 +3036,13 @@ BadgeNumber(sch)
 	return 0
 	}
 
+;A school's blades and traps: "elemental" (storm, fire, ice), "spirit" (myth, life, death), "balance"; "" not a school
+SchoolGroup(sch)
+	{
+	n := BadgeNumber(sch)
+	return (n = 1 || n = 2 || n = 5) ? "elemental" : (n = 3 || n = 6 || n = 7) ? "spirit" : n = 4 ? "balance" : ""
+	}
+
 ;Did the card just clicked go out? The Pass button has to stay gone for 1 s (it can blink out for a moment while
 ;the hand updates) - looked at every 100 ms; still there 0.7 s after the click = the card didn't cast
 CastWentOut()
@@ -3110,6 +3228,10 @@ DiscardSpare()
 	{
 	global
 	local did := 0
+	;(a party battle's blader or healer casts its blades again after each of the hitter's hits: none is spare - not with
+	;Alt+2's pick, whose hits nothing follows)
+	if (PartySupport() && HammerSlot)
+		return 0
 	;A blade whose sharpened and plain casts have both been used this battle won't stack again
 	if (blade == 1) && (used11 == 1) && (used12 == 1)
 		did += DiscardCard("blade", hitschool)

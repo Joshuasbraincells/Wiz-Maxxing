@@ -1251,7 +1251,11 @@ LearnStats(c)
 		pairs.Push([key "target", c.target])
 		}
 	else if (InStr(name, "heal") = 1 && c.pips != "")
+		{
 		pairs.Push([key "pips", c.pips])
+		;(whether it heals an ally - a party battle's healer finds out: Autofarmer.ahk UseHeal)
+		pairs.Push([key "target", ""])
+		}
 	if (pairs.Length())
 		StatsSet(pairs, LearnStatsNote(c))
 	}

@@ -8,7 +8,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 - [x] Followers walk to the leader, into its battles, through its doors; the leader waits for them (v0.37.0)
 - [ ] Teleport to friend when the leader is somewhere a door doesn't lead (phase 2 - needs friends-list screenshots)
 - [x] Own name plate in a party battle: its name learned from solo battles (the game's log), its plate read by name (v0.38.0)
-- [ ] Battle roles (hitter, healer, blader) so 4 bots don't all hit or all pass
+- [x] Battle roles (hitter, healer, blader) so 4 bots don't all hit or all pass (v0.40.0)
 
 ## 2. Stuck: mitigate completely
 - [ ] Ranked list from the stuck analysis (workflow run wf_60d57f89-04e), then pick routes

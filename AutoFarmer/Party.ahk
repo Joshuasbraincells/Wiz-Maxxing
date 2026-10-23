@@ -7,9 +7,17 @@
 ; name and (a follower) the leader PC's address: the tray menu's Party... (party.ini - not secret: a name, an address).
 ;
 ; The vision helper does the talking (vision\party.py): every half second PartyTick tells it this bot's state (/party)
-; and gets the party back - the leader's place, door and battle spot; the followers'. State only: nothing one bot sends
-; can make another press or click anything. Phase 2 (teleport to friend across zones) and phase 3 (battle roles) aren't
-; in yet: a follower whose leader went where it can't follow waits, and says so.
+; and gets the party back - the leader's place, door and battle spot; the followers'; each one's battle part
+; (partybattle), wizard's name, school and hits. State only: nothing one bot sends can make another press anything -
+; a blader's or healer's boosts go to the party's hitter's plate, found on its own screen by the name the game's log
+; gives for its own side. Phase 2 (teleport to friend across zones) isn't in yet: a follower whose leader went where it
+; can't follow waits, and says so.
+;
+; Battle roles (phase 3 - Settings: partybattle): with more than one wizard on your side, a Blader puts its blades on the
+; hitter (the wizard set to Hitter - the leader's first -, else the leader), its traps on the enemy the hitter goes for,
+; casts them again after each of the hitter's hits, Tower Shield on it, and hits only for a kill or with nothing else to
+; do; a Healer heals the one of you lowest under healat %, shields them, else boosts as a blader. Anything not sure (no
+; party state, the hitter not on your side, its plate not read): this wizard hits, as ever.
 
 ;The party as last heard: the role, the helper's state (off/serving/following/unreachable/error) and why; this wizard
 ;({zone, x, y, z, yaw}); the leader (a follower's view: {name, zone, x, y, z, yaw, battle, hp, ready, walk, age, dist,
@@ -45,21 +53,33 @@ PartyIni(key)
 ;Every half second (a timer - on through battle rounds too): this bot's state to the helper, the party back
 PartyTick()
 	{
+	static schoolAskAt := 0, schoolChar := ""
 	role := PartyRoleSet()
 	if (role = "off" && PartyRole = "off")
 		return
 	if (!VisionOn || !IsFunc("VisionGet"))
 		return
-	hp := (OwnHpPct != "" && A_TickCount - OwnHpAt < 60000) ? OwnHpPct : ""
+	;(your health only as read this battle round - out of battle it's set to 0, before the first read it's blank)
+	hp := (inbattle = 1 && OwnHpAt != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 30000) ? OwnHpPct : ""
+	;(your school for the party: off your plate - else the one this character fought as before, looked for once in 20 s)
+	if (A_TickCount - schoolAskAt > 20000)
+		{
+		schoolAskAt := A_TickCount, psChar := StatsCharID()
+		;(another character logged in: its school)
+		if (PartyMySchool = "" || (psChar != "" && psChar != schoolChar))
+			schoolChar := psChar, PartyMySchool := StatsSchoolOf(psChar)
+		}
 	ready := BotOn && Walking && !PlayerActive && GameActive() && !PotionResting ? 1 : 0
 	q := "/party?role=" role "&name=" NavUri(PartyIni("name")) "&leader=" NavUri(PartyIni("leader"))
 		. "&port=" Stat("partyport") "&battle=" (inbattle = 1 ? 1 : 0) "&hp=" hp "&ready=" ready "&walk=" (Walking ? 1 : 0)
 		. "&bot=" (BotOn ? 1 : 0) "&loading=" (WkLoading ? 1 : 0) "&hold=" NavUri(SubStr(PartyHolding, 1, 80))
+		. "&brole=" PartyBattleSet() "&wiz=" NavUri(OwnName()) "&school=" PartyMySchool "&hits=" (PartyHits ? PartyHits : 0) "&hitr=" (PartyHitR ? PartyHitR : 0)
 	ans := VisionGet(q, 600, true)
 	PartyAskAt := A_TickCount
 	if (ans = "")
 		{
-		PartyState := "error", PartyWhy := "the vision helper didn't answer"
+		;(nothing heard: the party as last heard isn't kept - a support would go on boosting a hitter not heard from)
+		PartyState := "error", PartyWhy := "the vision helper didn't answer", PartyLeader := "", PartyMembers := []
 		return
 		}
 	members := []
@@ -78,14 +98,307 @@ PartyTick()
 		else if (f[1] = "leader")
 			leader := {name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
 				, walk: f[11], age: f[12], dist: f[13], dzone: f[14], dx: f[15], dy: f[16], dz: f[17], ddx: f[18], ddy: f[19]
-				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24]}
+				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]}
 		else if (f[1] = "member")
 			members.Push({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
-				, dist: f[11], walk: f[12], loading: f[13], hold: f[14]})
+				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]})
 		}
 	PartyLeader := leader, PartyMembers := members
 	if (IsFunc("DashSee"))
 		Func("DashSee").Call("party", PartyText())
+	}
+
+;---- Battle roles ----
+
+;This wizard's part in a party battle (Settings: partybattle - <school>.partybattle for one school's wizard): "hitter",
+;"blader" or "healer"
+PartyBattleSet()
+	{
+	k := (PartyMySchool != "" && Stats.HasKey(PartyMySchool ".partybattle")) ? PartyMySchool ".partybattle" : "partybattle"
+	r := Stats.HasKey(k) ? Stats[k] : 1
+	return r = 2 ? "blader" : r = 3 ? "healer" : "hitter"
+	}
+
+;A blader or healer this round: its boosts go to the party's hitter (PartyBattleRole)
+PartySupport()
+	{
+	return BattleRole = "blader" || BattleRole = "healer"
+	}
+
+;A name as the plates and the log are matched by: its letters, in capitals (AutoQuester's WalkLetters)
+PartyKey(name)
+	{
+	if (IsFunc("WalkLetters"))
+		return Func("WalkLetters").Call(name)
+	StringUpper, name, name
+	return RegExReplace(name, "[^A-Z]")
+	}
+
+;This round's part (RoundStart, once the hitter's found): a party battle - more than one wizard on your side (the game's
+;log), not dual mode - with this wizard set to Blader or Healer (partybattle) and the party's hitter on your side, its
+;plate read: BattleRole that, the boosts to the hitter (hammerX/Y its plate, HammerSchool, HammerName). Else "hitter": as
+;ever, each time it's not sure (logged once a battle). Alt+2's pick (Manual) is the hitter: a friend without the bot too
+PartyBattleRole()
+	{
+	global
+	local want, h, p, bx, by
+	BattleRole := "hitter", HammerName := "", HammerSlot := 0
+	want := PartyBattleSet()
+	if (want = "hitter" || DualBattle = 1 || BattleTeam() < 2)
+		return
+	if (Manual = 1)
+		{
+		BattleRole := want, HammerName := "the plate picked with Alt+2"
+		return
+		}
+	if (PartyRoleSet() = "off")
+		return PartyRoleNote("this wizard's a " want ", but the party's off (Settings, PARTY) - it hits")
+	h := PartyHitter()
+	if (!IsObject(h))
+		return PartyRoleNote("this wizard's a " want ", but no party hitter is on your side of this battle (heard from in the last 5 s, its wizard's name known) - it hits")
+	ReadSidePlates()
+	p := SidePlates[h.slot]
+	if (!IsObject(p))
+		return PartyRoleNote(h.wiz "'s name plate wasn't read this round - this wizard hits")
+	hammerX := p.x + Px(25), hammerY := p.y + Px(8)
+	;(its school: as it says, else its plate's badge - left of its name)
+	HammerSchool := BadgeNumber(h.school) ? h.school : BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), bx, by, p.x - Px(45), p.y + Px(15))
+	BattleRole := want, HammerName := h.wiz, HammerSlot := h.slot
+	PartyNoteBoosts()
+	PartyReblade(h)
+	}
+
+;The party's hitter in this battle, from the party's state - the leader's and the followers' (heard from in the last 5 s,
+;in battle, its wizard's name one of your side's in the game's log, not yours, no two of your side so named): the one set
+;to Hitter - the leader first, else the first by name, so every support picks the same -, else the leader.
+;{wiz, school, hits, hitr, slot} or "". MySlot: your slot (by your name in the log)
+PartyHitter()
+	{
+	phSlots := {}, phTwice := {}, MySlot := 0
+	phMe := PartyKey(OwnName())
+	Loop, 4
+		{
+		phS := A_Index + 3
+		if (!IsObject(BlNames) || !BlNames.HasKey(phS))
+			continue
+		phK := PartyKey(BlNames[phS])
+		if (phSlots.HasKey(phK))
+			phTwice[phK] := 1
+		phSlots[phK] := phS
+		if (phK != "" && phK = phMe)
+			MySlot := phS
+		}
+	phAll := []
+	if (IsObject(PartyLeader))
+		phAll.Push({m: PartyLeader, lead: 1})
+	if (IsObject(PartyMembers))
+		for each, phM in PartyMembers
+			phAll.Push({m: phM, lead: 0})
+	phLead := "", phBest := "", phBestK := ""
+	for each, phC in phAll
+		{
+		phM := phC.m, phK := PartyKey(phM.wiz)
+		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.HasKey(phK) || phTwice.HasKey(phK))
+			continue
+		phW := {wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK]}
+		if (phC.lead)
+			phLead := phW
+		if (phM.brole = "hitter" && (phC.lead || (!IsObject(phBest) || (phBestK != "lead" && phK < phBestK))))
+			phBest := phW, phBestK := phC.lead ? "lead" : phK
+		}
+	return IsObject(phBest) ? phBest : phLead
+	}
+
+;A blader's or healer's boosts cast last round: each used flag (used0-20: UseBlade, UseTrap, PartyShield) newly set since
+;the last look went out in the round noted then - the game's log's (PartyCastRound). Called at each round's start
+PartyNoteBoosts()
+	{
+	global
+	local n
+	if (PartyFlagDuel != BlDuel || !IsObject(PartyFlagRound))
+		PartyFlagDuel := BlDuel, PartyFlagRound := {}, PartyCastRound := ""
+	Loop, 21
+		{
+		n := A_Index - 1
+		if (used%n% = 1)
+			{
+			if (!PartyFlagRound.HasKey(n))
+				PartyFlagRound[n] := PartyCastRound != "" ? PartyCastRound : 0
+			}
+		else
+			PartyFlagRound.Delete(n)
+		}
+	;(this round's cast goes out in the log's next round)
+	PartyCastRound := (BlRound ? BlRound : 0) + 1
+	}
+
+;A blader's or healer's boosts on the hitter are spent when it hits: its hits (shared) went up since last seen - once the
+;round that hit goes out in is in the game's log, each of ours that went out before it (an earlier round, or that round
+;before its hit in the log) is cast again - its used flag cleared; one after its hit is still on it. The first look in a
+;battle only notes the count
+PartyReblade(h)
+	{
+	global
+	local ours, theirs, i, c, wait, n, at, spent, kept
+	if (h.hits = "")
+		return
+	if (PartyHitsDuel != BlDuel)
+		{
+		PartyHitsDuel := BlDuel, PartyHitsSeen := h.hits, PartyHitsWait := ""
+		return
+		}
+	if (h.hits != PartyHitsSeen)
+		{
+		;(the round its hit goes out in - its log's; not said: the next one here)
+		wait := (h.hitr > 0) ? h.hitr : (BlRound ? BlRound : 0) + 1
+		PartyHitsSeen := h.hits, PartyHitsWait := wait
+		}
+	if (PartyHitsWait = "")
+		return
+	BattleLogRead(true)
+	if ((BlRound ? BlRound : 0) < PartyHitsWait)
+		return
+	ours := 0, theirs := 0
+	for i, c in BlCasts
+		if (c.round = PartyHitsWait && c.spell != "None")
+			{
+			if (MySlot && c.slot = MySlot)
+				ours := i
+			if (c.slot = h.slot)
+				theirs := i
+			}
+	spent := 0, kept := 0
+	Loop, 21
+		{
+		n := A_Index - 1
+		if (used%n% != 1)
+			continue
+		at := (IsObject(PartyFlagRound) && PartyFlagRound.HasKey(n)) ? PartyFlagRound[n] : 0
+		if (at > PartyHitsWait || (at = PartyHitsWait && ours && theirs && ours > theirs))
+			kept += 1
+		else
+			{
+			used%n% := 0, spent += 1
+			if (IsObject(PartyFlagRound))
+				PartyFlagRound.Delete(n)
+			}
+		}
+	DebugLog("  " h.wiz " hit (" h.hits " hits so far, round " PartyHitsWait "): " spent " of our boosts on it spent - cast again" (kept ? "; " kept " still on it (cast after its hit)" : ""))
+	PartyHitsWait := ""
+	}
+
+;The ally on your side lowest on health this round (the healer): each of your side's plates but yours read (Autofarmer.ahk
+;PlateHealth - a low reading only with 3 of its 4 reads agreeing, as for your own). PartyLowX/Y: its plate (the name),
+;PartyLowPct, PartyLowName ("" none read). Read once a round. True if one was read
+PartyLowest()
+	{
+	global
+	local i, p, r, pct, limit, key
+	key := BlDuel "|" roundnumber
+	if (PartyLowKey = key)
+		return PartyLowName != ""
+	PartyLowKey := key, PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := ""
+	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	ReadSidePlates()
+	for i, p in SidePlates
+		{
+		if (p.me)
+			continue
+		r := PlateHealth(p.x, p.y)
+		if (!IsObject(r))
+			{
+			DebugLog("  " p.name "'s health: not read for sure")
+			continue
+			}
+		pct := Round(100 * r.cur / r.max)
+		if (pct < limit && r.votes < 3)
+			{
+			DebugLog("  " p.name "'s health: read " r.cur "/" r.max " only " r.votes " times out of 4 - not sure enough to heal")
+			continue
+			}
+		DebugLog("  " p.name "'s health: " r.cur "/" r.max " (" pct "%)")
+		if (pct < PartyLowPct)
+			PartyLowPct := pct, PartyLowName := p.name, PartyLowX := p.x + Px(25), PartyLowY := p.y + Px(8)
+		}
+	return PartyLowName != ""
+	}
+
+;The healer: the ally lowest on health (PartyLowest) under healat % and lower than you - a heal for one wizard on it, or
+;one that heals all of you (heal1, then heal2; not one known to heal only you: <school>.healNtarget:0; :2 heals all of
+;you). True if one went out
+PartyHealAlly()
+	{
+	global
+	local limit, hcard, each
+	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	if (!PartyLowest() || PartyLowPct >= limit)
+		return false
+	;(you lower - a reading your own heal acts on, 3 of its 4 reads agreeing: your own heal, next)
+	if (OwnHpRound != roundnumber && playerX != "")
+		OwnHealthLow(true)
+	if (OwnHpRound = roundnumber && OwnHpPct != "" && OwnHpPct <= PartyLowPct && OwnHpVotes >= 3)
+		return false
+	DebugLog("  healer: " PartyLowName " at " PartyLowPct "% (under " limit "%) - a heal on " PartyLowName)
+	for each, hcard in ["heal1", "heal2"]
+		{
+		if (%hcard% != 1 || (Stats.HasKey(hitschool "." hcard "target") && Stats[hitschool "." hcard "target"] = 0))
+			continue
+		if UseHeal(hcard, %hcard%, hitschool, PartyLowX, PartyLowY)
+			return true
+		}
+	DebugLog("  healer: no heal in hand that goes on an ally")
+	return false
+	}
+
+;Tower Shield (resources\tower, usetower on) for the party: the healer's on the ally lowest on health while under twice
+;healat %, else - and the blader's - on the hitter; once till the hitter's next hit (used19). True if it went out
+PartyShield()
+	{
+	global
+	local limit, tx, ty, who
+	if (tower != 1 || !Stat("usetower") || used19 = 1)
+		return false
+	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	if (BattleRole = "healer" && PartyLowest() && PartyLowPct < 2 * limit)
+		tx := PartyLowX, ty := PartyLowY, who := PartyLowName " (" PartyLowPct "%)"
+	else
+		tx := hammerX, ty := hammerY, who := HammerName
+	DebugLog("  " BattleRole ": Tower Shield on " who)
+	if (UseOnHammer("tower", tower, "resources", tx, ty) && CastWentOut())
+		{
+		used19 := 1
+		if (IsFunc("DashCast"))
+			Func("DashCast").Call("tower")
+		return true
+		}
+	return false
+	}
+
+;Where a blader's or healer's traps go (no boss picked with Alt+1): the enemy the hitter goes for - the one with the
+;least health, as its hits pick (Autofarmer.ahk HitTarget); the enemies' plates as read in the last 8 s, else now
+;(KillCalc.ahk ReadEnemyHealth). False: none read - no traps (nowhere sure to put them)
+PartyTrapTarget(ByRef x, ByRef y)
+	{
+	if (A_TickCount - EnemyPlatesAt > 8000)
+		ReadEnemyHealth()
+	if (!IsObject(EnemyPlates) || !EnemyPlates.Length() || !IsObject(EnemyHP) || EnemyHP.Length() != EnemyPlates.Length())
+		return false
+	ptPick := 1
+	for ptI, ptE in EnemyHP
+		if (ptE.cur < EnemyHP[ptPick].cur)
+			ptPick := ptI
+	x := EnemyPlates[ptPick].x, y := EnemyPlates[ptPick].y
+	return true
+	}
+
+;Why this wizard hits after all (a blader or healer that isn't sure): in debug.log once a battle
+PartyRoleNote(why)
+	{
+	static saidDuel := "", saidWhy := ""
+	if (saidDuel = BlDuel && saidWhy = why)
+		return
+	saidDuel := BlDuel, saidWhy := why
+	DebugLog("  party battle: " why)
 	}
 
 ;The party in a line (the dashboard)

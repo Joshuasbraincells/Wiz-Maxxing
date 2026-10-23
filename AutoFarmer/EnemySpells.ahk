@@ -18,8 +18,8 @@
 ;when it was last read
 global BlPos, BlHead, BlDuel, BlNames, BlSub, BlCasts, BlRound, BlReadAt
 ;Your own wizard's name: the one wizard on your side of a battle with no other (learned this run - party.ini [me] keeps
-;the last for the next)
-global BlMe
+;the last for the next), and the character it's for (the game's log's CharID - another character logged in: not its)
+global BlMe, BlMeChar
 ;Your own health as last read (OwnHealthLow): now, most, when, how many of its 4 reads agreed
 global OwnHpCur, OwnHpMax, OwnHpAt, OwnHpVotes, OwnHpWin
 ;This round's prediction (EnemyDanger): the chance their hits kill the wizard (0-1, "" unknown), for the round
@@ -89,8 +89,9 @@ BattleLogLine(blLine)
 					blN += 1, blOne := BlNames[A_Index + 3]
 			if (blN = 1 && blOne != "" && blOne != BlMe)
 				{
-				BlMe := blOne
+				BlMe := blOne, BlMeChar := StatsCharID()
 				IniWrite, %blOne%, %A_ScriptDir%\party.ini, me, name
+				IniWrite, %BlMeChar%, %A_ScriptDir%\party.ini, me, char
 				DebugLog("Battle log: this wizard is " blOne " (the only one on your side)")
 				}
 			}
@@ -136,46 +137,135 @@ BattleTeam()
 	}
 
 ;Your own wizard's name: learned from a battle with no other wizard on your side (this run, else the last one kept in
-;party.ini), else the party name typed in (Party...); "" none
+;party.ini) - for the character logged in now -, else the party name typed in (Party...); "" none
 OwnName()
 	{
-	if (BlMe != "")
+	cid := StatsCharID()
+	if (BlMe != "" && (BlMeChar = "" || cid = "" || BlMeChar = cid))
 		return BlMe
 	IniRead, n, %A_ScriptDir%\party.ini, me, name, %A_Space%
-	if (Trim(n) = "")
+	IniRead, nChar, %A_ScriptDir%\party.ini, me, char, %A_Space%
+	if (Trim(n) = "" || (nChar != "" && cid != "" && nChar != cid))
 		IniRead, n, %A_ScriptDir%\party.ini, party, name, %A_Space%
 	return Trim(n)
 	}
 
 ;Your plate when more than one wizard is on your side: the name pictures (player.png...) would find whichever of your
-;wizards' plates comes first - so the plates' names along the bottom are read (OCR) and yours (OwnName) picked. x, y:
-;where its name starts (as the name picture's match would be). False: not a team battle, no name known, or not read
+;wizards' plates comes first - so your side's plates are read (ReadSidePlates) and yours (OwnName) picked. x, y: where
+;its name starts (as the name picture's match would be). False: not a team battle, no name known, or not read
 PlayerPlateByName(ByRef x, ByRef y)
 	{
-	if (BattleTeam() < 2)
+	if (BattleTeam() < 2 || OwnName() = "")
 		return false
-	ppMe := OwnName()
-	if (ppMe = "" || !IsFunc("WalkLetters"))
-		return false
-	ppKey := Func("WalkLetters").Call(ppMe)
-	if (StrLen(ppKey) < 3)
-		return false
-	ppT := OcrRect(GameLeft, Round(GameTop + GameH * 0.8), GameW, Round(GameH * 0.2), "en", 2, ppLines)
-	if (ErrorLevel || !IsObject(ppLines))
-		return false
-	for each, ppLine in ppLines
-		for each, ppW in ppLine.words
+	ReadSidePlates()
+	for ppSlot, ppP in SidePlates
+		if (ppP.me)
 			{
-			ppWk := Func("WalkLetters").Call(ppW.text)
-			if (StrLen(ppWk) >= 3 && (ppWk = ppKey || (IsFunc("WalkNameLike") && Func("WalkNameLike").Call(ppWk, ppKey))))
+			x := ppP.x, y := ppP.y
+			DebugLog("  your plate by its name (" ppP.name ", a battle with " BattleTeam() " of you) at " x - GameLeft "," y - GameTop)
+			return true
+			}
+	DebugLog("  " OwnName() "'s plate not read among " BattleTeam() " wizards on your side - the name pictures instead")
+	return false
+	}
+
+;Your side's name plates (a battle with more than one wizard on it): one OCR of the screen's bottom fifth, and each name
+;the game's log gives for slots 4-7 found among its words - a plate's capitals first (the chat's "Joshua" mustn't take
+;its place), then any word in the plates' row; each time the same letters (the whole name or its first word), then alike
+;(WalkNameLike), then the nearest capitals in the row with half its first word's letters right (they read badly now and
+;then: JOSHUA as "JOSWA"). Each word one name's at most ("JOSH" mustn't take JOSHUA's plate); a name's first word before
+;its others (x, y: where the name starts). SidePlates: {slot: {name, x, y, me}} - me: yours (OwnName). MySlot: your slot
+;(0 not found). Read once a round. How many were found
+ReadSidePlates()
+	{
+	rsKey := BlDuel "|" roundnumber "|" BattleTeam()
+	if (rsKey = SidePlatesKey && IsObject(SidePlates))
+		return SidePlates.Count()
+	SidePlatesKey := rsKey, SidePlates := {}, MySlot := 0
+	if (BattleTeam() < 2 || !IsFunc("WalkLetters"))
+		return 0
+	rsT := OcrRect(GameLeft, Round(GameTop + GameH * 0.8), GameW, Round(GameH * 0.2), "en", 2, rsLines)
+	if (ErrorLevel || !IsObject(rsLines))
+		return 0
+	rsWords := []
+	for each, rsLine in rsLines
+		for each, rsW in rsLine.words
+			{
+			rsK := Func("WalkLetters").Call(rsW.text)
+			if (StrLen(rsK) >= 3)
+				rsWords.Push({k: rsK, x: rsW.x, y: rsW.y, caps: StrLen(RegExReplace(rsW.text, "[^A-Z]")) >= StrLen(RegExReplace(rsW.text, "[^a-z]")), used: 0})
+			}
+	rsMe := Func("WalkLetters").Call(OwnName())
+	rsLike := IsFunc("WalkNameLike") && IsFunc("WalkEditDist")
+	;(round 1: capitals only - the row the plates are in comes from the first found; round 2: any word, in that row.
+	;Pass 1 the same letters, 2 alike, 3 - capitals in the row only - half the first word's letters)
+	rsRowY := ""
+	Loop, 2
+		{
+		rsRound := A_Index
+		Loop, 3
+			{
+			rsPass := A_Index
+			if ((rsRound = 2 && rsPass = 3) || (rsPass > 1 && !rsLike))
+				continue
+			Loop, 4
 				{
-				x := ppW.x, y := ppW.y
-				DebugLog("  your plate by its name (" ppMe ", a battle with " BattleTeam() " of you) at " x - GameLeft "," y - GameTop)
-				return true
+				rsSlot := A_Index + 3
+				if (!IsObject(BlNames) || !BlNames.HasKey(rsSlot) || SidePlates.HasKey(rsSlot))
+					continue
+				rsName := Func("WalkLetters").Call(BlNames[rsSlot]), rsFirst := Func("WalkLetters").Call(StrSplit(Trim(BlNames[rsSlot]), " ")[1])
+				if (StrLen(rsName) < 3 || (rsPass = 3 && StrLen(rsFirst) < 4))
+					continue
+				rsBest := 0, rsBestScore := ""
+				for rsI, rsW in rsWords
+					{
+					if (rsW.used || ((rsRound = 1 || rsPass = 3) && !rsW.caps) || ((rsRound = 2 || rsPass = 3) && rsRowY != "" && Abs(rsW.y - rsRowY) > Px(12)))
+						continue
+					if (rsPass = 1)
+						rsD := (rsW.k = rsName || rsW.k = rsFirst) ? 0 : ""
+					else if (rsPass = 2)
+						rsD := (Func("WalkNameLike").Call(rsW.k, rsName) || Func("WalkNameLike").Call(rsW.k, rsFirst)) ? Min(Func("WalkEditDist").Call(rsW.k, rsName), Func("WalkEditDist").Call(rsW.k, rsFirst)) : ""
+					else
+						{
+						rsD := Func("WalkEditDist").Call(rsW.k, rsFirst)
+						rsD := (rsD <= StrLen(rsFirst) // 2) ? rsD : ""
+						}
+					if (rsD = "")
+						continue
+					;(where the name starts - its first word - before its others; lower on the screen the nearer the plates)
+					rsScore := ((rsW.k = rsFirst || InStr(rsName, rsW.k) = 1) ? 0 : 500) + rsD * 10 - rsW.y / 10000
+					if (rsBestScore = "" || rsScore < rsBestScore)
+						rsBest := rsI, rsBestScore := rsScore
+					}
+				;(a later word of the name found - its first misread: the word just left of it in the same line is where the
+				;name starts)
+				if (rsBest && rsWords[rsBest].k != rsFirst && InStr(rsName, rsWords[rsBest].k) != 1)
+					{
+					rsLeft := 0
+					for rsI, rsW in rsWords
+						if (!rsW.used && rsI != rsBest && Abs(rsW.y - rsWords[rsBest].y) <= Px(6) && rsW.x < rsWords[rsBest].x && rsWords[rsBest].x - rsW.x < Px(220)
+							&& (!rsLeft || rsW.x > rsWords[rsLeft].x))
+							rsLeft := rsI
+					if (rsLeft)
+						rsWords[rsBest].used := 1, rsBest := rsLeft
+					}
+				if (rsBest)
+					{
+					rsWords[rsBest].used := 1
+					SidePlates[rsSlot] := {name: BlNames[rsSlot], x: rsWords[rsBest].x, y: rsWords[rsBest].y, me: rsName = rsMe}
+					if (rsName = rsMe)
+						MySlot := rsSlot
+					if (rsWords[rsBest].caps && rsRowY = "")
+						rsRowY := rsWords[rsBest].y
+					}
 				}
 			}
-	DebugLog("  " ppMe "'s plate not read among " BattleTeam() " wizards on your side - the name pictures instead")
-	return false
+		}
+	rsSaid := ""
+	for rsSlot, rsP in SidePlates
+		rsSaid .= (rsSaid = "" ? "" : ", ") rsP.name (rsP.me ? " (you)" : "") " at " rsP.x - GameLeft "," rsP.y - GameTop
+	DebugLog("  your side's plates: " (rsSaid = "" ? "none read" : rsSaid) " (" BattleTeam() " wizards in the log)")
+	return SidePlates.Count()
 	}
 
 ;This round's odds - the enemies' likely spells and the chance their hits kill the wizard: logged, on the dashboard

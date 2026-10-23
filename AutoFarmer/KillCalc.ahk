@@ -105,12 +105,15 @@ BladeOnUs(card)
 	}
 
 ;A hit uses up the hammer's blades and the boss's traps. With reboost:1 the battle code may also cast
-;its blades/traps again for the next hit (normally each is cast once per battle)
+;its blades/traps again for the next hit (normally each is cast once per battle). The hits counted, and the round of the
+;last (the game's log): a party's bladers and healers see them - their blades on this wizard are spent (Party.ahk); a
+;blader's or healer's own blades went on the hitter: cast again after the hitter's hit, not its own
 ConsumeBoosts()
 	{
 	AppliedBlades := {}
 	BossTraps := {}
-	if (Stat("reboost") == 1)
+	PartyHits := (PartyHits ? PartyHits : 0) + 1, PartyHitR := (BlRound ? BlRound : 0) + 1
+	if (Stat("reboost") == 1 && !PartySupport())
 		ResetUsed()
 	}
 
