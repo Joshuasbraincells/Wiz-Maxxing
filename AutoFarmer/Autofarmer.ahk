@@ -527,7 +527,8 @@ loop,
 		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
 		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
 		pmSize := GameW "x" GameH
-		if (PicMeasuredSize != pmSize)
+		;(not on a hovered Pass - the yellow one's picture tells the size: the next round, the mouse moved off it)
+		if (PicMeasuredSize != pmSize && !PassHover)
 			{
 			;(the Pass button just found is a cut picture - it only matches nearly pixel for pixel, *3: that's the size.
 			;A made one is mostly see-through and matches at a size a little off too)
@@ -663,6 +664,9 @@ BlockInput, MouseMove
 if (PassHover)
 	{
 	MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
+	;(and the mouse's way back - mousereturn - there too, not onto Pass: the next round would come up hovered again)
+	if (MouseHomeSet && MouseOnGame(MouseHomeX, MouseHomeY))
+		MouseHomeX := ScreenX, MouseHomeY := GameTop + Round(GameH * 0.4)
 	if (A_TickCount - PassHoverSaidAt > 300000)
 		PassHoverSaidAt := A_TickCount, DebugLog("  the Pass button was drawn hovered (the mouse on it) - the mouse moved onto the scene (said once in 5 minutes)")
 	}
@@ -783,8 +787,7 @@ if (hitter = 0)
 		{
 		Sleep, 500
 		UpdateGameRect()
-		ImageSearch, unknownX, unknownY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
-		if (ErrorLevel != 0 || A_TickCount - unknownFrom > 180000)
+		if (PassButtonAt(unknownX, unknownY) != 0 || A_TickCount - unknownFrom > 180000)
 			break
 		}
 	Goto, TestRound
@@ -2098,9 +2101,15 @@ PassButtonAt(ByRef x, ByRef y)
 	pbErr := ErrorLevel, PassHover := 0
 	if (pbErr = 1)
 		{
-		ImageSearch, x, y, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart_hover.png")
-		if (ErrorLevel = 0)
-			pbErr := 0, PassHover := 1
+		;(the main set - UI 1 - has none of its own: one made from the 1.144 cut, in a folder that isn't a picture set)
+		hp := (PicDir = A_WorkingDir && !FileExist(A_WorkingDir "\resources\roundstart_hover.png"))
+			? PicMake("resources\roundstart_hover.png", {dir: GenRoot "\main", scale: 1.0}) : PicPath("resources\roundstart_hover.png")
+		if (hp != "")
+			{
+			ImageSearch, x, y, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(hp)
+			if (ErrorLevel = 0)
+				pbErr := 0, PassHover := 1
+			}
 		}
 	ErrorLevel := pbErr
 	return pbErr
