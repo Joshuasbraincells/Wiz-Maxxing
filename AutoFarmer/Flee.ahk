@@ -23,7 +23,7 @@ global FleeHitsRound
 FleeCheck()
 	{
 	global
-	local cards, g, mana, cheapest, why, w
+	local cards, g, mana, cheapest, why, w, fx, fy, fled
 	if (!Stat("fleeon") || LearnAll || Manual == 1)
 		return false
 	;(blank till now: made numbers - in an expression "" + 1 is "" in AHK v1, and so is a blank "+= 0" chained with a
@@ -61,6 +61,25 @@ FleeCheck()
 		}
 	DebugLog("  fleeing: " why " - Flee at " Round(w.x + w.w / 2) - GameLeft "," Round(w.y + w.h / 2) - GameTop " - to try again")
 	ClickAt(Round(w.x + w.w / 2), Round(w.y + w.h / 2), 300)
+	;(did it take? The round's Pass button goes with it. Not: once more, the mouse brought up from below the buttons -
+	;on its way across, a card in hand zooms up under the mouse and can cover the button. Still not: the round goes on,
+	;and the next tries again - the counts kept)
+	if (!CastWentOut())
+		{
+		fx := Round(w.x + w.w / 2), fy := Round(w.y + w.h / 2)
+		MouseMove, %fx%, % fy + Px(70), MouseSpeedNow()
+		Sleep, 150
+		MouseMove, %fx%, %fy%, MouseSpeedNow()
+		Sleep, 80
+		Click
+		fled := CastWentOut()
+		DebugLog("  the Flee click didn't take - clicked it again from below: " (fled ? "fled" : "still in the battle - the round goes on"))
+		if (!fled)
+			{
+			CenterMouse()
+			return false
+			}
+		}
 	;(out of mana as well: a potion after it, whatever else it fled for)
 	FleeWhy := (InStr(why, "mana") || FleeNoMana >= 2) ? "mana" : "cards", FleeNoCards := 0, FleeNoMana := 0, FleeNoHits := 0
 	TrayTip, Wizard101 bot, % "Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), 8, 1

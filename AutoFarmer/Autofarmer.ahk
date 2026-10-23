@@ -240,6 +240,9 @@ global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStal
 global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 ;When the spellbook (out of battle only) was last seen - the walker's "no battle on" (BotNoBattle)
 global BookSeenAt := 0
+;When a battle round's Pass button was last seen, when the mouse was last moved onto the scene for one that wasn't, and
+;how many times since (a button shown as hovered: see the main loop)
+global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 ;Boost cards cast since the last hit (Settings.ahk CardBoostOk: boostmax)
@@ -514,6 +517,7 @@ loop,
 		}
 	If (startErr = 0)
 		{
+		PassSeenAt := A_TickCount, PassNudges := 0
 		;(a battle: the game at normal speed - Cheat Engine's speedhack, if walking had it on)
 		SpeedSet(0, "a battle round", true)
 		;(gamefront: the game in front for its cards - a first click on a window behind only brings it forward)
@@ -589,6 +593,18 @@ loop,
 		LastSetTry := A_TickCount
 		if (DetectPicSet(true) || DetectUiScale())
 			continue
+		}
+	;In a battle (no spellbook since one) and no round seen for 15 s: Wizard101 draws a button as hovered - white, not
+	;yellow - when the mouse last left the game from it (a jump to another monitor never crosses the game), and the Pass
+	;button isn't known by its picture then (2026-10-23 06:35: a whole battle left to auto-pass). You away, the game in
+	;front: the mouse moved onto the scene - every 15 s, said the first time and then every 4th
+	if (!bookSeen && inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000 && A_TickCount - PassNudgeAt > 15000
+		&& GameActive() && A_TimeIdlePhysical > 5000)
+		{
+		PassNudgeAt := A_TickCount, PassNudges += 1
+		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
+		if (Mod(PassNudges, 4) = 1)
+			DebugLog("In a battle, no round seen for " Round((A_TickCount - PassSeenAt) / 1000) " s - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known)")
 		}
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).

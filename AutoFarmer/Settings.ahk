@@ -506,9 +506,22 @@ MouseLetGo()
 	if (A_TimeIdlePhysical < A_TickCount - MouseHomeAt)
 		return -1
 	MouseGetPos, mouseNowX, mouseNowY
+	;(on the game, going off it: over the scene first - Wizard101 keeps showing the button the mouse last left it from
+	;as hovered (Pass: white, and the next round's Pass isn't known by its picture)
+	if ((mouseNowX != MouseHomeX || mouseNowY != MouseHomeY) && MouseOnGame(mouseNowX, mouseNowY) && !MouseOnGame(MouseHomeX, MouseHomeY))
+		{
+		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
+		Sleep, 60
+		}
 	if (mouseNowX != MouseHomeX || mouseNowY != MouseHomeY)
 		MouseMove, MouseHomeX, MouseHomeY, 0
 	return 1
+	}
+
+;Whether screen point x, y is on the game's picture (GameLeft.. - its client area)
+MouseOnGame(x, y)
+	{
+	return x >= GameLeft && x < GameLeft + GameW && y >= GameTop && y < GameTop + GameH
 	}
 
 ;---- How it plays its cards ----
