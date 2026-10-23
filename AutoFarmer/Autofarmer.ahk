@@ -2040,7 +2040,8 @@ HitTarget(title, dir, force := 0)
 		}
 	;(the game asking for a target a moment after the card's clicked: then the plate hovered, then clicked)
 	AfterClick(600)
-	TargetClick(tx, ty)
+	if (!TargetClick(tx, ty))
+		return
 	DebugLog("  " title ": clicked " pick " as the target at " tx - GameLeft "," ty - GameTop)
 	;(a click on a nameplate doesn't always take: the round's still waiting - its Pass button there - 0.8 s later:
 	;once more, on the plate's health line just under the name)
@@ -2060,7 +2061,7 @@ TargetClick(x, y)
 	if (x < GameLeft + Px(185) && y < GameTop + Px(110))
 		{
 		DebugLog("  a target click at " x - GameLeft "," y - GameTop " is in the Crown shop's corner - not clicked")
-		return
+		return 0
 		}
 	ownGrab := MouseGrab()
 	MouseMove, x, y, MouseSpeedNow()
@@ -2068,6 +2069,7 @@ TargetClick(x, y)
 	Click
 	if (ownGrab)
 		MouseLetGo()
+	return 1
 	}
 
 ;True while the round still waits for us 0.8 s on: its Pass button is still there (a target click that took starts

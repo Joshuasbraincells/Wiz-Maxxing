@@ -207,7 +207,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
 	WkWalkSpeed := "", WkWalkSamples := [], WkWUpAt := 0, WkFrontLook := 0, WkMetAt := A_TickCount
-	WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0}
+	WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0, mturns: 0}
 	WkPassMin := "", WkPassKey := ""
 	WkPromptSkip := {}, WkPreXText := "", WkQmLooked := {}, WkQmTalked := {}
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
@@ -1151,7 +1151,13 @@ WalkStep()
 	;clear of the walls and the aim's outside it - up to SpotTurnMem; nothing said about it, up to ArcBlind. Not while
 	;aiming off after an obstacle. By the bare arrow - the camera lags, no walls known: on the spot over TurnInPlace)
 	arcOk := (WkNavUse && IsObject(WkNavObj) && WkNavObj.arc != "") ? WkNavObj.arc : ""
-	walkTurn := WkNavUse && steer = h && SpeedNow <= 5 && Abs(steer) <= SpotTurnMem && (arcOk = 1 || (arcOk = "" && Abs(steer) <= ArcBlind))
+	;(by the mouse - MouseSteer.ahk: the wizard turned at once, walking on, its arc looked at for the mouse's small circle:
+	;up to 150 degrees with it clear, 100 with nothing said; the arc looked at for the mouse's circle is no use to A/D's)
+	;(only once a count's worth is measured - the measuring isn't for a big turn walking on)
+	msWalk := WkNavUse && steer = h && !escaping && Abs(steer) > TurnInPlace && WkArcMouse && MsK != ""
+		&& ((arcOk = 1 && Abs(steer) <= 150) || (arcOk = "" && Abs(steer) <= 100)) && MouseSteerWhyNot(false) = ""
+	walkTurn := msWalk || (WkNavUse && steer = h && SpeedNow <= 5 && Abs(steer) <= SpotTurnMem
+		&& ((arcOk = 1 && !WkArcMouse) || (arcOk = "" && Abs(steer) <= ArcBlind)))
 	if (Abs(steer) > TurnInPlace && WkSpins < 3 && !escaping && !walkTurn)
 		{
 		WkSpins += 1
@@ -1201,15 +1207,26 @@ WalkStep()
 	WkSpotTurn := ""
 	if (Abs(steer) > TurnInPlace)
 		{
-		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move" (walkTurn ? (arcOk = 1 ? " (its arc clear of walls)" : "") : " (" WkSpins " turns on the spot in a row)"))
+		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move" (msWalk ? " (by the mouse)" : walkTurn ? (arcOk = 1 ? " (its arc clear of walls)" : "") : " (" WkSpins " turns on the spot in a row)"))
 		WkMet.walkturns += 1
-		Turn(steer)
+		;(by the mouse; it couldn't after all - A/D's wide arc isn't looked at: stopped, and turned on the spot)
+		if (msWalk && MouseTurn(steer) = "")
+			{
+			HoldW(0)
+			WkMet.spot += 1
+			Turn(steer)
+			}
+		else if (!msWalk)
+			Turn(steer)
 		WkBestTime := A_TickCount
 		}
 	;(sped up, the shortest key press (30 ms) turns more than a small correction: smaller ones are left. By the game's
-	;memory a narrower band - it knows the facing)
+	;memory a narrower band - it knows the facing; by the mouse when it may)
 	else if (fine && Abs(steer) > Max(WkNavUse ? AheadMem : AheadAngle, TurnRate * 30 * (SpeedNow ? SpeedNow : 1)))
-		Turn(steer)
+		{
+		if (!WkNavUse || MouseTurn(steer) = "")
+			Turn(steer)
+		}
 	WkSpins := 0
 	if (!Walking)
 		return false
@@ -2072,7 +2089,7 @@ WalkCloseWindow(why, now := false)
 	if (!IsFunc("PicOpt") || !Walking || !GameActive() || (!now && A_TickCount - WkCloseLook < 5000))
 		return false
 	WkCloseLook := A_TickCount
-	ImageSearch, cwX, cwY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % Func("PicOpt").Call("resources\closewin.png", 30)
+	ImageSearch, cwX, cwY, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
 	if (ErrorLevel)
 		return false
 	cwT := OcrRect(GameLeft, GameTop, GameW, GameH)
@@ -2092,7 +2109,7 @@ WalkCloseWindow(why, now := false)
 	Sleep, 700
 	if (ownGrab)
 		Func("MouseLetGo").Call()
-	ImageSearch, cwX2, cwY2, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % Func("PicOpt").Call("resources\closewin.png", 30)
+	ImageSearch, cwX2, cwY2, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
 	cwGone := ErrorLevel != 0
 	WalkLog(why " - clicked a window's close button at " cwX + cwHalf - GameLeft "," cwY + cwHalf - GameTop ": " (cwGone ? "closed" : "still there"))
 	return cwGone
@@ -2128,6 +2145,7 @@ SpiralMapButton()
 ;Moves the mouse there and clicks (screen coordinates), only while walking is on and Wizard101 has focus
 WalkClick(x, y)
 	{
+	MsWinAt := 0
 	if (!Walking || !GameActive())
 		return
 	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
@@ -2145,6 +2163,8 @@ WalkClick(x, y)
 PressKey(key)
 	{
 	Critical
+	;(a window may open: the mouse's look for one done afresh - MouseSteer.ahk)
+	MsWinAt := 0
 	if (Walking && GameActive())
 		Send, {Blind}{%key%}
 	Critical, Off
@@ -2340,6 +2360,9 @@ HoldW(on, noSpeed := false)
 ;once it's stood 1.5 s (WalkStep)
 ReleaseKeys(keepSpeed := false)
 	{
+	;(the right button too, if a mouse turn held it - MouseSteer.ahk)
+	if (MsHeld)
+		MouseSteerButton(0)
 	Send, {Blind}{w up}{a up}{s up}{d up}
 	if (HeldW)
 		WalkMetW(0)
@@ -2352,7 +2375,7 @@ ReleaseKeys(keepSpeed := false)
 WalkMetW(down)
 	{
 	if (!IsObject(WkMet))
-		WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0}
+		WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0, act: 0, last: 0, mturns: 0}
 	if (down)
 		WkMet.wfrom := A_TickCount
 	else
@@ -2378,18 +2401,26 @@ WalkMetrics()
 		return
 	held := WkMet.wms + (WkMet.wfrom ? A_TickCount - WkMet.wfrom : 0)
 	if (held > 3000 && WkMet.act > 5000)
-		WalkLog("the last minute: W held " Min(100, Round(100 * held / WkMet.act)) "% of " Round(WkMet.act / 1000) " s out walking, " WkMet.stops " stops, " WkMet.spot " turns on the spot, " WkMet.walkturns " turns walking on, " WkMet.keys " speed keys"
+		WalkLog("the last minute: W held " Min(100, Round(100 * held / WkMet.act)) "% of " Round(WkMet.act / 1000) " s out walking, " WkMet.stops " stops, " WkMet.spot " turns on the spot, " WkMet.walkturns " turns walking on (" (WkMet.mturns ? WkMet.mturns : 0) " by the mouse), " WkMet.keys " speed keys"
 			. (WkWalkSpeed != "" ? " (walks " Round(WkWalkSpeed * 1000) " a second at 1x, turning circle " Round(TurnRadius) ")" : " (turning circle " TurnRadius " till it's measured at 1x)"))
-	WkMet.wms := 0, WkMet.stops := 0, WkMet.spot := 0, WkMet.walkturns := 0, WkMet.keys := 0, WkMet.act := 0
+	WkMet.wms := 0, WkMet.stops := 0, WkMet.spot := 0, WkMet.walkturns := 0, WkMet.keys := 0, WkMet.act := 0, WkMet.mturns := 0
 	if (WkMet.wfrom)
 		WkMet.wfrom := A_TickCount
 	WkMetAt := A_TickCount
 	}
 
-;The wizard's turning circle for the helper's arc look (game units, a fifth more to be safe)
+;The wizard's turning circle for the helper's arc look (game units, a fifth more to be safe): the mouse's small one
+;(a mouse turn takes ~0.1 s: the wizard walks on ~100 units meanwhile at 1x - 120, times the speed: the turn's time is
+;the bot's, the walking the game's) when the mouse may steer now (as MouseSteerWhyNot - its window look done here,
+;before the reading), else A/D's. Kept as sent (WkArcSentR, WkArcMouse) - an arc looked at for the mouse's circle is no
+;use to A/D's
 WalkTurnRadius()
 	{
-	return Round((TurnRadius ? TurnRadius : 400) * 1.2)
+	WkArcMouse := IsFunc("MouseSteerOn") && MouseSteerOn() && MsK != "" && !(MsOffUntil && A_TickCount < MsOffUntil) && SpeedNow <= 5
+		&& GameActive() && !PlayerActive && A_TimeIdlePhysical >= 3000 && (WkArrived = 0 || WkArrived = 3 || WkArrived = 7)
+		&& MouseSteerWindowClear()
+	WkArcSentR := WkArcMouse ? Round(120 * Max(1, SpeedNow ? SpeedNow : 1)) : Round((TurnRadius ? TurnRadius : 400) * 1.2)
+	return WkArcSentR
 	}
 
 ;---- Cheat Engine's speedhack (AutoFarmer's Settings window: speedhack) ----
@@ -4166,3 +4197,5 @@ WalkerQuit(reason, code)
 	SpeedSet(0, "the bot stops", true)
 	return 0
 	}
+;Turning by the mouse while walking
+#Include %A_LineFile%\..\MouseSteer.ahk

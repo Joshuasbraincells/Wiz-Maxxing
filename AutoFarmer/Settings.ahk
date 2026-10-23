@@ -72,6 +72,8 @@ CfgList()
 		, help: "The key you set in Cheat Engine for the walking speed."})
 	list.Push({key: "speedkeynormal", label: "...Cheat Engine's 1x key", kind: "pick", def: 1, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
 		, help: "The key you set in Cheat Engine for normal speed (1)."})
+	list.Push({key: "mousesteer", label: "Turn with the mouse while walking", kind: "check", def: 1
+		, help: "Walking, the wizard is turned with the mouse (the right button held, the mouse slid) - at once, so it doesn't stop at corners - when you've left the keyboard and mouse alone 3 s, out of battle, by the game's memory, no window open over the game. The mouse goes back where it was. Turns on the spot stay A/D. Off: A/D only, as before."})
 	list.Push({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
 		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."})
 	list.Push({key: "mobshape", label: "...what they see", kind: "pick", def: 2, picks: ["A circle all round", "A semi-circle in front", "A cone in front"]
@@ -152,7 +154,7 @@ CfgSimpleKeys()
 	if (!IsObject(keys))
 		{
 		keys := {}
-		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "speedhack"
+		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}

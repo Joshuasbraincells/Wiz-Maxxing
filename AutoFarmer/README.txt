@@ -76,9 +76,21 @@ goal, instead of going to and fro over it. The speed stays as it is through its
 own short stops (a mob or the party waited for), dropping to 1x once it has
 stood 1.5 s, and goes fast only once W has been held a moment - no 1x/2x flips.
 Talking, X, dialogues, sigils, gates, battles, you playing, F8 and exit are 1x
-at once, as ever. Once a minute after walking, debug.log says how smooth it was:
-"Walk: the last minute: W held N%, N stops, N turns on the spot, N turns walking
-on, N speed keys".
+at once, as ever.
+Turning with the mouse (mousesteer:1 - Settings, on unless you switch it off):
+walking, the wizard is turned with the mouse - the right button held in the
+middle of the scene and the mouse slid, then let go - at once, so it doesn't
+stop at corners; the mouse goes back where it was. Only while it walks by the
+game's memory (it reads the facing back as it turns - how far a mouse count
+turns the wizard is measured on the first turn), out of battle, Wizard101 in
+front, you away from the keyboard and mouse 3 s, at 5x or less, no window
+over the middle of the game (its words: Crowns, shop, quest...). You touching
+the keyboard or mouse mid-turn ends it there, the mouse left to you. Anything
+not sure, and every turn on the spot: A/D as before. The mouse not turning the
+wizard three times: left alone for 10 minutes. debug.log: "mouse steering:
+...". Once a minute after walking, debug.log says how smooth it was: "Walk: the
+last minute: W held N% of N s out walking, N stops, N turns on the spot, N
+turns walking on (N by the mouse), N speed keys".
 
 Faster walking with Cheat Engine's speedhack (Settings: "Walk faster with
 Cheat Engine's speedhack", off unless you switch it on): Cheat Engine - yours,
