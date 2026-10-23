@@ -643,21 +643,30 @@ global playerX := 0
 global playerY := 0
 global player := 1
 
-ImageSearch, playerX, playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, % PicOpt("resources\player.png")
-if (ErrorLevel = 0)
+;(more than one of your wizards in the battle - a party: your plate by your name, EnemySpells.ahk PlayerPlateByName)
+global PlateByName := 0
+if (PlayerPlateByName(pbnX, pbnY))
 	{
-	player := 1
-	} else if (ErrorLevel = 1)
+	playerX := pbnX, playerY := pbnY, PlateByName := 1, player := 1
+	}
+else
+	{
+	ImageSearch, playerX, playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, % PicOpt("resources\player.png")
+	if (ErrorLevel = 0)
 		{
-		ImageSearch, playerX, playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, % PicOpt("resources\player2.png")
-		if (Errorlevel = 0)
+		player := 1
+		} else if (ErrorLevel = 1)
 			{
-			player := 1
-			}
-		} else 
-			{
-			Goto, TestHammer
-			}
+			ImageSearch, playerX, playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, % PicOpt("resources\player2.png")
+			if (Errorlevel = 0)
+				{
+				player := 1
+				}
+			} else 
+				{
+				Goto, TestHammer
+				}
+	}
 		
 ;Find player school
 
@@ -853,7 +862,7 @@ DebugLog("  pips=" PipsNow)
 DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant)
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the
 ;hitter can be an ally)
-if (!PlayerPlates2())
+if (PlateByName || !PlayerPlates2())
 	StatsNoteSchool(school)
 DebugLog("  cards: hit1-4=" hit1 hit2 hit3 hit4 " wand=" wand " heal1-2=" heal1 heal2 " blade=" blade " blade2=" blade2 " blade3=" blade3 " blade4=" blade4 " sharpen=" sharpen " trap=" trap " trap2=" trap2 " trap3=" trap3 " potent=" potent " feint=" feint " aura=" aura " bubble=" bubble " convert=" convert " tower=" tower " reshuffle=" reshuffle)
 

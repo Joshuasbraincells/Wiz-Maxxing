@@ -7,7 +7,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 - [x] Bots talk over the home network: zone, position, in battle, health, ready (v0.37.0)
 - [x] Followers walk to the leader, into its battles, through its doors; the leader waits for them (v0.37.0)
 - [ ] Teleport to friend when the leader is somewhere a door doesn't lead (phase 2 - needs friends-list screenshots)
-- [ ] Own name plate in a party battle (which plate is this PC's)
+- [x] Own name plate in a party battle: its name learned from solo battles (the game's log), its plate read by name (v0.38.0)
 - [ ] Battle roles (hitter, healer, blader) so 4 bots don't all hit or all pass
 
 ## 2. Stuck: mitigate completely

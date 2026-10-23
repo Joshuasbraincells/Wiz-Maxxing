@@ -17,6 +17,9 @@
 ;slot's name ({slot: name}), the slot a name line is for, the casts ([{round, slot, spell}]), the last round resolved,
 ;when it was last read
 global BlPos, BlHead, BlDuel, BlNames, BlSub, BlCasts, BlRound, BlReadAt
+;Your own wizard's name: the one wizard on your side of a battle with no other (learned this run - party.ini [me] keeps
+;the last for the next)
+global BlMe
 ;Your own health as last read (OwnHealthLow): now, most, when, how many of its 4 reads agreed
 global OwnHpCur, OwnHpMax, OwnHpAt, OwnHpVotes, OwnHpWin
 ;This round's prediction (EnemyDanger): the chance their hits kill the wizard (0-1, "" unknown), for the round
@@ -77,6 +80,20 @@ BattleLogLine(blLine)
 		;(each planning phase names those still in the circle - one that died isn't: the names afresh)
 		else if (blM2 = "kPhase_Planning")
 			BlNames := {}, BlSub := ""
+		;(the planning over: one wizard on your side - that's you)
+		else if (blM2 = "kPhase_Execution" && IsObject(BlNames))
+			{
+			blOne := "", blN := 0
+			Loop, 4
+				if (BlNames.HasKey(A_Index + 3))
+					blN += 1, blOne := BlNames[A_Index + 3]
+			if (blN = 1 && blOne != "" && blOne != BlMe)
+				{
+				BlMe := blOne
+				IniWrite, %blOne%, %A_ScriptDir%\party.ini, me, name
+				DebugLog("Battle log: this wizard is " blOne " (the only one on your side)")
+				}
+			}
 		return
 		}
 	if (RegExMatch(blLine, "CombatPlanningP\s+Subcircle (\d+)\s*$", blM))
@@ -106,6 +123,59 @@ BattleLogLine(blLine)
 		if (blSlot <= 3 && IsObject(BlNames) && BlNames.HasKey(blSlot) && VisionOn)
 			VisionGet("/enemyseen?name=" NavUri(BlNames[blSlot]) "&spell=" NavUri(blM3) "&round=" blRnd, 600, true)
 		}
+	}
+
+;How many wizards are on your side of this battle (the game's log; 0 not known)
+BattleTeam()
+	{
+	n := 0
+	if (IsObject(BlNames))
+		Loop, 4
+			n += BlNames.HasKey(A_Index + 3) ? 1 : 0
+	return n
+	}
+
+;Your own wizard's name: learned from a battle with no other wizard on your side (this run, else the last one kept in
+;party.ini), else the party name typed in (Party...); "" none
+OwnName()
+	{
+	if (BlMe != "")
+		return BlMe
+	IniRead, n, %A_ScriptDir%\party.ini, me, name, %A_Space%
+	if (Trim(n) = "")
+		IniRead, n, %A_ScriptDir%\party.ini, party, name, %A_Space%
+	return Trim(n)
+	}
+
+;Your plate when more than one wizard is on your side: the name pictures (player.png...) would find whichever of your
+;wizards' plates comes first - so the plates' names along the bottom are read (OCR) and yours (OwnName) picked. x, y:
+;where its name starts (as the name picture's match would be). False: not a team battle, no name known, or not read
+PlayerPlateByName(ByRef x, ByRef y)
+	{
+	if (BattleTeam() < 2)
+		return false
+	ppMe := OwnName()
+	if (ppMe = "" || !IsFunc("WalkLetters"))
+		return false
+	ppKey := Func("WalkLetters").Call(ppMe)
+	if (StrLen(ppKey) < 3)
+		return false
+	ppT := OcrRect(GameLeft, Round(GameTop + GameH * 0.8), GameW, Round(GameH * 0.2), "en", 2, ppLines)
+	if (ErrorLevel || !IsObject(ppLines))
+		return false
+	for each, ppLine in ppLines
+		for each, ppW in ppLine.words
+			{
+			ppWk := Func("WalkLetters").Call(ppW.text)
+			if (StrLen(ppWk) >= 3 && (ppWk = ppKey || (IsFunc("WalkNameLike") && Func("WalkNameLike").Call(ppWk, ppKey))))
+				{
+				x := ppW.x, y := ppW.y
+				DebugLog("  your plate by its name (" ppMe ", a battle with " BattleTeam() " of you) at " x - GameLeft "," y - GameTop)
+				return true
+				}
+			}
+	DebugLog("  " ppMe "'s plate not read among " BattleTeam() " wizards on your side - the name pictures instead")
+	return false
 	}
 
 ;This round's odds - the enemies' likely spells and the chance their hits kill the wizard: logged, on the dashboard
