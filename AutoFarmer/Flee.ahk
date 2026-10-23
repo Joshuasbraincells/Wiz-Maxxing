@@ -61,6 +61,8 @@ FleeCheck()
 		}
 	DebugLog("  fleeing: " why " - Flee at " Round(w.x + w.w / 2) - GameLeft "," Round(w.y + w.h / 2) - GameTop " - to try again")
 	ClickAt(Round(w.x + w.w / 2), Round(w.y + w.h / 2), 300)
+	;(the game asks "Are you sure you want to flee? You will lose all your Mana..." - Yes / No: Yes)
+	FleeConfirm()
 	;(did it take? The round's Pass button goes with it. Not: once more, the mouse brought up from below the buttons -
 	;on its way across, a card in hand zooms up under the mouse and can cover the button. Still not: the round goes on,
 	;and the next tries again - the counts kept)
@@ -72,6 +74,7 @@ FleeCheck()
 		MouseMove, %fx%, %fy%, MouseSpeedNow()
 		Sleep, 80
 		Click
+		FleeConfirm()
 		fled := CastWentOut()
 		DebugLog("  the Flee click didn't take - clicked it again from below: " (fled ? "fled" : "still in the battle - the round goes on"))
 		if (!fled)
@@ -84,6 +87,32 @@ FleeCheck()
 	FleeWhy := (InStr(why, "mana") || FleeNoMana >= 2) ? "mana" : "cards", FleeNoCards := 0, FleeNoMana := 0, FleeNoHits := 0
 	TrayTip, Wizard101 bot, % "Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), 8, 1
 	return true
+	}
+
+;The game's "Are you sure you want to flee?" box (COMBAT - "You will lose all your Mana and won't get credit...", Yes /
+;No; 2026-10-23 08:24: never answered, the bot sat 15 minutes before it) answered Yes - read in the middle of the game,
+;its Yes clicked where it's read; never with Crowns in sight. True if it was there and Yes was clicked
+FleeConfirm()
+	{
+	Sleep, 400
+	fcT := OcrRect(Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameW * 0.4), Round(GameH * 0.42), "en", 1, fcLines)
+	if (ErrorLevel || !IsObject(fcLines) || !RegExMatch(fcT, "is)sure.{0,30}flee"))
+		return false
+	if (RegExMatch(fcT, "i)cr[o0]wn"))
+		{
+		DebugLog("  the game asks to be sure about fleeing, but Crowns are in sight - not clicked")
+		return false
+		}
+	for fcI, fcLine in fcLines
+		for fcJ, fcW in fcLine.words
+			if (RegExMatch(Trim(fcW.text), "i)^yes[.!]?$"))
+				{
+				ClickAt(Round(fcW.x + fcW.w / 2), Round(fcW.y + fcW.h / 2), 300)
+				DebugLog("  the game asks to be sure about fleeing - Yes at " Round(fcW.x + fcW.w / 2) - GameLeft "," Round(fcW.y + fcW.h / 2) - GameTop)
+				return true
+				}
+	DebugLog("  the game asks to be sure about fleeing, but its Yes can't be read")
+	return false
 	}
 
 ;How many cards are in hand, by the vision helper's read of it this round - only boxes it calls cards (-1: not read

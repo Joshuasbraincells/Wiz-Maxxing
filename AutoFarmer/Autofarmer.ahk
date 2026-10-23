@@ -1891,29 +1891,34 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 ;what at least two of them agree on: {cur, max, votes} ("" not read for sure). Yours (OwnHealthLow), an ally's (Party.ahk)
 PlateHealth(nx, ny)
 	{
-	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines
-	x := nx - Px(8), y := ny + Px(20), w := Px(110), h := Px(24)
-	;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
-	gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
-	;(the game's digits fool OCR now and then - B for 8, a 3 for an 8 - so it reads at four sizes and
-	;takes what at least two of them read)
-	votes := {}, best := "", bestN := 0
-	for each, zoom in [2, 3, 4, 5]
+	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines, phW
+	;(110 wide first; not read: 150 - a four-figure health, 1,772/3,153, runs past 110 and its last figure is cut, never
+	;read: 2026-10-23 - the wider box takes in more of what's round it, so it's only the second try)
+	for each, phW in [110, 150]
 		{
-		t := OcrRect(x, y, w, h, "en", zoom, phLines, 1)
-		if (ErrorLevel)
-			continue
-		t := StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(t, "B", "8"), "O", "0"), "o", "0"), "S", "5"), "l", "1"), "I", "1")
-		a := ParseHealth(HealthDigits(t, gl))
-		if (!IsObject(a) || a.Length() != 1)
-			continue
-		key := a[1].cur "/" a[1].max, n := votes.HasKey(key) ? votes[key] + 1 : 1, votes[key] := n
-		if (n > bestN)
-			best := a, bestN := n
+		x := nx - Px(8), y := ny + Px(20), w := Px(phW), h := Px(24)
+		;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
+		gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
+		;(the game's digits fool OCR now and then - B for 8, a 3 for an 8 - so it reads at four sizes and
+		;takes what at least two of them read)
+		votes := {}, best := "", bestN := 0
+		for each2, zoom in [2, 3, 4, 5]
+			{
+			t := OcrRect(x, y, w, h, "en", zoom, phLines, 1)
+			if (ErrorLevel)
+				continue
+			t := StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(t, "B", "8"), "O", "0"), "o", "0"), "S", "5"), "l", "1"), "I", "1")
+			a := ParseHealth(HealthDigits(t, gl))
+			if (!IsObject(a) || a.Length() != 1)
+				continue
+			key := a[1].cur "/" a[1].max, n := votes.HasKey(key) ? votes[key] + 1 : 1, votes[key] := n
+			if (n > bestN)
+				best := a, bestN := n
+			}
+		if (bestN >= 2 && best[1].max > 0)
+			return {cur: best[1].cur, max: best[1].max, votes: bestN}
 		}
-	if (bestN < 2 || best[1].max <= 0)
-		return ""
-	return {cur: best[1].cur, max: best[1].max, votes: bestN}
+	return ""
 	}
 
 ;Your own health off your name plate (the red cur/max under your name), read by OCR at two sizes that
@@ -2050,6 +2055,13 @@ HitTarget(title, dir, force := 0)
 ;the mouse back where it was afterwards (MouseGrab: mousereturn)
 TargetClick(x, y)
 	{
+	;(never in the Crown shop's corner - SHOP and EARN CROWNS at its top left, to about Px(170): an enemy's plate read
+	;that far left isn't clicked)
+	if (x < GameLeft + Px(185) && y < GameTop + Px(110))
+		{
+		DebugLog("  a target click at " x - GameLeft "," y - GameTop " is in the Crown shop's corner - not clicked")
+		return
+		}
 	ownGrab := MouseGrab()
 	MouseMove, x, y, MouseSpeedNow()
 	Sleep, % Max(150, Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
