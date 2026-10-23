@@ -2952,12 +2952,13 @@ CastWentOut()
 	}
 
 ;A learned hit in no slot cast (CastBestHit, when no hit1-4 went): the strongest in hand you can pay for, by a fresh
-;look at the hand (LearnHitCards) - its card clicked, then a target if it hits one enemy. Not the kill check's (it
-;knows the slots' hits only), no enchant on it. learnedhits:0 in PlayerStats.txt: never. True if it went out
+;look at the hand (LearnHitCards) - an enchant in hand on it first (as UseHit does for hit1-4: free, more damage), its
+;card clicked, then a target if it hits one enemy. Not the kill check's (it knows the slots' hits only).
+;learnedhits:0 in PlayerStats.txt: never. True if it went out
 CastLearnedHit()
 	{
 	global
-	local ans, list, c
+	local ans, list, c, enchanted
 	if (!Stat("learnedhits") || !VisionOn || hitschool = "" || PipSaveFor != "" || !IsFunc("LearnHitCards"))
 		return false
 	if (!LearnHitReady())
@@ -2971,7 +2972,23 @@ CastLearnedHit()
 		if (!list.Length())
 			return false
 		c := list[1]
-		DebugLog("  learned hit " c.id " (" LearnDescribe(c.c) ") - in no slot: cast at " Round(c.x) - GameLeft "," Round(c.y) - GameTop)
+		;(an enchant in hand: on the hit first - then the hand closes up round the gap it left, the hit half a card's
+		;width towards it)
+		enchanted := false
+		if (A_Index = 1)
+			{
+			FindEnchant()
+			if (enchant >= 1 && enchantX != "" && Abs(enchantX - c.x) > HalfPitch)
+				{
+				DebugLog("  enchant (level " enchant ") on learned hit " c.id " first, at " enchantX - GameLeft "," enchantY - GameTop)
+				ClickAt(enchantX, enchantY, 150)
+				ClickAt(Round(c.x), Round(c.y), 150)
+				CenterMouse()
+				Sleep, 500
+				c.x += (c.x < enchantX ? HalfPitch : -HalfPitch), enchanted := true
+				}
+			}
+		DebugLog("  learned hit " c.id " (" LearnDescribe(c.c) ")" (enchanted ? ", enchanted," : "") " - in no slot: cast at " Round(c.x) - GameLeft "," Round(c.y) - GameTop)
 		ClickAt(Round(c.x), Round(c.y))
 		if (c.c.type = "damage" && c.c.target != 0)
 			HitTarget("learned hit", hitschool, 1)

@@ -85,7 +85,7 @@ DiscardUnused()
 		;(not a card - the deck's back, the timer, a popup where a card should be: never clicked)
 		if (f.Length() < 12 || f[1] != "card" || (f.Length() >= 15 && f[15] = "0"))
 			continue
-		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, l: f[2] + 0, w: f[4] + 0})
+		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, l: f[2] + 0, w: f[4] + 0, tc: f.Length() >= 16 ? f[16] + 0 : 0})
 		}
 	;(where the battle's own search found its cards this round - one of them learned again at another UI size, under
 	;its own name, is still that slot's card)
@@ -115,8 +115,11 @@ DiscardUnused()
 		for k, o in own
 			if (o >= c.l - 5 && o <= c.l + c.w)
 				ox := o
+		;(an enchant - a treasure card's Monstrous, say - is never thrown away: it goes on a hit, slot or no slot
+		;(CastLearnedHit); nor a card the hand's look says is a treasure card)
 		if (LearnSlotOf(pid) != "" || ox != "" || !IsObject(lc) || lc.type = "" || LearnHasFlag(lc, "hold") || LearnHasFlag(lc, "tc")
-			|| ((lc.type = "blade" || lc.type = "trap" || lc.type = "aura" || lc.type = "enchant") && LearnSlotFor(lc) != "")
+			|| lc.type = "enchant" || c.tc = 1
+			|| ((lc.type = "blade" || lc.type = "trap" || lc.type = "aura") && LearnSlotFor(lc) != "")
 			;(a hit of the school while no hit1-3 in hand can go: cast this round instead - LearnHitCards)
 			|| (LearnIsHit(lc) && Stat("learnedhits") && !((hit1 == 1 && Affordable("hit1")) || (hit2 == 1 && Affordable("hit2")) || (hit3 == 1 && Affordable("hit3")))))
 			{

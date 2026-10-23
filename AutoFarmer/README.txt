@@ -352,6 +352,10 @@ round - in debug.log ("enemy spells: ...") and on the dashboard (Threat).
 	  show the odds. A hit at one target is counted at you 1 in however many
 	  wizards are on your side.
 
+Enchants (Strong, Giant, Monstrous, Gargantuan, Colossal, Epic - treasure cards
+too) go on the hit about to be cast, a learned hit in no slot as well; an
+enchant or a treasure card is never discarded.
+
 Kill check:
 At the start of every round the program reads each enemy's health off the
 nameplates at the top of the screen and works out how much damage each hit
