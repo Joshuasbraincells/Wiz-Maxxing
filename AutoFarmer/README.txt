@@ -67,6 +67,19 @@ It also follows a route the helper plans round the walls over the zone's map
 (debug.log: "the game's memory ..."). navmem:0 = only the arrow on screen.
 More in ..\AutoQuester\README.txt.
 
+Smoother walking: steering by the game's memory on its route, a big turn (up to
+100 degrees) is made walking on when the helper says the wizard's turning arc
+there is clear of walls and mobs (its turning circle is worked out from how
+fast it walks); else, and by the bare arrow, it stops and turns on the spot as
+before. It arrives on one memory reading, or when it has walked right past the
+goal, instead of going to and fro over it. The speed stays as it is through its
+own short stops (a mob or the party waited for), dropping to 1x once it has
+stood 1.5 s, and goes fast only once W has been held a moment - no 1x/2x flips.
+Talking, X, dialogues, sigils, gates, battles, you playing, F8 and exit are 1x
+at once, as ever. Once a minute after walking, debug.log says how smooth it was:
+"Walk: the last minute: W held N%, N stops, N turns on the spot, N turns walking
+on, N speed keys".
+
 Faster walking with Cheat Engine's speedhack (Settings: "Walk faster with
 Cheat Engine's speedhack", off unless you switch it on): Cheat Engine - yours,
 installed and attached to Wizard101 by you - speeds the game up; the bot only
@@ -120,7 +133,10 @@ button, the tray menu, Settings): with Wizard101 not the window in front, the
 bot brings it there when the quest arrow shows (walking - once you've left the
 keyboard and mouse alone 3 s, so what you type elsewhere doesn't end up in the
 game) or a battle round is up. It brings the window forward; it never clicks in
-it to do so.
+it to do so. Left the PC with another window in front (nothing touched for 5
+minutes): the game's brought forward all the same, setting or not - and after a
+reconnect it's left in front - else the bot can't walk and the game logs out
+for inactivity.
 
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.

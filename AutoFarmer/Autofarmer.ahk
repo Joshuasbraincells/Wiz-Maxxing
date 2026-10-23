@@ -518,7 +518,7 @@ loop,
 		SpeedSet(0, "a battle round", true)
 		;(gamefront: the game in front for its cards - a first click on a window behind only brings it forward)
 		if (!GameActive())
-			GameToFront("a battle round is up", false)
+			GameToFront("a battle round is up", false, A_TimeIdlePhysical > 300000)
 		;(the first round at a window size: the UI size measured from Pass and Flee before it's played - a made set's
 		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
 		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
@@ -1300,11 +1300,12 @@ GameFrontShow()
 
 ;Wizard101 to the front (gamefront on, it isn't): why - for debug.log; idle - only once you've left the keyboard and
 ;mouse alone 3 s (walking: what you type elsewhere mustn't end up in the game). WinActivate - never a click (the game's
-;Crown shop is in its corner). True if it's in front now
-GameToFront(why, idle := true)
+;Crown shop is in its corner). force: gamefront off too (you've left the PC: nothing touched for 5 minutes). True if it's
+;in front now
+GameToFront(why, idle := true, force := false)
 	{
 	static saidAt := 0
-	if (!GameFrontOn() || GameActive())
+	if ((!GameFrontOn() && !force) || GameActive())
 		return GameActive()
 	if (idle && A_TimeIdlePhysical < 3000)
 		return false

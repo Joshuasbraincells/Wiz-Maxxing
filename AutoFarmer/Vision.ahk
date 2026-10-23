@@ -276,7 +276,9 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		goalNow := IsObject(goalLine) ? goalLine.Call() : goalLine
 		unblock .= NavMobArgs() "&goal=" NavUri(SubStr(goalNow, 1, 160))
 		}
-	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0) unblock, timeoutMs, true)
+	;(the wizard's turning circle: the helper looks round its arc to the aim - walls on it or not)
+	arcAsk := (withRoute && IsFunc("WalkTurnRadius")) ? "&arcr=" Func("WalkTurnRadius").Call() : ""
+	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0) unblock arcAsk, timeoutMs, true)
 	if (InStr(unblock, "&unblock=1") && answer != "")
 		NavUnblock := 0
 	if (answer = "")
@@ -288,7 +290,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: ""}
+		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -312,8 +314,9 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4]), nav.jump := NavNum(f[5]), nav.jx := NavNum(f[6]), nav.jy := NavNum(f[7])
 			;(8-11: a mob on the way the route can't go round - seconds waited for it, where it is, its name)
 			nav.mob := NavNum(f[8]), nav.mx := NavNum(f[9]), nav.my := NavNum(f[10]), nav.mobname := Trim(f[11])
-			;(12: inside a mob's ring or sight - its name: the aim leads out of it)
-			nav.escape := Trim(f[12])
+			;(12: inside a mob's ring or sight - its name: the aim leads out of it; 13: turning walking on round to the
+			;aim - 1 its arc's clear of the walls, 0 not, "" not known)
+			nav.escape := Trim(f[12]), nav.arc := f.Length() >= 13 ? Trim(f[13]) : ""
 			}
 		;(the mob whose ring or sight the arrow's straight way comes into, and backing up would - moves off the route)
 		else if (f[1] = "blind" && withRoute)

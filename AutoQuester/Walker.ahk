@@ -13,6 +13,12 @@
 ; used the arrow on screen decides, as before. See "The game's memory" near the bottom.
 
 global ArriveDist, TurnRate, AheadAngle, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch
+;Turning walking on (smoother): the most it turns walking by the game's memory when the helper says the arc's clear of
+;walls, the most with nothing said about it, the "just walk" band by memory; the wizard's turning circle (game units,
+;learned from its walking speed: WkWalkSpeed, game units per ms at 1x); when W last came up; the once-a-minute counts
+global SpotTurnMem, ArcBlind, AheadMem, TurnRadius, WkWalkSpeed, WkWUpAt, WkMet, WkMetAt
+;Arriving at the closest approach: the nearest the game's memory had it to this goal, and the goal that's for
+global WkPassMin, WkPassKey, WkPassAt
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -58,6 +64,9 @@ global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkM
 ;Turns made on the spot in a row with no walking between (a route point jumping behind the wizard): after 3 the next
 ;one's made walking on, so it never just spins
 global WkSpins
+;When the last small turn on the spot (70 degrees or less) ended - WkTurnAt then ("" walked since, or a bigger one): the
+;camera's wait after it is walked through (not after a back-up or another turn since - WkTurnAt moved on)
+global WkSpotTurn
 ;AutoFarmer's "a battle is on" flag (blank in AutoQuester on its own): never talk or push on during a battle
 global inbattle
 ;The game's memory (AutoFarmer's NavRead, read-only; AutoQuester on its own has none): settings; this step's
@@ -124,6 +133,11 @@ WalkerInit(prefix := "AutoQuester")
 	TurnRate := 0.15     ;degrees the wizard turns per ms of holding A/D (measured: 22.5 degrees per 150 ms)
 	TurnSettle := 500    ;ms the camera takes to catch up after a turn: don't steer on the arrow before then
 	AheadAngle := 12     ;arrow within this many degrees of straight ahead: just walk
+	AheadMem := 6        ;...steering by the game's memory (it knows the facing at once): this many
+	SpotTurnMem := 100   ;by the game's memory on the route: a turn up to this made walking on when the helper says the
+	                     ;arc round the wizard's turning circle is clear of the walls (and the aim's outside it)
+	ArcBlind := 60       ;...by memory with nothing said about the arc: up to this (its bulge stays inside the walls' margin)
+	TurnRadius := 60     ;the wizard's turning circle (game units) till it's worked out from its walking speed
 	TurnInPlace := 45    ;arrow (or the route) further off than this: stop, turn on the spot, then walk straight on -
 	                     ;turning with W held swings the wizard round an arc about 100 units wide, into walls and round
 	                     ;NPCs and the goal; under it (and over AheadAngle) the small turn is made walking on
@@ -182,6 +196,8 @@ WalkerInit(prefix := "AutoQuester")
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
+	WkWalkSpeed := "", WkWUpAt := 0, WkFrontLook := 0, WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0}, WkMetAt := A_TickCount
+	WkPassMin := "", WkPassKey := ""
 	WkPromptSkip := {}, WkPreXText := "", WkQmLooked := {}, WkQmTalked := {}
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
 	WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := 0, WkBlindAt := 0, WkBlindBackSaid := 0, WkBlindMob := ""
@@ -216,7 +232,7 @@ WalkReset()
 	WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkEscTried := 0, WkLastDist := "", WkLastDistAt := 0
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
-	WkNavDoor := 0, WkStandIn := 0, WkRouteBest := "", WkRouteProg := ""
+	WkNavDoor := 0, WkStandIn := 0, WkRouteBest := "", WkRouteProg := "", WkPassMin := ""
 	;(a new goal: its line is read again)
 	WkGoalLineAt := 0
 	}
@@ -238,6 +254,10 @@ WalkLog(text)
 ;1 = done, waiting for the next goal to show up
 WalkStep()
 	{
+	;(stood still 1.5 s - the walker's own short stops keep the speed: back to 1x; the minute's line)
+	if (!HeldW && SpeedNow > 1 && WkWUpAt && A_TickCount - WkWUpAt > 1500)
+		SpeedSet(0, "standing")
+	WalkMetrics()
 	;A notice for you: hidden in a battle (it mustn't cover what the battle reads), shown again after - also
 	;while walking is off (the "stuck" one)
 	if (inbattle && WkNoteShown)
@@ -252,6 +272,14 @@ WalkStep()
 			ReleaseKeys(), Refocus := 1
 		;(AutoFarmer's "Bring Wizard101 to the front": the quest arrow on screen - something to walk to - and you've left
 		;the keyboard and mouse alone a moment: the game in front, walking on)
+		;(you've left the PC with another window in front - nothing touched for 5 minutes: the game in front all the same,
+		;else it logs you out for inactivity)
+		if (IsFunc("GameToFront") && A_TimeIdlePhysical > 300000 && A_TickCount - WkFrontLook > 1500)
+			{
+			WkFrontLook := A_TickCount
+			if (Func("GameToFront").Call("nothing touched for 5 minutes, another window in front", true, true))
+				return true
+			}
 		if (IsFunc("GameFrontOn") && Func("GameFrontOn").Call() && A_TickCount - WkFrontLook > 1500)
 			{
 			WkFrontLook := A_TickCount
@@ -716,7 +744,7 @@ WalkStep()
 			return true
 			}
 		if (KeysDown)
-			ReleaseKeys()
+			ReleaseKeys(true)
 		;Walking into a doorway and the arrow stayed gone: a loading screen, carry on normally afterwards
 		if (WkArrived = 3)
 			{
@@ -877,7 +905,7 @@ WalkStep()
 		if (WkMobLogged != WkNavMobName)
 			WkMobLogged := WkNavMobName, WalkLog("a mob on the way (" WkNavMobName ") and no way round it - waiting for it to move off")
 		if (KeysDown || HeldW)
-			ReleaseKeys()
+			ReleaseKeys(true)
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 		SetStatus("waiting - a mob on the way (" WkNavMobName (WkNavMob != "" ? ", " WkNavMob " s" : "") ")")
 		Sleep, 300
@@ -891,7 +919,7 @@ WalkStep()
 		if (pWhy != "")
 			{
 			if (KeysDown || HeldW)
-				ReleaseKeys()
+				ReleaseKeys(true)
 			WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 			SetStatus("party: waiting - " pWhy)
 			Sleep, 300
@@ -952,11 +980,12 @@ WalkStep()
 		;(by the game's memory, in game units, when it can be used: the arrow's number means more or less in
 		;each zone)
 		WkNear := WalkNear(dist, ArriveDist, ArriveUnits) ? WkNear + 1 : 0
-		;(or walked right over it - ahead, then behind, close by)
+		;(or walked right over it - ahead, then behind, close by - or past its nearest and on away)
 		passedGoal := WalkPassedGoal()
-		if (passedGoal)
-			WalkLog("walked right past the goal (" Round(WkNavObj.dist) " game units off - its point a step off the ground?) - there")
-		if (WkNear >= 2 || passedGoal)
+		if (passedGoal != "")
+			WalkLog("walked right past the goal (" passedGoal ") - there")
+		;(the game's memory's distance isn't misread like the arrow's number: one reading is enough)
+		if (WkNear >= ((WkNavOk && IsObject(WkNavObj) && WkNavObj.dist != "") ? 1 : 2) || passedGoal != "")
 			{
 			StartTalk(dist)
 			return true
@@ -1031,7 +1060,7 @@ WalkStep()
 			return true
 			}
 		if (KeysDown)
-			ReleaseKeys()
+			ReleaseKeys(true)
 		SetStatus("waiting - can't read the distance on the arrow")
 		WkBestTime := A_TickCount
 		Sleep, 300
@@ -1043,6 +1072,9 @@ WalkStep()
 	;it, walking on (or standing) as before. (Steering by the game's memory: it knows the facing at once)
 	if (!WkNavUse && A_TickCount - WkTurnAt < WalkSettle())
 		{
+		;(after a turn on the spot of up to 70 degrees: walking on meanwhile - it faces about the right way)
+		if (!HeldW && WkSpotTurn != "" && WkSpotTurn = WkTurnAt && !(WkNavOk && IsObject(WkNavObj) && WkNavObj.blindahead != ""))
+			HoldW(1)
 		Sleep, 50
 		return true
 		}
@@ -1055,9 +1087,9 @@ WalkStep()
 		WkPrevMovedH := h
 		if (!stable)
 			{
-			HoldW(0)
-			SetStatus("waiting - arrow moving (talk prompt?)")
-			Sleep, 150
+			;(walking straight on past the NPC - not steered on a jumping arrow, not stopped)
+			SetStatus("walking on - arrow moving (talk prompt?)")
+			Sleep, 50
 			WkBestTime := A_TickCount
 			return true
 			}
@@ -1093,15 +1125,24 @@ WalkStep()
 		WkBestTime := A_TickCount
 		return true
 		}
-	if (Abs(steer) > TurnInPlace && WkSpins < 3 && !escaping)
+	;(by the game's memory: walking on round it - the helper's look round the wizard's turning circle says the arc's
+	;clear of the walls and the aim's outside it - up to SpotTurnMem; nothing said about it, up to ArcBlind. Not while
+	;aiming off after an obstacle. By the bare arrow - the camera lags, no walls known: on the spot over TurnInPlace)
+	arcOk := (WkNavUse && IsObject(WkNavObj) && WkNavObj.arc != "") ? WkNavObj.arc : ""
+	walkTurn := WkNavUse && steer = h && SpeedNow <= 5 && Abs(steer) <= SpotTurnMem && (arcOk = 1 || (arcOk = "" && Abs(steer) <= ArcBlind))
+	if (Abs(steer) > TurnInPlace && WkSpins < 3 && !escaping && !walkTurn)
 		{
 		WkSpins += 1
 		HoldW(0)
 		SetStatus("turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees")
+		WkMet.spot += 1
 		Turn(steer)
+		WkSpotTurn := Abs(steer) <= 70 ? WkTurnAt : ""
 		if (!Walking)
 			return false
-		Sleep, 150
+		;(the camera's wait is the arrow's - the game's memory knows the facing at once)
+		if (!WkNavUse)
+			Sleep, 150
 		WkBestTime := A_TickCount
 		;Turning doesn't count against the unreadable-distance timers, except next to the goal: there
 		;the wizard keeps walking over the goal point and turning back, which would put them off forever
@@ -1122,7 +1163,7 @@ WalkStep()
 		if (A_TickCount - WkBlindAt < 20000)
 			{
 			if (KeysDown || HeldW)
-				ReleaseKeys()
+				ReleaseKeys(true)
 			WkBestTime := A_TickCount, WkLastRead := A_TickCount
 			SetStatus("waiting - " WkNavObj.blindahead " ahead on the arrow's way (no route to keep to)")
 			Sleep, 300
@@ -1133,15 +1174,19 @@ WalkStep()
 	else if (WkNavOk)
 		WkBlindAt := 0, WkBlindMob := ""
 	;(a small turn: walking on - W stays down while A/D turns the wizard; a big one after three on the spot too)
-	HoldW(1)
+	;(a big turn walking on: no speed key first - the wizard would walk on past where the helper looked at the arc)
+	HoldW(1, Abs(steer) > TurnInPlace)
+	WkSpotTurn := ""
 	if (Abs(steer) > TurnInPlace)
 		{
-		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move (" WkSpins " turns on the spot in a row)")
+		SetStatus("walking - turning " (steer < 0 ? "left " : "right ") Round(Abs(steer)) " degrees on the move" (walkTurn ? (arcOk = 1 ? " (its arc clear of walls)" : "") : " (" WkSpins " turns on the spot in a row)"))
+		WkMet.walkturns += 1
 		Turn(steer)
 		WkBestTime := A_TickCount
 		}
-	;(sped up, the shortest key press (30 ms) turns more than a small correction: smaller ones are left)
-	else if (fine && Abs(steer) > Max(AheadAngle, TurnRate * 30 * (SpeedNow ? SpeedNow : 1)))
+	;(sped up, the shortest key press (30 ms) turns more than a small correction: smaller ones are left. By the game's
+	;memory a narrower band - it knows the facing)
+	else if (fine && Abs(steer) > Max(WkNavUse ? AheadMem : AheadAngle, TurnRate * 30 * (SpeedNow ? SpeedNow : 1)))
 		Turn(steer)
 	WkSpins := 0
 	if (!Walking)
@@ -1229,9 +1274,8 @@ DistChanged(dist, was)
 ;way out of this zone (the game's memory says so) walk on into it instead (not when stuck by the goal)
 StartTalk(d, door := true)
 	{
-	if (KeysDown || HeldW)
-		ReleaseKeys()
-	;A World Gate's prompt: Go To World instead. A sigil's: enter it and wait
+	;A World Gate's prompt: Go To World instead. A sigil's: enter it and wait (read walking on - each of those stops
+	;itself; a way out of the zone is walked straight on into)
 	prompt := InteractPrompt()
 	if (prompt = "gate")
 		{
@@ -1250,8 +1294,13 @@ StartTalk(d, door := true)
 		WalkLog("talk: at the goal (distance " d ") - the game's memory says it's the way out of this zone (" WkNavHops " zone change" (WkNavHops = 1 ? "" : "s") " to the goal): no X")
 		StartPush("the way out of this zone (the game's memory)", d)
 		WkNavDoor := WkArrived = 3
+		;(pushed twice here already - waiting: stopped)
+		if (WkArrived != 3 && (KeysDown || HeldW))
+			ReleaseKeys()
 		return
 		}
+	if (KeysDown || HeldW || SpeedNow > 1)
+		ReleaseKeys()
 	WkArrived := 2, WkTalk := 0, WkFar := 0, WkNear := 0, WkDialog := 0, WkTalkDist := d, WkTalkAt := A_TickCount
 	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("talk: at the goal (distance " d "), pressed X")
@@ -1280,7 +1329,7 @@ StartPush(why, d)
 ;then GateStep clicks Go To World
 StartGate(why)
 	{
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkArrived := 4, WkGateAt := A_TickCount, WkGateClicks := 0, WkGateX := 1
 	PressKey("x")
@@ -1293,7 +1342,7 @@ StartGate(why)
 ;through whatever it opens and walks on
 StartPressX(key)
 	{
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkPromptUsed[key = "" ? "?" : key] := A_TickCount
 	WkArrived := 6, WkPressAt := A_TickCount, WkTalk := 0, WkDialog := 0, WkSpaceAt := 0, WkAfterXLooked := 0
@@ -1323,7 +1372,7 @@ WalkPromptFree(key, ms)
 ;no-X time after it (DialogQuiet)
 WalkSkipDialog()
 	{
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	presses := 0, acc := ""
 	Loop, 80
@@ -1420,7 +1469,7 @@ WalkAcceptQuest(why)
 	btn := WalkAcceptButton()
 	if (!IsObject(btn) || !Walking || !GameActive())
 		return false
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	if (!WkAcceptClicks)
 		WkAcceptAt := A_TickCount
@@ -1502,28 +1551,43 @@ WalkResume()
 		WkArrived := 5, WkSigilUntil := keepUntil, WkWaitWhat := keepWhat
 	}
 
-;Walked right past the goal: by the game's memory it was ahead and close, and is now behind and as close - its point a
-;step off the ground (a sigil's: the distance never gets down to ArriveUnits, and the wizard goes to and fro over it).
-;Counts as there. Called each step the goal's distance is looked at
+;Walked right past the goal, by the game's memory: it was ahead and close, and is now behind and as close - its point a
+;step off the ground (a sigil's: the distance never gets down to ArriveUnits, and the wizard goes to and fro over it) -
+;or it came within 1.5 x ArriveUnits in the last 4 s, and is now 40 further than that (still within 2 x) and the goal's
+;well behind. Counts as there: why ("" not). Called each step the goal's distance is looked at
 WalkPassedGoal()
 	{
 	static prevH := "", prevD := "", prevAt := 0
 	if (!WkNavOk || !IsObject(WkNavObj) || WkNavObj.dist = "" || WkNavH = "")
 		{
 		prevH := "", prevD := ""
-		return false
+		return ""
 		}
-	nowH := WkNavH, nowD := WkNavObj.dist
+	;(the heading to the game's own target - WkNavH is the route's aim's once there's a route)
+	nowH := WalkNavHeading(WkNavObj.x, WkNavObj.y, WkNavObj.yaw, WkNavObj.tx, WkNavObj.ty), nowD := WkNavObj.dist
+	if (nowH = "")
+		return ""
+	pgKey := WkNavObj.zone "|" WkNavObj.goalid "|" WkNavObj.hops "|" Round(WkNavObj.tx / 50) "|" Round(WkNavObj.ty / 50)
+	if (pgKey != WkPassKey)
+		WkPassKey := pgKey, WkPassMin := ""
 	passed := prevH != "" && A_TickCount - prevAt < 4000 && Abs(prevH) <= 45 && Abs(nowH) >= 135 && nowD <= ArriveUnits * 2 && prevD <= ArriveUnits * 2
+	why := passed ? Round(nowD) " game units off, from ahead to behind - its point a step off the ground?" : ""
+	if (why = "" && WkPassMin != "" && WkPassMin <= ArriveUnits * 1.5 && nowD >= WkPassMin + 40 && nowD <= ArriveUnits * 2
+		&& A_TickCount - WkPassAt < 4000 && Abs(nowH) > 100)
+		why := "it came within " Round(WkPassMin) " and is going away (" Round(nowD) ")"
+	if (WkPassMin = "" || nowD < WkPassMin)
+		WkPassMin := nowD, WkPassAt := A_TickCount
 	prevH := nowH, prevD := nowD, prevAt := A_TickCount
-	return passed
+	if (why != "")
+		WkPassMin := ""
+	return why
 	}
 
 ;The arrow led to a sigil (a dungeon entrance: its prompt says "Press X to Enter"): stop, press X, and
 ;stand still for SigilWait while it counts down and the dungeon loads (WalkStep's WkArrived = 5)
 StartSigil(why)
 	{
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkArrived := 5, WkSigilUntil := A_TickCount + SigilWait, WkWaitWhat := "sigil"
 	WkPromptUsed[WkPromptDest = "" ? "?" : WkPromptDest] := A_TickCount
@@ -1648,7 +1712,7 @@ WalkZoneKey(zoneName)
 ;Uses a boat or the like: X, then stand still while it moves us and the new zone loads
 StartTransport(dest, why)
 	{
-	if (KeysDown || HeldW)
+	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkTransUsed[dest] := A_TickCount, WkTransSeen := ""
 	WkArrived := 5, WkSigilUntil := A_TickCount + TransportWait, WkWaitWhat := dest
@@ -1785,9 +1849,7 @@ WalkQuestMarker(key)
 	if (WkQmLooked.HasKey(key) && A_TickCount - WkQmLooked[key] < 4000)
 		return ""
 	WkQmLooked[key] := A_TickCount
-	;(standing for the look - walking on, the wizard could leave the prompt's range meanwhile)
-	if (HeldW || KeysDown)
-		ReleaseKeys()
+	;(walking on through the look - X is only pressed with its prompt still showing)
 	;(the game above its bottom bar - the markers float over heads)
 	ans := Func("VisionGet").Call("/qmark?x1=" GameLeft "&y1=" GameTop "&x2=" GameLeft + GameW "&y2=" Round(GameTop + GameH * 0.85), 1500, true)
 	if (ans = "" || ans = "none" || ans = " ")
@@ -1996,6 +2058,8 @@ WalkToggle()
 				Refocus := 1
 			ReleaseKeys()
 			}
+		;(a keep-speed stop just before left it fast)
+		SpeedSet(0, "walking off (F8)")
 		SetStatus("walking off - press F8 to walk again")
 		;Keys let go while another window had focus: give Wizard101 one clean release when it's back
 		if (Refocus)
@@ -2072,7 +2136,7 @@ Turn(h)
 Unstick(side, walkMs)
 	{
 	;(at normal speed - backing up, turning and walking off as measured - and for a few seconds after)
-	WkSpeedHold := A_TickCount + walkMs + 4000
+	WkSpeedHold := A_TickCount + walkMs + 1500
 	SpeedSet(0, "getting round an obstacle")
 	BackUp(BackupTime)
 	if (!Walking || !GameActive())
@@ -2080,6 +2144,7 @@ Unstick(side, walkMs)
 	Turn(UnstickTurn * side)
 	if (!Walking || !GameActive())
 		return
+	WkSpeedHold := A_TickCount + walkMs + 1500
 	HoldW(1)
 	HoldFor(walkMs)
 	}
@@ -2088,14 +2153,15 @@ Unstick(side, walkMs)
 ;behind (the helper's blind check)
 BackUp(ms)
 	{
-	HoldW(0)
-	;(blind - straight back: not into a mob's reach or sight - the helper's blind check on this moment's reading)
+	;(blind - straight back: not into a mob's reach or sight - the helper's blind check on this moment's reading - looked
+	;at before W comes up: a refusal walks on)
 	if (IsObject(WkNavObj) && WkNavObj.blindback != "" && IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500)
 		{
 		if (A_TickCount - WkBlindBackSaid > 10000)
 			WkBlindBackSaid := A_TickCount, WalkLog("not backing up: " WkNavObj.blindback "'s reach or sight is behind the wizard")
 		return false
 		}
+	HoldW(0)
 	Critical
 	if (!Walking || !GameActive())
 		{
@@ -2131,7 +2197,8 @@ HoldFor(ms)
 	return true
 	}
 
-HoldW(on)
+;noSpeed: no speed key now (the next step's HoldW sees to it)
+HoldW(on, noSpeed := false)
 	{
 	Critical
 	if (on && !HeldW && Walking && GameActive())
@@ -2139,24 +2206,66 @@ HoldW(on)
 		KeysDown := 1
 		Send, {Blind}{w down}
 		HeldW := 1, WkWalkFrom := A_TickCount
+		WalkMetW(1)
 		}
 	else if (!on && HeldW)
 		{
 		Send, {Blind}{w up}
 		HeldW := 0
+		WalkMetW(0)
 		}
 	Critical, Off
 	;(walking: Cheat Engine's speed for it, if that's on)
-	if (on && HeldW)
+	if (on && HeldW && !noSpeed)
 		SpeedWalking()
 	}
 
 ;{Blind} so an Alt/Ctrl/Shift the user is holding isn't let go. Stopping: the game back to normal speed (Cheat Engine)
-ReleaseKeys()
+;- keepSpeed: the walker's own short stop (a mob or the party waited for, the arrow gone a moment): the speed kept, 1x
+;once it's stood 1.5 s (WalkStep)
+ReleaseKeys(keepSpeed := false)
 	{
 	Send, {Blind}{w up}{a up}{s up}{d up}
+	if (HeldW)
+		WalkMetW(0)
 	HeldW := 0, KeysDown := 0
-	SpeedSet(0, "stopped")
+	if (!keepSpeed)
+		SpeedSet(0, "stopped")
+	}
+
+;W's time held, and stops (W coming up), for the minute's line; when W last came up (the 1x after standing)
+WalkMetW(down)
+	{
+	if (!IsObject(WkMet))
+		WkMet := {wms: 0, wfrom: 0, stops: 0, spot: 0, walkturns: 0, keys: 0}
+	if (down)
+		WkMet.wfrom := A_TickCount
+	else
+		{
+		if (WkMet.wfrom)
+			WkMet.wms += A_TickCount - WkMet.wfrom
+		WkMet.wfrom := 0, WkMet.stops += 1, WkWUpAt := A_TickCount
+		}
+	}
+
+;Once a minute, after walking: how smooth it was - W held, stops, turns on the spot and walking on, speed keys pressed
+WalkMetrics()
+	{
+	if (!IsObject(WkMet) || A_TickCount - WkMetAt < 60000)
+		return
+	span := A_TickCount - WkMetAt, held := WkMet.wms + (WkMet.wfrom ? A_TickCount - WkMet.wfrom : 0)
+	if (held > 3000)
+		WalkLog("the last minute: W held " Round(100 * held / span) "%, " WkMet.stops " stops, " WkMet.spot " turns on the spot, " WkMet.walkturns " turns walking on, " WkMet.keys " speed keys" (WkWalkSpeed != "" ? " (turning circle " Round(TurnRadius) ")" : ""))
+	WkMet.wms := 0, WkMet.stops := 0, WkMet.spot := 0, WkMet.walkturns := 0, WkMet.keys := 0
+	if (WkMet.wfrom)
+		WkMet.wfrom := A_TickCount
+	WkMetAt := A_TickCount
+	}
+
+;The wizard's turning circle for the helper's arc look (game units, a fifth more to be safe)
+WalkTurnRadius()
+	{
+	return Round((TurnRadius ? TurnRadius : 60) * 1.2)
 	}
 
 ;---- Cheat Engine's speedhack (AutoFarmer's Settings window: speedhack) ----
@@ -2215,6 +2324,8 @@ SpeedSet(fast, why := "", force := false)
 	Send, {Blind}{%key% up}
 	SpeedSentAt := A_TickCount
 	Critical, Off
+	if (IsObject(WkMet))
+		WkMet.keys += 1
 	WalkLog("speed: " want "x - " key (why != "" ? " (" why ")" : ""))
 	}
 
@@ -2240,6 +2351,9 @@ SpeedWalking()
 	k := (SpeedNow > 1) ? 1 : 1.5
 	if (WkLastDist != "" && WalkNear(WkLastDist, SpeedSlowDist * k, SpeedSlowUnits * k))
 		return SpeedSet(0, "near the goal")
+	;(no flip to fast and back: fast once W's been held 0.8 s, and not within 3 s of the last press)
+	if (SpeedNow <= 1 && (A_TickCount - WkWalkFrom < 800 || (SpeedSentAt && A_TickCount - SpeedSentAt < 3000)))
+		return
 	SpeedSet(1, "walking")
 	}
 
@@ -2335,8 +2449,7 @@ CollectGiveUp(dist, why)
 
 StartCollect(text, why)
 	{
-	if (KeysDown || HeldW)
-		ReleaseKeys()
+	;(walking on into it - collecting roams; 1x for it: SpeedWalking)
 	WkArrived := 7, WkChaseFrom := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkFoesAt := 0
 	WalkLog("collect: '" text "' - " why " - looking for monsters, roaming the area")
 	SetStatus("collecting - " SubStr(text, 1, 60))
@@ -3384,6 +3497,14 @@ WalkNav(hScr, dScr)
 		if (IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500 && A_TickCount > WkNavPrev.at)
 			navSpeed := Sqrt((nav.x - WkNavPrev.x) ** 2 + (nav.y - WkNavPrev.y) ** 2) / (A_TickCount - WkNavPrev.at)
 		WkNavPrev := {x: nav.x, y: nav.y, at: A_TickCount}
+		;(walking straight on - W held a second, no turn just now: its speed at 1x, and from it the turning circle -
+		;speed over turn rate - the helper's arc look goes by)
+		if (navSpeed != "" && navSpeed > 0.02 && HeldW && A_TickCount - WkWalkFrom > 1000 && A_TickCount - WkTurnAt > 700 && SpeedNow)
+			{
+			wsNow := navSpeed / SpeedNow
+			WkWalkSpeed := (WkWalkSpeed = "") ? wsNow : WkWalkSpeed * 0.8 + wsNow * 0.2
+			TurnRadius := Min(200, Max(30, WkWalkSpeed / (TurnRate * 0.0174533)))
+			}
 		WalkNavMoveCheck(nav)
 		;(how the arrow's distance compares with the memory's differs from zone to zone - 41 in one, about 100
 		;in Pigswick Academy: each zone's own once worked out there)

@@ -1659,9 +1659,10 @@ def mob_avoid(q):
     return min(1500.0, rng), mob_cone(q)
 
 
-def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
+def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
     """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from - mob_near round
-    them, out of their sight cone (degrees wide, long) in front"""
+    them, out of their sight cone (degrees wide, long) in front; arc_r: the wizard's turning circle - field 13 says
+    whether turning walking on round to the aim stays clear of the walls"""
     try:
         import navroute
         res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
@@ -1688,6 +1689,13 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None):
     mob = res.get('mob')
     tail += '||||' if mob is None else f"|{mob:.0f}|{res['mob_at'][0]:.0f}|{res['mob_at'][1]:.0f}|{res['mob_name'].replace('|', ' ')}"
     tail += '|' + (res.get('escape') or '').replace('|', ' ')
+    arc = None
+    if arc_r and arc_r > 0:
+        try:
+            arc = router(game_dir).arc_clear(r, res['aim'], arc_r)
+        except Exception as e:  # noqa: BLE001 - not known: the walker's own limit
+            log(f'arc: {e!r}')
+    tail += '|' + ('' if arc is None else str(arc))
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
 
 
@@ -2251,7 +2259,11 @@ class Handler(BaseHTTPRequestHandler):
                                           cone=cone)
                     else:
                         MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
-                    lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'))
+                    try:
+                        arc_r = min(400.0, max(0.0, float(q.get('arcr') or 0)))
+                    except ValueError:
+                        arc_r = 0.0
+                    lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'), arc_r)
                 return self.reply('\n'.join(lines))
             if u.path == '/navmap':
                 w, h = int(q['w']), int(q['h'])

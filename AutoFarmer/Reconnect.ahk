@@ -746,7 +746,9 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 		Sleep, 150
 		BlockInput, MouseMoveOff
 		}
-	if (prevWin && prevWin != gameWin)
+	;(the focus back to your window - not when you've left the PC, nothing touched for 5 minutes: the game stays in front,
+	;else the bot can't walk and the game logs out for inactivity again)
+	if (prevWin && prevWin != gameWin && A_TimeIdlePhysical < 300000)
 		{
 		Sleep, 200
 		MouseMove, %mouseX%, %mouseY%, 0

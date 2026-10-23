@@ -813,6 +813,55 @@ class Planner:
     """Routes for /nav?route=1: route(r) answers at once from the field it has and asks the background thread
     for a new one when that's needed (see the top of this file)"""
 
+    def arc_clear(self, r, aim, radius):
+        """turning walking on, round a circle of radius (game units) from where the wizard stands and faces until it
+        faces aim, then straight at it: 1 - all of that clear of the grown walls (CLEAR) and aim outside the circle;
+        0 - not; None - not known (no field for this zone, no facing)"""
+        f = self.field
+        if f is None or r is None or r.get('pos') is None or r.get('yaw') is None or aim is None or radius <= 0:
+            return None
+        if getattr(f, 'zone', None) != r.get('zone'):
+            return None
+        px, py = float(r['pos'][0]), float(r['pos'][1])
+        fx, fy = -math.sin(r['yaw']), -math.cos(r['yaw'])
+        ax, ay = aim[0] - px, aim[1] - py
+        theta = math.atan2(fx * ay - fy * ax, fx * ax + fy * ay)
+        if abs(theta) < math.radians(10):
+            return 1
+        s = 1.0 if theta > 0 else -1.0
+        # (the circle's middle: off to the side turned to - the left normal of forward is (-fy, fx))
+        cx, cy = px - s * radius * fy, py + s * radius * fx
+        if math.hypot(aim[0] - cx, aim[1] - cy) <= radius * 1.05:
+            return 0
+        j0, i0 = f.cell((px, py))
+        if not (0 <= j0 < f.ny and 0 <= i0 < f.nx):
+            return None
+        # (mobs' rings and sight too, as the aim's own line - unless the wizard's in one: then out along the route)
+        mm = getattr(f, 'mob_mask', None)
+        mask = (f.blocked | mm) if (mm is not None and mm.any() and not mm[j0, i0]) else f.blocked
+        # (starting inside a wall's margin: the first CLEAR units along the arc left out, as route()'s own look)
+        rem = CLEAR if mask[j0, i0] else 0.0
+        step = math.radians(10)
+        prev = (px, py)
+        for k in range(1, 37):
+            ang = s * step * k
+            ca, sa = math.cos(ang), math.sin(ang)
+            ox, oy = px - cx, py - cy
+            q = (cx + ox * ca - oy * sa, cy + ox * sa + oy * ca)
+            hx, hy = fx * ca - fy * sa, fx * sa + fy * ca
+            # (off the planned window: not known - the walker's own limit)
+            jq, iq = f.cell(q)
+            if not f.inside(jq, iq):
+                return None
+            if not f.seen(prev, q, mask, rem):
+                return 0
+            rem = max(0.0, rem - math.hypot(q[0] - prev[0], q[1] - prev[1]))
+            prev = q
+            bx, by = aim[0] - q[0], aim[1] - q[1]
+            if s * math.atan2(hx * by - hy * bx, hx * bx + hy * by) <= step / 2:
+                break
+        return 1 if f.seen(prev, aim, mask, rem) else 0
+
     def __init__(self, log=print, game_dir=''):
         self.log, self.game_dir = log, game_dir
         self.zones = collections.OrderedDict()
