@@ -25,6 +25,8 @@ global WkPassMin, WkPassKey, WkPassAt
 global WkPromptVerb
 ;When a window's close button was last looked for (WalkCloseWindow)
 global WkCloseLook
+;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute
+global WkFroTurns, WkFroUntil, WkFroHolds
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -391,6 +393,8 @@ WalkStep()
 		return false
 		}
 	WkNavByArrow := 0
+	;(the arrow's own heading, for the to-and-fro note)
+	hRaw := seen ? h : ""
 	if (WkNavUse)
 		h := WkNavH
 	;(the memory's facing not steered by - a battle starting froze a turn, say - but its sign checked and a route round
@@ -1116,6 +1120,15 @@ WalkStep()
 	;(getting out of a mob's reach or sight: standing still turning in it is how it catches the wizard (the logs) - the way
 	;out behind: backed straight out, a moment at a time; else turned walking on)
 	escaping := (WkNavUse || WkNavByArrow) && IsObject(WkNavObj) && WkNavObj.escape != "" && (WkNavOk || A_TickCount - WkNavEscAt < 1500)
+	;(going to and fro - what it steers at flipping end for end: WalkFroNote - the course held, small corrections only;
+	;the stuck watch below goes on counting meanwhile)
+	if (A_TickCount < WkFroUntil && !escaping && Abs(steer) > TurnInPlace)
+		steer := 0, fine := false
+	else if (Abs(steer) >= 140 && !escaping && WalkFroNote(dist, hRaw))
+		{
+		StartTalk(dist)
+		return true
+		}
 	;(two back-outs in a row that hardly moved it - a wall behind: turned walking on instead)
 	if (escaping && Abs(steer) > 120 && WkNavOk && WkNavObj.x != "")
 		{
@@ -1520,6 +1533,58 @@ WalkDialogOpen()
 	s := ArrowScale().scale
 	t := OcrRect(Round(GameLeft + GameW / 2 - 480 * s), Round(GameTop + GameH - 170 * s), Round(960 * s), Round(168 * s))
 	return !ErrorLevel && RegExMatch(t, "\b(DONE|D0NE|NEXT|BACK|MORE)\b")
+	}
+
+;A turn of 140 degrees or more about to be made (WalkStep): three of them in 12 s with the wizard no further on (within 500
+;units - the game's memory - else the distance within a tenth) is going to and fro: what it steers at flipping end for end
+;(2026-10-23 07:29: 30 a minute, 175 degrees each, for minutes - each turn put the stuck watch off). Then: by the goal
+;(within NearDist on the arrow, twice ArriveUnits by the memory) - it's there: true (StartTalk); else the course held 5 s
+;(WkFroUntil), and the third hold in a minute is taken as stuck (got round as any obstacle). Logged with what it steered by
+WalkFroNote(d, hRaw)
+	{
+	if (!IsObject(WkFroTurns))
+		WkFroTurns := []
+	if (!IsObject(WkFroHolds))
+		WkFroHolds := []
+	fx := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.x : "", fy := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.y : ""
+	WkFroTurns.Push({at: A_TickCount, x: fx, y: fy, d: d})
+	keep := []
+	for each, ft in WkFroTurns
+		if (A_TickCount - ft.at <= 12000)
+			keep.Push(ft)
+	WkFroTurns := keep
+	if (keep.Length() < 3)
+		return false
+	f1 := keep[1]
+	if (fx != "" && f1.x != "")
+		moved := Sqrt((fx - f1.x) ** 2 + (fy - f1.y) ** 2) > 500
+	else
+		moved := (d != "" && f1.d != "" && f1.d > 0) ? Abs(d - f1.d) > f1.d * 0.1 : false
+	if (moved)
+		return false
+	WkFroTurns := []
+	by := WkNavUse ? (WkNavRouted ? "the route's aim" : "the game's memory") : WkNavByArrow ? "the arrow and the route" : "the arrow"
+	what := keep.Length() " turns of 140 degrees or more in " Round((A_TickCount - f1.at) / 1000) " s, no further on - by " by " (the arrow " (hRaw = "" ? "not seen" : Round(hRaw)) ", the memory " (WkNavH = "" ? "-" : Round(WkNavH)) ")"
+	if (WalkNear(d, NearDist, ArriveUnits * 2))
+		{
+		WalkLog("going to and fro by the goal: " what " - there")
+		return true
+		}
+	WkFroUntil := A_TickCount + 5000
+	keepH := []
+	for each, at in WkFroHolds
+		if (A_TickCount - at <= 60000)
+			keepH.Push(at)
+	keepH.Push(A_TickCount)
+	WkFroHolds := keepH
+	WalkLog("going to and fro: " what " - holding the course 5 s")
+	if (keepH.Length() >= 3)
+		{
+		WkFroHolds := []
+		WkBestTime := A_TickCount - StuckTime - 1
+		WalkLog("going to and fro a third time in a minute - taken as stuck")
+		}
+	return false
 	}
 
 ;Coming out of a dungeon puts you on its sigil: not straight back in (for 90 s). The zone just left is that dungeon when
