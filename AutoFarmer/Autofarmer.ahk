@@ -1113,8 +1113,11 @@ PlayerActing()
 		{
 		DebugLog("You've stopped - the bot carries on")
 		logged := 0
-		;(the walker starts its watch afresh: you may have moved, and the time you played isn't it being stuck)
-		if (IsFunc("WalkReset"))
+		;(the walker starts its watch afresh: you may have moved, and the time you played isn't it being stuck - a sigil's
+		;wait goes on: WalkResume)
+		if (IsFunc("WalkResume"))
+			Func("WalkResume").Call()
+		else if (IsFunc("WalkReset"))
 			Func("WalkReset").Call()
 		}
 	PlayerActive := acting

@@ -51,6 +51,9 @@ global WkSeenAt, WkHidden, WkHiddenAt, WkBias, WkBiasUntil, WkPrevMovedH, WkLast
 global WkDialog, WkPushes, WkPushStart, WkStraight, WkStraightAt
 global WkTalkDist, WkArrDist, WkLoadAt, WkSpaceAt, WkGoneSpaces
 global WkGateAt, WkGateClicks, WkGateX, WkGateLook, WkSigilUntil, WkFarAt, WkSigilSeen
+;Sigils: the zones entered through one ({zone: 1} - coming out of those puts you on their sigil), when X was last
+;pressed at one, its prompt's key and the zone it was in, the tries at each ({key: [ticks]})
+global WkSigilZones, WkSigilAt, WkSigilKey, WkSigilFromZone, WkSigilTries
 global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkMemFile, WkEsc
 ;Turns made on the spot in a row with no walking between (a route point jumping behind the wizard): after 3 the next
 ;one's made walking on, so it never just spins
@@ -178,6 +181,7 @@ WalkerInit(prefix := "AutoQuester")
 	SpeedNow := 1, SpeedSentAt := 0, WkSpeedHold := 0, SpeedSlowDist := 40, SpeedSlowUnits := 600, SpeedOff := "", SpeedMiss := 0
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
+	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
 	WkPromptSkip := {}, WkPreXText := "", WkQmLooked := {}, WkQmTalked := {}
 	WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := 0, WkJumpPushUntil := 0
 	WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := 0, WkBlindAt := 0, WkBlindBackSaid := 0, WkBlindMob := ""
@@ -295,6 +299,13 @@ WalkStep()
 			return true
 			}
 		WalkLog((WkWaitWhat = "sigil" ? "sigil" : "transport") ": waited " Round((WkWaitWhat = "sigil" ? SigilWait : TransportWait) / 1000) " s - walking on")
+		;(still in the sigil's zone: X didn't take - or its countdown stopped, the wizard moved off: X again when its prompt
+		;shows, 3 tries in 10 minutes)
+		if (WkWaitWhat = "sigil" && WkSigilKey != "" && WalkZone() = WkSigilFromZone && WalkSigilTriesLeft(WkSigilKey))
+			{
+			WkPromptUsed.Delete(WkSigilKey)
+			WalkLog("sigil: still here - X again when its prompt shows")
+			}
 		WalkReset()
 		WkLoadAt := A_TickCount
 		return true
@@ -485,10 +496,10 @@ WalkStep()
 		if (prompt = "sigil")
 			{
 			WalkZone()
-			if (InStr(WkZoneFrom, "/Interiors/") && A_TickCount - WkZoneAt < 90000)
+			if (WalkSigilJustLeft(near))
 				{
 				if (!WkPromptUsed.HasKey("exitlog") || A_TickCount - WkPromptUsed["exitlog"] > 30000)
-					WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " - not going straight back in")
+					WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " (its dungeon) - not going straight back in")
 				}
 			else if (WalkPromptFree(WkPromptDest, 600000))
 				{
@@ -941,7 +952,11 @@ WalkStep()
 		;(by the game's memory, in game units, when it can be used: the arrow's number means more or less in
 		;each zone)
 		WkNear := WalkNear(dist, ArriveDist, ArriveUnits) ? WkNear + 1 : 0
-		if (WkNear >= 2)
+		;(or walked right over it - ahead, then behind, close by)
+		passedGoal := WalkPassedGoal()
+		if (passedGoal)
+			WalkLog("walked right past the goal (" Round(WkNavObj.dist) " game units off - its point a step off the ground?) - there")
+		if (WkNear >= 2 || passedGoal)
 			{
 			StartTalk(dist)
 			return true
@@ -1449,6 +1464,61 @@ WalkDialogOpen()
 	return !ErrorLevel && RegExMatch(t, "\b(DONE|D0NE|NEXT|BACK|MORE)\b")
 	}
 
+;Coming out of a dungeon puts you on its sigil: not straight back in (for 90 s). The zone just left is that dungeon when
+;the bot went in through a sigil (WkSigilZones), or - one you went into yourself - an interior while the quest's arrow
+;doesn't lead to this sigil (near) or the game's memory says the goal's in this zone. A house or shop left by its door
+;with the goal through this sigil isn't: in
+WalkSigilJustLeft(near)
+	{
+	if (WkZoneFrom = "" || A_TickCount - WkZoneAt >= 90000)
+		return false
+	if (IsObject(WkSigilZones) && WkSigilZones.HasKey(WkZoneFrom))
+		return true
+	if (!InStr(WkZoneFrom, "/Interiors/"))
+		return false
+	return !near || (WkNavOk && WkNavHops = 0)
+	}
+
+;Tries left at the sigil whose prompt key is key: 3 X presses in 10 minutes (the old ones dropped)
+WalkSigilTriesLeft(key)
+	{
+	if (!IsObject(WkSigilTries) || !WkSigilTries.HasKey(key))
+		return true
+	recent := []
+	for each, at in WkSigilTries[key]
+		if (A_TickCount - at < 600000)
+			recent.Push(at)
+	WkSigilTries[key] := recent
+	return recent.Length() < 3
+	}
+
+;You've stopped playing (AutoFarmer's PlayerActing): the walker's watch starts afresh - but a sigil's or a boat's wait goes
+;on (walking off a sigil stops its countdown)
+WalkResume()
+	{
+	keepUntil := (WkArrived = 5 && A_TickCount < WkSigilUntil) ? WkSigilUntil : 0, keepWhat := WkWaitWhat
+	WalkReset()
+	if (keepUntil)
+		WkArrived := 5, WkSigilUntil := keepUntil, WkWaitWhat := keepWhat
+	}
+
+;Walked right past the goal: by the game's memory it was ahead and close, and is now behind and as close - its point a
+;step off the ground (a sigil's: the distance never gets down to ArriveUnits, and the wizard goes to and fro over it).
+;Counts as there. Called each step the goal's distance is looked at
+WalkPassedGoal()
+	{
+	static prevH := "", prevD := "", prevAt := 0
+	if (!WkNavOk || !IsObject(WkNavObj) || WkNavObj.dist = "" || WkNavH = "")
+		{
+		prevH := "", prevD := ""
+		return false
+		}
+	nowH := WkNavH, nowD := WkNavObj.dist
+	passed := prevH != "" && A_TickCount - prevAt < 4000 && Abs(prevH) <= 45 && Abs(nowH) >= 135 && nowD <= ArriveUnits * 2 && prevD <= ArriveUnits * 2
+	prevH := nowH, prevD := nowD, prevAt := A_TickCount
+	return passed
+	}
+
 ;The arrow led to a sigil (a dungeon entrance: its prompt says "Press X to Enter"): stop, press X, and
 ;stand still for SigilWait while it counts down and the dungeon loads (WalkStep's WkArrived = 5)
 StartSigil(why)
@@ -1457,6 +1527,13 @@ StartSigil(why)
 		ReleaseKeys()
 	WkArrived := 5, WkSigilUntil := A_TickCount + SigilWait, WkWaitWhat := "sigil"
 	WkPromptUsed[WkPromptDest = "" ? "?" : WkPromptDest] := A_TickCount
+	;(for the tries at it, and the zone it leads to - WalkZone notes it when the zone changes)
+	WkSigilKey := WkPromptDest = "" ? "?" : WkPromptDest, WkSigilAt := A_TickCount, WkSigilFromZone := WalkZone()
+	if (!IsObject(WkSigilTries))
+		WkSigilTries := {}
+	if (!WkSigilTries.HasKey(WkSigilKey))
+		WkSigilTries[WkSigilKey] := []
+	WkSigilTries[WkSigilKey].Push(A_TickCount)
 	PressKey("x")
 	WalkLog("sigil: " why " - pressed X, waiting " Round(SigilWait / 1000) " s")
 	SetStatus("entering the sigil - pressed X")
@@ -3096,7 +3173,12 @@ WalkZone(fresh := false)
 		}
 	;(the zone just left, and when that was noticed: coming out of a dungeon puts you at its sigil)
 	if (zoneBefore != "" && zone != zoneBefore)
+		{
 		WkZoneFrom := zoneBefore, WkZoneAt := A_TickCount
+		;(X at a sigil just before: this zone's its dungeon)
+		if (WkSigilAt && A_TickCount - WkSigilAt < SigilWait + 15000 && IsObject(WkSigilZones))
+			WkSigilZones[zone] := 1, WkSigilAt := 0
+		}
 	return zone
 	}
 
