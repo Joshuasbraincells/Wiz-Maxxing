@@ -54,7 +54,7 @@ CfgList()
 	list.Push({key: "healat", label: "Heal under this % of health (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
 		, help: "In battle: a healing card (the heal1 / heal2 pictures) on yourself when your health is under this %. 0 = never."})
 	list.Push({key: "enemyspells", label: "Predict the enemies' spells", kind: "check", def: 1
-		, help: "Each round: what each enemy will most likely cast - its spells off the Wizard101 wiki (Fandom), looked up once and kept; its pips guessed from the round; what it was seen casting (the game's own log) - and the chance their hits kill you this round. In debug.log ('enemy spells:') and on the dashboard (Threat). Needs the vision helper."})
+		, help: "Each round: what each enemy will most likely cast - its spells off the Wizard101 wiki (Fandom), looked up once and kept; its pips guessed from the round; what it was seen casting (the game's own log) - and the chance their hits kill you this round. In debug.log ('enemy spells:') and on the dashboard (Threat; each enemy's every spell on its Cards tab). Needs the vision helper."})
 	list.Push({key: "defendat", label: "...defend first at this % chance to die (0 = never)", kind: "num", lo: 0, hi: 100, def: 30
 		, help: "When the chance this round's enemy hits kill you is this % or more and no hit in hand ends the battle: a heal on yourself (heal1 / heal2), else Tower Shield, before anything else. 0 = only show the odds."})
 	list.Push({key: "potionat", label: "Drink a potion under this % (0 = never)", kind: "num", lo: 0, hi: 100, def: 40

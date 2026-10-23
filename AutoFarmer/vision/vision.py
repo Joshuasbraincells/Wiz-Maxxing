@@ -1180,12 +1180,36 @@ def enemy_lines(names, rnd, health, team, hist):
                 seen.setdefault(r, {})[i] = enemies.clean_spell(raw, c.get('spells', ())) or None
     b.step(max(1, rnd), seen)
     pred, lethal = b.predict(health or None)
+
+    def bare(s):
+        return str(s or '').replace('|', ' ').replace(';', ' ').replace(':', ' ')
+
+    def n(x):
+        return '' if x is None else f'{x:g}'
+
     lines = []
     for i, e in enumerate(pred):
         c = wiki.creature(e['name'])
         state = 'pending' if c is None else ('missing' if c.get('missing') else 'ok')
-        top = ';'.join(f"{s}:{p:.2f}:{br}" for s, p, br in e['top'])
-        lines.append(f"enemy|{i}|{e['name']}|{state}|{e['pips']:.1f}|{e['hit']:.2f}|{e['max']}|{top}")
+        top = ';'.join(f"{bare(s)}:{p:.2f}:{bare(br)}" for s, p, br in e['top'])
+        # (9-12, the dashboard's Cards tab: its school, rank and health off the wiki; every spell of it -
+        # spell:chance:brief:seen before (weighed):rounds it cast it this battle (r/r) - likeliest first, a pass among
+        # them, a spell it cast this battle that its wiki page hasn't added at 0)
+        mine = {}
+        for r in sorted(seen):
+            if i in seen[r]:
+                mine.setdefault(seen[r][i] or 'pass', []).append(str(r))
+        deck = list(e['deck'])
+        extra = [s for s in mine if not any(d[0] == s for d in deck)]
+        if extra:
+            before = b._seen(e['name'], (c or {}).get('spells', ()))
+            before['pass'] = float(casts.counts(e['name']).get('_pass', 0))
+            for s in extra:
+                deck.append((s, 0.0, wiki.brief(s) if wiki.spell(s) else '', before.get(s, 0.0)))
+        cs = c if state == 'ok' else {}
+        cards = ';'.join(f"{bare(s)}:{p:.2f}:{bare(br)}:{w:g}:{'/'.join(mine.get(s, []))}" for s, p, br, w in deck)
+        lines.append(f"enemy|{i}|{e['name']}|{state}|{e['pips']:.1f}|{e['hit']:.2f}|{e['max']}|{top}"
+                     f"|{bare(cs.get('school'))}|{n(cs.get('rank'))}|{n(cs.get('health'))}|{cards}")
     lines.append('lethal|' + ('' if lethal is None else f'{lethal:.2f}'))
     return lines
 

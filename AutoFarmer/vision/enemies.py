@@ -400,11 +400,7 @@ class Battle:
         c = self.wiki.creature(e.name)
         out = [(None, PASS_PRIOR, None)]
         if c and not c.get('missing'):
-            seen = {}
-            for k, v in self.casts.counts(e.name).items():
-                if k != '_pass':
-                    s = clean_spell(k, c['spells'])
-                    seen[s] = seen.get(s, 0) + v
+            seen = self._seen(e.name, c['spells'])
             spells = list(dict.fromkeys(c['spells']))
             raw = [1.0 + seen.get(s, 0) for s in spells]
             # (the casts seen say which spells it favours, not how often it passes: the weights kept to the same total
@@ -416,6 +412,26 @@ class Battle:
                     d = {}
                 out.append((s, r * scale, d))
         return out
+
+    def _seen(self, name, spells):
+        """{spell: its casts seen, weighed} for creature name - the log's names matched to the wiki's (spells)"""
+        seen = {}
+        for k, v in self.casts.counts(name).items():
+            if k != '_pass':
+                s = clean_spell(k, spells)
+                seen[s] = seen.get(s, 0) + v
+        return seen
+
+    def _deck(self, e, dist):
+        """[(spell or 'pass', its chance this round, brief, its casts seen - weighed)]: every spell the wiki has for it,
+        and a pass, likeliest first; [] for a creature the wiki hasn't (yet)"""
+        c = self.wiki.creature(e.name)
+        if not c or c.get('missing'):
+            return []
+        seen = self._seen(e.name, c['spells'])
+        rows = [(s, dist.get(s, 0.0), self.wiki.brief(s), seen.get(s, 0.0)) for s in dict.fromkeys(c['spells'])]
+        rows.append(('pass', dist.get(None, 0.0), '', float(self.casts.counts(e.name).get('_pass', 0))))
+        return sorted(rows, key=lambda r: -r[1])
 
     @staticmethod
     def _cost(d):
@@ -482,8 +498,9 @@ class Battle:
         return float(self.enemies[index].pips[cost:].sum()) if cost > 0 else 1.0
 
     def predict(self, health=None):
-        """[{name, pips, top: [(spell, chance, brief)], hit: chance it hits the wizard, max: its biggest hit}], and the
-        chance all their hits this round together reach health ('lethal'; None without health)"""
+        """[{name, pips, top: [(spell, chance, brief)], hit: chance it hits the wizard, max: its biggest hit, deck: all
+        its spells (_deck)}], and the chance all their hits this round together reach health ('lethal'; None without
+        health)"""
         rng = np.random.default_rng(12345)
         out, sampled = [], []
         for e in self.enemies:
@@ -505,7 +522,7 @@ class Battle:
                 outcomes.append((p * acc, lo, hi))
             out.append({'name': e.name, 'pips': float(np.dot(np.arange(MAX_PIPS + 1), e.pips)),
                         'top': [(s or 'pass', p, self.wiki.brief(s) if s else '') for s, p in top[:3]],
-                        'hit': hit, 'max': big, 'known': bool(self.wiki.creature(e.name))})
+                        'hit': hit, 'max': big, 'known': bool(self.wiki.creature(e.name)), 'deck': self._deck(e, dist)})
             sampled.append(outcomes)
         lethal = None
         if health:

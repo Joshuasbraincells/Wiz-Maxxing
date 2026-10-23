@@ -241,6 +241,9 @@ EnemyDanger()
 	DebugLog("  enemy spells: " edText " - " edRisk)
 	if (IsFunc("DashSee"))
 		Func("DashSee").Call("threat", edDash (edLethal = "" ? "" : " - " Round(edLethal * 100) "% lethal"))
+	;(the Cards tab: every spell of each enemy and its chance)
+	if (IsFunc("DashFoesSeen"))
+		Func("DashFoesSeen").Call(edAns, edLethal, edHealth, BlRound + 1)
 	edAt := Stat("defendat")
 	return edLethal != "" && edAt > 0 && edLethal * 100 >= edAt
 	}

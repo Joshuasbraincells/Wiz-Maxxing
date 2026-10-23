@@ -168,7 +168,7 @@ the window keeps what you typed until it's sent.
 
 Simple and advanced views: the dashboard's bottom-right button switches it -
 simple shows what the bot is doing and seeing (STATISTICS, WHAT IT SEES) with
-the main buttons, advanced adds the hand's cards, the live log and its buttons.
+the main buttons, advanced adds the live log and its buttons.
 The Settings window's "All settings" / "Fewer settings" switches it between the
 most used settings and all of them (changes not saved yet are kept). Each is
 remembered (dashboard.ini [view]); a new install starts simple, one that ran
@@ -184,8 +184,14 @@ it (dashboard.ini). It never takes the focus by itself. Its X (close) stops
 the bot; minimise it (or Windows+2) to just put it away. Next to STATISTICS:
 the CPU and RAM in use, every second - the bot (with its vision helper), the
 game and the whole PC (CPU share of all cores, RAM in use). Its tabs: Bot (all
-that), Dungeons (below) and Spells (the cards it learned - see "Learned spells"
-under New cards; tray menu "Learned spells" opens it there).
+that), Dungeons (below), Spells (the cards it learned - see "Learned spells"
+under New cards; tray menu "Learned spells" opens it there) and Cards: your
+hand as the bot read it this round (each card's picture, what it took it for,
+its pips - white known, yellow new to it, grey can't cast) with the Learn every
+card button, and the enemies' spells (see Enemy spells) - each enemy's school,
+rank and health, the chance it hits you, its pips, and under it every spell it
+has, likeliest first: the chance it casts it this round, its pips and damage,
+the rounds it cast it this battle, and how often it was seen casting it.
 
 Settings (the dashboard's Settings button, or the tray menu "Settings..."):
 the mouse and the bot's waits, and how it plays its cards, in one window -
@@ -335,7 +341,8 @@ say "saving pips for ...".
 
 Enemy spells (enemyspells:1 - Settings, HEALTH): each round the bot works out
 what each enemy will most likely cast and the chance their hits kill you this
-round - in debug.log ("enemy spells: ...") and on the dashboard (Threat).
+round - in debug.log ("enemy spells: ..."), on the dashboard (Threat) and,
+each enemy's every spell with its chance, on the dashboard's Cards tab.
 	- Who's fighting and what each cast comes from the game's own log
 	  (Bin\WizardClient.log, only read): it names every slot of the circle
 	  and each caster's spell each round, passes too.
@@ -553,7 +560,7 @@ can't stack any more, as before. PlayerStats.txt: discardunused:0 switches it
 off, discardmax: how many a round. Learned treasure cards are never discarded
 (that would use them up), nor spells set to Never discard on the Spells tab.
 debug.log: "Discarded learned card ... - a kind the bot doesn't play: stun".
-Learn every card (dashboard button, or the tray menu): for a deck you made
+Learn every card (the dashboard's Cards tab, or the tray menu): for a deck you made
 to be learned - one of every card. Switch it on and start a battle (an easy
 one). Each round the bot learns what's in hand, right-clicks away every card
 it knows so the next round draws new ones, keeps greyed-out cards it doesn't

@@ -31,7 +31,9 @@ global DashUpdBtn, DashUpdBusy, DashBugBtn
 global DashTabOX, DashTabOY, DashTabOW, DashTabOH
 ;The bottom row's other buttons (they share the window's width)
 global DashClearBtn, DashLogBtn, DashWalkBtn, DashFolderBtn, DashBotBtn
-;The Hand section: its heading, and a picture and a label for each of up to 7 cards
+;The Cards tab: your hand - its heading, and a picture and a label for each of up to 7 cards - and the enemies' spells
+;(their heading and list: DashFoesSeen)
+global DashFoeHead, DashFoeList
 global DashLearnBtn, DashHandHead, DashCardPic1, DashCardPic2, DashCardPic3, DashCardPic4, DashCardPic5, DashCardPic6, DashCardPic7
 global DashCardTxt1, DashCardTxt2, DashCardTxt3, DashCardTxt4, DashCardTxt5, DashCardTxt6, DashCardTxt7
 ;The map window: the button, the window, its picture and line; the request it's waiting for (kind: map / nav,
@@ -55,10 +57,10 @@ DashInit()
 	Gui, Dash:Add, Button, x544 y7 w88 h24 gDashBugButton vDashBugBtn, Report a bug
 	Gui, Dash:Add, Button, x640 y7 w136 h24 gDashUpdButton vDashUpdBtn, Check for updates
 	;(the button says "Checking..." a while after a click: DashUpdBusy)
-	;Three tabs: Bot (statistics, what it sees, the hand, the log), Dungeons (Dungeons.ahk) and Spells (the cards
-	;the bot learned by itself: Spells.ahk)
+	;Four tabs: Bot (statistics, what it sees, the log), Dungeons (Dungeons.ahk), Spells (the cards the bot learned by
+	;itself: Spells.ahk) and Cards (your hand, the enemies' spells)
 	Gui, Dash:Font, s9 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells
+	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells|Cards
 	Gui, Dash:Tab, 1
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y68 w86 h16, STATISTICS
@@ -73,22 +75,10 @@ DashInit()
 	Gui, Dash:Font, s9 w400 cDADADA, Consolas
 	Gui, Dash:Add, Text, x12 y88 w350 h190 vDashStatText
 	Gui, Dash:Add, Text, x372 y88 w400 h190 vDashSeeText
-	;The hand: each card as the bot saw it this round, and what it took it for (DashHandSeen)
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y286 w630 h16 vDashHandHead, HAND - nothing read yet (once a round in battle)
-	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x646 y280 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
-	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
-	Loop, 7
-		{
-		cx := 12 + (A_Index - 1) * 72
-		Gui, Dash:Add, Picture, x%cx% y306 w58 h97 Hidden vDashCardPic%A_Index%
-		Gui, Dash:Add, Text, x%cx% y405 w66 h28 Hidden vDashCardTxt%A_Index%
-		}
-	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y438 w200 h16 vDashLogHead, LOG
+	Gui, Dash:Add, Text, x12 y286 w200 h16 vDashLogHead, LOG
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
-	Gui, Dash:Add, Edit, x12 y458 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
+	Gui, Dash:Add, Edit, x12 y306 w760 h452 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	Gui, Dash:Add, Button, x12 y768 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
 	Gui, Dash:Add, Button, x130 y768 w80 h26 gDashClearLog vDashClearBtn, Clear
@@ -151,6 +141,25 @@ DashInit()
 	Gui, Dash:Add, Picture, x632 y190 w140 h233 Hidden vSpPreview
 	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
 	Gui, Dash:Add, Text, x632 y428 w140 h360 vSpPreviewTxt, Pick a spell to see it.
+	;The Cards tab: your hand - each card as the bot saw it this round, and what it took it for (DashHandSeen) - and the
+	;enemies' spells: what each is likely to cast this round (EnemySpells.ahk EnemyDanger: DashFoesSeen)
+	Gui, Dash:Tab, 4
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y70 w630 h16 vDashHandHead, YOUR HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x646 y64 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
+	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
+	Loop, 7
+		{
+		cx := 12 + (A_Index - 1) * 72
+		Gui, Dash:Add, Picture, x%cx% y92 w58 h97 Hidden vDashCardPic%A_Index%
+		Gui, Dash:Add, Text, x%cx% y191 w66 h28 Hidden vDashCardTxt%A_Index%
+		}
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y228 w760 h16 vDashFoeHead, ENEMIES - nothing yet (each battle round, with Settings > Predict the enemies' spells on)
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y248 w760 h544 vDashFoeList NoSort -Multi Background111317 cDADADA, Enemy|Spell|This round|Pips, what it does|This battle|Seen (all battles)
+	LV_ModifyCol(1, 130), LV_ModifyCol(2, 170), LV_ModifyCol(3, 76), LV_ModifyCol(4, 186), LV_ModifyCol(5, 84), LV_ModifyCol(6, 96)
 	Gui, Dash:Tab
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
@@ -221,21 +230,15 @@ ViewSimple(what)
 	return v = 1
 	}
 
-;The view shown: simple hides the Hand section and the log with its buttons (the window that much shorter), advanced
-;shows them; the view button says which the other is
+;The view shown: simple hides the log with its buttons (the window that much shorter), advanced shows them; the view
+;button says which the other is
 DashApplyView()
 	{
 	if (!DashHwnd)
 		return
 	act := DashSimple ? "Hide" : "Show"
-	for each, c in ["DashHandHead", "DashLearnBtn", "DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn"]
+	for each, c in ["DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn"]
 		GuiControl, Dash:%act%, %c%
-	if (DashSimple)
-		Loop, 7
-			{
-			GuiControl, Dash:Hide, DashCardPic%A_Index%
-			GuiControl, Dash:Hide, DashCardTxt%A_Index%
-			}
 	GuiControl, Dash:, DashViewBtn, % DashSimple ? "Advanced view" : "Simple view"
 	Gui, % "Dash:+MinSize740x" (DashSimple ? 330 : 640)
 	}
@@ -514,7 +517,7 @@ DashHandSeen(answer)
 		GuiControl, Dash:Hide, DashCardTxt%slot%
 		}
 	FormatTime, now, , HH:mm:ss
-	GuiControl, Dash:, DashHandHead, % "HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
+	GuiControl, Dash:, DashHandHead, % "YOUR HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
 	DashSee("hand", text)
 	}
 
@@ -537,16 +540,68 @@ DashHandCard(n, name, known, grey, pips, box := "")
 		{
 		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
 		GuiControl, Dash:, DashCardPic%n%, % "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
-		if (!DashSimple)
-			GuiControl, Dash:Show, DashCardPic%n%
+		GuiControl, Dash:Show, DashCardPic%n%
 		}
 	else
 		GuiControl, Dash:Hide, DashCardPic%n%
 	colour := grey ? "8A8A8A" : known = "" ? "F2C14E" : "E8E8E8"
 	GuiControl, Dash:+c%colour%, DashCardTxt%n%
 	GuiControl, Dash:, DashCardTxt%n%, % SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "")
-	if (!DashSimple)
-		GuiControl, Dash:Show, DashCardTxt%n%
+	GuiControl, Dash:Show, DashCardTxt%n%
+	}
+
+;The Cards tab's enemies (EnemySpells.ahk EnemyDanger, each round): each one - its school, rank and health off the wiki,
+;the chance it hits you, its pips - and under it every spell it has, likeliest first: the chance it casts it this
+;round, its pips and damage, the rounds it cast it this battle, how often it was seen casting it (all battles, weighed).
+;answer: /enemies'; lethal: the chance their hits kill you this round ("" not known); health: yours as read ("" not
+;read); rnd: the round
+DashFoesSeen(answer, lethal, health, rnd)
+	{
+	if (!DashHwnd)
+		return
+	wasCrit := A_IsCritical
+	Critical
+	;(the window has three ListViews: this one for the LV_ functions, the one before put back after)
+	Gui, Dash:Default
+	prevLV := A_DefaultListView
+	Gui, Dash:ListView, DashFoeList
+	GuiControl, Dash:-Redraw, DashFoeList
+	LV_Delete()
+	foes := 0
+	Loop, Parse, answer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f[1] != "enemy")
+			continue
+		foes += 1
+		if (foes > 1)
+			LV_Add("", "")
+		if (f[4] != "ok")
+			LV_Add("", f[3], f[4] = "pending" ? "looking it up on the wiki" : "not on the wiki - its spells not known")
+		else
+			{
+			about := (f[9] != "" ? f[9] : "") (f[10] != "" ? ", rank " f[10] : "") (f[11] != "" ? ", " f[11] " health" : "")
+			LV_Add("", f[3], about = "" ? "" : "(" LTrim(about, ", ") ")", "hits you " Round(f[6] * 100) "%"
+				, "~" Round(f[5], 1) " pips now" (f[7] > 0 ? ", biggest hit " f[7] : ""))
+			}
+		;(spell:chance:pips and damage:seen before:rounds cast this battle)
+		for each, card in StrSplit(f[12], ";")
+			{
+			p := StrSplit(card, ":")
+			if (p[1] = "")
+				continue
+			LV_Add("", "", "   " p[1], Round(p[2] * 100) "%", p[3], p[5] = "" ? "" : "round " StrReplace(p[5], "/", ", ")
+				, p[4] > 0 ? RegExReplace(Round(p[4], 1), "\.0$") : "")
+			}
+		}
+	GuiControl, Dash:+Redraw, DashFoeList
+	if (prevLV != "" && prevLV != "DashFoeList")
+		Gui, Dash:ListView, %prevLV%
+	FormatTime, now, , HH:mm:ss
+	GuiControl, Dash:, DashFoeHead, % "ENEMIES " now ", round " rnd " - " (foes = 0 ? "none named in the game's log"
+		: lethal = "" ? "your health not read: the chance they kill you not known" : Round(lethal * 100) "% chance their hits kill you this round (your health " health ")")
+	if (!wasCrit)
+		Critical, Off
 	}
 
 ;A slot's card name alone (e.g. "Scarab"), else the slot
@@ -1179,10 +1234,13 @@ DashGuiSize:
 	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84 - DashTabOX
 	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166 - DashTabOX
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384
-	;(the Learn button at the right end of the Hand row, its heading up to it)
+	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 352)
+	;(the Cards tab: the Learn button at the right end of the hand's row, its heading up to it; the enemies' list takes
+	;what's left)
 	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138 - DashTabOX
 	GuiControl, Dash:Move, DashHandHead, % "w" A_GuiWidth - 154
-	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 504)
+	GuiControl, Dash:Move, DashFoeHead, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, DashFoeList, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 260)
 	;(the tabs fill the window under the heading; the Dungeons tab's list takes what's left)
 	GuiControl, Dash:Move, DashTabs, % "w" A_GuiWidth - 12 " h" A_GuiHeight - 42
 	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24
