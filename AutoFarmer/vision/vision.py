@@ -1325,6 +1325,30 @@ QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this 
 MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
 
 
+# ---------------------------------------------------------------- party (party.py)
+PARTY = None
+
+
+def party():
+    """this PC's part of the party, made on first use (its thread reads the wizard's place only while the party's on)"""
+    global PARTY
+    if PARTY is None:
+        import party as party_mod
+
+        def read():
+            try:
+                return nav_reader().read(path=False, wait=0.2)
+            except Exception:  # noqa: BLE001 - no game, no place
+                return None
+        PARTY = party_mod.Party(read, log=log)
+    return PARTY
+
+
+def party_stop():
+    if PARTY is not None:
+        PARTY.stop()
+
+
 def nav_reader():
     global NAV
     with NAV_LOCK:
@@ -1600,12 +1624,14 @@ def mob_avoid(q):
         return min(hi, max(lo, v))
     rng = num('mobr', 300.0, 100.0, 3000.0)
     shape = q.get('shape', '')
+    # (a semi-circle or cone's reach all round: body= - the bot raises it when a mob catches the wizard from the side)
+    body = min(rng, num('body', navroute.MOB_BODY, 40.0, 1500.0))
     if shape == '1':
         return rng, (0.0, 0.0)
     if shape == '2':
-        return navroute.MOB_BODY, (180.0, rng)
+        return body, (180.0, rng)
     if shape == '3':
-        return navroute.MOB_BODY, (num('cone', 60.0, 5.0, 180.0), rng)
+        return body, (num('cone', 60.0, 5.0, 180.0), rng)
     return min(1500.0, rng), mob_cone(q)
 
 
@@ -2237,8 +2263,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':
                 self.reply('OK bye')
+                party_stop()
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
+            if u.path == '/party':
+                # (AutoFarmer's party settings and state in - role, name, leader, port, battle, hp, ready, walk, bot,
+                # hold; the party as this PC sees it out: party|.., me|.., leader|.., member|.. - party.py)
+                return self.reply('\n'.join(party().update(q)))
             if u.path in ('/cards', '/badge'):
                 x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))
                 scale = float(q['scale'])
@@ -2297,6 +2328,7 @@ def main():
             while parent_alive(args.parent):
                 time.sleep(5)
             log('AutoFarmer is gone - stopping')
+            party_stop()
             server.shutdown()
         threading.Thread(target=watch, daemon=True).start()
     server.serve_forever()

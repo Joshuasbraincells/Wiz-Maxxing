@@ -10,6 +10,9 @@
 ;The window; its help line and its note by the buttons; each setting's control (key -> hwnd), the value it
 ;showed (key -> value) and the help for each label and control (hwnd -> text); the help on show
 global CfgHwnd, CfgHelpText, CfgNote, CfgCtls, CfgShownVals, CfgHelps, CfgHelpShown
+;The view: simple (only the most used settings - CfgSimpleKeys) or all of them; changes not saved yet, kept across a
+;switch of view ({key: value}); where the window was (the switch opens it there again)
+global CfgSimple, CfgPending, CfgReopenX, CfgReopenY
 ;Where the mouse was when the bot took it (MouseGrab), whether that's kept, and when it was taken
 global MouseHomeX, MouseHomeY, MouseHomeSet, MouseHomeAt
 ;Cards of kinds switched off discarded this round (RoundStart clears it; at most discardmax)
@@ -29,6 +32,8 @@ CfgList()
 		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.)"})
 	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 10
 		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."})
+	list.Push({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
+		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."})
 	list.Push({key: "mousereturn", label: "Put the mouse back afterwards", kind: "check", def: 1
 		, help: "When the bot takes the mouse - a battle round, a click out of battle - it goes back to where it was once the bot's done (not if you've used the mouse or keys meanwhile). Off: it's left in the middle of the game."})
 	list.Push({key: "mousespeed", label: "Mouse speed (0 = jump there)", kind: "num", lo: 0, hi: 100, def: 1
@@ -75,6 +80,10 @@ CfgList()
 		, help: "How far the shape reaches from a mob. More: safer, but narrow streets may leave no way round (then it waits for the mob to turn or move)."})
 	list.Push({key: "mobcone", label: "...the cone's width (degrees; a cone only)", kind: "num", lo: 5, hi: 180, def: 60
 		, help: "With 'A cone in front': how wide the cone is. Players say 50 to 120."})
+	list.Push({key: "mobbody", label: "...their reach all round (semi-circle / cone)", kind: "num", lo: 60, hi: 1500, def: 120
+		, help: "With a semi-circle or cone in front: how far round the rest of each mob the route keeps away too - a mob notices you beside or behind it from nearer than in front."})
+	list.Push({key: "mobgrow", label: "...more after each battle a mob not the quest's starts", kind: "check", def: 1
+		, help: "Caught by a mob the quest doesn't need (not collecting, not one in the goal line, not right after X at the goal): the reach is raised to where it caught you from, and a bit - its front's (how far they notice you) when it caught you in front, its reach all round when from the side or behind. 1500 at most; set them back in Settings any time."})
 	list.Push({key: "|"})
 	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
 	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]
@@ -120,7 +129,53 @@ CfgList()
 		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."})
 	list.Push({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
 		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."})
+	list.Push({key: "-", label: "PARTY (ONE WIZARD PER PC, SAME HOME NETWORK)"})
+	list.Push({key: "partyrole", label: "This wizard in the party", kind: "pick", def: 1, picks: ["Off", "Leader - quests, the others follow", "Follower - goes where the leader goes"]
+		, help: "Leader: quests as now, and waits while a follower is far, in another zone or not ready. Follower: goes where the leader goes instead of its own quest - to it, through the door it took, into its battles. Set this wizard's party name, and on a follower the leader PC's address, with the tray menu's Party.... The leader's PC asks once (Windows) to let Python through its firewall - allow it on Private networks."})
+	list.Push({key: "partyport", label: "...the party's port", kind: "num", lo: 1024, hi: 65535, def: 47140
+		, help: "The leader's bot listens for its followers on this port of your home network; the same on every PC in the party."})
+	list.Push({key: "partynear", label: "...a follower stays this near the leader", kind: "num", lo: 80, hi: 2000, def: 250
+		, help: "A follower walks to within this many game units of the leader, and walks again once the leader is twice as far."})
+	list.Push({key: "partywaitdist", label: "...the leader waits for one farther than", kind: "num", lo: 300, hi: 10000, def: 800
+		, help: "The leader stops while a follower is farther than this (game units), in another zone, loading or not ready."})
+	list.Push({key: "partywaitmax", label: "...but for at most (s, 0 = no waiting)", kind: "num", lo: 0, hi: 900, def: 60
+		, help: "How long the leader waits for one follower; after that it walks on without it till it's been near again."})
 	return list
+	}
+
+;The settings the simple view shows - the most used ones
+CfgSimpleKeys()
+	{
+	static keys := ""
+	if (!IsObject(keys))
+		{
+		keys := {}
+		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "speedhack"
+			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole"]
+			keys[k] := 1
+		}
+	return keys
+	}
+
+;CfgList as the view shows it: all of it, or (simple) only CfgSimpleKeys' settings, the headings that have some under
+;them, no "|" column breaks (the window's height decides)
+CfgViewList()
+	{
+	if (!CfgSimple)
+		return CfgList()
+	keys := CfgSimpleKeys(), out := [], head := ""
+	for each, s in CfgList()
+		{
+		if (s.key = "-")
+			head := s
+		else if (s.key != "|" && keys.HasKey(s.key))
+			{
+			if (IsObject(head))
+				out.Push(head), head := ""
+			out.Push(s)
+			}
+		}
+	return out
 	}
 
 ;Opens the window - made afresh, with the values in use now - or brings it to the front if it's open
@@ -136,6 +191,7 @@ CfgShow()
 	if (!hooked)
 		OnMessage(0x200, Func("CfgHover")), hooked := 1
 	CfgCtls := {}, CfgShownVals := {}, CfgHelps := {}, CfgHelpShown := ""
+	CfgSimple := ViewSimple("settings")
 	Gui, Cfg:New, +HwndCfgHwnd -MaximizeBox, % "Wizard101 bot " BotVersion() " - settings"
 	Gui, Cfg:Color, 1B1D22, 111317
 	Gui, Cfg:Margin, 12, 10
@@ -151,6 +207,9 @@ CfgShow()
 		if (cfgDx != "" && cfgMm != -1)
 			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " ", cfgAtX := cfgDx + 30, cfgAtY := cfgDy + 60
 		}
+	;(the view switched: where the window was)
+	if (CfgReopenX != "")
+		cfgPos := "x" CfgReopenX " y" CfgReopenY " ", cfgAtX := CfgReopenX, cfgAtY := CfgReopenY, CfgReopenX := ""
 	DashMonitorAt(cfgAtX, cfgAtY, cfgML, cfgMT, cfgMR, cfgMB)
 	cfgMaxY := Max(300, Floor((cfgMB - cfgMT) * 96 / A_ScreenDPI) - 140)
 	;(column n's right edge: 434 + 432 (n - 1), and the window's frame)
@@ -193,10 +252,12 @@ CfgShow()
 		Gui, Cfg:Font, s9 w400 cDADADA, Segoe UI
 		Gui, Cfg:Add, Text, % "x" cfgX " y" cfgY + 3 " w" cfgW " h18 +0x100 HwndcfgL", % cfgS.label
 		cfgCx := cfgX + cfgW + 8
+		;(a change not saved before the view was switched: shown, still to be saved - cfgV stays what's in use)
+		cfgNew := (IsObject(CfgPending) && CfgPending.HasKey(cfgS.key)) ? CfgPending[cfgS.key] : ""
 		if (cfgS.kind = "check")
 			{
 			cfgV := cfgV ? 1 : 0
-			Gui, Cfg:Add, Checkbox, % "x" cfgCx " y" cfgY + 3 " w18 h18 HwndcfgC Checked" cfgV
+			Gui, Cfg:Add, Checkbox, % "x" cfgCx " y" cfgY + 3 " w18 h18 HwndcfgC Checked" (cfgNew != "" ? cfgNew : cfgV)
 			}
 		else if (cfgS.kind = "pick")
 			{
@@ -204,14 +265,14 @@ CfgShow()
 			cfgList := ""
 			for each, cfgP in cfgS.picks
 				cfgList .= (cfgList = "" ? "" : "|") cfgP
-			Gui, Cfg:Add, DropDownList, % "x" cfgCx " y" cfgY " w312 AltSubmit HwndcfgC Choose" cfgV, %cfgList%
+			Gui, Cfg:Add, DropDownList, % "x" cfgCx " y" cfgY " w312 AltSubmit HwndcfgC Choose" (cfgNew != "" ? cfgNew : cfgV), %cfgList%
 			}
 		else
 			{
 			cfgV := Round(cfgV)
-			Gui, Cfg:Add, Edit, % "x" cfgCx " y" cfgY " w70 h22 Number Right HwndcfgC", %cfgV%
+			Gui, Cfg:Add, Edit, % "x" cfgCx " y" cfgY " w70 h22 Number Right HwndcfgC", % cfgNew != "" ? cfgNew : cfgV
 			;(0x80: no thousands commas)
-			Gui, Cfg:Add, UpDown, % "Range" cfgS.lo "-" cfgS.hi " 0x80 HwndcfgU", %cfgV%
+			Gui, Cfg:Add, UpDown, % "Range" cfgS.lo "-" cfgS.hi " 0x80 HwndcfgU", % cfgNew != "" ? cfgNew : cfgV
 			CfgHelps[cfgU + 0] := cfgHelp
 			}
 		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV
@@ -222,13 +283,15 @@ CfgShow()
 	cfgY := cfgPlan.bottom + (cfgTab ? 14 : 6)
 	Gui, Cfg:Font, s9 w400 c9AA0A6, Segoe UI
 	cfgHelpW := 432 * cfgPlan.cols - 32
-	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart.
+	CfgPending := ""
+	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, % "Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart." (CfgSimple ? " These are the most used ones - All settings shows the rest." : "")
 	cfgY += 44
 	Gui, Cfg:Font, s9 w400 c000000, Segoe UI
 	Gui, Cfg:Add, Button, x12 y%cfgY% w90 h26 Default gCfgSave, Save
 	Gui, Cfg:Add, Button, x+8 yp w90 h26 gCfgDefaults, Defaults
 	Gui, Cfg:Add, Button, x+8 yp w150 h26 gCfgOpenFile, Open PlayerStats.txt
 	Gui, Cfg:Add, Button, x+8 yp w90 h26 gCfgGuiClose, Close
+	Gui, Cfg:Add, Button, x+8 yp w110 h26 gCfgViewToggle, % CfgSimple ? "All settings" : "Fewer settings"
 	Gui, Cfg:Font, s9 w400 cB9E2B9, Segoe UI
 	Gui, Cfg:Add, Text, x+14 yp+5 w370 h18 vCfgNote
 	Gui, Cfg:Show, % cfgPos "AutoSize", % "Wizard101 bot " BotVersion() " - settings"
@@ -251,7 +314,7 @@ CfgPlace(maxY, tabbed)
 	top := tabbed ? 44 : 12
 	plan := {items: [], cols: 1, bottom: top, tabs: []}
 	x := 12, y := top, col := 1
-	for each, s in CfgList()
+	for each, s in CfgViewList()
 		{
 		if (s.key = "|")
 			{
@@ -568,6 +631,37 @@ CfgDefaults:
 
 CfgOpenFile:
 	Run, notepad.exe "%A_WorkingDir%\PlayerStats.txt"
+	return
+
+;Simple / all settings (dashboard.ini [view] settings): the window made again in the other view, where it was - changes
+;not saved yet kept (CfgPending), still to be saved
+CfgViewToggle:
+	CfgPending := {}
+	for CfgVKey, CfgVC in CfgCtls
+		{
+		GuiControlGet, CfgVVal, Cfg:, %CfgVC%
+		if (CfgVVal != CfgShownVals[CfgVKey])
+			CfgPending[CfgVKey] := CfgVVal
+		}
+	;(to the simple view with changes to settings it doesn't show: saved or undone first - they'd be lost)
+	CfgVHid := 0
+	if (!CfgSimple)
+		for CfgVKey in CfgPending
+			CfgVHid += CfgSimpleKeys().HasKey(CfgVKey) ? 0 : 1
+	if (CfgVHid)
+		{
+		GuiControl, Cfg:, CfgNote, % "Save first - " CfgVHid " change(s) to settings the simple view doesn't show"
+		CfgPending := ""
+		return
+		}
+	CfgVCount := CfgPending.Count()
+	WinGetPos, CfgReopenX, CfgReopenY, , , ahk_id %CfgHwnd%
+	IniWrite, % CfgSimple ? 0 : 1, %A_ScriptDir%\dashboard.ini, view, settings
+	Gui, Cfg:Destroy
+	CfgHwnd := 0
+	CfgShow()
+	if (CfgVCount)
+		GuiControl, Cfg:, CfgNote, % CfgVCount " change(s) not saved yet - Save to use them"
 	return
 
 CfgGuiClose:

@@ -106,6 +106,22 @@ with no route at all it won't walk the arrow's straight way into a mob's reach
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
 
+Mobs that catch you anyway (mobgrow:1): each battle a mob the quest doesn't
+need starts (not collecting, not one named in the goal line, not right after X
+at the goal, not a dungeon run that fights everything, not while you play)
+widens the reach the route keeps out of - to where it caught you from, and 25
+more (20 at the least; 1500 at most): how far they notice you (mobradius) when
+it caught you in front of it, their reach all round (mobbody - a semi-circle or
+cone's sides and back, 120 at first) when from the side or behind. debug.log
+says so under "Caught by ..."; set them back in Settings any time.
+
+Bring Wizard101 to the front (gamefront:0 - the dashboard's "Game to front"
+button, the tray menu, Settings): with Wizard101 not the window in front, the
+bot brings it there when the quest arrow shows (walking - once you've left the
+keyboard and mouse alone 3 s, so what you type elsewhere doesn't end up in the
+game) or a battle round is up. It brings the window forward; it never clicks in
+it to do so.
+
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.
 It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never
@@ -123,6 +139,22 @@ STATISTICS. Needs a GitHub token once per PC (Setup.exe, "GitHub updates").
 Your settings, learned cards, potion routes and pictures are kept.
 updater.log (next to Wiz-Maxxing.exe) says what it did.
 
+Party (Settings > PARTY; tray menu Party...): up to 4 wizards, one per PC on the
+same home network. One is the Leader - it quests as now, and stops while a
+follower is far (partywaitdist), in another zone, loading or not ready, for
+partywaitmax s at most. The others are Followers - instead of their own quest
+they walk to the leader (stopping partynear from it), into its battles (where
+it stood when the battle started), and through the door it took (its last spot
+in the zone, then on the way it was going). Set each wizard's party name, and on
+each follower the leader PC's name or IP, with Party... (kept in party.ini). The
+leader's PC asks once to let Python through Windows' firewall - allow it on
+Private networks (the home network has to be set to Private). The bots share
+only where each wizard is and what it's doing - nothing one sends makes another
+press or click anything. Still to come: teleport to friend when the leader is
+somewhere a door doesn't lead (the follower waits and says so), and battle roles.
+In a battle with more than one of your wizards, a bot doesn't save the school it
+read for its character (which name plate is its own isn't sure yet).
+
 Report a bug (the dashboard's button, top right, or the tray menu): say what
 went wrong; Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with
 the version, this PC's name, the screen, what the dashboard's STATISTICS and
@@ -133,6 +165,14 @@ github.com, Settings > Developer settings > Fine-grained tokens > the
 Wiz-Maxxing token > Edit > Repository permissions > Issues: Read and write >
 Update (the same token keeps working - nothing to change on the PCs). Closing
 the window keeps what you typed until it's sent.
+
+Simple and advanced views: the dashboard's bottom-right button switches it -
+simple shows what the bot is doing and seeing (STATISTICS, WHAT IT SEES) with
+the main buttons, advanced adds the hand's cards, the live log and its buttons.
+The Settings window's "All settings" / "Fewer settings" switches it between the
+most used settings and all of them (changes not saved yet are kept). Each is
+remembered (dashboard.ini [view]); a new install starts simple, one that ran
+before starts advanced.
 
 Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
 cast per card, passes, discards, kill-check hits, potions, cards learned),

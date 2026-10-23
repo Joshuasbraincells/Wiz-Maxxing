@@ -376,6 +376,50 @@ CaughtLog()
 		where := ((f[4] <= s.wide / 2 && f[3] <= s.range) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
 	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
 		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
+	MobGrow(f, s)
+	}
+
+;Caught by a mob the quest doesn't want (mobgrow, on unless 0): the reach the route keeps out of made bigger, so mobs
+;are kept further off from now on - the shape's front (mobradius) when it caught the wizard in front of it (or all round:
+;a circle, its facing unknown), its reach all round (mobbody) when from the side or behind - to where it caught him from
+;and 25 more, 20 more at the least; 1500 at most (all round past the front: the front raised too). Left as it is when the battle was
+;the quest's - collecting, a mob named in the goal line, X pressed in the last 15 s (the goal's boss), a dungeon run that
+;fights every battle - or you were playing. f: /caught's fields; s: MobShape()
+MobGrow(f, s)
+	{
+	if (Stat("mobgrow") = 0 || (Stats.HasKey("mobavoid") && !Stats["mobavoid"]))
+		return
+	mgName := f[2], mgDist := Round(f[3]), mgOff := f[4]
+	mgWhy := WkArrived = 7 ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
+		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : PlayerActive ? "you were playing" : ""
+	;(the quest's mob: its name in the goal line last read)
+	if (mgWhy = "" && WkGoalLine != "" && IsFunc("WalkLetters"))
+		{
+		mgKey := Func("WalkLetters").Call(mgName)
+		if (StrLen(mgKey) >= 4 && InStr(Func("WalkLetters").Call(WkGoalLine), mgKey))
+			mgWhy := "the quest's - in its goal line"
+		}
+	if (mgWhy != "")
+		{
+		DebugLog("  (the mobs' reach left as it is: " mgWhy ")")
+		return
+		}
+	mgFront := s.wide >= 360 || mgOff = "" || mgOff <= s.wide / 2
+	mgSet := mgFront ? "mobradius" : "mobbody"
+	mgWas := mgFront ? s.range : s.body
+	mgTo := Min(1500, Max(mgWas + 20, mgDist + 25))
+	mgWhat := mgFront ? "how far they notice you" : "their reach all round"
+	if (mgTo <= mgWas)
+		{
+		DebugLog("  not the quest's mob - " mgWhat " is at its most already (" mgWas ")")
+		return
+		}
+	;(all round further than in front: the front that far too)
+	mgPairs := [[mgSet, mgTo]]
+	if (!mgFront && mgTo > s.range)
+		mgPairs.Push(["mobradius", mgTo]), mgWhat .= " (and how far they notice you, " s.range " -> " mgTo ")"
+	if (IsFunc("CfgWrite") && Func("CfgWrite").Call(mgPairs))
+		DebugLog("  not the quest's mob - " mgWhat " raised " mgWas " -> " mgTo " (Settings: " mgSet ")")
 	}
 
 ;What the mobs see, as PlayerStats.txt says: {shape (mobshape: 1 a circle all round, 2 a semi-circle in front - the
@@ -386,7 +430,7 @@ MobShape()
 	shape := (shape >= 1 && shape <= 3) ? shape : 2
 	cone := Stats.HasKey("mobcone") && Stats["mobcone"] >= 5 ? Min(180, Round(Stats["mobcone"])) : 60
 	return {shape: shape, wide: shape = 1 ? 360 : shape = 2 ? 180 : cone, range: Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300
-		, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"}
+		, body: Stat("mobbody") > 0 ? Round(Stat("mobbody")) : 120, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"}
 	}
 
 ;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off
@@ -395,7 +439,7 @@ NavMobArgs()
 	if (Stats.HasKey("mobavoid") && !Stats["mobavoid"])
 		return ""
 	s := MobShape()
-	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "")
+	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "") (s.shape > 1 ? "&body=" s.body : "")
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08

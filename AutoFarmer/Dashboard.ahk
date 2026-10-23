@@ -19,6 +19,11 @@ global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHands
 global DashUsageText
 ;The Settings button (Settings.ahk), left of the Map button
 global DashCfgBtn
+;The view: simple (1 - what it's doing and seeing, the main buttons: no hand pictures, no log) or advanced (0 -
+;everything); its button (the bottom row's right end) and the LOG heading
+global DashSimple, DashViewBtn, DashLogHead
+;"Game to front" on/off (gamefront - Autofarmer.ahk GameFrontToggle)
+global DashFrontBtn
 ;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState); Report a
 ;bug left of it (BugReport.ahk)
 global DashUpdBtn, DashUpdBusy, DashBugBtn
@@ -39,6 +44,7 @@ global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, Dash
 DashInit()
 	{
 	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
+	DashSimple := ViewSimple("dashboard")
 	Gui, Dash:New, +Resize +MinSize740x640 +HwndDashHwnd, % "Wizard101 bot " BotVersion()
 	Gui, Dash:Color, 1B1D22, 111317
 	Gui, Dash:Margin, 12, 10
@@ -80,7 +86,7 @@ DashInit()
 		Gui, Dash:Add, Text, x%cx% y405 w66 h28 Hidden vDashCardTxt%A_Index%
 		}
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y438 w200 h16, LOG
+	Gui, Dash:Add, Text, x12 y438 w200 h16 vDashLogHead, LOG
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
 	Gui, Dash:Add, Edit, x12 y458 w760 h300 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
@@ -91,6 +97,8 @@ DashInit()
 	Gui, Dash:Add, Button, x346 y768 w150 h26 gDashWalkToggle vDashWalkBtn, Walking on/off (F8)
 	Gui, Dash:Add, Button, x504 y768 w140 h26 gDashFolder vDashFolderBtn, Open bot folder
 	Gui, Dash:Add, Button, x652 y768 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
+	Gui, Dash:Add, Button, x652 y768 w124 h26 gDashFrontToggle vDashFrontBtn, Game to front: off
+	Gui, Dash:Add, Button, x652 y768 w110 h26 gDashViewToggle vDashViewBtn, Advanced view
 	;The Dungeons tab: a run recorded once, walked again and again (Dungeons.ahk)
 	Gui, Dash:Tab, 2
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
@@ -149,6 +157,7 @@ DashInit()
 	if (earlier != "")
 		DashAppend(earlier)
 	IniRead, shown, %A_ScriptDir%\dashboard.ini, window, shown, 1
+	DashApplyView()
 	;(the Dungeons tab's list and status; the Spells tab's)
 	DgListFill()
 	DgShow()
@@ -177,6 +186,13 @@ DashBotShow(isOn)
 		GuiControl, Dash:, DashBotBtn, % "Bot: " (isOn ? "on" : "off") " (F6)"
 	}
 
+;The "Game to front" button's label
+DashFrontShow(frontOn)
+	{
+	if (DashHwnd)
+		GuiControl, Dash:, DashFrontBtn, % "Game to front: " (frontOn ? "on" : "off")
+	}
+
 ;The "Wait while I play" button's label
 DashHandsShow(waitOn)
 	{
@@ -184,16 +200,61 @@ DashHandsShow(waitOn)
 		GuiControl, Dash:, DashHandsBtn, % "Wait for me: " (waitOn ? "on" : "off")
 	}
 
-;Shows the window where it was (else on a monitor the game isn't on), without taking the focus
+;Simple (true) or advanced: which view of a window (what: "dashboard", "settings") - dashboard.ini [view]. Not set yet:
+;advanced where the bot ran before (it had a dashboard.ini - nothing that was there goes missing), simple on a new one
+ViewSimple(what)
+	{
+	ini := A_ScriptDir "\dashboard.ini"
+	IniRead, v, %ini%, view, %what%, %A_Space%
+	if (v = "")
+		{
+		;(both views decided at once - the first one asked mustn't make the file the other takes for "ran before")
+		v := FileExist(ini) ? 0 : 1
+		for each, w in ["dashboard", "settings"]
+			{
+			IniRead, had, %ini%, view, %w%, %A_Space%
+			if (had = "")
+				IniWrite, %v%, %ini%, view, %w%
+			}
+		IniRead, v, %ini%, view, %what%, %v%
+		}
+	return v = 1
+	}
+
+;The view shown: simple hides the Hand section and the log with its buttons (the window that much shorter), advanced
+;shows them; the view button says which the other is
+DashApplyView()
+	{
+	if (!DashHwnd)
+		return
+	act := DashSimple ? "Hide" : "Show"
+	for each, c in ["DashHandHead", "DashLearnBtn", "DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn"]
+		GuiControl, Dash:%act%, %c%
+	if (DashSimple)
+		Loop, 7
+			{
+			GuiControl, Dash:Hide, DashCardPic%A_Index%
+			GuiControl, Dash:Hide, DashCardTxt%A_Index%
+			}
+	GuiControl, Dash:, DashViewBtn, % DashSimple ? "Advanced view" : "Simple view"
+	Gui, % "Dash:+MinSize740x" (DashSimple ? 330 : 640)
+	}
+
+;Shows the window where it was (else on a monitor the game isn't on), without taking the focus - each view its own
+;place and size ([window]: advanced, [simple])
 DashShow()
 	{
-	IniRead, x, %A_ScriptDir%\dashboard.ini, window, x, %A_Space%
-	IniRead, y, %A_ScriptDir%\dashboard.ini, window, y, %A_Space%
-	IniRead, w, %A_ScriptDir%\dashboard.ini, window, w, 784
-	IniRead, h, %A_ScriptDir%\dashboard.ini, window, h, %A_Space%
+	section := DashSimple ? "simple" : "window"
+	IniRead, x, %A_ScriptDir%\dashboard.ini, %section%, x, %A_Space%
+	IniRead, y, %A_ScriptDir%\dashboard.ini, %section%, y, %A_Space%
+	IniRead, w, %A_ScriptDir%\dashboard.ini, %section%, w, 784
+	IniRead, h, %A_ScriptDir%\dashboard.ini, %section%, h, %A_Space%
 	IniRead, layout, %A_ScriptDir%\dashboard.ini, window, layout, 1
 	;(the Hand section came in above the log, then the tabs: a window saved before that is that much taller now)
-	h := (h = "") ? 804 : (layout < 2 ? h + 180 : layout < 3 ? h + 28 : h)
+	if (DashSimple)
+		h := (h = "") ? 330 : Max(330, h)
+	else
+		h := (h = "") ? 804 : (layout < 2 ? h + 180 : layout < 3 ? h + 28 : h)
 	;(w and h are at 100% display scaling; Windows' scaling makes the window that much bigger)
 	dpi := A_ScreenDPI / 96
 	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
@@ -285,7 +346,9 @@ DashSavePlace()
 	{
 	if (!DashShown || !DashHwnd)
 		return
-	if (DashSaveWin(DashHwnd, "window"))
+	if (DashSimple)
+		DashSaveWin(DashHwnd, "simple")
+	else if (DashSaveWin(DashHwnd, "window"))
 		IniWrite, 3, %A_ScriptDir%\dashboard.ini, window, layout
 	}
 
@@ -474,14 +537,16 @@ DashHandCard(n, name, known, grey, pips, box := "")
 		{
 		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
 		GuiControl, Dash:, DashCardPic%n%, % "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
-		GuiControl, Dash:Show, DashCardPic%n%
+		if (!DashSimple)
+			GuiControl, Dash:Show, DashCardPic%n%
 		}
 	else
 		GuiControl, Dash:Hide, DashCardPic%n%
 	colour := grey ? "8A8A8A" : known = "" ? "F2C14E" : "E8E8E8"
 	GuiControl, Dash:+c%colour%, DashCardTxt%n%
 	GuiControl, Dash:, DashCardTxt%n%, % SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "")
-	GuiControl, Dash:Show, DashCardTxt%n%
+	if (!DashSimple)
+		GuiControl, Dash:Show, DashCardTxt%n%
 	}
 
 ;A slot's card name alone (e.g. "Scarab"), else the slot
@@ -605,6 +670,7 @@ DashRefresh()
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"
 		. "Walker       " DashCut(StatusText != "" ? StatusText : "-") "`n"
+		. (see.party != "" ? "Party        " DashCut(see.party) "`n" : "")
 		. "Pictures     " DashCut(see.pictures != "" ? RegExReplace(see.pictures, " - card area.*") : "?") "`n"
 		. "Last learned " DashCut(see.lastLearned != "" ? see.lastLearned : "-")
 		. (see.reconnect != "" && A_TickCount - see.reconnectAt < 600000 ? "`nReconnect    " DashCut(see.reconnect) : "")
@@ -1070,6 +1136,21 @@ DashBotToggle:
 		Func("BotToggle").Call()
 	return
 
+;Simple / advanced view (dashboard.ini [view] dashboard): each view keeps its own place and size
+DashViewToggle:
+	DashSavePlace()
+	DashSimple := !DashSimple
+	IniWrite, % DashSimple ? 1 : 0, %A_ScriptDir%\dashboard.ini, view, dashboard
+	DashApplyView()
+	DashShow()
+	return
+
+;"Bring Wizard101 to the front" on/off (GameFrontToggle in Autofarmer.ahk)
+DashFrontToggle:
+	if (IsFunc("GameFrontToggle"))
+		Func("GameFrontToggle").Call()
+	return
+
 ;"Wait while I play" on/off (HandsOffToggle in Autofarmer.ahk)
 DashHandsToggle:
 	if (IsFunc("HandsOffToggle"))
@@ -1101,7 +1182,7 @@ DashGuiSize:
 	;(the Learn button at the right end of the Hand row, its heading up to it)
 	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138 - DashTabOX
 	GuiControl, Dash:Move, DashHandHead, % "w" A_GuiWidth - 154
-	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 504
+	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 504)
 	;(the tabs fill the window under the heading; the Dungeons tab's list takes what's left)
 	GuiControl, Dash:Move, DashTabs, % "w" A_GuiWidth - 12 " h" A_GuiHeight - 42
 	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24
@@ -1113,13 +1194,19 @@ DashGuiSize:
 	GuiControl, Dash:Move, SpList, % "w" A_GuiWidth - 172 " h" A_GuiHeight - 202
 	GuiControl, Dash:Move, SpPreview, % "x" A_GuiWidth - 152 - DashTabOX
 	GuiControl, Dash:Move, SpPreviewTxt, % "x" A_GuiWidth - 152 - DashTabOX " h" Max(40, A_GuiHeight - 440)
-	;(the bottom row shares the width, each button in proportion to the width it was made with, so all six
-	;fit at any size - 620 at the least)
+	;(the bottom row shares the width, each button in proportion to the width it was made with, so all fit at any
+	;size - 620 at the least; the simple view: without the log's three)
 	;(a label runs in the global scope: Dash-named variables only)
-	DashRowX := 12, DashRowRoom := A_GuiWidth - 24 - 6 * 6
-	for DashRowI, DashRowB in [["DashPauseBtn", 100], ["DashClearBtn", 70], ["DashLogBtn", 110], ["DashBotBtn", 100], ["DashWalkBtn", 140], ["DashFolderBtn", 120], ["DashHandsBtn", 120]]
+	DashRowList := [["DashBotBtn", 100], ["DashWalkBtn", 140], ["DashFolderBtn", 120], ["DashHandsBtn", 120], ["DashFrontBtn", 130], ["DashViewBtn", 110]]
+	if (!DashSimple)
+		DashRowList.InsertAt(1, ["DashPauseBtn", 100], ["DashClearBtn", 70], ["DashLogBtn", 110])
+	DashRowSum := 0
+	for DashRowI, DashRowB in DashRowList
+		DashRowSum += DashRowB[2]
+	DashRowX := 12, DashRowRoom := A_GuiWidth - 24 - 6 * (DashRowList.Length() - 1)
+	for DashRowI, DashRowB in DashRowList
 		{
-		DashRowW := Floor(DashRowRoom * DashRowB[2] / 760)
+		DashRowW := Floor(DashRowRoom * DashRowB[2] / DashRowSum)
 		GuiControl, Dash:Move, % DashRowB[1], % "x" DashRowX - DashTabOX " y" A_GuiHeight - 36 - DashTabOY " w" DashRowW
 		DashRowX += DashRowW + 6
 		}

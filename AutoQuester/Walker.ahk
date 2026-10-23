@@ -44,6 +44,8 @@ global WkNoGuideFrom
 global WkLastDist, WkLastDistAt, WkOnTop, WkOnTopAt, WkOnTopBacked, WkOnTopDone, WkStuckNearDone, WkStuckTalk, WkTalkAt
 global WkCollect, WkGoalReadAt, WkArr1At, WkFoesAt, WkChaseFrom, WkChaseSkipUntil, WkRoamLeg, WkRoamLegAt, WkRoamSide
 global Walking, HeldW, KeysDown, Refocus, StatusText, StatusKind, StatusPrefix
+;(when the arrow was last looked for to bring the game to the front - AutoFarmer's gamefront)
+global WkFrontLook
 global WkBestDist, WkBestTime, WkLastRead, WkSide, WkTries, WkNear, WkFar, WkArrived, WkTalk, WkPushUntil
 global WkSeenAt, WkHidden, WkHiddenAt, WkBias, WkBiasUntil, WkPrevMovedH, WkLastBoxOff, WkLastMode, WkBackups, WkBackupsFrom
 global WkDialog, WkPushes, WkPushStart, WkStraight, WkStraightAt
@@ -244,6 +246,14 @@ WalkStep()
 		{
 		if (KeysDown)
 			ReleaseKeys(), Refocus := 1
+		;(AutoFarmer's "Bring Wizard101 to the front": the quest arrow on screen - something to walk to - and you've left
+		;the keyboard and mouse alone a moment: the game in front, walking on)
+		if (IsFunc("GameFrontOn") && Func("GameFrontOn").Call() && A_TickCount - WkFrontLook > 1500)
+			{
+			WkFrontLook := A_TickCount
+			if (ReadArrow() != "" && Func("GameToFront").Call("the quest arrow showed"))
+				return true
+			}
 		SetStatus("paused - click into Wizard101 to carry on")
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkWaitFrom := 0
 		Sleep, 300
@@ -861,6 +871,21 @@ WalkStep()
 		SetStatus("waiting - a mob on the way (" WkNavMobName (WkNavMob != "" ? ", " WkNavMob " s" : "") ")")
 		Sleep, 300
 		return true
+		}
+	;A party's leader (AutoFarmer's Party.ahk): it waits while a follower is far, in another zone or not ready - walking,
+	;not mid-talk or mid-push, and never inside a mob's reach (getting out of it first)
+	if ((WkArrived = 0 || WkArrived = 1) && A_TickCount - WkNavEscAt > 1500 && WkNavMob = "" && IsFunc("PartyHoldWhy"))
+		{
+		pWhy := Func("PartyHoldWhy").Call()
+		if (pWhy != "")
+			{
+			if (KeysDown || HeldW)
+				ReleaseKeys()
+			WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
+			SetStatus("party: waiting - " pWhy)
+			Sleep, 300
+			return true
+			}
 		}
 	if (WkNavOk)
 		WkMobLogged := "", WkNavMobAt := 0

@@ -3,9 +3,11 @@
 Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engine's speedhack keys).
 
 ## 1. Party of 4: synced quests
-- [ ] One client per PC (2 desktops + 2 laptops); a leader picks the quest, the others follow it
-- [ ] Bots talk over the home network: quest, zone, position, "in battle", "ready"
-- [ ] Followers walk to the leader, join its battle, and wait at loading screens and teleports
+- [x] One client per PC (2 desktops + 2 laptops); a leader picks the quest, the others follow it (v0.37.0)
+- [x] Bots talk over the home network: zone, position, in battle, health, ready (v0.37.0)
+- [x] Followers walk to the leader, into its battles, through its doors; the leader waits for them (v0.37.0)
+- [ ] Teleport to friend when the leader is somewhere a door doesn't lead (phase 2 - needs friends-list screenshots)
+- [ ] Own name plate in a party battle (which plate is this PC's)
 - [ ] Battle roles (hitter, healer, blader) so 4 bots don't all hit or all pass
 
 ## 2. Stuck: mitigate completely

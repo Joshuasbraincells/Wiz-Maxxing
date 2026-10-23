@@ -33,9 +33,11 @@ Menu, Tray, Add
 Menu, Tray, Add, Bot on/off (F6), MenuBotToggle
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
+Menu, Tray, Add, Bring Wizard101 to the front, MenuGameFront
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Discord alerts..., MenuAlerts
+Menu, Tray, Add, Party..., MenuParty
 Menu, Tray, Add, Dashboard (Windows+2), MenuDash
 Menu, Tray, Add, Learned spells, MenuSpells
 Menu, Tray, Add, Settings..., MenuSettings
@@ -85,6 +87,10 @@ return
 
 MenuHandsOff:
 HandsOffToggle()
+return
+
+MenuGameFront:
+GameFrontToggle()
 return
 
 MenuLearnAll:
@@ -177,6 +183,11 @@ ReconnectSetLogin()
 return
 
 ;Discord alerts when the wizard needs you (Alerts.ahk): the webhook set, tested or removed
+;This wizard's party name and the leader's address (Party.ahk; the role is in Settings > PARTY)
+MenuParty:
+PartySetup()
+return
+
 MenuAlerts:
 AlertSetup()
 return
@@ -298,6 +309,7 @@ FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 DashInit()
 SetTimer, UpdPeekNow, -45000
 HandsOffShow()
+GameFrontShow()
 BotOnShow()
 WatchShow()
 DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
@@ -328,6 +340,8 @@ OnMessage(0x5555, "StatsAsked")
 ;The Python vision helper (Vision.ahk): finds the cards in hand and school badges; ImageSearch if it
 ;can't run
 VisionStart()
+;(the party - Party.ahk: this bot's state to the helper and the party back, every half second, battles too)
+SetTimer, PartyTimer, 500
 OnExit("VisionOnExit")
 
 ;Initializes modes
@@ -485,6 +499,9 @@ loop,
 		{
 		;(a battle: the game at normal speed - Cheat Engine's speedhack, if walking had it on)
 		SpeedSet(0, "a battle round", true)
+		;(gamefront: the game in front for its cards - a first click on a window behind only brings it forward)
+		if (!GameActive())
+			GameToFront("a battle round is up", false)
 		;(the first round at a window size: the UI size measured from Pass and Flee before it's played - a made set's
 		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
 		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
@@ -571,6 +588,9 @@ loop,
 			ReleaseKeys()
 		PotionRestCheck()
 		}
+	;(a party's follower: where the leader goes instead of its own quest - Party.ahk)
+	else if (PartyFollowing())
+		PartyFollowStep()
 	;(a dungeon run on the Dungeons tab: its way instead of the quest's - Dungeons.ahk)
 	else if (IsObject(DgRun))
 		DungeonStep()
@@ -833,7 +853,8 @@ DebugLog("  pips=" PipsNow)
 DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant)
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the
 ;hitter can be an ally)
-StatsNoteSchool(school)
+if (!PlayerPlates2())
+	StatsNoteSchool(school)
 DebugLog("  cards: hit1-4=" hit1 hit2 hit3 hit4 " wand=" wand " heal1-2=" heal1 heal2 " blade=" blade " blade2=" blade2 " blade3=" blade3 " blade4=" blade4 " sharpen=" sharpen " trap=" trap " trap2=" trap2 " trap3=" trap3 " potent=" potent " feint=" feint " aura=" aura " bubble=" bubble " convert=" convert " tower=" tower " reshuffle=" reshuffle)
 
 ;Cards in hand the bot has no picture for yet: learned (CardLearn.ahk); one that went into a free slot is
@@ -1166,6 +1187,53 @@ WatchShow()
 BotNoBattle(since := 0)
 	{
 	return BookSeenAt > since && A_TickCount - BookSeenAt < 2000
+	}
+
+;"Bring Wizard101 to the front" (tray menu, dashboard button): gamefront in PlayerStats.txt, off unless it's 1
+GameFrontOn()
+	{
+	return Stats.HasKey("gamefront") && Stats["gamefront"] = 1
+	}
+
+;Turns it on/off and keeps it in PlayerStats.txt (gamefront)
+GameFrontToggle()
+	{
+	frontOn := !GameFrontOn()
+	if (!StatsSet([["gamefront", frontOn ? 1 : 0]]))
+		Stats["gamefront"] := frontOn ? 1 : 0
+	GameFrontShow()
+	DebugLog("Bring Wizard101 to the front: " (frontOn ? "on - when the quest arrow shows or a battle round is up, and you've left the keyboard and mouse alone 3 s" : "off"))
+	TrayTip, Wizard101 bot, % "Bring Wizard101 to the front: " (frontOn ? "ON - when there's something to do (the quest arrow, a battle round)." : "OFF - click into Wizard101 yourself."), 4, 1
+	}
+
+;The tray menu's tick and the dashboard button's label
+GameFrontShow()
+	{
+	frontOn := GameFrontOn()
+	if (frontOn)
+		Menu, Tray, Check, Bring Wizard101 to the front
+	else
+		Menu, Tray, Uncheck, Bring Wizard101 to the front
+	if (IsFunc("DashFrontShow"))
+		Func("DashFrontShow").Call(frontOn)
+	}
+
+;Wizard101 to the front (gamefront on, it isn't): why - for debug.log; idle - only once you've left the keyboard and
+;mouse alone 3 s (walking: what you type elsewhere mustn't end up in the game). WinActivate - never a click (the game's
+;Crown shop is in its corner). True if it's in front now
+GameToFront(why, idle := true)
+	{
+	static saidAt := 0
+	if (!GameFrontOn() || GameActive())
+		return GameActive()
+	if (idle && A_TimeIdlePhysical < 3000)
+		return false
+	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
+	WinWaitActive, ahk_class %GameClass% ahk_exe %GameExe%, , 1
+	front := GameActive()
+	if (A_TickCount - saidAt > 30000)
+		saidAt := A_TickCount, DebugLog((front ? "Wizard101 brought to the front - " : "Wizard101 couldn't be brought to the front (Windows wouldn't let it) - ") why)
+	return front
 	}
 
 ;"Wait while I play" (tray menu, dashboard button): handsoffon in PlayerStats.txt, on unless it's 0
@@ -2963,6 +3031,31 @@ FindEnchant()
 ;Checks a hit really got cast: once a spell is chosen the Pass button goes away. If it's still
 ;there the card couldn't be cast (not enough pips), so the round tries the next option instead
 ;consume: a hit uses up the blades and traps on it (ConsumeBoosts) - a heal doesn't (false)
+;Another of your wizards' name plates (player.png, player2.png, player3.png) in the battle besides the one found: a party
+;battle - which plate is this PC's isn't sure (phase 1b), so its school isn't saved for the character (StatsNoteSchool)
+PlayerPlates2()
+	{
+	;(only when the battle has more than one wizard on your side - the game's log, EnemySpells.ahk)
+	n := 0
+	if (IsObject(BlNames))
+		Loop, 4
+			n += BlNames.HasKey(A_Index + 3) ? 1 : 0
+	if (n < 2)
+		return false
+	n := 0
+	for each, pic in ["player.png", "player2.png", "player3.png"]
+		{
+		if (!FileExist(A_ScriptDir "\resources\" pic))
+			continue
+		ImageSearch, px, py, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, % PicOpt("resources\" pic)
+		if (ErrorLevel = 0)
+			n += 1
+		}
+	if (n > 1)
+		DebugLog("  " n " of your wizards' name plates in this battle - its school not saved for this character")
+	return n > 1
+	}
+
 CastResult(title, ByRef hit, dir, enchanted, consume := true)
 	{
 	global
@@ -3270,6 +3363,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Flee.ahk
 #Include %A_ScriptDir%\Draw.ahk
 #Include %A_ScriptDir%\EnemySpells.ahk
+#Include %A_ScriptDir%\Party.ahk
 #Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk
