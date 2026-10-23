@@ -973,6 +973,28 @@ PotionToCommons(since)
 	DebugLog("Potions: End went nowhere (it seems to take mana) - to the Commons through the door instead (" door.name ")")
 	return PotionWalkTo(door, since, true)
 	}
+;The shop's BUY button when the whole window's read missed it: under COST (its cost line), read in a box just below it
+;at 3x - a word ending in UY there ("C)UY", "BUY"). {x, y} of its middle, or ""; seen: what was read added to it
+PotionFindBuy(ByRef seen)
+	{
+	c := PotionFindWords("i)^cost$", "", costSeen, false)
+	if (!IsObject(c))
+		return ""
+	bx := c.x - Round(40 * UiScale), by := c.y + Round(30 * UiScale)
+	bt := OcrRect(bx, by, Round(220 * UiScale), Round(70 * UiScale), "en", 3, bLines)
+	seen .= " | under COST: " bt
+	if (ErrorLevel || !IsObject(bLines))
+		return ""
+	for i, line in bLines
+		for j, w in line.words
+			if (RegExMatch(Trim(w.text), "i)^.{0,3}uy[.!]?$"))
+				{
+				DebugLog("Potions: BUY read under COST (as """ Trim(w.text) """)")
+				return {x: Round(w.x + w.w / 2), y: Round(w.y + w.h / 2)}
+				}
+	return ""
+	}
+
 ;The words firstRe (and nextRe right after it, if given) in the middle of the game window, by OCR: {x, y} (screen)
 ;of their middle, or "" - the first found, or with rightmost the one furthest right. text: what was read there
 PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false, rightmost := false)
@@ -1044,8 +1066,16 @@ PotionShopXFind(anchor, ByRef x, ByRef y)
 	{
 	shopX := anchor.x + Round(235 * UiScale), shopY := anchor.y + Round(359 * UiScale), shopR := Round(32 * UiScale)
 	PixelSearch, x, y, Max(GameLeft, shopX - shopR), Max(GameTop, shopY - shopR), Min(GameLeft + GameW - 1, shopX + shopR), Min(GameTop + GameH - 1, shopY + shopR), 0xD20805, 40, Fast RGB
+	;(not there - the anchor read off the left panel's "Fill All" title, the button not read: 2026-10-23 08:43, the X looked
+	;for 570 px left of it - the close button's picture, the red X in its brown ring, looked for in the window's lower right)
 	if (ErrorLevel)
-		return false
+		{
+		ImageSearch, x, y, Round(GameLeft + GameW * 0.45), Round(GameTop + GameH * 0.5), Round(GameLeft + GameW * 0.9), Round(GameTop + GameH * 0.92), % PicOpt("resources\closewin.png", 50)
+		if (ErrorLevel)
+			return false
+		x += Round(30 * UiScale / 1.144), y += Round(30 * UiScale / 1.144)
+		return true
+		}
 	;(the first red pixel is near the top of its cross: its middle is a little right of and below that)
 	x += Round(5 * UiScale), y += Round(13 * UiScale)
 	PixelSearch, midX, midY, x - 4, y - 4, x + 4, y + 4, 0xD20805, 50, Fast RGB
@@ -1207,6 +1237,9 @@ PotionBuyHere(s, since := 0)
 	;(Fill All only picks what to buy: its BUY button - on the left, under the cost - buys it, with gold. Only with no
 	;Crown anywhere in the window nor round the button)
 	b := PotionFindWords("i)^buy[.!]?$", "", seen, true)
+	;(not read - yellow on red reads badly at 1:1, 2026-10-23 08:43: "C)UY", or nothing - the box under COST read 3x)
+	if (!IsObject(b))
+		b := PotionFindBuy(seen)
 	if (!IsObject(b) || RegExMatch(seen, "i)cr[o0]wn") || !PotionNoCrowns(b.x, b.y) || !PotionOk(true, since))
 		{
 		DebugLog("Potions: " (!IsObject(b) ? "no BUY button after Fill All" : RegExMatch(seen, "i)cr[o0]wn") ? """Crown"" in the shop's window - BUY not clicked" : "BUY not clicked") " (read: " SubStr(RegExReplace(seen, "\s+", " "), 1, 160) ") - not bought")
