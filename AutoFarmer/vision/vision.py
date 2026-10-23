@@ -116,7 +116,7 @@ Only numpy and Pillow (katsuba is used for a zone .wad only if installed and the
 it). Stops by itself when the AutoFarmer process (--parent <pid>) is gone.
 """
 import argparse
-import collections, ctypes, glob, json, math, os, re, struct, sys, tempfile, threading, time
+import collections, ctypes, functools, glob, json, math, os, re, struct, sys, tempfile, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -1412,13 +1412,44 @@ FIGHT_GOAL = re.compile(r'\b(defeat|destroy|kill|hunt|vanquish|beat|fight|battle
                         r'|\(\s*\d+\s*(of|/)\s*\d+\s*\)', re.I)
 
 
+def _ocr_letters(s):
+    """a name's or an OCR'd line's letters, in capitals - the OCR's usual digit-for-letter slips put right"""
+    s = (s or '').upper().translate(str.maketrans('0158', 'OISB'))
+    return re.sub(r'[^A-Z]', '', s)
+
+
+def _approx_in(k, s, tol):
+    """True if k is within s with at most tol letters added, dropped or changed (one pass: the match may start and end
+    anywhere in s)"""
+    prev = [0] * (len(s) + 1)
+    for i, ck in enumerate(k, 1):
+        cur = [i] + [0] * len(s)
+        for j, cs in enumerate(s, 1):
+            cur[j] = min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ck != cs))
+        prev = cur
+    return min(prev) <= tol
+
+
+@functools.lru_cache(maxsize=1024)
+def name_in_line(name, line):
+    """the mob's name in an OCR'd goal line: as its words (plurals too), or - the OCR runs words together and slips a
+    letter (2026-10-23: the quest's own Optio Agenor waited for as a mob on the way) - its letters within the line's,
+    one slip in six letters at most (names of 5 letters or more)"""
+    clean = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', (line or '').lower()))
+    rx = mob_name_re(name)
+    if rx is not None and clean.strip() and rx.search(clean):
+        return True
+    k, L = _ocr_letters(name), _ocr_letters(line)
+    if len(k) < 5 or not L:
+        return False
+    return k in L or _approx_in(k, L, max(1, len(k) // 6))
+
+
 def quest_mob(m, r, goal_line):
     """the quest is about this mob: its name is in the goal line ("Defeat 3 Lost Souls ..."), or - the goal a fight
     (or no goal line read) - it stands by the quest's goal in this zone (a boss the arrow leads to). Not a mob
     wandering by a "Talk to ..." goal"""
-    line = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', (goal_line or '').lower()))
-    rx = mob_name_re(m['name'])
-    if rx is not None and line.strip() and rx.search(line):
+    if goal_line and name_in_line(m['name'], goal_line):
         return True
     g = r.get('goal') if r else None
     if goal_line and not FIGHT_GOAL.search(goal_line):

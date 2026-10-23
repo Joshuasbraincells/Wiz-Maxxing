@@ -21,6 +21,8 @@ global SpotTurnMem, ArcBlind, AheadMem, TurnRadius, WkWalkSpeed, WkWUpAt, WkMet,
 global WkWalkSamples
 ;Arriving at the closest approach: the nearest the game's memory had it to this goal, and the goal that's for
 global WkPassMin, WkPassKey, WkPassAt
+;The "Press X ..." prompt's verb last read ("Talk", "Collect", "Interact", "Use"... - "" none)
+global WkPromptVerb
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -1788,7 +1790,7 @@ GateStep()
 ;prompt from another. Read by OCR; the panel grows with the UI like the arrow does
 InteractPrompt()
 	{
-	WkPromptDest := ""
+	WkPromptDest := "", WkPromptVerb := ""
 	s := ArrowScale().scale
 	t := OcrRect(Round(GameLeft + GameW / 2 - 330 * s), Round(GameTop + GameH - 300 * s), Round(660 * s), Round(240 * s))
 	if (ErrorLevel)
@@ -1812,6 +1814,7 @@ InteractPrompt()
 	if (RegExMatch(t, "i)\bpress\b") && RegExMatch(t, "i)\bto\s+[a-z]{3,}"))
 		{
 		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", cap) ? WalkLetters(cap1) : SubStr(WalkLetters(t), 1, 60)
+		WkPromptVerb := RegExMatch(t, "i)press.*?to\s+([a-z]{3,})", verb) ? verb1 : ""
 		return "press"
 		}
 	return ""
@@ -1828,15 +1831,17 @@ WalkNear(d, arrowMax, units)
 
 ;Is this "Press X" prompt (key: its name's letters, WkPromptDest) one the quest wants? Its name in the quest's
 ;goal line ("Talk To Benedict Glendemming in ..." has BENEDICT GLENDEMMING), close to the goal (NearDist on the
-;arrow), or collecting (a collect goal - it's how things are picked up). Prompts at others - an NPC or a vendor
-;walked past - aren't: X there opens their chatter, an OK box or their shop
+;arrow), or collecting (a collect goal - it's how things are picked up: not an NPC's "Press X to Talk", whose chatter
+;isn't). Prompts at others - an NPC or a vendor walked past - aren't: X there opens their chatter, an OK box or their
+;shop (2026-10-23 07:07: X at an NPC on the way to "Defeat Optio Agenor and collect ...", its Escape then opening the
+;game's menu, the arrow lost for 2 minutes)
 WalkPromptWanted(key, d)
 	{
 	;(and right at a teleport on the game's path: its prompt is the way on)
 	if (WkArrived = 7 || WkNavJump != "" || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
 		return true
 	goal := WalkGoalLine()
-	if (goal != "" && CollectGoal(goal))
+	if (goal != "" && CollectGoal(goal) && !RegExMatch(WkPromptVerb, "i)^talk"))
 		return true
 	g := WalkLetters(goal)
 	return (StrLen(key) >= 4 && g != "" && InStr(g, key))
