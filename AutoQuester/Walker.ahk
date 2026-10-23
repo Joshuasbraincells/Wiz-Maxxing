@@ -23,6 +23,8 @@ global WkWalkSamples
 global WkPassMin, WkPassKey, WkPassAt
 ;The "Press X ..." prompt's verb last read ("Talk", "Collect", "Interact", "Use"... - "" none)
 global WkPromptVerb
+;When a window's close button was last looked for (WalkCloseWindow)
+global WkCloseLook
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -1841,7 +1843,7 @@ WalkPromptWanted(key, d)
 	if (WkArrived = 7 || WkNavJump != "" || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
 		return true
 	goal := WalkGoalLine()
-	if (goal != "" && CollectGoal(goal) && !RegExMatch(WkPromptVerb, "i)^talk"))
+	if (goal != "" && CollectGoal(goal) && !RegExMatch(WkPromptVerb, "i)^(talk|speak|chat|shop|trade|buy|sell|browse|craft|learn|train)"))
 		return true
 	g := WalkLetters(goal)
 	return (StrLen(key) >= 4 && g != "" && InStr(g, key))
@@ -1966,6 +1968,9 @@ WalkCloseAfterX()
 		PressKey("Escape")
 		Sleep, 800
 		WalkCloseGameMenu()
+		;(a shop Escape doesn't close - 2026-10-23 07:11, Avery Templeton's Recipe Shop: its Escape opened the game's menu,
+		;the shop stayed and held the wizard 3 minutes - its close button)
+		WalkCloseWindow("the shop didn't close with Escape", true)
 		return true
 		}
 	;(an OK with Crowns anywhere in sight is never clicked)
@@ -1991,6 +1996,41 @@ WalkCloseAfterX()
 			return true
 			}
 	return false
+	}
+
+;An open window's close button - the red X in a brown ring at the bottom right of shops and the like (AutoFarmer's
+;resources\closewin.png, cut 2026-10-23 at UI 1.144 off a Recipe Shop) - clicked: never with Crowns anywhere in sight (the
+;game read first; then you're told instead), never more than once in 5 s (now: a shop just opened). True if one was there
+;and went
+WalkCloseWindow(why, now := false)
+	{
+	if (!IsFunc("PicOpt") || !Walking || !GameActive() || (!now && A_TickCount - WkCloseLook < 5000))
+		return false
+	WkCloseLook := A_TickCount
+	ImageSearch, cwX, cwY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % Func("PicOpt").Call("resources\closewin.png", 30)
+	if (ErrorLevel)
+		return false
+	cwT := OcrRect(GameLeft, GameTop, GameW, GameH)
+	if (!ErrorLevel && RegExMatch(cwT, "i)cr[o0]wn"))
+		{
+		WalkLog(why " - a window's close button is there, but Crowns are in sight: not clicked")
+		WalkNotify("window", "A window is open", "A window is open over the game (" why ") and Crowns are in sight, so the bot doesn't click its close button. Close it yourself.")
+		return false
+		}
+	ReleaseKeys()
+	;(the picture's middle - it's 60 px at UI 1.144; the mouse back where it was afterwards, in AutoFarmer: mousereturn)
+	cwHalf := Round(30 * (UiScale ? UiScale : 1.144) / 1.144)
+	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	MouseMove, % cwX + cwHalf, % cwY + cwHalf, 2
+	Sleep, 80
+	Click
+	Sleep, 700
+	if (ownGrab)
+		Func("MouseLetGo").Call()
+	ImageSearch, cwX2, cwY2, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % Func("PicOpt").Call("resources\closewin.png", 30)
+	cwGone := ErrorLevel != 0
+	WalkLog(why " - clicked a window's close button at " cwX + cwHalf - GameLeft "," cwY + cwHalf - GameTop ": " (cwGone ? "closed" : "still there"))
+	return cwGone
 	}
 
 ;The middle of the game - where a window X opens shows: not the chat (bottom left), the prompt or the goal line
@@ -3903,6 +3943,9 @@ NavTurn(h)
 		{
 		if (A_TickCount - WkNavTurnLog > 20000)
 			WkNavTurnLog := A_TickCount, WalkLog("memory turn: the wizard's facing didn't change with " key " held, twice - held by the game (a battle starting, a ride?): still steering by the game's memory")
+		;(out of battle a window can be what holds him - a shop X opened that Escape didn't close: its close button)
+		if (!inbattle)
+			WalkCloseWindow("the wizard doesn't turn - a window open over the game?")
 		}
 	else if (ending = "not turning" && stillTurns >= 2)
 		{
