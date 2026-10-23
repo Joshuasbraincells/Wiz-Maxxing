@@ -641,13 +641,16 @@ PotionReplay(route)
 ;Fine to carry on with a run: Wizard101 in front, your hands off, no battle
 PotionOk(watchHands := true, since := 0)
 	{
-	if (!GameActive())
+	;(Wizard101 behind another window: brought to the front if "Bring Wizard101 to the front" is on - without waiting for
+	;you to leave the keyboard alone: the run's under way)
+	if (!GameActive() && !(IsFunc("GameToFront") && Func("GameToFront").Call("the potion run is under way", false)))
 		{
 		DebugLog("Potions: Wizard101 isn't the active window - stopping")
 		return false
 		}
-	;(since: the run's start - any key or mouse of yours after it, not only in the last 400 ms)
-	if (watchHands && (A_TimeIdlePhysical < 400 || (since && A_TickCount - A_TimeIdlePhysical > since)))
+	;(since: the run's start - any key or mouse of yours after it, not only in the last 400 ms. "Wait while I play" off:
+	;the bot carries on while you play - the run too)
+	if (watchHands && HandsOffOn() && (A_TimeIdlePhysical < 400 || (since && A_TickCount - A_TimeIdlePhysical > since)))
 		{
 		DebugLog("Potions: you touched the mouse or keyboard - stopping (the bot leaves it to you)")
 		return false
@@ -1319,6 +1322,20 @@ PotionRunWalk()
 					PotionMarkZone := "", PotionMarkAt := 0
 				PotionCarryOn(false)
 				return false
+				}
+			;(home is a house - a loading screen into somewhere else (walked through a door meanwhile, the key not taken)
+			;isn't: Home once more; still not one, the run's no good from here)
+			if (!InStr(WalkZone(true), "Housing"))
+				{
+				DebugLog("Potions: Home went to " WalkZone(true) " - not a house: Home again")
+				if (!PotionTeleport("{Home}", "home") || !InStr(WalkZone(true), "Housing"))
+					{
+					DebugLog("Potions: Home doesn't lead to a house from here (" WalkZone(true) ") - back to the mark; buy potions by hand this time")
+					AlertSend("potions", "out of potions", "The Home key didn't lead to your house (" WalkZone(true) ") - back to where it was.")
+					PotionRecall()
+					PotionCarryOn(false)
+					return false
+					}
 				}
 			}
 		else
