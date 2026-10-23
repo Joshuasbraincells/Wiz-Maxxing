@@ -293,6 +293,25 @@ affordable. Not while your health is under pipsavehealth % (default 50); it
 gives up for the battle if the pips don't come. debug.log and the dashboard
 say "saving pips for ...".
 
+Enemy spells (enemyspells:1 - Settings, HEALTH): each round the bot works out
+what each enemy will most likely cast and the chance their hits kill you this
+round - in debug.log ("enemy spells: ...") and on the dashboard (Threat).
+	- Who's fighting and what each cast comes from the game's own log
+	  (Bin\WizardClient.log, only read): it names every slot of the circle
+	  and each caster's spell each round, passes too.
+	- Each creature's spells, pips and damage come from the Wizard101 wiki on
+	  Fandom (Wizard101 Central's blocks bots), looked up once and kept in
+	  wiki\cache.json for a month; a creature's first battle may show
+	  "looking it up". Its pips are guessed from the round (mobs pick a card
+	  at random and pass if they can't afford it, so they save up).
+	- Every enemy cast seen is counted for its creature (wiki\casts.json),
+	  so the odds sharpen with every battle against it.
+	- defendat (30): when the chance their hits kill you is that % or more
+	  and no hit in hand ends the battle (the kill check goes first), a heal
+	  on yourself, else Tower Shield, goes before anything else. 0 = only
+	  show the odds. A hit at one target is counted at you 1 in however many
+	  wizards are on your side.
+
 Kill check:
 At the start of every round the program reads each enemy's health off the
 nameplates at the top of the screen and works out how much damage each hit

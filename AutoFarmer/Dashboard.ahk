@@ -352,7 +352,7 @@ DashParse(line)
 	{
 	msg := SubStr(line, 10)
 	if (InStr(msg, "Round start:") = 1)
-		DashAdd("rounds"), DashSees.mode := "battle", DashSees.roundAt := A_TickCount, DashSees.plan := ""
+		DashAdd("rounds"), DashSees.mode := "battle", DashSees.roundAt := A_TickCount, DashSees.plan := "", DashSees.threat := ""
 	else if (msg = "Round done")
 		DashSees.mode := "battle"
 	else if (InStr(msg, "Out of battle") = 1)
@@ -600,6 +600,7 @@ DashRefresh()
 		. "School       " (see.school != "" ? see.school : "?") "  (hitting with " (see.hitter != "" ? see.hitter : "?") ")`n"
 		. "Hand         " DashCut(see.hand != "" ? see.hand : "-") "`n"
 		. "Enemies      " DashCut(see.enemies != "" ? see.enemies : "-") "`n"
+		. "Threat       " DashCut(see.threat != "" ? see.threat : "-") "`n"
 		. "Plan         " DashCut(see.plan != "" ? see.plan : "-") "`n"
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"

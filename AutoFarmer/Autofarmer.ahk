@@ -412,6 +412,8 @@ loop,
 		Sleep, 200
 		continue
 		}
+	;(the game's log, for the battle: who's in it, what each cast - EnemySpells.ahk)
+	BattleLogRead()
 	;Disconnected, or the game closed: get back online first (no battles or walking meanwhile)
 	if (ReconnectCheck())
 		{
@@ -933,6 +935,15 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 			Goto, EndRound
 			}
 		}
+	}
+
+;Enemy spells (EnemySpells.ahk): what each enemy will likely cast, off the wiki and the battle so far (the game's log) -
+;logged and on the dashboard; the chance their hits kill you this round defendat % or more: a heal, else Tower Shield,
+;first (a hit that ends the battle went first, above)
+if (hitter != 0) && (!PlayerTookRound) && (playerX != "") && EnemyDanger()
+	{
+	if EnemyDefend()
+		Goto, EndRound
 	}
 
 ;Low on health (under healat % of it, PlayerStats.txt): a healing card on yourself before anything else
@@ -1708,10 +1719,18 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 	
 ;Your own health off your name plate (the red cur/max under your name), read by OCR at two sizes that
 ;must agree. True if it's under healat % (PlayerStats.txt, default 40). Logged each round it's read
-OwnHealthLow()
+;quiet: only read (and logged) - not a heal's question (EnemySpells.ahk's look). Read once a round: a second ask in the same
+;round (within 15 s) uses that reading (OwnHpCur, OwnHpMax, OwnHpVotes)
+OwnHealthLow(quiet := false)
 	{
 	global
-	local x, y, w, h, t, a, pct, limit, votes, key, n, best, bestN, zoom, gl
+	local x, y, w, h, t, a, pct, limit, votes, key, n, best, bestN, zoom, gl, cur, most
+	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	if (OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 15000 && OwnHpWin = WinExist("A"))
+		{
+		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
+		Goto, OwnHealthLowRead
+		}
 	x := playerX - Px(8), y := playerY + Px(20), w := Px(110), h := Px(24)
 	;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
 	gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
@@ -1736,21 +1755,27 @@ OwnHealthLow()
 		DebugLog("  own health: couldn't read it for sure")
 		return false
 		}
-	a := best
+	a := best, cur := a[1].cur, most := a[1].max
 	;(your most health, for the potions out of battle)
-	PotionNoteMax(a[1].max)
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
-	pct := Round(100 * a[1].cur / a[1].max)
+	PotionNoteMax(most)
+	OwnHpCur := cur, OwnHpMax := most, OwnHpAt := A_TickCount, OwnHpVotes := bestN, OwnHpWin := WinExist("A")
+OwnHealthLowRead:
+	pct := Round(100 * cur / most)
 	;(for saving pips: not while your health is low)
 	OwnHpPct := pct, OwnHpRound := roundnumber
+	if (quiet)
+		{
+		DebugLog("  own health: " cur "/" most " (" pct "%)")
+		return pct < limit
+		}
 	;(healing on a misread wastes the card - e.g. 775 read as 75 by two sizes - so a low reading needs
 	;three of the four sizes to agree)
 	if (pct < limit && bestN < 3)
 		{
-		DebugLog("  own health: read " a[1].cur "/" a[1].max " only " bestN " times out of 4 - not sure enough to heal")
+		DebugLog("  own health: read " cur "/" most " only " bestN " times out of 4 - not sure enough to heal")
 		return false
 		}
-	DebugLog("  own health: " a[1].cur "/" a[1].max " (" pct "%)" (pct < limit ? " - under " limit "%: healing" : ""))
+	DebugLog("  own health: " cur "/" most " (" pct "%)" (pct < limit ? " - under " limit "%: healing" : ""))
 	return pct < limit
 	}
 
@@ -1770,7 +1795,8 @@ UseHeal(title, ByRef card, dir)
 		}
 	ClickAt(foundX, foundY, 300)
 	ClickAt(playerX, playerY)
-	return CastResult(title, card, dir, 0)
+	;(a heal: the blades and traps out stay - the kill check still counts them)
+	return CastResult(title, card, dir, 0, false)
 	}
 
 ;A hit that strikes one enemy (<school>.hitNtarget:1 in PlayerStats.txt, e.g. Scarab) waits for a target
@@ -2936,13 +2962,15 @@ FindEnchant()
 
 ;Checks a hit really got cast: once a spell is chosen the Pass button goes away. If it's still
 ;there the card couldn't be cast (not enough pips), so the round tries the next option instead
-CastResult(title, ByRef hit, dir, enchanted)
+;consume: a hit uses up the blades and traps on it (ConsumeBoosts) - a heal doesn't (false)
+CastResult(title, ByRef hit, dir, enchanted, consume := true)
 	{
 	global
 	if (CastWentOut())
 		{
 		EnchantedHits.Delete(title)
-		ConsumeBoosts()
+		if (consume)
+			ConsumeBoosts()
 		DashCast(title)
 		return true
 		}
@@ -3241,6 +3269,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Potions.ahk
 #Include %A_ScriptDir%\Flee.ahk
 #Include %A_ScriptDir%\Draw.ahk
+#Include %A_ScriptDir%\EnemySpells.ahk
 #Include %A_ScriptDir%\Settings.ahk
 #Include %A_ScriptDir%\Alerts.ahk
 #Include %A_ScriptDir%\Dashboard.ahk

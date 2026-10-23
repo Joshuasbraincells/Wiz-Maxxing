@@ -22,6 +22,8 @@ __pycache__/
 AutoFarmer/dashboard.ini
 # Bug reports waiting to be posted (BugReport.ahk)
 AutoFarmer/reports/
+# Enemy spells: the wiki's creatures and spells (cached) and what enemies were seen casting (enemies.py)
+AutoFarmer/wiki/
 # What the walker learned about the game's memory (made by itself)
 AutoQuester/resources/nav_calibration.txt
 # the updater's own state (token warning, the latest release looked up)

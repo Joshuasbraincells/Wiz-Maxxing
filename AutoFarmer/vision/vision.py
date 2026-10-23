@@ -1153,6 +1153,60 @@ def read_globes(left, bottom, scale, file=None):
     return out
 
 
+# ---------------------------------------------------------------- enemy spells (enemies.py)
+ENEMY = {'wiki': None, 'casts': None, 'battle': None, 'key': None}
+
+
+def enemy_state():
+    """the wiki's data and the casts seen (AutoFarmer\\wiki), made on first use"""
+    if ENEMY['wiki'] is None:
+        import enemies
+        folder = os.path.join(ROOT, 'wiki')
+        ENEMY['wiki'], ENEMY['casts'] = enemies.Wiki(folder, log=log), enemies.Casts(folder, log=log)
+    return ENEMY['wiki'], ENEMY['casts']
+
+
+def enemy_lines(names, rnd, health, team, hist):
+    """/enemies: round rnd's prediction for the enemies names (in their slots' order), worked out afresh from the
+    battle's casts so far - hist: {round: {enemy index: the game log's spell name}} - with team wizards on your side"""
+    import enemies
+    wiki, casts = enemy_state()
+    b = enemies.Battle(wiki, casts, names, team)
+    seen = {}
+    for r, d in hist.items():
+        for i, raw in d.items():
+            if 0 <= i < len(names):
+                c = wiki.creature(names[i]) or {}
+                seen.setdefault(r, {})[i] = enemies.clean_spell(raw, c.get('spells', ())) or None
+    b.step(max(1, rnd), seen)
+    pred, lethal = b.predict(health or None)
+    lines = []
+    for i, e in enumerate(pred):
+        c = wiki.creature(e['name'])
+        state = 'pending' if c is None else ('missing' if c.get('missing') else 'ok')
+        top = ';'.join(f"{s}:{p:.2f}:{br}" for s, p, br in e['top'])
+        lines.append(f"enemy|{i}|{e['name']}|{state}|{e['pips']:.1f}|{e['hit']:.2f}|{e['max']}|{top}")
+    lines.append('lethal|' + ('' if lethal is None else f'{lethal:.2f}'))
+    return lines
+
+
+def enemy_seen(name, raw, rnd=0):
+    """/enemyseen: one enemy's cast at round rnd, off the game's log (raw: its spell name there, None for a pass) -
+    counted for its creature under the wiki's name for it, weighed 1 / the chance (the plain model's) it could afford it
+    then: the model's own "can't afford it, so it passes" isn't counted twice. The name counted ('' a pass)"""
+    import enemies
+    wiki, casts = enemy_state()
+    c = wiki.creature(name) or {}
+    s = enemies.clean_spell(raw, c.get('spells', ()))
+    weight = 1.0
+    if s and c.get('spells') and rnd >= 1:
+        b = enemies.Battle(wiki, enemies.NoCasts(), [name])
+        b.step(rnd)
+        weight = 1.0 / max(0.1, b.afford(0, enemies.Battle._cost(wiki.spell(s) or {})))
+    casts.add(name, s, weight)
+    return s
+
+
 # ---------------------------------------------------------------- quest markers over NPCs
 # An NPC a quest has something for wears a marker over its head: a gold "?" (or "!") in a red swirl, its name in bright
 # green under it (measured 2026-10-22 at 2560x1440, UI 1.144: Shalek the Wise's - gold 56x83 px with its dot, the red
@@ -2004,6 +2058,20 @@ class Handler(BaseHTTPRequestHandler):
                     globals()['TPL_BYTES'] = 0
                 log('pictures read again: ' + ', '.join(f'{os.path.basename(d) or "main"}={sc}' for d, sc in LIB.sets))
                 return self.reply('OK')
+            if u.path == '/enemies':
+                # (names: the enemies in their slots' order; hist: round:enemy index:spell|... - the casts so far)
+                names = [n.strip() for n in q.get('names', '').split('|')]
+                hist = {}
+                for part in q.get('hist', '').split('|'):
+                    bits = part.split(':', 2)
+                    if len(bits) == 3 and bits[0].isdigit() and bits[1].isdigit():
+                        hist.setdefault(int(bits[0]), {})[int(bits[1])] = bits[2]
+                lines = enemy_lines(names, int(float(q.get('round') or 1)), float(q.get('health') or 0),
+                                    int(float(q.get('team') or 1)), hist)
+                return self.reply('\n'.join(lines))
+            if u.path == '/enemyseen':
+                s = enemy_seen(q.get('name', ''), q.get('spell', ''), int(float(q.get('round') or 0)))
+                return self.reply('seen|' + (s or 'pass'))
             if u.path == '/qmark':
                 # (qmark|kind|x|y|w|h|label x|y|w|h - the label's fields empty when no green name was found under it)
                 x1, y1, x2, y2 = (int(round(float(q[k]))) for k in ('x1', 'y1', 'x2', 'y2'))
