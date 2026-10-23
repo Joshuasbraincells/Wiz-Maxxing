@@ -242,7 +242,7 @@ global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 global BookSeenAt := 0
 ;When a battle round's Pass button was last seen, when the mouse was last moved onto the scene for one that wasn't, and
 ;how many times since (a button shown as hovered: see the main loop)
-global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0, PassNudgeSaidAt := 0
+global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0, PassNudgeSaidAt := 0, PassHover := 0, PassHoverSaidAt := 0
 ;Your pips this round, read off your nameplate (-1 = couldn't read)
 global PipsNow := -1
 ;Boost cards cast since the last hit (Settings.ahk CardBoostOk: boostmax)
@@ -439,8 +439,7 @@ loop,
 		;(the round left to you is over once its Pass button goes)
 		if (RoundLeft)
 			{
-			ImageSearch, gx, gy, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
-			if (ErrorLevel)
+			if (PassButtonAt(gx, gy))
 				RoundLeft := 0
 			}
 		Sleep, 200
@@ -507,7 +506,8 @@ loop,
 		gosub, mobloop
 		gosub, LoreLoop
 		}
-	ImageSearch, startX, startY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+	;(the Pass button, or as it's drawn with the mouse on it - PassButtonAt)
+	PassButtonAt(startX, startY)
 	;Kept, since writing the log line below resets ErrorLevel (which would start a round that isn't there)
 	startErr := ErrorLevel
 	if (startErr = 2 && !PicError)
@@ -651,8 +651,7 @@ if (!RoundAgain && Stat("roundwait") > 0)
 			PlayerTookRound := 1
 		Goto, TestRound
 		}
-	ImageSearch, rwX, rwY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
-	if (ErrorLevel)
+	if (PassButtonAt(rwX, rwY))
 		Goto, TestRound
 	}
 ;(a walker notice mustn't cover what the battle reads)
@@ -660,6 +659,13 @@ WalkNoteHide()
 ;(where the mouse is now: it goes back there when the round's done - mousereturn)
 MouseGrab()
 BlockInput, MouseMove
+;(Pass drawn hovered - the mouse on it: moved onto the scene, so the buttons and cards look as their pictures)
+if (PassHover)
+	{
+	MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
+	if (A_TickCount - PassHoverSaidAt > 300000)
+		PassHoverSaidAt := A_TickCount, DebugLog("  the Pass button was drawn hovered (the mouse on it) - the mouse moved onto the scene (said once in 5 minutes)")
+	}
 CenterMouse()
 
 ;The Alt+1 boss where the window and UI size are now (the nameplates are drawn from its top left)
@@ -2082,6 +2088,24 @@ TargetClick(x, y)
 	return 1
 	}
 
+;The round's Pass button (resources\roundstart.png) - or as Wizard101 draws it with the mouse on it: white, not yellow
+;(roundstart_hover.png, cut 2026-10-23 at 1440p - the mouse left on Pass hid two battles' first rounds that afternoon).
+;ErrorLevel as ImageSearch's - 0 found (x, y its top left), 1 not, 2 the picture can't be opened - and returned;
+;PassHover 1 when it was the hovered one
+PassButtonAt(ByRef x, ByRef y)
+	{
+	ImageSearch, x, y, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+	pbErr := ErrorLevel, PassHover := 0
+	if (pbErr = 1)
+		{
+		ImageSearch, x, y, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart_hover.png")
+		if (ErrorLevel = 0)
+			pbErr := 0, PassHover := 1
+		}
+	ErrorLevel := pbErr
+	return pbErr
+	}
+
 ;True while the round still waits for us 0.8 s on: its Pass button is still there (a target click that took starts
 ;the cast and the button goes)
 TargetPending()
@@ -2090,8 +2114,7 @@ TargetPending()
 	while (A_TickCount - t0 < 800)
 		{
 		Sleep, 100
-		ImageSearch, pendX, pendY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
-		if (ErrorLevel)
+		if (PassButtonAt(pendX, pendY))
 			return false
 		}
 	return true
@@ -3095,8 +3118,7 @@ CastWentOut()
 		{
 		Sleep, 100
 		UpdateGameRect()
-		ImageSearch, passX, passY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
-		if (ErrorLevel = 0)
+		if (PassButtonAt(passX, passY) = 0)
 			{
 			goneFrom := 0
 			if (A_TickCount - t0 >= 700)
