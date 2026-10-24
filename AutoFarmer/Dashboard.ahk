@@ -27,6 +27,8 @@ global DashFrontBtn
 ;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState); Report a
 ;bug left of it (BugReport.ahk)
 global DashUpdBtn, DashUpdBusy, DashBugBtn
+;The red "Play for me" button (a red bar and clickable words: a button can't be red) - Autofarmer.ahk PlayForMeToggle
+global DashPlayBtn, DashPlayBg
 ;Where the tabs' inside starts in the window (GuiControl Move places a tab's controls from there: DashGuiSize)
 global DashTabOX, DashTabOY, DashTabOW, DashTabOH
 ;The bottom row's other buttons (they share the window's width)
@@ -161,6 +163,13 @@ DashInit()
 	Gui, Dash:Add, ListView, x12 y248 w760 h544 vDashFoeList NoSort -Multi Background111317 cDADADA, Enemy|Spell|This round|Pips, what it does|This battle|Seen (all battles)
 	LV_ModifyCol(1, 130), LV_ModifyCol(2, 170), LV_ModifyCol(3, 76), LV_ModifyCol(4, 186), LV_ModifyCol(5, 84), LV_ModifyCol(6, 96)
 	Gui, Dash:Tab
+	;The red Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
+	;room: every check for you off till you click it again; off at every start. A red bar - a Progress control takes a
+	;colour - with the clickable words over it
+	Gui, Dash:Add, Progress, x668 y37 w108 h24 BackgroundB71C1C Disabled vDashPlayBg
+	Gui, Dash:Font, s9 w700 cFFFFFF, Segoe UI
+	Gui, Dash:Add, Text, x668 y37 w108 h24 +Center +0x200 BackgroundTrans gDashPlayToggle vDashPlayBtn, Play for me
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	;(the log so far: the lines written before the window was made)
 	FileRead, earlier, %A_ScriptDir%\debug.log
 	if (earlier != "")
@@ -200,6 +209,18 @@ DashFrontShow(frontOn)
 	{
 	if (DashHwnd)
 		GuiControl, Dash:, DashFrontBtn, % "Game to front: " (frontOn ? "on" : "off")
+	}
+
+;The red "Play for me" button: dark red "Play for me" off, bright red "PLAYING FOR ME" on
+DashPlayShow(on)
+	{
+	if (!DashHwnd)
+		return
+	playCol := on ? "E53935" : "B71C1C"
+	GuiControl, Dash:+Background%playCol%, DashPlayBg
+	GuiControl, Dash:, DashPlayBtn, % on ? "PLAYING FOR ME" : "Play for me"
+	;(the words drawn again over the bar's new colour)
+	GuiControl, Dash:MoveDraw, DashPlayBtn
 	}
 
 ;The "Wait while I play" button's label
@@ -507,7 +528,7 @@ DashHandSeen(answer)
 		text .= (text = "" ? "" : ", ") name (f[8] = 1 ? "*" : "")
 		n += 1
 		if (n <= 7)
-			DashHandCard(n, name, known, f[8] = 1, f[11], box)
+			DashHandCard(n, name, known, f[8] = 1, f[11] != "" ? f[11] : DashKnownPips(known), box)
 		}
 	;(the slots past the hand: empty)
 	Loop, % 7 - Min(n, 7)
@@ -519,6 +540,24 @@ DashHandSeen(answer)
 	FormatTime, now, , HH:mm:ss
 	GuiControl, Dash:, DashHandHead, % "YOUR HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
 	DashSee("hand", text)
+	}
+
+;A known card's pip cost when its digit wasn't read ("" not known): an enchant (Sharpened Blade, Potent Trap, Epic,
+;Colossal...) and the like are free - 0 - and a slot's cost is in PlayerStats.txt (<school>.<slot>pips); a "?" for a
+;free card was shown otherwise (2026-10-23)
+DashKnownPips(known)
+	{
+	if (known = "")
+		return ""
+	dir := SubStr(known, 1, InStr(known, "/") - 1), title := SubStr(known, InStr(known, "/") + 1)
+	if (dir = "resources" && RegExMatch(title, "i)^(sharpen|potent|epic|colossal|gargantuan|monstrous|giant|strong)$"))
+		return 0
+	if (dir = "life" && title = "enchant")
+		return 0
+	;(0 there is an X-pip spell's - all your pips - not a free one: left as not known)
+	if (IsObject(Stats) && Stats.HasKey(dir "." title "pips") && Stats[dir "." title "pips"] > 0)
+		return Stats[dir "." title "pips"]
+	return ""
 	}
 
 ;A learned card's name in the hand: the one you gave it on the Spells tab, else "learned"
@@ -1206,6 +1245,12 @@ DashFrontToggle:
 		Func("GameFrontToggle").Call()
 	return
 
+;"Play for me" on/off (PlayForMeToggle in Autofarmer.ahk)
+DashPlayToggle:
+	if (IsFunc("PlayForMeToggle"))
+		Func("PlayForMeToggle").Call()
+	return
+
 ;"Wait while I play" on/off (HandsOffToggle in Autofarmer.ahk)
 DashHandsToggle:
 	if (IsFunc("HandsOffToggle"))
@@ -1229,6 +1274,8 @@ DashGuiSize:
 		GuiControlGet, DashTabO, Dash:Pos, DashPauseBtn
 		}
 	GuiControl, Dash:Move, DashHead, % "w" A_GuiWidth - 258
+	GuiControl, Dash:Move, DashPlayBg, % "x" A_GuiWidth - 116
+	GuiControl, Dash:Move, DashPlayBtn, % "x" A_GuiWidth - 116
 	GuiControl, Dash:Move, DashBugBtn, % "x" A_GuiWidth - 240
 	GuiControl, Dash:Move, DashUpdBtn, % "x" A_GuiWidth - 144
 	GuiControl, Dash:Move, DashMapBtn, % "x" A_GuiWidth - 84 - DashTabOX

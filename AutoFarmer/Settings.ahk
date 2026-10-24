@@ -507,7 +507,7 @@ MouseLetGo()
 	MouseHomeSet := 0
 	if (!Stat("mousereturn"))
 		return 0
-	if (A_TimeIdlePhysical < A_TickCount - MouseHomeAt)
+	if (UserIdle() < A_TickCount - MouseHomeAt)
 		return -1
 	MouseGetPos, mouseNowX, mouseNowY
 	;(on the game, going off it: over the scene first - Wizard101 keeps showing the button the mouse last left it from

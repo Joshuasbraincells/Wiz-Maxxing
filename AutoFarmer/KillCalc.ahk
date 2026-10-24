@@ -668,6 +668,15 @@ HitDamage(hitName, useEnchant, toBoss)
 		base += Stat("enchant" . EnchantedHits[hitName])
 	else if (useEnchant && enchant >= 1)
 		base += Stat("enchant" . enchant)
+	return HitDamageFrom(base, toBoss)
+	}
+
+;A hit's least damage from its base (its card's, an enchant added): your damage %, the blades and aura on, the traps on
+;the boss (solotraps), the enemies' resist less your pierce - HitDamage's, and a learned hit's in no slot (HitTarget)
+HitDamageFrom(base, toBoss := false)
+	{
+	if (base <= 0)
+		return 0
 	dmg := base * DamageMultiplier(Stat("damage")) * BoostMult(AppliedBlades)
 	if (AuraRounds > 0)
 		dmg *= 1 + Stat("aura") / 100
@@ -678,6 +687,19 @@ HitDamage(hitName, useEnchant, toBoss)
 	if (resist > 0)
 		dmg *= 1 - resist / 100
 	return Floor(dmg)
+	}
+
+;A learned hit's least damage in no slot (for its target: HitTarget) - every head of it (CardLearn.ahk LearnHitBase: a
+;Hydra's three), the enchant put on it added (enchanted), then as HitDamage; "" its damage not known
+LearnedHitDamage(c, enchanted)
+	{
+	global enchant, BossChoosen
+	lhdBase := IsFunc("LearnHitBase") ? Func("LearnHitBase").Call(c) : ""
+	if (lhdBase = "" || lhdBase <= 0)
+		return ""
+	if (enchanted && enchant >= 1)
+		lhdBase += Stat("enchant" . enchant)
+	return HitDamageFrom(lhdBase, BossChoosen == 1)
 	}
 
 IsLethal(hitName, useEnchant)
@@ -851,6 +873,30 @@ CaptureRGB(x, y, w, h)
 
 ;Cheapest hit in hand that kills every enemy, trying without the enchant first: the wand's card first (it
 ;costs nothing; never enchanted), then hit1-4
+;The damage the kill check counts on from each hit in hand (HitDamage: the least it does - no crit - with the blades
+;and traps known to be on, your damage %, the enemies' resist), for debug.log: "Sandstorm (hit1) 255 all enemies, 355
+;with the enchant; wand 80 one enemy" ("" none in hand)
+KillHitsText()
+	{
+	global enchant, wand, hit1, hit2, hit3, hit4, hitschool
+	inHand := [hit1, hit2, hit3, hit4], out := ""
+	for each, kh in ["wand", "hit1", "hit2", "hit3", "hit4"]
+		{
+		if (kh = "wand" ? !(wand == 1 && Stat("usewand")) : inHand[each - 1] != 1)
+			continue
+		khDmg := HitDamage(kh, false, false)
+		if (khDmg <= 0)
+			continue
+		khName := IsFunc("DashShortName") && kh != "wand" ? Func("DashShortName").Call(kh, hitschool) : ""
+		;(a wand's hit is always one enemy's)
+		khOne := kh = "wand" || Stat(hitschool "." kh "target") = 1
+		khBoost := (kh != "wand" && enchant >= 1) ? HitDamage(kh, true, false) : 0
+		out .= (out = "" ? "" : "; ") (khName != "" && khName != kh ? khName " (" kh ")" : kh) " " khDmg (khOne ? " one enemy" : " all enemies")
+			. (khBoost > khDmg ? ", " khBoost " with the enchant" : "")
+		}
+	return out
+	}
+
 FindLethalHit(ByRef hitName, ByRef withEnchant)
 	{
 	global enchant, wand

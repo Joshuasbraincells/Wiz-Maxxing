@@ -650,7 +650,7 @@ PotionOk(watchHands := true, since := 0)
 		}
 	;(since: the run's start - any key or mouse of yours after it, not only in the last 400 ms. "Wait while I play" off:
 	;the bot carries on while you play - the run too)
-	if (watchHands && HandsOffOn() && (A_TimeIdlePhysical < 400 || (since && A_TickCount - A_TimeIdlePhysical > since)))
+	if (watchHands && HandsOffOn() && (UserIdle() < 400 || (since && A_TickCount - UserIdle() > since)))
 		{
 		DebugLog("Potions: you touched the mouse or keyboard - stopping (the bot leaves it to you)")
 		return false

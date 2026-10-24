@@ -474,6 +474,9 @@ PartyFollowStep()
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
+		;(Wizard101 behind another window, you away 5 minutes - or Play for me: brought to the front, as the walker does)
+		if (Walking && !GameActive() && inbattle != 1 && IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
+			WkFrontLook := A_TickCount, Func("GameToFront").Call("following the leader", true, true)
 		Sleep, 150
 		return
 		}

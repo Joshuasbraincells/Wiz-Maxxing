@@ -22,6 +22,10 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 - [ ] Live-test what shipped untested: draw for a killing enchant, learned hits, enchant learning, MoveToCard
 - [ ] The 913 s battle (07:10-09:34 run): find why it lasted so long
 - [ ] Fewer passes (24 passes to 74 casts in that run)
+- [ ] Blades and traps by damage school: each hit's damage schools known (the wiki, the card's text - Hydra: storm, fire and ice heads); a blade/trap used when it matches any of the planned hit's schools (Elemental Blade: all three heads; only a Storm Blade in hand: still boosts Hydra's storm head) and counted per head in the kill check; a support's other-school blades (a pet's Storm Blade) cast on the hitter they boost; asked 2026-10-23 (code check: workflow wf_71ffa745-5e6, scratchpad blade_audit.md). Found: hits all taken as the wizard's school (a Balance wizard never looks for Elemental Blade/Trap); every blade counted on every hit; a learned Hydra stored as its first head only; Elemental/Spirit pictures are placeholders at 1440p; a support never looks in the hitter's school folder; a wand's cast clears every blade from the model. (Learned blades/traps no longer thrown away: v0.43.0)
+- [ ] Deck switching: a "small" deck for weak collect mobs, a "large" deck for bosses - switched before the fight by what's ahead (collect goal / the quest's boss); asked 2026-10-23
+  - [ ] The dashboard's Cards tab gets two tabs of its own, Small deck and Large deck: each deck's settings and behaviour (its cards and slots, how it plays - blades/traps before hitting, healing, passing, when it's used) set there
+  - [ ] Adaptive decks: more decks than the two - you add one (or the bot learns from the decks you set up in the game which ones you want) and define what it's for and how it plays; used for dungeons and farming. A dungeon's deck picked on the Dungeons tab (per recorded dungeon run); farming's on the Cards tab
 
 ## 4. Card quests and spell learning, automatic
 - [x] NPCs with a quest marker ("?") talked to when passed on the way (v0.35.0)

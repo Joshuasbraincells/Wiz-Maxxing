@@ -25,6 +25,8 @@ global WkPassMin, WkPassKey, WkPassAt
 global WkPromptVerb
 ;When a window's close button was last looked for (WalkCloseWindow)
 global WkCloseLook
+;"Play for me" (AutoFarmer's red button, off at every start): every check for you off - UserIdle
+global PlayForMe
 ;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute
 global WkFroTurns, WkFroUntil, WkFroHolds
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
@@ -287,7 +289,7 @@ WalkStep()
 		;the keyboard and mouse alone a moment: the game in front, walking on)
 		;(you've left the PC with another window in front - nothing touched for 5 minutes: the game in front all the same,
 		;else it logs you out for inactivity)
-		if (IsFunc("GameToFront") && A_TimeIdlePhysical > 300000 && A_TickCount - WkFrontLook > 1500)
+		if (IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
 			{
 			WkFrontLook := A_TickCount
 			if (Func("GameToFront").Call("nothing touched for 5 minutes, another window in front", true, true))
@@ -2429,7 +2431,7 @@ WalkMetrics()
 WalkTurnRadius()
 	{
 	WkArcMouse := IsFunc("MouseSteerOn") && MouseSteerOn() && MsK != "" && !(MsOffUntil && A_TickCount < MsOffUntil) && SpeedNow <= 5
-		&& GameActive() && !PlayerActive && A_TimeIdlePhysical >= 3000 && (WkArrived = 0 || WkArrived = 3 || WkArrived = 7)
+		&& GameActive() && !PlayerActive && UserIdle() >= 3000 && (WkArrived = 0 || WkArrived = 3 || WkArrived = 7)
 		&& MouseSteerWindowClear()
 	WkArcSentR := WkArcMouse ? Round(120 * Max(1, SpeedNow ? SpeedNow : 1)) : Round((TurnRadius ? TurnRadius : 400) * 1.2)
 	return WkArcSentR
@@ -2533,6 +2535,14 @@ WalkSettle()
 GameActive()
 	{
 	return WinActive("ahk_class " GameClass " ahk_exe " GameExe)
+	}
+
+;How long you've left the keyboard and mouse alone (ms; the bot's own input doesn't count) - as A_TimeIdlePhysical, which
+;every check for you goes by. "Play for me" on (AutoFarmer: PlayForMe - the red button; off at every start): you're
+;taken as away for good - nothing waits for you, yields to you or keeps its hands off for you
+UserIdle()
+	{
+	return PlayForMe ? 2147483647 : A_TimeIdlePhysical
 	}
 
 ;Shows what the walker is doing in the tray tip. In AutoFarmer each new kind of status (walking,

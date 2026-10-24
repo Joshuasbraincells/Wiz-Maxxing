@@ -313,7 +313,7 @@ EnemyDanger()
 	if (!edSlots.Length())
 		return false
 	;(your health: read this round already - the heal check - or now, quietly)
-	if (!(OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 20000 && OwnHpWin = WinExist("A")) && playerX != "")
+	if (!(OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 20000 && OwnHpWin = WinExist("A")) && playerX != "" && !(playerX = 0 && playerY = 0))
 		OwnHealthLow(true)
 	edHealth := (OwnHpCur != "" && OwnHpRound = roundnumber && OwnHpWin = WinExist("A")) ? OwnHpCur : ""
 	;(a low reading only 2 of its 4 reads agreed on - 775 read as 75 - isn't trusted: as for a heal)

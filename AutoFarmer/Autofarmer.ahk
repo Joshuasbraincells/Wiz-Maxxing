@@ -33,6 +33,7 @@ Menu, Tray, Add
 Menu, Tray, Add, Bot on/off (F6), MenuBotToggle
 Menu, Tray, Add, Walking on/off (F8), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
+Menu, Tray, Add, Play for me (leave it alone for days), MenuPlayForMe
 Menu, Tray, Add, Bring Wizard101 to the front, MenuGameFront
 Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
@@ -87,6 +88,10 @@ return
 
 MenuHandsOff:
 HandsOffToggle()
+return
+
+MenuPlayForMe:
+PlayForMeToggle()
 return
 
 MenuGameFront:
@@ -238,6 +243,13 @@ global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStal
 ;of) a round of this battle - the bot's record of blades/traps may be wrong, so no kill check till it ends.
 ;RoundLeft: the bot left the round that's up to you (seeing it again isn't a new round)
 global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
+;"Play for me" (the dashboard's red button, the tray menu): every check for you off - nothing waits for you or keeps its
+;hands off the mouse for you (UserIdle, Walker.ahk). Off at every start: the bot takes control only once you've said so
+global PlayForMe := 0
+;The game log's planning phase the enemies' odds were last worked out for while you played (EnemyDanger)
+global EnemyPhaseDone := 0
+;The battle (the game log's duel) your plate was last found in - playerX is that battle's
+global PlateDuel := ""
 ;When the spellbook (out of battle only) was last seen - the walker's "no battle on" (BotNoBattle)
 global BookSeenAt := 0
 ;When a battle round's Pass button was last seen, when the mouse was last moved onto the scene for one that wasn't, and
@@ -336,6 +348,7 @@ FileMove, %A_ScriptDir%\debug.log, %A_ScriptDir%\debug.previous.log, 1
 DashInit()
 SetTimer, UpdPeekNow, -45000
 HandsOffShow()
+PlayForMeShow()
 GameFrontShow()
 BotOnShow()
 WatchShow()
@@ -443,6 +456,16 @@ loop,
 		BlockInput, MouseMoveOff
 		if (inbattle == 1 && !PlayerTookRound)
 			PlayerTookRound := 1, DebugLog("  (you're playing in this battle: no kill check till it ends - the bot can't know which blades and traps are left)")
+		;(the enemies' likely spells kept up on the dashboard while you play the rounds - once a round, by the game's log,
+		;read here too: 2026-10-23 its list stayed on the last round the bot played. Your plate as found in another battle
+		;isn't read for your health - an ally's can be there now)
+		BattleLogRead()
+		if (IsFunc("BattleLogInBattle") && BattleLogInBattle() && BlPhase = "kPhase_Planning" && BlPhaseAt != EnemyPhaseDone && A_TickCount - BlPhaseAt > 1500)
+			{
+			if (PlateDuel != BlDuel)
+				playerX := 0, playerY := 0
+			EnemyPhaseDone := BlPhaseAt, EnemyDanger()
+			}
 		;(the round left to you is over once its Pass button goes)
 		if (RoundLeft)
 			{
@@ -529,7 +552,7 @@ loop,
 		SpeedSet(0, "a battle round", true)
 		;(gamefront: the game in front for its cards - a first click on a window behind only brings it forward)
 		if (!GameActive())
-			GameToFront("a battle round is up", false, A_TimeIdlePhysical > 300000)
+			GameToFront("a battle round is up", false, UserIdle() > 300000)
 		;(the first round at a window size: the UI size measured from Pass and Flee before it's played - a made set's
 		;Pass button, mostly see-through, matches at a size a little off too: a 2544x1401 window's 1.121 was kept at
 		;2560x1440 borderless, 1.144, and your nameplate never found. 3 rounds tried, then played with the set in use)
@@ -611,7 +634,7 @@ loop,
 	;(only before a round of the battle's been seen: after the bot's own, a party's planning goes on while the others choose)
 	passLog := inbattle != 1 && BattleLogPlanning(4000)
 	if (!bookSeen && ((inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000) || passLog) && A_TickCount - PassNudgeAt > 15000
-		&& GameActive() && A_TimeIdlePhysical > 5000)
+		&& GameActive() && UserIdle() > 5000)
 		{
 		PassNudgeAt := A_TickCount, PassNudges += 1
 		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
@@ -725,6 +748,10 @@ else
 				}
 	}
 		
+;(the battle it's this battle's plate for)
+if (player == 1)
+	PlateDuel := BlDuel
+
 ;Find player school
 
 global school := ""
@@ -1034,6 +1061,10 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 		}
 	ShowKillInfo()
 	DebugLog("  kill check: " HealthText() " -> " (KillHit = "" ? "no lethal hit" : KillHit (KillEnchant ? " with enchant" : "")))
+	;(and the damage it counts on from each hit in hand - you asked, 2026-10-23)
+	khText := KillHitsText()
+	if (khText != "")
+		DebugLog("  your hits now: " khText)
 	CenterMouse()
 	if (KillHit != "")
 		{
@@ -1049,9 +1080,12 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 ;Enemy spells (EnemySpells.ahk): what each enemy will likely cast, off the wiki and the battle so far (the game's log) -
 ;logged and on the dashboard; the chance their hits kill you this round defendat % or more: a heal, else Tower Shield,
 ;first (a hit that ends the battle went first, above)
-if (hitter != 0) && (!PlayerTookRound) && (playerX != "") && EnemyDanger()
+;(worked out every round the bot plays - the dashboard's list kept up even after you played one; defending only while
+;the bot's record of the battle is its own)
+if (hitter != 0) && (playerX != "")
 	{
-	if EnemyDefend()
+	EnemyPhaseDone := BlPhaseAt
+	if (EnemyDanger() && !PlayerTookRound && EnemyDefend())
 		Goto, EndRound
 	}
 
@@ -1199,7 +1233,7 @@ PlayerActing()
 	{
 	static logged := 0
 	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 3
-	acting := (HandsOffOn() && secs > 0 && A_TimeIdlePhysical < secs * 1000)
+	acting := (HandsOffOn() && secs > 0 && UserIdle() < secs * 1000)
 	;(the bot's own hotkeys aren't you playing: the key itself, and for Alt+1 / Alt+2 / Windows+3 the click
 	;on the boss / player that follows within 10 s)
 	if (acting && A_ThisHotkey != "")
@@ -1276,7 +1310,7 @@ BotRestart()
 ;started from the tray - and no key or mouse of yours since from (A_TickCount; 0: not looked at)
 WalkHostOn(from := 0)
 	{
-	return (BotOn || PotionManual) && !(from && A_TickCount - A_TimeIdlePhysical > from)
+	return (BotOn || PotionManual) && !(from && A_TickCount - UserIdle() > from)
 	}
 
 ;The tray menu's tick and the dashboard's button for the bot on / off
@@ -1332,13 +1366,15 @@ BotNoBattle(since := 0)
 ;"Bring Wizard101 to the front" (tray menu, dashboard button): gamefront in PlayerStats.txt, off unless it's 1
 GameFrontOn()
 	{
-	return Stats.HasKey("gamefront") && Stats["gamefront"] = 1
+	;(Play for me: the game brought up whenever it's needed)
+	return PlayForMe || (Stats.HasKey("gamefront") && Stats["gamefront"] = 1)
 	}
 
 ;Turns it on/off and keeps it in PlayerStats.txt (gamefront)
 GameFrontToggle()
 	{
-	frontOn := !GameFrontOn()
+	;(the setting itself switched - not what Play for me makes of it)
+	frontOn := !(Stats.HasKey("gamefront") && Stats["gamefront"] = 1)
 	if (!StatsSet([["gamefront", frontOn ? 1 : 0]]))
 		Stats["gamefront"] := frontOn ? 1 : 0
 	GameFrontShow()
@@ -1367,7 +1403,7 @@ GameToFront(why, idle := true, force := false)
 	static saidAt := 0
 	if ((!GameFrontOn() && !force) || GameActive())
 		return GameActive()
-	if (idle && A_TimeIdlePhysical < 3000)
+	if (idle && UserIdle() < 3000)
 		return false
 	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
 	WinWaitActive, ahk_class %GameClass% ahk_exe %GameExe%, , 1
@@ -1395,6 +1431,40 @@ HandsOffToggle()
 	}
 
 ;The tray menu's tick and the dashboard button's label
+;"Play for me" on/off - the dashboard's red button, the tray menu. On: every check for you off (UserIdle) - the bot plays
+;on as if you've left the PC, taking the mouse and the game's window whenever it needs them. F6 / F8 still stop it.
+;Turned on only once you've typed pimpmeout in the box that asks (your say-so - you asked for it, 2026-10-23); off at a
+;click. Never kept: off at every start
+PlayForMeToggle()
+	{
+	if (!PlayForMe)
+		{
+		InputBox, pfmTyped, Play for me, Type 'pimpmeout' To Turn This Feature On`n`n(The bot then stops waiting for you: it takes the mouse and Wizard101's window whenever it needs them. F6 stops it.), , 420, 190
+		if (ErrorLevel || Trim(pfmTyped) != "pimpmeout")
+			{
+			DebugLog("Play for me: not turned on (" (ErrorLevel ? "cancelled" : "the word typed wasn't pimpmeout") ")")
+			return
+			}
+		}
+	PlayForMe := !PlayForMe
+	PlayForMeShow()
+	DebugLog("Play for me: " (PlayForMe ? "ON - every check for you is off: the bot takes the mouse and the game's window whenever it needs them (F6 stops it)" : "off - the bot waits for you and keeps its hands off while you play, as set"))
+	TrayTip, Wizard101 bot, % PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. F6 stops it." : "Play for me is off: the bot waits for you again.", 5, PlayForMe ? 2 : 1
+	}
+
+;The tray menu's tick and the dashboard's red button
+PlayForMeShow()
+	{
+	if (PlayForMe)
+		Menu, Tray, Check, Play for me (leave it alone for days)
+	else
+		Menu, Tray, Uncheck, Play for me (leave it alone for days)
+	if (IsFunc("DashPlayShow"))
+		Func("DashPlayShow").Call(PlayForMe)
+	;(Game to front's label too: Play for me brings the game up whatever it's set to)
+	GameFrontShow()
+	}
+
 HandsOffShow()
 	{
 	waitOn := HandsOffOn()
@@ -1908,7 +1978,7 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 			ErrorBox("UseHit", dir, title)
 			}
 		ClickAt(foundX, foundY)
-		HitTarget(title, dir)
+		HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen == 1))
 		return CastResult(title, hit, dir, 1)
 		} else if (hit == 1)
 			{
@@ -1923,7 +1993,7 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 				ErrorBox("UseHit", dir, title)
 				}
 			ClickAt(foundX, foundY)
-			HitTarget(title, dir)
+			HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen == 1))
 			return CastResult(title, hit, dir, 0)
 			} else
 				{
@@ -2059,10 +2129,10 @@ UseHeal(title, ByRef card, dir, tx := "", ty := "")
 ;A hit that strikes one enemy (<school>.hitNtarget:1 in PlayerStats.txt, e.g. Scarab) waits for a target
 ;after its card is clicked: click the boss if one was picked (Alt+1), else the enemy with the least
 ;health, else the leftmost one (their nameplates along the top). All-enemy hits need nothing
-HitTarget(title, dir, force := 0)
+HitTarget(title, dir, force := 0, dmg := "")
 	{
 	global
-	local key, i, e, pick, tx, ty
+	local key, i, e, pick, tx, ty, eff, best, why
 	key := dir "." title "target"
 	;(force: a learned hit in no slot that needs a target - its card says so, not PlayerStats.txt)
 	if (!force && (!Stats.HasKey(key) || Stats[key] != 1))
@@ -2075,13 +2145,21 @@ HitTarget(title, dir, force := 0)
 		tx := BossX, ty := BossY, pick := "the boss"
 	else if (EnemyPlates.Length())
 		{
-		pick := 1
+		;(the enemy the hit does the most to - the least of its damage and that enemy's health: not a big hit thrown at
+		;one nearly dead while another's at full - 2026-10-23, a Hydra; one it kills, the healthiest of those; none, the
+		;weakest - the first to go. Its damage not known: the weakest, as before)
+		pick := 1, best := "", why := ""
 		if (IsObject(EnemyHP) && EnemyHP.Length() = EnemyPlates.Length())
 			for i, e in EnemyHP
-				if (e.cur < EnemyHP[pick].cur)
-					pick := i
+				{
+				eff := (dmg > 0) ? Min(dmg, e.cur) : -e.cur
+				if (best = "" || eff > best || (eff = best && e.cur < EnemyHP[pick].cur))
+					pick := i, best := eff
+				}
+		if (dmg > 0 && IsObject(EnemyHP) && EnemyHP.Length() > 1 && EnemyHP.Length() = EnemyPlates.Length())
+			why := ", " Min(dmg, EnemyHP[pick].cur) " of its " dmg " damage on it" (dmg >= EnemyHP[pick].cur ? " - kills it" : "")
 		tx := EnemyPlates[pick].x, ty := EnemyPlates[pick].y
-		pick := "enemy " pick " of " EnemyPlates.Length() (IsObject(EnemyHP) ? " (" EnemyHP[pick].cur " health)" : "")
+		pick := "enemy " pick " of " EnemyPlates.Length() (IsObject(EnemyHP) ? " (" EnemyHP[pick].cur " health" why ")" : "")
 		}
 	else
 		{
@@ -3215,7 +3293,7 @@ CastLearnedHit()
 		DebugLog("  learned hit " c.id " (" LearnDescribe(c.c) ")" (enchanted ? ", enchanted," : "") " - in no slot: cast at " Round(c.x) - GameLeft "," Round(c.y) - GameTop)
 		ClickAt(Round(c.x), Round(c.y))
 		if (c.c.type = "damage" && c.c.target != 0)
-			HitTarget("learned hit", hitschool, 1)
+			HitTarget("learned hit", hitschool, 1, LearnedHitDamage(c.c, enchanted))
 		if (CastWentOut())
 			{
 			ConsumeBoosts()
@@ -3434,7 +3512,7 @@ StatsAuto()
 	;(cheap checks first: this runs on every pass out of battle)
 	if (!StatsWanted && SrBattleSchool = "")
 		return
-	if (A_TimeIdlePhysical < 5000 || afk || loopmode || loremode || !WinActive("ahk_class " GameClass " ahk_exe " GameExe))
+	if (UserIdle() < 5000 || afk || loopmode || loremode || !WinActive("ahk_class " GameClass " ahk_exe " GameExe))
 		return
 	;The school of the wizard logged in now: the last battle's if that was this character (it may have
 	;switched since), else the one noted for it before

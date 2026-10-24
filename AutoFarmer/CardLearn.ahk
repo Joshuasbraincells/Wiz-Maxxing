@@ -119,7 +119,10 @@ DiscardUnused()
 		;(CastLearnedHit); nor a card the hand's look says is a treasure card)
 		if (LearnSlotOf(pid) != "" || ox != "" || !IsObject(lc) || lc.type = "" || LearnHasFlag(lc, "hold") || LearnHasFlag(lc, "tc")
 			|| lc.type = "enchant" || c.tc = 1
-			|| ((lc.type = "blade" || lc.type = "trap" || lc.type = "aura") && LearnSlotFor(lc) != "")
+			;(nor a blade or trap at all: the bot can't yet tell the school it boosts - a pet's Storm Blade on a Balance
+			;support boosts the Storm hitter, an Elemental Blade a Balance wizard's Hydra - so it was thrown away as having
+			;no slot, 2026-10-23; an aura only with a slot)
+			|| lc.type = "blade" || lc.type = "trap" || (lc.type = "aura" && LearnSlotFor(lc) != "")
 			;(a hit of the school while no hit1-3 in hand can go: cast this round instead - LearnHitCards)
 			|| (LearnIsHit(lc) && Stat("learnedhits") && !((hit1 == 1 && Affordable("hit1")) || (hit2 == 1 && Affordable("hit2")) || (hit3 == 1 && Affordable("hit3")))))
 			{
@@ -1058,6 +1061,27 @@ LearnStatOf(sch, key)
 LearnValueKnown(c)
 	{
 	return (c.value != "" && (LearnHasFlag(c, "two") || LearnHasFlag(c, "user"))) ? c.value : ""
+	}
+
+;A learned hit's least damage, every head of it - the low end of each damage range on the card before any "over N
+;rounds" (Hydra: its storm, fire and ice heads; LearnKindOf keeps the first range only) when its value is known, else
+;"" (a value you set on the Spells tab is taken as it is)
+LearnHitBase(c)
+	{
+	known := LearnValueKnown(c)
+	if (known = "" || LearnHasFlag(c, "user"))
+		return known
+	lhbAt := RegExMatch(c.text, "i)over\s*\d|(?<![a-z])o\S{0,2}r\s*\d|\(\s*\S{0,2}\s*\d\s*\)|r[o0]unds?\b|\brds\b")
+	lhbHead := lhbAt ? SubStr(c.text, 1, lhbAt - 1) : c.text
+	lhbSum := 0, lhbN := 0, p := 1
+	while (p := RegExMatch(lhbHead, "O)(\d+)\s*-\s*(\d+)", lhbM, p))
+		{
+		lhbLo := LearnRangeFix(lhbM.Value(1), lhbM.Value(2))
+		if (lhbLo != "")
+			lhbSum += lhbLo, lhbN += 1
+		p += StrLen(lhbM.Value(0))
+		}
+	return lhbN > 1 ? lhbSum : known
 	}
 
 ;Which of two hits is stronger: > 0 the first, < 0 the second, 0 can't tell (or the same). By their damage where

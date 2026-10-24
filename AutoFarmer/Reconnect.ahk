@@ -160,7 +160,7 @@ RcStep()
 			RcSet("wait", "try " RcTries ": clicked RECONNECT - waiting to log back in")
 			return true
 			}
-		if (IsObject(btn) || inFront || (early ? nowMs - RcPeekAt > 20000 : nowMs - RcPeekAt > 120000 && A_TimeIdlePhysical > 60000))
+		if (IsObject(btn) || inFront || (early ? nowMs - RcPeekAt > 20000 : nowMs - RcPeekAt > 120000 && UserIdle() > 60000))
 			{
 			RcPeekAt := nowMs
 			if (RcFrontClick("i)^reconn?ect$", "box", "RECONNECT", "RECONNECT"))
@@ -941,7 +941,7 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 		}
 	;(the focus back to your window - not when you've left the PC, nothing touched for 5 minutes: the game stays in front,
 	;else the bot can't walk and the game logs out for inactivity again)
-	if (prevWin && prevWin != gameWin && A_TimeIdlePhysical < 300000)
+	if (prevWin && prevWin != gameWin && UserIdle() < 300000)
 		{
 		Sleep, 200
 		MouseMove, %mouseX%, %mouseY%, 0

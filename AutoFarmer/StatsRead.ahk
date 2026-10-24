@@ -122,7 +122,7 @@ SrOk()
 		return false
 	if (!WinActive("ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe"))
 		SrStop := "Wizard101 isn't the active window any more"
-	else if (SrHandsOff && A_TimeIdlePhysical < 500)
+	else if (SrHandsOff && (IsFunc("UserIdle") ? Func("UserIdle").Call() : A_TimeIdlePhysical) < 500)
 		SrStop := "you used the mouse or keyboard"
 	else
 		{

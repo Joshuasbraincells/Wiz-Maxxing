@@ -161,6 +161,14 @@ dashboard's "Wait for me" button; it's kept in PlayerStats.txt (handsoffon).
 It's on again, with 3 s, every time the bot starts - it never takes the mouse
 from you as it starts; switched off or changed, that holds for the run.
 
+Play for me (the dashboard's red button, or the tray menu): for leaving the
+PC for days. Every check for you is off - it no longer waits while you use the
+keyboard or mouse, gives the mouse back, keeps out of a window you're using or
+leaves a shop's window to you; it brings Wizard101 to the front whenever it
+needs it. It asks you to type pimpmeout to turn it on (your say-so); a click
+turns it off. It's off at every start - the bot only takes control once you've
+said so. F6 and F8 still stop it.
+
 Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
 updates" does it any time - so does the dashboard's Updates button (top right),
@@ -433,7 +441,11 @@ in your hand would do. If one of them kills every enemy it casts it right
 away (the cheapest one that works - the wand's free hit first - and without
 the enchant if it doesn't need it) instead of putting up more blades and
 traps. A hit on one enemy (<school>.hitNtarget:1) only counts when one enemy
-is left. If it can't read the
+is left. When one is cast, it goes where it does the most - the least of its
+damage and the enemy's health: a big hit isn't thrown at an enemy nearly dead
+while another is at full; of those it kills, the healthiest; none, the
+weakest. debug.log says after the kill check what it counts on from each hit
+in hand ("your hits now: ..."). If it can't read the
 health, or no hit is enough yet, it plays exactly like before.
 	- Draw treasure cards for an enchant that kills (the Settings window, off
 	  unless you switch it on): when no hit ends the battle but one would with

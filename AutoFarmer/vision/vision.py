@@ -637,11 +637,38 @@ def digit_masks(sc):
     return out
 
 
+def specks_out(m, least=3):
+    """m without its specks - pieces of fewer than least pixels (8-connected): a treasure card's lavender frame and the
+    art's tan put a yellow pixel or two by the pip digit, and every one counts against the digit's match (a Sharpened
+    Blade's 0 at 0.57, under DIGIT_IOU: "? pips", 2026-10-23)"""
+    m = m.copy()
+    H, W = m.shape
+    seen = np.zeros_like(m)
+    for y0, x0 in zip(*np.nonzero(m)):
+        if seen[y0, x0]:
+            continue
+        stack, piece = [(y0, x0)], []
+        seen[y0, x0] = True
+        while stack:
+            y, x = stack.pop()
+            piece.append((y, x))
+            for dy in (-1, 0, 1):
+                for dx in (-1, 0, 1):
+                    yy, xx = y + dy, x + dx
+                    if 0 <= yy < H and 0 <= xx < W and m[yy, xx] and not seen[yy, xx]:
+                        seen[yy, xx] = True
+                        stack.append((yy, xx))
+        if len(piece) < least:
+            for y, x in piece:
+                m[y, x] = False
+    return m
+
+
 def read_digit(patch, masks):
     """(digit, score) of the pip cost in patch: each cut digit slid over the patch's yellow pixels, scored
     by how many it shares with them over all of both (so a 1 inside a 4 scores low). ("", best score) if
     none matches clearly"""
-    m = yellow(patch)
+    m = specks_out(yellow(patch))
     total = int(m.sum())
     if total < 4:
         return '', 0.0
@@ -1528,8 +1555,12 @@ NAV_ZONES_KEPT = 3
 # colours, to sit on the dashboard (1B1D22 / 111317, accent 8AB4F8)
 MAP_BG = (17, 19, 23)
 MAP_FLOOR = (44, 48, 56)
-MAP_FLOOR_LOW = (34, 38, 46)        # the floor shaded by height: the zone's lowest...
-MAP_FLOOR_HIGH = (104, 112, 130)    # ...and highest (a dais, a ramp, a balcony stand out)
+MAP_FLOOR_LOW = (34, 38, 46)        # (the floor's grey shading by height, before the colours below)
+MAP_FLOOR_HIGH = (104, 112, 130)
+# the floor coloured by height as maps are: blue (the zone's lowest, cold) through cyan, green and yellow to red (its
+# highest, hot) - muted, so the route, mobs and markers drawn over it stand out (you asked, 2026-10-23)
+MAP_HEIGHT_STOPS = (0.0, 0.25, 0.5, 0.75, 1.0)
+MAP_HEIGHT_RGB = ((38, 64, 140), (34, 112, 142), (52, 124, 72), (148, 138, 50), (150, 56, 46))
 MAP_RIM = (72, 78, 90)
 MAP_WATER = (28, 52, 74)
 MAP_OBST = (204, 112, 74)
@@ -2072,8 +2103,7 @@ class ZoneLayers:
         rim = (np.asarray(solid.filter(ImageFilter.MaxFilter(2 * S + 1))) > 0) & (g == 0)
         rgb = np.empty((size, size, 3), np.uint8)
         rgb[:] = MAP_BG
-        lo, hi = np.array(MAP_FLOOR_LOW, np.float32), np.array(MAP_FLOOR_HIGH, np.float32)
-        floor_rgb = (lo + (hi - lo) * sh).astype(np.uint8)
+        floor_rgb = height_rgb(sh[..., 0])
         rgb[g == 1] = floor_rgb[g == 1]
         rgb[g == 2] = MAP_WATER
         rgb[rim] = MAP_RIM
@@ -2140,6 +2170,14 @@ def map_font(size):
         else:
             MAP_FONTS[size] = ImageFont.load_default()
     return MAP_FONTS[size]
+
+
+def height_rgb(level):
+    """the floor's colour for its height (0 the zone's lowest - blue - to 1 its highest - red; MAP_HEIGHT_*), per pixel:
+    level (H, W) floats -> (H, W, 3) uint8"""
+    lv = np.clip(np.asarray(level, np.float32), 0.0, 1.0)
+    cols = np.array(MAP_HEIGHT_RGB, np.float32)
+    return np.stack([np.interp(lv, MAP_HEIGHT_STOPS, cols[:, c]) for c in range(3)], -1).astype(np.uint8)
 
 
 def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False):

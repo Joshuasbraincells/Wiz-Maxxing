@@ -42,7 +42,7 @@ MouseSteerWhyNot(needW := true)
 		return "sped up over 5x"
 	if (WkArrived != 0 && WkArrived != 3 && WkArrived != 7)
 		return "at the goal"
-	if (PlayerActive || A_TimeIdlePhysical < 3000)
+	if (PlayerActive || UserIdle() < 3000)
 		return "you're at the keyboard or mouse"
 	if (GetKeyState("RButton", "P") || GetKeyState("LButton", "P") || GetKeyState("Shift", "P") || GetKeyState("Ctrl", "P")
 		|| GetKeyState("Alt", "P") || GetKeyState("LWin", "P") || GetKeyState("RWin", "P"))
@@ -126,7 +126,7 @@ MouseSteerTurned(yaw, yaw0)
 ;You touched the keyboard or mouse since from (the bot's own input doesn't count: the hooks), or Wizard101 isn't in front
 MouseSteerYours(from)
 	{
-	return A_TimeIdlePhysical < A_TickCount - from || !GameActive()
+	return UserIdle() < A_TickCount - from || !GameActive()
 	}
 
 ;Where the cursor is and whether it shows: "x,y shown" / "x,y hidden" (screen), "?" not known
@@ -171,7 +171,7 @@ MouseTurn(h)
 	wasCrit := A_IsCritical
 	Critical
 	;(the window and the read let other threads run: F6, F8, you - looked at again before anything's pressed)
-	if (!Walking || !HeldW || inbattle || !GameActive() || PlayerActive || A_TimeIdlePhysical < 3000)
+	if (!Walking || !HeldW || inbattle || !GameActive() || PlayerActive || UserIdle() < 3000)
 		{
 		if (!wasCrit)
 			Critical, Off
