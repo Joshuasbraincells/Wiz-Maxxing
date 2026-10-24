@@ -267,6 +267,13 @@ global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := ""
 ;Where traps go this round: on (the boss picked with Alt+1, or a party support's pick) and where
 global TrapOn := 0, TrapAtX := 0, TrapAtY := 0
 LoadStats()
+;"Wait while I play" on, 3 s, at every start - the bot never takes the mouse from you as it starts (you asked,
+;2026-10-23); the tray menu, the dashboard and Settings change it for the run
+if (!HandsOffOn() || !Stats.HasKey("handsoff") || Stats["handsoff"] != 3)
+	{
+	if (!StatsSet([["handsoffon", 1], ["handsoff", 3]], "Wait while I play: on and 3 s at every start"))
+		Stats["handsoffon"] := 1, Stats["handsoff"] := 3
+	}
 
 ;Misc Initilization
 global inbattle := 0
@@ -1186,12 +1193,12 @@ Goto, TestRound
 	
 ;Functions
 ;You're playing: a key, a click or a mouse move of yours (not the bot's own: A_TimeIdlePhysical leaves those
-;out) in the last handsoff seconds (PlayerStats.txt, default 10; 0 = never wait for you), while "Wait while
+;out) in the last handsoff seconds (PlayerStats.txt, default 3 - and 3 at every start; 0 = never wait for you), while "Wait while
 ;I play" is on (HandsOffOn). Logged when it starts and ends; PlayerActive tells the dashboard
 PlayerActing()
 	{
 	static logged := 0
-	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 10
+	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 3
 	acting := (HandsOffOn() && secs > 0 && A_TimeIdlePhysical < secs * 1000)
 	;(the bot's own hotkeys aren't you playing: the key itself, and for Alt+1 / Alt+2 / Windows+3 the click
 	;on the boss / player that follows within 10 s)
@@ -1290,6 +1297,30 @@ WatchShow()
 		Menu, Tray, Check, Open with Wizard101 (in standby - F6 starts it)
 	else
 		Menu, Tray, Uncheck, Open with Wizard101 (in standby - F6 starts it)
+	}
+
+;For Reconnect.ahk's hung-loading check: the game seen in the world since (tick) - the spellbook (out of battle) or a
+;battle round's Pass; look: if not, looked for on screen now too (the main loop's own look can be a while ago)
+BotWorldSeenSince(since, look := false)
+	{
+	if (BookSeenAt > since || PassSeenAt > since)
+		return true
+	if (!look)
+		return false
+	UpdateGameRect()
+	ImageSearch, bwX, bwY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundfinish.png")
+	if (ErrorLevel = 0)
+		{
+		BookSeenAt := A_TickCount
+		return true
+		}
+	return PassButtonAt(bwX, bwY) = 0
+	}
+
+;For Reconnect.ahk: the bot on (F6), or a run from the tray
+BotIsOn()
+	{
+	return BotOn || PotionManual
 	}
 
 ;For the walker: no battle on - the spellbook (it only shows out of battle) seen in the last 2 s

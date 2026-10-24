@@ -14,6 +14,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 - [ ] Ranked list from the stuck analysis (workflow run wf_60d57f89-04e), then pick routes
 - [x] Inside a mob's reach or sight: walks out (the quest's side) instead of waiting there (v0.34.0)
 - [x] Walked through mob rings after a battle start (memory steering dropped, the arrow's straight way): route kept by the arrow, no turning on the spot in a ring (v0.35.0)
+- [ ] Other players' battles kept away from: active duel circles found in the game's memory (read-only; the log's "MSG_EndDuel ... NOT a part of it" to cross-check), the WHOLE arena blocked with a margin - the players' side too: the route now goes through it outside the mobs' sight, and any active arena pulls the wizard in (seen by you) - unless the duel has the quest's mob; fallback: the arena from where its mobs and players stand (opposite sides of the circle); drawn on the dashboard map (asked 2026-10-23)
 - [ ] Throne Room: the goal is behind a wall the zone map lacks
 - [ ] Measure it: badly-stuck count and time lost per run (07:10-09:34 run: 4 incidents)
 

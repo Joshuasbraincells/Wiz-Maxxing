@@ -154,10 +154,12 @@ for inactivity.
 
 You playing: while you use the keyboard or mouse yourself, the bot waits - no
 battle rounds, no walking, no potions; a walking key it held is let go at once.
-It carries on 10 s after you stop (handsoff in PlayerStats.txt; 0 = it never
+It carries on 3 s after you stop (handsoff in PlayerStats.txt; 0 = it never
 waits). If you take over during its turn, it leaves that round to you.
 Switch it on/off with the tray menu "Wait while I play" (ticked = on) or the
 dashboard's "Wait for me" button; it's kept in PlayerStats.txt (handsoffon).
+It's on again, with 3 s, every time the bot starts - it never takes the mouse
+from you as it starts; switched off or changed, that holds for the run.
 
 Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
@@ -309,8 +311,15 @@ Auto-reconnect (Reconnect.ahk, on from the start):
 	- The game closed (a crash or Quit): it asks whether to start it again
 	  (yes after 60 seconds if nobody answers), starts it, types your saved
 	  login into the game's login box and goes back in. It only presses Enter
-	  once it can read your username back in the login box, and stops for
-	  good if the game turns the login down.
+	  once it can read your username back in the login box (an OCR slip or
+	  two allowed in a longer one), and stops for good if the game turns the
+	  login down.
+	- Stuck on a loading screen (hungload, Settings: 5 minutes, 0 = never): a
+	  zone change the game's log says began that long ago, nothing but its
+	  memory notes written for 3 minutes, Wizard101 in front and neither the
+	  spellbook nor a battle round shown since: it asks (yes after 60 seconds
+	  if nobody answers), closes Wizard101 and starts it again as above.
+	  debug.log: "Reconnect: the game has been on a loading screen N minutes".
 	- "Client is out of date" after maintenance: it starts the launcher so it
 	  can patch (it fills in the launcher's login too - not tried yet).
 	Tray menu: "Auto-reconnect on/off", and "Set Wizard101 login..." to save

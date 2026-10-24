@@ -29,11 +29,13 @@ CfgList()
 	list := []
 	list.Push({key: "-", label: "THE MOUSE AND WAITS"})
 	list.Push({key: "handsoffon", label: "Wait for me while I play", kind: "check", def: 1
-		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.)"})
-	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 10
+		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.) On again, with 3 seconds, every time the bot starts - it never takes the mouse from you as it starts."})
+	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 3
 		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."})
 	list.Push({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
 		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."})
+	list.Push({key: "hungload", label: "Restart Wizard101 stuck on a loading screen (minutes, 0 = never)", kind: "num", lo: 0, hi: 120, def: 5
+		, help: "A zone change that never finishes - the game's log says it began this long ago and has written nothing but its memory notes for 3 minutes, and neither the spellbook nor a battle round has shown since: asks (yes in 60 s if nobody answers), closes Wizard101 and starts it again, logging in with the saved login (tray menu: Set Wizard101 login...). Needs Auto-reconnect on. 2026-10-23: a defeat's trip back hung 69 minutes."})
 	list.Push({key: "mousereturn", label: "Put the mouse back afterwards", kind: "check", def: 1
 		, help: "When the bot takes the mouse - a battle round, a click out of battle - it goes back to where it was once the bot's done (not if you've used the mouse or keys meanwhile). Off: it's left in the middle of the game."})
 	list.Push({key: "mousespeed", label: "Mouse speed (0 = jump there)", kind: "num", lo: 0, hi: 100, def: 1

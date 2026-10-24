@@ -32,6 +32,11 @@
 global RcOn, RcLog, RcPos, RcPid, RcExe, RcState, RcStateAt, RcMsg, RcTries, RcNext, RcLookAt
 global RcCheckAt, RcProcAt, RcClickBg, RcLastBg, RcClickAt, RcCharAt, RcPlayTries, RcNoRelaunch
 global RcLoginBad, RcNote, RcScanning, RcTyped, RcCredTarget, RcHead, RcPeekAt, RcPeeks, RcFrontOk, RcFindInfo
+;A zone change under way by the game's log (when it began, 0 none), when the log last wrote anything but its memory
+;notes, and a restart of a hung game (RcHungCheck) already asked about - RcGone doesn't ask again
+global RcLoadAt, RcLastLineAt, RcHungAsked
+;Restarts for a hang: how many, since when (two in an hour: left to you)
+global RcHungCount, RcHungFirstAt
 
 ;Call once at start. Picks up a disconnect box that's already showing
 ReconnectInit()
@@ -40,7 +45,8 @@ ReconnectInit()
 	RcOn := 1, RcState := "", RcStateAt := A_TickCount, RcTries := 0, RcNext := 0, RcLookAt := 0
 	RcCheckAt := 0, RcProcAt := 0, RcClickBg := -1, RcLastBg := 0, RcClickAt := 0, RcCharAt := 0
 	RcPlayTries := 0, RcNoRelaunch := 0, RcLoginBad := 0, RcNote := 0, RcTyped := 0, RcMsg := ""
-	RcHead := "", RcPeekAt := 0, RcPeeks := 0
+	RcHead := "", RcPeekAt := 0, RcPeeks := 0, RcLoadAt := 0, RcLastLineAt := A_TickCount, RcHungAsked := 0
+	RcHungCount := 0, RcHungFirstAt := 0
 	Process, Exist, %GameExe%
 	RcPid := ErrorLevel
 	RcSetClient(RcFindClient())
@@ -85,14 +91,14 @@ ReconnectCheck()
 		if (gamePid && gamePid != RcPid)
 			{
 			;(its new log is told apart from the old one by its first line: see RcReadLog)
-			RcPid := gamePid, RcNoRelaunch := 0
+			RcPid := gamePid, RcNoRelaunch := 0, RcLoadAt := 0, RcLastLineAt := nowMs, RcHungAsked := 0
 			RcSetClient(RcFindClient())
 			if (RcState = "gone" || RcState = "stopped")
 				RcSet("", "the game is running again")
 			}
 		else if (!gamePid && RcPid)
 			{
-			RcPid := 0
+			RcPid := 0, RcLoadAt := 0
 			if (RcState != "patch")
 				{
 				;Closed by itself (not during one of our own restarts): count tries afresh
@@ -107,6 +113,9 @@ ReconnectCheck()
 		RcCheckAt := nowMs
 		RcReadLog()
 		}
+	;(online: a loading screen that never finishes - RcHungCheck)
+	if (RcState = "")
+		RcHungCheck()
 	if (RcState = "" || RcState = "stopped")
 		return false
 	return RcStep()
@@ -259,6 +268,18 @@ RcReadLog()
 ;What one line of the game's log means for getting back online
 RcLogLine(logLine)
 	{
+	;(a zone change under way, and the log's last sign of life - RcHungCheck. Its memory notes come every 5 minutes
+	;whatever the game's doing: they don't count)
+	;(not the empty field after the chunk's last line break - RcReadLog's Loop Parse)
+	if (logLine != "" && !InStr(logLine, "PROCESS MEMORY USAGE"))
+		RcLastLineAt := A_TickCount
+	if (InStr(logLine, "MSG_ServerTransfer") || InStr(logLine, "Transition windows has appeared"))
+		RcLoadAt := RcLoadAt ? RcLoadAt : A_TickCount
+	;(the zone loaded - "GameClient::LoadZone() - Finished loading zone '...'", then "OnZoneLoaded": never written in the
+	;hang; or the character select screen or the login: no zone change under way - you may sit there a while)
+	else if (InStr(logLine, "Finished loading zone") || InStr(logLine, "OnZoneLoaded")
+		|| InStr(logLine, "WizardCharacterSelect") || InStr(logLine, "LOGIN RESPONSE"))
+		RcLoadAt := 0
 	if (InStr(logLine, "DisplayMessageBox("))
 		{
 		;(the msg string key can be empty - e.g. a Crown Shop error, keyed by its title: GUI_CrownShopError)
@@ -351,6 +372,89 @@ RcLogLine(logLine)
 		}
 	}
 
+;A loading screen that never finishes (2026-10-23 18:30: a defeat's trip back to Celestia's hub connected, then the game
+;wrote nothing but its memory notes for 69 minutes and showed its loading picture): a zone change the log says began
+;hungload minutes ago (5; 0 never - Settings), the log silent for 3 minutes since, the game still running, and neither the
+;spellbook nor a battle round seen since it began (AutoFarmer: BotWorldSeenSince - that's the load done, however the log
+;put it). Asks - yes in 60 s if nobody answers - then closes the game and starts it again (RcGone, not asking again)
+RcHungCheck()
+	{
+	if (!RcLoadAt || !RcPid || RcScanning)
+		return
+	;(only with the game in front - covered by another window, the spellbook can't be seen on screen even when it's up)
+	if (!RcGameActive())
+		return
+	hungMin := IsFunc("Stat") ? Func("Stat").Call("hungload") : ""
+	hungMin := (hungMin = "") ? 5 : hungMin + 0
+	if (hungMin <= 0)
+		return
+	;(in the world again - the spellbook, a battle round - since the zone change began: done)
+	if (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt))
+		{
+		RcLoadAt := 0
+		return
+		}
+	if (A_TickCount - RcLoadAt < hungMin * 60000 || A_TickCount - RcLastLineAt < 180000)
+		return
+	;(a last look at the screen itself - the spellbook, a round's Pass: BotWorldSeenSince with look)
+	if (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt, true))
+		{
+		RcLoadAt := 0
+		return
+		}
+	hungFor := Round((A_TickCount - RcLoadAt) / 60000), quietFor := Round((A_TickCount - RcLastLineAt) / 60000)
+	RcLogMsg("the game has been on a loading screen " hungFor " minutes (nothing in its log for " quietFor ") - it's hung")
+	;(not closed when it can't be started and logged in again: left to you, said once)
+	if (RcLoginBad || RcNoRelaunch || !RcHaveLogin())
+		{
+		RcLoadAt := 0
+		RcLogMsg("no saved login to start it again with (tray menu: Set Wizard101 login...) - the hung game left to you")
+		if (IsFunc("AlertSend"))
+			Func("AlertSend").Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - and no saved login to start it again with: close and start Wizard101 yourself.")
+		return
+		}
+	;(two restarts for a hang within an hour: it's not going away - left to you)
+	if (RcHungCount >= 2 && A_TickCount - RcHungFirstAt < 3600000)
+		{
+		RcLoadAt := 0
+		RcSet("stopped", "the game hung on a loading screen again after " RcHungCount " restarts within an hour - left to you")
+		return
+		}
+	if (IsFunc("ReleaseKeys"))
+		Func("ReleaseKeys").Call()
+	if (IsFunc("AlertSend"))
+		Func("AlertSend").Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - closing it and starting it again (Settings: hungload).")
+	rcHungPid := RcPid
+	MsgBox, 4145, Wizard101 bot, % "Wizard101 has been stuck on a loading screen for " hungFor " minutes.`n`nClose it and start it again, logging back in?`n(It will in 60 seconds if nobody answers.)", 60
+	IfMsgBox, Cancel
+		{
+		RcLoadAt := 0
+		RcLogMsg("the hung game left to you (you chose not to restart it)")
+		return
+		}
+	;(things may have moved on while the question was up - the bot or auto-reconnect switched off, the load finished, a
+	;disconnect, the game closed or started afresh: the log read now, and the screen looked at again)
+	if (!RcOn || (IsFunc("BotIsOn") && !Func("BotIsOn").Call()))
+		{
+		RcLoadAt := 0
+		return
+		}
+	RcReadLog()
+	if (!RcLoadAt || RcState != "" || (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt, true)))
+		{
+		RcLoadAt := 0
+		return
+		}
+	Process, Exist, %GameExe%
+	if (!ErrorLevel || ErrorLevel != rcHungPid)
+		return
+	RcCloseGame()
+	RcHungCount := (RcHungFirstAt && A_TickCount - RcHungFirstAt < 3600000) ? RcHungCount + 1 : 1
+	RcHungFirstAt := RcHungCount = 1 ? A_TickCount : RcHungFirstAt
+	RcLoadAt := 0, RcTries := 0, RcNext := 0, RcHungAsked := 1
+	RcSet("gone", "closed the hung game - starting it again")
+	}
+
 ;A try didn't work: back to looking for RECONNECT, after a longer wait each time
 RcFail(why)
 	{
@@ -408,18 +512,26 @@ RcGone()
 		}
 	if (IsFunc("ReleaseKeys"))
 		Func("ReleaseKeys").Call()
-	MsgBox, 4145, Wizard101 bot, % "Wizard101 has closed.`n`nStart it again and log back in?`n(It will in 60 seconds if nobody answers.)", 60
-	IfMsgBox, Cancel
+	;(a hung game the bot closed itself has been asked about already - RcHungCheck)
+	if (!RcHungAsked)
 		{
-		RcNoRelaunch := 1
-		RcLogMsg("the game has closed - you chose not to start it again")
-		return false
+		MsgBox, 4145, Wizard101 bot, % "Wizard101 has closed.`n`nStart it again and log back in?`n(It will in 60 seconds if nobody answers.)", 60
+		IfMsgBox, Cancel
+			{
+			RcNoRelaunch := 1
+			RcLogMsg("the game has closed - you chose not to start it again")
+			return false
+			}
 		}
 	;Things may have changed while the question was up: the game started some other way, or
-	;auto-reconnect switched off in the tray menu
+	;auto-reconnect switched off in the tray menu. (The hung game still going away: looked at again next time, not
+	;asked about again)
 	Process, Exist, %GameExe%
+	if (ErrorLevel && RcHungAsked)
+		return true
 	if (ErrorLevel || !RcOn || RcState != "gone")
 		return false
+	RcHungAsked := 0
 	return RcLaunchClient()
 	}
 
@@ -462,36 +574,58 @@ RcStartStep()
 		return true
 	if (IsFunc("UpdateGameRect"))
 		Func("UpdateGameRect").Call()
-	if (!IsObject(RcFindWord("i)^password:?$", "all")))
+	;(its PASSWORD label - read badly at 1440p, "PASSWQD:": a word near it counts; the Account field worked out from it)
+	rcPw := RcFindWord("i)^password:?$", "all", "PASSWORD")
+	if (!IsObject(rcPw))
 		return true
+	rcField := RcAccountField(rcPw)
 	if (!RcCredLoad(loginUser, loginPass))
 		{
 		RcSet("stopped", "the saved login is gone - save it again (tray menu: Set Wizard101 login...)")
 		return false
 		}
+	;(read back from the Account field alone, closer up, allowing an OCR slip or two in a longer username - RcLineTol:
+	;2026-10-23 19:39 it was typed, but the whole game read at once didn't find it, and the login was left to you)
+	rcTol := RcLineTol(loginUser)
 	;A fresh start has an empty login box: if the username is already there, don't guess where the
 	;typing would go
-	if (RcSeeLine(loginUser, gameWin))
+	if (RcLineDist(loginUser, gameWin, rcDistX, rcField) <= rcTol)
 		{
 		loginUser := "", loginPass := ""
 		return RcLoginHelp("the login box already has the username in it")
 		}
-	;Typed straight to the game window as characters (it doesn't need focus), checking each step.
+	;Typed straight to the game window as characters, checking each step. 0. Into the Account field: a click there, and a
+	;test (zq7) typed and read back before anything of the login is - nothing of the login typed where it can't be seen
+	RcLoginFocus(rcField)
+	Sleep, 300
+	RcChars(gameWin, "", 40)
+	RcChars(gameWin, "zq7")
+	Sleep, 400
+	rcDist := RcLineDist("zq7", gameWin, rcDistX, rcField)
+	RcChars(gameWin, "", 10)
+	if (rcDist > 1)
+		{
+		loginUser := "", loginPass := ""
+		return RcLoginHelp("a test (zq7) typed into the login box's Account field wasn't read back there (" (rcDist = 99 ? "nothing like it read" : rcDist " letters off") ", the field at " rcField.x - GameLeft "," rcField.y - GameTop " " rcField.w "x" rcField.h ")")
+		}
 	;1. The username into the Account box (cleared first), then read it back
 	RcChars(gameWin, "", 40)
 	RcChars(gameWin, loginUser)
 	Sleep, 400
-	if (!RcSeeLine(loginUser, gameWin))
+	rcDist := RcLineDist(loginUser, gameWin, rcDistX, rcField)
+	if (rcDist > rcTol)
 		{
 		RcChars(gameWin, "", 40)
 		loginUser := "", loginPass := ""
-		return RcLoginHelp("couldn't see the username in the login box after typing it")
+		return RcLoginHelp("couldn't see the username in the login box after typing it (" (rcDist = 99 ? "no line like it read" : "the nearest line read was " rcDist " letters off") ")")
 		}
-	;2. Tab to the Password box: a test letter typed now mustn't show up in the Account box
+	;2. Tab to the Password box: test letters (xqz) typed now mustn't show up in the Account box - the line read is
+	;nearer the username than the username with them after it, by 2 letters or more (an OCR slip can't make up for 3)
 	RcChars(gameWin, Chr(9))
-	RcChars(gameWin, "x")
+	RcChars(gameWin, "xqz")
 	Sleep, 400
-	if (!RcSeeLine(loginUser, gameWin))
+	rcDist := RcLineDist(loginUser, gameWin, rcDistX, rcField)
+	if (rcDist > rcTol || rcDistX < rcDist + 2)
 		{
 		RcChars(gameWin, "", 40)
 		loginUser := "", loginPass := ""
@@ -502,7 +636,7 @@ RcStartStep()
 	RcChars(gameWin, loginPass)
 	loginPass := ""
 	Sleep, 300
-	if (!RcSeeLine(loginUser, gameWin))
+	if (RcLineDist(loginUser, gameWin, rcDistX, rcField) > rcTol)
 		{
 		RcChars(gameWin, "", 40)
 		loginUser := ""
@@ -523,21 +657,76 @@ RcLoginHelp(why)
 	return false
 	}
 
-;Is there a line of text on the game reading just that (or "Account: " and that), e.g. the username
-;in the login box?
-RcSeeLine(text, gameWin)
+;How near a line of text on the game comes to reading text (the username in the login box): the fewest letter changes
+;between them - both lower case, spaces left out, an "Account:" in front taken off or not, whichever is nearer; 99
+;nothing like it read. withX: the same for text with xqz after it (the test letters of RcStartStep's Tab step). Nothing
+;read is kept or logged
+RcLineDist(text, gameWin, ByRef withX := "", field := "")
 	{
-	for each, zoom in [1, 2]
+	rcWant := RegExReplace(Format("{:L}", text), "\s"), rcBest := 99, withX := 99
+	;(field: only that box - the login box's Account field, RcAccountField - read closer up: its text is small)
+	for each, zoom in (IsObject(field) ? [3, 4] : [1, 2])
 		{
-		OcrRect(GameLeft, GameTop, GameW, GameH, "en", zoom, ocrLines)
+		if (IsObject(field))
+			OcrRect(field.x, field.y, field.w, field.h, "en", zoom, ocrLines)
+		else
+			OcrRect(GameLeft, GameTop, GameW, GameH, "en", zoom, ocrLines)
 		if (ErrorLevel || !IsObject(ocrLines))
 			continue
 		for i, ocrLine in ocrLines
-			if (RegExMatch(Trim(ocrLine.text), "i)^(account:?\s*)?\Q" text "\E$")
-				&& RcOnGame(ocrLine.x + ocrLine.w // 2, ocrLine.y + ocrLine.h // 2, gameWin))
-				return true
+			{
+			if (!RcOnGame(ocrLine.x + ocrLine.w // 2, ocrLine.y + ocrLine.h // 2, gameWin))
+				continue
+			rcRaw := RegExReplace(Format("{:L}", Trim(ocrLine.text)), "\s")
+			for each2, rcSeen in [rcRaw, RegExReplace(rcRaw, "^account:?")]
+				{
+				if (rcSeen = "" || Abs(StrLen(rcSeen) - StrLen(rcWant)) > 4)
+					continue
+				rcD := RcEditDistance(rcSeen, rcWant), rcDX := RcEditDistance(rcSeen, rcWant "xqz")
+				rcBest := rcD < rcBest ? rcD : rcBest, withX := rcDX < withX ? rcDX : withX
+				}
+			}
+		ocrLines := ""
+		if (rcBest = 0 && withX > 0)
+			break
 		}
-	return false
+	rcWant := "", rcSeen := "", rcRaw := ""
+	return rcBest
+	}
+
+;The login box's Account field, from its PASSWORD label (word, RcFindWord: its left, top, height) - the box is small and
+;its labels read badly ("PASSWQD:", "Accmna:" at 1440p, 2026-10-23): the field is the black box over that label,
+;from 1.6 to 0.1 of the label's height above it, 14 heights wide. {x, y, w, h, cx, cy} (screen)
+RcAccountField(word)
+	{
+	rcH := word.h
+	rcX := word.left - Round(rcH * 0.2), rcY := word.top - Round(rcH * 1.6), rcW := Round(rcH * 14.2), rcFH := Round(rcH * 1.5)
+	return {x: rcX, y: rcY, w: rcW, h: rcFH, cx: rcX + rcW // 2, cy: rcY + rcFH // 2}
+	}
+
+;A click into the login box's Account field (field: RcAccountField), so what's typed goes there: with the real mouse
+;when the game's in front (your mouse held off meanwhile, put back after), else in the background (RcClick)
+RcLoginFocus(field)
+	{
+	if (!RcGameActive())
+		return RcClick(field.cx, field.cy, "the login box's Account field")
+	MouseGetPos, rcMx, rcMy
+	BlockInput, MouseMove
+	MouseMove, % field.cx, % field.cy, 0
+	Sleep, 120
+	Click
+	Sleep, 120
+	MouseMove, %rcMx%, %rcMy%, 0
+	BlockInput, MouseMoveOff
+	RcLogMsg("clicked into the login box's Account field at " field.cx - GameLeft "," field.cy - GameTop)
+	return true
+	}
+
+;The OCR slips let through reading the username back: none in a short one, 1 from 6 letters, 2 from 14
+RcLineTol(text)
+	{
+	rcN := StrLen(RegExReplace(text, "\s"))
+	return rcN >= 14 ? 2 : rcN >= 6 ? 1 : 0
 	}
 ;Logging in: the log's LOGIN RESPONSE moves on to "select"; "Invalid..." stops for good
 RcLoginStep()
@@ -671,7 +860,11 @@ RcCloseGame()
 	WinClose, ahk_class %GameClass% ahk_exe %GameExe%
 	Process, WaitClose, %GameExe%, 15
 	if (ErrorLevel)
+		{
 		Process, Close, %GameExe%
+		;(a hung game takes a moment to go even when forced)
+		Process, WaitClose, %GameExe%, 10
+		}
 	RcPid := 0
 	}
 
@@ -825,7 +1018,7 @@ RcFindWord(pattern, area, fuzzy := "")
 						found := true, wx := (ocrWord.x + nextWord.x + nextWord.w) // 2
 					}
 				if (found && RcOnGame(wx, wy, gameWin))
-					return {x: wx, y: wy, text: ocrWord.text}
+					return {x: wx, y: wy, text: ocrWord.text, left: ocrWord.x, top: ocrWord.y, w: ocrWord.w, h: ocrWord.h}
 				}
 		}
 	RcFindInfo := wordCount " words read there (" SubStr(wordsSeen, 1, 200) "), over the middle: " (hitWin = gameWin ? "the game" : (hitClass = "" ? "an unknown window" : hitClass) (hitExe = "" ? "" : " (" hitExe ")"))
