@@ -15,6 +15,9 @@
 ;(when, its answer, why), what was last said and when, the radius sent with the last route ask and whether it was the
 ;mouse's
 global MsK, MsKSign, MsOffUntil, MsFails, MsHeld, MsWinAt, MsWinOk, MsWinWhy, MsSaid, MsSaidAt, WkArcSentR, WkArcMouse
+;Measured mouse turns that didn't turn the wizard, in a row (two: the count's worth measured again - one alone is
+;likely the moment's: a battle pulling him round, a window)
+global MsMiss
 
 ;The setting (mousesteer, on unless 0) and the game's memory there to read the facing by
 MouseSteerOn()
@@ -22,8 +25,10 @@ MouseSteerOn()
 	return IsFunc("NavRead") && !(IsObject(Stats) && Stats.HasKey("mousesteer") && !Stats["mousesteer"])
 	}
 
-;Whether a mouse turn may go now: why not ("" it may). needW: W held already (false: about to be)
-MouseSteerWhyNot(needW := true)
+;Whether a mouse turn may go now: why not ("" it may). needW: W held already (false: about to be). byMem false: a
+;dungeon run, following the party's leader or walking to a quest item (AutoFarmer DgSteer) - steering by the game's
+;memory, not the walker's arrow, and not at the walker's goal
+MouseSteerWhyNot(needW := true, byMem := true)
 	{
 	if (!MouseSteerOn())
 		return "off"
@@ -36,11 +41,11 @@ MouseSteerWhyNot(needW := true)
 		return "just set off"
 	if (!GameActive())
 		return "Wizard101 not in front"
-	if (!WkNavUse || !WkNavOk)
+	if (byMem && (!WkNavUse || !WkNavOk))
 		return "not steering by the game's memory"
 	if (SpeedNow > 5)
 		return "sped up over 5x"
-	if (WkArrived != 0 && WkArrived != 3 && WkArrived != 7)
+	if (byMem && WkArrived != 0 && WkArrived != 3 && WkArrived != 7)
 		return "at the goal"
 	if (PlayerActive || UserIdle() < 3000)
 		return "you're at the keyboard or mouse"
@@ -153,12 +158,12 @@ MouseSteerNote(what)
 ;and measured again next time; measured, but not turning him now (a window, the game's menu): A/D, which notices and
 ;deals with it, and measured again next time; no turn after 168 counts, three times: off for 10 minutes. You touching
 ;anything meanwhile: the turn ends there, the mouse left where you have it
-MouseTurn(h)
+MouseTurn(h, byMem := true)
 	{
 	;(the memory's heading turned round since the count was measured: so is the count)
 	if (MsK != "" && MsKSign != WkNavSign)
 		MsK := -MsK, MsKSign := WkNavSign
-	why := MouseSteerWhyNot()
+	why := MouseSteerWhyNot(true, byMem)
 	if (why != "")
 		{
 		if (why != "not walking" && why != "off" && why != "just set off")
@@ -301,10 +306,15 @@ MouseTurn(h)
 	;it; measured again next time - three of those with no turn switch the mouse off)
 	if (!probed && Abs(h) > 6 && Abs(turned) < 2)
 		{
-		MouseSteerNote("the mouse didn't turn the wizard (" Abs(sent) " counts) - A/D, measured again next time")
-		MsK := ""
+		;(once: likely the moment's - a battle pulling him round, a window - the mouse again next turn; twice in a row:
+		;measured again. The keyboard only for this turn either way - 2026-10-24: the mouse is the steadier)
+		MsMiss := (MsMiss ? MsMiss : 0) + 1
+		MouseSteerNote("the mouse didn't turn the wizard (" Abs(sent) " counts) - A/D this once" (MsMiss >= 2 ? ", measured again next time" : ""))
+		if (MsMiss >= 2)
+			MsK := "", MsMiss := 0
 		return ""
 		}
+	MsMiss := 0
 	if (IsObject(WkMet))
 		WkMet.mturns := (WkMet.mturns ? WkMet.mturns : 0) + 1
 	if (Abs(turned) >= 15)

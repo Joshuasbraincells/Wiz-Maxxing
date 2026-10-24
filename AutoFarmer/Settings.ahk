@@ -91,7 +91,7 @@ CfgList()
 	list.Push({key: "mobgrow", label: "...more after each battle a mob not the quest's starts", kind: "check", def: 1
 		, help: "Caught by a mob the quest doesn't need (not collecting, not one in the goal line, not right after X at the goal): the reach is raised to where it caught you from, and a bit - its front's (how far they notice you) when it caught you in front, its reach all round when from the side or behind. 1500 at most; set them back in Settings any time."})
 	list.Push({key: "mobshrink", label: "...less after 10 minutes walking without one", kind: "check", def: 1
-		, help: "Every 10 minutes of walking without a mob the quest doesn't need catching the wizard, both reaches are made a fifth smaller - down to 300 (how far they notice you) and 120 (all round) at the least - so the routes don't go the long way round for nothing. A catch raises them again (the setting above)."})
+		, help: "Every 10 minutes of walking without a mob the quest doesn't need catching the wizard, both reaches are made a tenth smaller - never below what you set yourself here (else 300 and 120) - so the routes don't go the long way round for nothing. A catch raises them again (the setting above)."})
 	list.Push({key: "|"})
 	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
 	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]
@@ -409,6 +409,11 @@ CfgSaveNow()
 		GuiControl, Cfg:, CfgNote, % "Nothing changed" (cfgFixed = "" ? "" : " - " SubStr(cfgFixed, 3))
 		return
 		}
+	;(the mobs' reach you set yourself: the least the shrink after quiet walking comes back down to - Vision.ahk
+	;MobShrinkTick)
+	for each, cfgKv in cfgPairs.Clone()
+		if (cfgKv[1] = "mobradius" || cfgKv[1] = "mobbody")
+			cfgPairs.Push([cfgKv[1] "floor", cfgKv[2]])
 	if (!CfgWrite(cfgPairs))
 		{
 		GuiControl, Cfg:, CfgNote, Couldn't write PlayerStats.txt - nothing was saved

@@ -1167,7 +1167,8 @@ WalkStep()
 	;(only once a count's worth is measured - the measuring isn't for a big turn walking on)
 	;(and only with the wizard running a moment already - MouseSteerWhyNot's "just set off": a big turn from standing goes
 	;the counted way, on the spot)
-	msWalk := WkNavUse && steer = h && !escaping && Abs(steer) > TurnInPlace && WkArcMouse && MsK != ""
+	;(getting out of a mob's reach too - turning on the spot there, or by A/D, is how it got caught: 2026-10-24)
+	msWalk := WkNavUse && steer = h && Abs(steer) > TurnInPlace && WkArcMouse && MsK != ""
 		&& HeldW && WkWalkFrom && A_TickCount - WkWalkFrom >= 600
 		&& ((arcOk = 1 && Abs(steer) <= 150) || (arcOk = "" && Abs(steer) <= 100)) && MouseSteerWhyNot(false) = ""
 	walkTurn := msWalk || (WkNavUse && steer = h && SpeedNow <= 5 && Abs(steer) <= SpotTurnMem
@@ -3702,12 +3703,10 @@ WalkNav(hScr, dScr)
 	;shouldn't wait for it)
 	if (!IsFunc("NavRead") || inbattle)
 		return
-	;(the route kept away from mobs - mobavoid, on unless it's 0 - but not while collecting: walking into them is
-	;the point. A collect goal left over - finished in a battle - doesn't count once the goal line has moved on. The
-	;quest's goal line goes along, read only if the ask is sent: the mobs it names aren't avoided)
+	;(the route kept away from mobs - mobavoid, on unless it's 0 - a collect goal's too: the quest's goal line goes along,
+	;read only if the ask is sent, and the mobs it names aren't avoided - only the others. 2026-10-24: a collect goal
+	;turned avoiding off for every mob - the map's rings went and the wizard walked into crabs it didn't need)
 	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"]) && WkArrived != 7
-	if (avoidMobs && IsObject(WkCollect) && !WkCollect.gaveUp && CollectSameGoal(WalkGoalLine(), WkCollect.text))
-		avoidMobs := false
 	nav := Func("NavRead").Call(150, false, NavRoute, avoidMobs, Func("WalkGoalLine"))
 	why := WalkNavProblem(nav)
 	if (why = "")

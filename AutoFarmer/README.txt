@@ -189,8 +189,14 @@ no place) is read where its line sits and collected the same way. The
 dashboard's map shows them as green diamonds (the goal's brighter, named).
 debug.log: "Walk: collect: ...".
 Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
-kept off (mobgrow); every 10 minutes of walking without one it's made a fifth
-smaller again, down to 300 / 120 (mobshrink).
+kept off (mobgrow); every 10 minutes of walking without one it's made a tenth
+smaller again - never below what you set yourself in Settings (mobshrink).
+A collect goal keeps them off too (all but the mobs its goal line names).
+Turning: by the mouse wherever it can (the wizard running) - getting out of a
+mob's reach, walking to a quest item, following the party's leader, a dungeon
+run, close by its target too (no stopping); the keys (A/D) only for a big
+turn standing still - the mouse turns a standing wizard's camera, not him - or
+when the mouse can't (it failed, a window over the game).
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines

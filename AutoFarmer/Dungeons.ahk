@@ -618,16 +618,31 @@ DgSteer(nav, p, d)
 	{
 	h := WalkNavHeading(nav.x, nav.y, nav.yaw, nav.ax != "" ? nav.ax : p.x, nav.ay != "" ? nav.ay : p.y)
 	h := (h = "") ? 0 : h
+	;(close by and well off to one side: by the mouse while he's still running - its turn is tight, no circling round
+	;it (2026-10-24: you asked); standing - the mouse turns only the camera then - or the mouse can't: on the spot, A/D)
 	if (Abs(h) > 60 && d < 250)
 		{
+		if (HeldW && Abs(h) <= 150 && MouseSteerWhyNot(true, false) = "" && MouseTurn(h, false) != "")
+			{
+			Sleep, 60
+			return
+			}
 		HoldW(0)
 		DgTurn(h)
 		}
 	else
 		{
 		HoldW(1)
+		;(by the mouse while he runs - steadier than A/D (2026-10-24); A/D only when the mouse can't: a turn of more than
+		;150, the mouse off or failing, a window. Just set off - the mouse doesn't turn him yet - a small turn waits a step)
 		if (Abs(h) > 12)
-			DgTurn(h)
+			{
+			why := MouseSteerWhyNot(true, false)
+			if (why = "just set off" && Abs(h) <= 45)
+				h := 0
+			else if (Abs(h) > 150 || MouseTurn(h, false) = "")
+				DgTurn(h)
+			}
 		}
 	Sleep, 60
 	}

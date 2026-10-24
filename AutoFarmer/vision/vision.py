@@ -1905,7 +1905,10 @@ def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None):
             path = geo.nav_path(r['pos'], target, jumps)
         # (all the mobs kept away from - avoid: mobavoid - on the way to the potion seller none is the quest's)
         import navroute
-        mobs = mobs_now(None)[0] if avoid else None
+        # (kept on the map's rings and in the trail /caught looks back along, as /nav's)
+        mobs = mobs_now(r, '', trail=True)[0] if avoid else None
+        if avoid:
+            MOBS_SHOWN.update(quest=set(), near=mob_near or navroute.MOB_NEAR, avoid=True, at=time.time(), cone=cone or navroute.MOB_CONE)
         res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False, mobs=mobs or None,
                       mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
     except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot

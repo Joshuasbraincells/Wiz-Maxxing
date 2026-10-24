@@ -413,7 +413,8 @@ MobGrow(f, s)
 	if (Stat("mobgrow") = 0 || (Stats.HasKey("mobavoid") && !Stats["mobavoid"]))
 		return
 	mgName := f[2], mgDist := Round(f[3]), mgOff := f[4]
-	mgWhy := WkArrived = 7 ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
+	;(collecting: walking into mobs is the point - but not on the way to a quest item lying about: Collect.ahk)
+	mgWhy := (WkArrived = 7 && CiGid = "") ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
 		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : PlayerActive ? "you were playing" : ""
 	;(the quest's mob: its name in the goal line last read)
 	if (mgWhy = "" && WkGoalLine != "" && IsFunc("WalkLetters"))
@@ -448,9 +449,11 @@ MobGrow(f, s)
 	}
 
 ;Every 10 minutes of walking without a mob the quest doesn't want catching the wizard (mobshrink, on unless 0): the reach
-;the route keeps out of made smaller - a fifth off how far they notice you (mobradius) and their reach all round
-;(mobbody), down to 300 and 120 at the least - so routes aren't long ways round for nothing; a catch raises it again
-;(MobGrow, which starts the 10 minutes again). Counted while the bot's on and walking, out of battle, you not playing
+;the route keeps out of made smaller - a tenth off how far they notice you (mobradius) and their reach all round
+;(mobbody) - so routes aren't long ways round for nothing; a catch raises it again (MobGrow, which starts the 10 minutes
+;again). Never below what you set yourself in the Settings window (mobradiusfloor, mobbodyfloor - written when you
+;save them there; else 300 and 120). 2026-10-24: a fifth at a time down to 300 had the crabs of Survey Camp catching
+;the wizard - you'd set 850. Counted while the bot's on and walking, out of battle, you not playing
 MobShrinkTick()
 	{
 	static lastAt := 0
@@ -464,7 +467,7 @@ MobShrinkTick()
 	if (Stat("mobshrink") = 0 || (Stats.HasKey("mobavoid") && !Stats["mobavoid"]))
 		return
 	s := MobShape()
-	r := Max(300, Round(s.range * 0.8)), b := Max(120, Round(s.body * 0.8))
+	r := Max(Max(300, Stat("mobradiusfloor")), Round(s.range * 0.9)), b := Max(Max(120, Stat("mobbodyfloor")), Round(s.body * 0.9))
 	if (r >= s.range && b >= s.body)
 		return
 	if (IsFunc("CfgWrite") && Func("CfgWrite").Call([["mobradius", r], ["mobbody", b]]))
