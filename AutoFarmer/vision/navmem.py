@@ -856,13 +856,16 @@ class _Attached:
             return r, "the quest helper is still on zone %r" % r["thread_zone"]
         if o["th_goal"] is not None and o["th_hops"] is not None:
             g = self._group(th, {"goal": (o["th_goal"], "3f"), "hops": (o["th_hops"], "i")})
-            if finite(*g["goal"]) and 0 <= g["hops"] < 1000:
+            # (a goal the game shows no way to - collect things lying about the zone, 2026-10-23 Piece Of Coral: no arrow,
+            # the goal at exactly 0, 0, 0 - is no place: not read as one, else the walker stands "at" it)
+            if finite(*g["goal"]) and 0 <= g["hops"] < 1000 and any(abs(v) > 1e-3 for v in g["goal"]):
                 r["goal"], r["hops"] = g["goal"], g["hops"]
         if o["hud_arrow"] is not None:
             h = self._group(qhh, {"target": (o["hud_arrow"], "3f"), "dist": (o["hud_dist"], "f"),
                                   "hops": (o["hud_hops"], "i")})
             # (the arrow is the thread's message as of its last update: only while it has the same hops)
-            if r["hops"] is not None and h["hops"] == r["hops"] and finite(*h["target"]) and finite(h["dist"]):
+            if (r["hops"] is not None and h["hops"] == r["hops"] and finite(*h["target"]) and finite(h["dist"])
+                    and h["dist"] >= 0 and any(abs(v) > 1e-3 for v in h["target"])):
                 r["target"], r["dist"] = h["target"], h["dist"]
         if want_path and o["th_path"] is not None:
             r["path"] = self.path(th)

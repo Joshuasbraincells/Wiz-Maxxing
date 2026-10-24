@@ -2310,7 +2310,7 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
         if k < 6 and on_pic(q, 4 * unit):
             d.text((q[0] + s * 1.6, q[1]), m['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
     # the quest items: a green diamond each (the goal's brighter, named); the goal's off the picture: a pointer
-    for it in sorted(items or [], key=lambda it: not it.get('quest')):
+    for it in sorted(items or [], key=lambda it: bool(it.get('quest'))):
         q = at(it['pos'])
         col = MAP_ITEM_QUEST if it.get('quest') else MAP_ITEM
         if not on_pic(q, 3 * unit):

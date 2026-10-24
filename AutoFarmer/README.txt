@@ -184,8 +184,13 @@ The Grotto, from the game's item names) - each one's place is read from the
 game's memory (read-only), the nearest walked to round walls and mobs and
 stepped onto (picked up; still there after a moment: X), then the next. One it
 can't reach in a minute waits 3 minutes. None seen: it roams and walks into
-monsters as before. The dashboard's map shows them as green diamonds (the
-goal's brighter, named). debug.log: "Walk: collect: ...".
+monsters as before. A collect goal the game shows no arrow for (its goal has
+no place) is read where its line sits and collected the same way. The
+dashboard's map shows them as green diamonds (the goal's brighter, named).
+debug.log: "Walk: collect: ...".
+Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
+kept off (mobgrow); every 10 minutes of walking without one it's made a fifth
+smaller again, down to 300 / 120 (mobshrink).
 Updating by itself (Settings > UPDATES, autoupdate - on, every 10 minutes): the
 bot looks for a newer release every that many minutes and downloads it while
 it plays on; then it closes itself for it - never closed under it - once it's

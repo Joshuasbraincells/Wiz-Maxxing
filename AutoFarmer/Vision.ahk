@@ -427,6 +427,8 @@ MobGrow(f, s)
 		DebugLog("  (the mobs' reach left as it is: " mgWhy ")")
 		return
 		}
+	;(caught: the 10 minutes before the reach is made smaller start again - MobShrinkTick)
+	MobWalkMs := 0
 	mgFront := s.wide >= 360 || mgOff = "" || mgOff <= s.wide / 2
 	mgSet := mgFront ? "mobradius" : "mobbody"
 	mgWas := mgFront ? s.range : s.body
@@ -443,6 +445,30 @@ MobGrow(f, s)
 		mgPairs.Push(["mobradius", mgTo]), mgWhat .= " (and how far they notice you, " s.range " -> " mgTo ")"
 	if (IsFunc("CfgWrite") && Func("CfgWrite").Call(mgPairs))
 		DebugLog("  not the quest's mob - " mgWhat " raised " mgWas " -> " mgTo " (Settings: " mgSet ")")
+	}
+
+;Every 10 minutes of walking without a mob the quest doesn't want catching the wizard (mobshrink, on unless 0): the reach
+;the route keeps out of made smaller - a fifth off how far they notice you (mobradius) and their reach all round
+;(mobbody), down to 300 and 120 at the least - so routes aren't long ways round for nothing; a catch raises it again
+;(MobGrow, which starts the 10 minutes again). Counted while the bot's on and walking, out of battle, you not playing
+MobShrinkTick()
+	{
+	static lastAt := 0
+	now := A_TickCount
+	if (lastAt && now - lastAt < 5000 && BotOn && Walking && inbattle != 1 && !PlayerActive)
+		MobWalkMs := (MobWalkMs ? MobWalkMs : 0) + now - lastAt
+	lastAt := now
+	if (MobWalkMs < 600000)
+		return
+	MobWalkMs := 0
+	if (Stat("mobshrink") = 0 || (Stats.HasKey("mobavoid") && !Stats["mobavoid"]))
+		return
+	s := MobShape()
+	r := Max(300, Round(s.range * 0.8)), b := Max(120, Round(s.body * 0.8))
+	if (r >= s.range && b >= s.body)
+		return
+	if (IsFunc("CfgWrite") && Func("CfgWrite").Call([["mobradius", r], ["mobbody", b]]))
+		DebugLog("Walk: 10 minutes walking without a mob catching the wizard - mobs kept off less far: how far they notice you " s.range " -> " r ", their reach all round " s.body " -> " b " (Settings: mobshrink)")
 	}
 
 ;What the mobs see, as PlayerStats.txt says: {shape (mobshape: 1 a circle all round, 2 a semi-circle in front - the

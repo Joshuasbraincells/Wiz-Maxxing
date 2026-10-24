@@ -251,6 +251,9 @@ global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 ;"Play for me" (the dashboard's red button, the tray menu): every check for you off - nothing waits for you or keeps its
 ;hands off the mouse for you (UserIdle, Walker.ahk). Off at every start: the bot takes control only once you've said so
 global PlayForMe := 0
+;Walking without a mob the quest doesn't want catching the wizard, since the last catch or the last time the mobs' reach
+;was made smaller (ms - Vision.ahk MobShrinkTick)
+global MobWalkMs := 0
 ;(started again by an update - Wiz-Maxxing /check passes /playforme on when it was on: kept on, you'd said so)
 for each, botArg in A_Args
 	if (botArg = "/playforme")
@@ -509,6 +512,8 @@ loop,
 		}
 	;(the game's log, for the battle: who's in it, what each cast - EnemySpells.ahk)
 	BattleLogRead()
+	;(mobs kept off less far after 10 minutes of walking unbothered - Vision.ahk)
+	MobShrinkTick()
 	;Disconnected, or the game closed: get back online first (no battles or walking meanwhile)
 	if (ReconnectCheck())
 		{

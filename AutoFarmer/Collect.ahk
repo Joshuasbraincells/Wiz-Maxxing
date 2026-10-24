@@ -9,6 +9,9 @@
 ;({gid: till when}); standing still (since when, where) and the tries at getting unstuck; when it was first stood on,
 ;when X was last pressed on it
 global CiGid, CiFrom, CiItems, CiAskAt, CiSkip, CiStillAt, CiStillX, CiStillY, CiTries, CiOnAt, CiXAt
+;The last step here (time away - a battle, a prompt, F8 - isn't counted on an item), and the last goal line that named
+;one of its items (a garbled read meanwhile doesn't drop the item being walked to)
+global CiStepAt, CiLine, CiLineAt
 
 ;The zone's quest items by the game's memory, for goal line goal: [{name, x, y, z, dist, quest, gid}] nearest first
 ;(quest: the goal line names it); "" when they can't be read (no helper, the game's memory unreadable)
@@ -32,15 +35,34 @@ CollectItems(goal)
 ;for - the walker does its own collecting (monsters, roaming)
 CollectItemStep(goal)
 	{
-	if (Stats.HasKey("collectmem") && !Stats["collectmem"])
+	if ((Stats.HasKey("collectmem") && !Stats["collectmem"]) || !VisionOn)
+		{
+		CiGid := ""
 		return false
+		}
 	if (!IsObject(CiSkip))
 		CiSkip := {}
+	;(away from collecting meanwhile - a battle, a prompt, F8, you: not counted on the item)
+	if (CiStepAt && A_TickCount - CiStepAt > 5000)
+		CiFrom += A_TickCount - CiStepAt, CiOnAt := 0, CiStillAt := 0, CiXAt := 0
+	CiStepAt := A_TickCount
 	if (!CiAskAt || A_TickCount - CiAskAt > 1500)
 		{
 		CiAskAt := A_TickCount
 		got := CollectItems(goal)
 		CiItems := IsObject(got) ? got : []
+		named := false
+		for i, x in CiItems
+			named := named || x.quest
+		;(a goal line read wrong this time - none of the items named - while walking to one: asked with the last line that
+		;named one, up to 6 s back)
+		if (named)
+			CiLine := goal, CiLineAt := A_TickCount
+		else if (CiGid != "" && CiLine != "" && CiLine != goal && A_TickCount - CiLineAt < 6000)
+			{
+			got := CollectItems(CiLine)
+			CiItems := IsObject(got) ? got : CiItems
+			}
 		}
 	it := ""
 	for i, x in CiItems
@@ -80,8 +102,9 @@ CollectItemStep(goal)
 		return false
 		}
 	d := Sqrt((nav.x - it.x) ** 2 + (nav.y - it.y) ** 2)
-	;Standing on it: picked up on contact - still there after 1.5 s: X pressed (again after 4 s)
-	if (d <= 45)
+	;Standing on it (at its height - not under it on a ledge): picked up on contact - still there after 1.5 s: X pressed
+	;(again after 4 s)
+	if (d <= 45 && (nav.z = "" || Abs(nav.z - it.z) < 120))
 		{
 		ReleaseKeys()
 		CiOnAt := CiOnAt ? CiOnAt : A_TickCount
@@ -122,4 +145,16 @@ CollectItemStep(goal)
 	SetStatus("collecting - walking to " it.name " (" Round(d) " away)")
 	DgSteer(nav, {x: it.x, y: it.y}, d)
 	return true
+	}
+
+;One of the goal's items in the game's memory left for a while (couldn't be reached) and waiting to be tried again: the
+;walker doesn't give the goal up meanwhile (Walker.ahk CollectStep)
+CollectItemsWaiting()
+	{
+	if (!IsObject(CiSkip) || !IsObject(CiItems))
+		return false
+	for i, x in CiItems
+		if (x.quest && CiSkip.HasKey(x.gid) && A_TickCount < CiSkip[x.gid])
+			return true
+	return false
 	}

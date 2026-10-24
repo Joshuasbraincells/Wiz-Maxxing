@@ -459,7 +459,13 @@ WalkStep()
 		else if (!WkNoGuideFrom)
 			WkNoGuideFrom := A_TickCount
 		gone := A_TickCount - WkNoArrowFrom
-		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !WalkDialogOpen())
+		;(no arrow and nothing standing in for it: a goal the game shows no way to - its line read where it sits; a
+		;collect goal: collecting - its things by the game's memory, else roaming)
+		if (!standIn && WkArrived != 7 && gone > 2000 && CollectNoPlace())
+			return Walking ? true : false
+		;(not while collecting a goal the game shows no arrow for: no arrow is how it is, not a window an X opened)
+		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !(IsObject(WkCollect) && WkCollect.noPlace && !WkCollect.gaveUp)
+			&& !WalkDialogOpen())
 			{
 			;(a quest offer: accepted, not closed)
 			if (WalkAcceptQuest("no arrow since an X"))
@@ -468,7 +474,7 @@ WalkStep()
 			WalkEscape()
 			return Walking ? true : false
 			}
-		if (WkNoGuideFrom && A_TickCount - WkNoGuideFrom > NoArrowNotify)
+		if (WkNoGuideFrom && A_TickCount - WkNoGuideFrom > NoArrowNotify && !(IsObject(WkCollect) && WkCollect.noPlace && !WkCollect.gaveUp))
 			WalkNotify("arrow", "No quest arrow", "No quest arrow for " Round((A_TickCount - WkNoGuideFrom) / 1000) " s, out of battle. Is a quest tracked? Is a window open over the game? It walks on by itself once the arrow is back.")
 		}
 	;Waiting at a goal for the next one for WaitNotify, out of battle: tell you (only while the arrow shows -
@@ -621,7 +627,7 @@ WalkStep()
 	;nothing. Walk into the monsters there, or roam about the spot (CollectStep)
 	if (WkArrived = 7)
 		return CollectStep(seen, h, dist)
-	if ((WkArrived = 0 || WkArrived = 1) && !inbattle && seen && dist != "" && (dist <= RoamRadius || (IsObject(WkCollect) && WkCollect.gaveUp)) && CollectCheck(dist))
+	if ((WkArrived = 0 || WkArrived = 1) && !inbattle && seen && dist != "" && (dist <= RoamRadius || (IsObject(WkCollect) && (WkCollect.gaveUp || A_TickCount - WkCollect.stepAt < 300000))) && CollectCheck(dist))
 		return true
 
 	;Talking (after X). The dialogue box covers the arrow, so: no arrow = dialogue open, press Space to
@@ -2626,6 +2632,32 @@ CollectGiveUp(dist, why)
 	WalkNotify("collect", "Collect quest needs you", "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: collect again (" mins " minutes without progress). Stop walking: walking off (F8 turns it back on).", true)
 	}
 
+;No arrow, nothing standing in for it (a goal the game shows no way to - collect things lying about the zone): its line
+;read where it sits (every 3 s); a collect goal - collecting starts (or goes on: the same goal as before). True if it did
+CollectNoPlace()
+	{
+	if (A_TickCount - WkGoalReadAt < 3000 && WkGoalReadAt)
+		return false
+	WkGoalReadAt := A_TickCount
+	text := WalkGoalText()
+	if (text = "" || !CollectGoal(text))
+		return false
+	if (IsObject(WkCollect) && !WkCollect.gaveUp && !CollectGoalChanged(text))
+		{
+		WkCollect.sureAt := A_TickCount, WkCollect.noPlace := 1
+		StartCollect(WkCollect.text, "same goal as before, no arrow")
+		return true
+		}
+	if (IsObject(WkCollect) && WkCollect.gaveUp && !CollectGoalChanged(text))
+		return false
+	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0, noPlace: 1
+		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: ""}
+	WalkNotifyClose("collect")
+	WalkNotifyClose("arrow")
+	StartCollect(text, "a goal to collect things with no arrow (the game shows no way to it)")
+	return true
+	}
+
 StartCollect(text, why)
 	{
 	;(walking on into it - collecting roams; 1x for it: SpeedWalking)
@@ -2645,8 +2677,9 @@ CollectStep(seen, h, dist)
 	if (A_TickCount - WkCollect.stepAt > 5000)
 		WkCollect.progressAt += A_TickCount - WkCollect.stepAt, WkCollect.from += A_TickCount - WkCollect.stepAt
 	WkCollect.stepAt := A_TickCount
-	;Is it still the same goal? (every 4 s, when the arrow and so its line are showing)
-	if (seen && A_TickCount - WkGoalReadAt > 4000)
+	;Is it still the same goal? (every 4 s, when the arrow and so its line are showing - or with none at all: a goal the
+	;game shows no way to, its line where it sits)
+	if ((seen || WkCollect.noPlace) && A_TickCount - WkGoalReadAt > 4000)
 		{
 		WkGoalReadAt := A_TickCount
 		text := WalkGoalText()
@@ -2682,7 +2715,9 @@ CollectStep(seen, h, dist)
 		}
 	;No progress for CollectStall: an odd one (items it can't find, monsters elsewhere...) - stop, wait here
 	;(battles still get fought) and tell you. It carries on once the goal changes, or on Keep trying
-	if (seen && A_TickCount - WkCollect.progressAt > CollectStall)
+	;(not while one of the goal's items lies in the game's memory waiting to be tried again - Collect.ahk)
+	if ((seen || WkCollect.noPlace) && A_TickCount - WkCollect.progressAt > CollectStall
+		&& !(IsFunc("CollectItemsWaiting") && Func("CollectItemsWaiting").Call()))
 		{
 		WalkLog("collect: no progress on '" WkCollect.text "' in " Round(CollectStall / 60000) " minutes - stopping here, telling you")
 		CollectGiveUp(dist, "no progress in " Round(CollectStall / 60000) " minutes of roaming and fighting")
@@ -2779,10 +2814,16 @@ CollectStep(seen, h, dist)
 WalkGoalText()
 	{
 	info := ArrowInfo()
-	if (info.pvx = "" || info.pvy = "")
-		return ""
-	s := info.scale ? info.scale : 1
-	t := OcrRect(Round(info.pvx - 450 * s), Round(info.pvy + 28 * s), Round(900 * s), Round(60 * s))
+	px := info.pvx, py := info.pvy, s := info.scale ? info.scale : 1
+	;(no arrow read yet - a goal the game shows no way to has none, 2026-10-23 Piece Of Coral: the line where it sits,
+	;under the arrow's usual box at the bottom middle - ArrowFind)
+	if (px = "" || py = "")
+		{
+		as := ArrowScale()
+		s := as.scale ? as.scale : 1
+		px := GameLeft + GameW / 2 - 0.7 * s, py := GameTop + GameH - 138.3 * s
+		}
+	t := OcrRect(Round(px - 450 * s), Round(py + 28 * s), Round(900 * s), Round(60 * s))
 	return ErrorLevel ? "" : Trim(RegExReplace(t, "\s+", " "))
 	}
 
