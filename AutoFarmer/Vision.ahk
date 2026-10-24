@@ -20,6 +20,8 @@ global VisionOn := 0, VisionPid := 0, VisionFails := 0, VisionCards := "", Visio
 global VisionDir := "", VisionPort := 47128, VisionErr
 ;Why the last VisionPlate read nothing
 global VisionPlateWhy
+;Why the last VisionCards (the hand from the game's memory) got nothing; its last answer kept, its why and when
+global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy
 
 ;Starts the helper (after stopping one left over from before) and waits up to 8 s for it to answer
 VisionStart()
@@ -201,7 +203,129 @@ VisionFind(dir, title, ByRef X, ByRef Y)
 ;Forget the last look at the hand (it's changed: a card was cast or discarded)
 VisionForget()
 	{
-	VisionCardsAt := 0
+	VisionCardsAt := 0, VisionMemAt := 0
+	}
+
+;---- The cards in hand from the game's memory (vision\handmem.py) ----
+;
+;The helper's /cards without a rectangle reads the hand straight out of the game's memory, READ-ONLY as /nav (nothing in
+;the game is written, injected or hooked; no key, click or window): each card's name, school, kind, pips (X pips),
+;numbers, whether it's a treasure / item card and its enchantment, and your pips of each kind - only in a battle's
+;planning phase, once the hand's settled (the cards on screen are exactly your hand). navmem:0 in PlayerStats.txt
+;switches it off too (VisionCardsWhy, VisionMemLast... at the top)
+
+;The hand from the game's memory, as an object - "" when there's none (VisionCardsWhy says why: navmem:0, the helper not
+;running or an older one, not in a battle's planning phase, a card chosen, the hand still changing after waitMs...):
+;  me     {health, max, generic, power, balance, death, fire, ice, life, myth, storm, shadow (your pips of each kind -
+;         "" not read), school (yours, lower case; "" not known), ok (1: every pip count read)}
+;  cards  left to right as on screen: [{slot (Card1-7, PetCard), name (the spell's own), display (the name on the card),
+;         school (lower case), type (the game's: Damage, AOE, Charm, Ward, Jinx...), pips ("" unknown), xpip (1: X pips),
+;         shadow, castable (1 / 0 - an estimate, the normal mode - "" unknown), tc, item, ench (its enchantment's name,
+;         "" none), acc, value (as /cards writes it: "255-285", "45/pip", "35%", "+175", "" none), num (value's first
+;         number, "" none), kind (damage aoe heal ward blade trap aura weakness enchant dot stun dispel prism clear
+;         polymorph keep), dot (damage over time besides, "" none), schoolpips ("fire:1"), enchfx, valueench, tid (the
+;         template id), text (about as the card says it)}]
+;  ms     how long the read took in the helper
+;While the game says the hand is changing (dealing, laying the cards out) it's asked again every 100 ms, up to waitMs.
+;maxAgeMs: the last answer (or its why) if it's no older than that - the hand doesn't change till a card's cast or
+;discarded (VisionForget forgets it)
+VisionCards(waitMs := 1500, maxAgeMs := 0)
+	{
+	;(when the last wait for a settled hand ran out: for 10 s after, asked once with no retries - the 1.5 s wait was paid
+	;two to six times a round)
+	static vcGaveUp := 0
+	if (maxAgeMs > 0 && VisionMemAt && A_TickCount - VisionMemAt <= maxAgeMs)
+		{
+		VisionCardsWhy := VisionMemWhy
+		return VisionMemLast
+		}
+	VisionCardsWhy := "", VisionMemLast := "", VisionMemAt := 0, VisionMemWhy := ""
+	if (!Stat("navmem"))
+		{
+		VisionCardsWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		VisionCardsWhy := "the vision helper isn't running"
+		return ""
+		}
+	;(two clients - dual mode: the memory read is one client's, maybe not the one played)
+	if (dualmode == 1)
+		{
+		VisionCardsWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (vcGaveUp && A_TickCount - vcGaveUp < 10000)
+		waitMs := 0
+	vcFrom := A_TickCount
+	Loop
+		{
+		;(an older helper - /cards wants a rectangle there - answers ERR: never counted against the helper)
+		vcAns := Trim(VisionGet("/cards", 800, true), " `t`r`n")
+		if (vcAns = "")
+			{
+			VisionCardsWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+			return VisionCardsKeep("")
+			}
+		if (SubStr(vcAns, 1, 5) != "none|")
+			break
+		VisionCardsWhy := SubStr(vcAns, 6)
+		if (VisionCardsWhy != "hand changing" || A_TickCount - vcFrom >= waitMs)
+			{
+			if (VisionCardsWhy = "hand changing" && waitMs > 0)
+				vcGaveUp := A_TickCount
+			return VisionCardsKeep("")
+			}
+		Sleep, 100
+		}
+	vcOut := {me: "", cards: [], ms: ""}
+	Loop, Parse, vcAns, `n, `r
+		{
+		vcF := StrSplit(A_LoopField, "|")
+		if (vcF[1] = "me" && vcF.Length() >= 14)
+			{
+			vcMe := {health: NavNum(vcF[2]), max: NavNum(vcF[3]), school: Format("{:L}", Trim(vcF[14])), ok: 1}
+			for vcI, vcKey in ["generic", "power", "balance", "death", "fire", "ice", "life", "myth", "storm", "shadow"]
+				{
+				vcMe[vcKey] := NavNum(vcF[vcI + 3])
+				if (vcMe[vcKey] = "")
+					vcMe.ok := 0
+				}
+			vcOut.me := vcMe
+			}
+		else if (vcF[1] = "card" && vcF.Length() >= 17)
+			{
+			vcCard := {slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
+				, pips: NavNum(vcF[8]), xpip: vcF[9] = 1, shadow: NavNum(vcF[10]), castable: vcF[11], tc: vcF[12] = 1, item: vcF[13] = 1
+				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(vcF[18]), schoolpips: vcF[19]
+				, enchfx: vcF[20], valueench: vcF[21], tid: vcF[22], text: vcF[23]}
+			vcCard.num := RegExMatch(vcCard.value, "\d+", vcNum) ? vcNum + 0 : ""
+			vcOut.cards.Push(vcCard)
+			}
+		else if (vcF[1] = "hand")
+			vcOut.ms := vcF[3]
+		}
+	vcGaveUp := 0
+	if (!IsObject(vcOut.me))
+		{
+		VisionCardsWhy := "an odd answer: " SubStr(RegExReplace(vcAns, "\s+", " "), 1, 60)
+		return VisionCardsKeep("")
+		}
+	;(the wizard on screen another school than the game's memory's: another client's - not used)
+	if (vcOut.me.school != "" && school != "" && IsFunc("BadgeNumber") && Func("BadgeNumber").Call(school) && Format("{:L}", school) != vcOut.me.school)
+		{
+		VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
+		return VisionCardsKeep("")
+		}
+	return VisionCardsKeep(vcOut)
+	}
+
+;VisionCards' answer kept, with its why, for its maxAgeMs
+VisionCardsKeep(vckOut)
+	{
+	VisionMemLast := vckOut, VisionMemWhy := VisionCardsWhy, VisionMemAt := A_TickCount
+	return vckOut
 	}
 
 ;Whose school badge is in the rectangle, by the helper: the school ("" none clearly), its top left in

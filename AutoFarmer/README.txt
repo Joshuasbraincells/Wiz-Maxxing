@@ -630,6 +630,23 @@ pips - waits until it's castable), is learned:
 	- seen at another UI size, a learned card is cut again at that size
 	- no free slot or an unknown type: it's only kept and recognised from then
 	  on (and tried for a slot again whenever it's in hand)
+From the game's memory (vision\handmem.py, the helper's /cards - read-only
+like the walker's: nothing in the game is ever written, no key or click):
+in a battle's planning phase, once the cards on screen are exactly your
+hand, the bot has each card's real name, school, kind, pips (X pips too),
+numbers (a hit's least damage, every head added; a heal; a %), whether it's
+a treasure or item card and its enchantment - and your pips of each kind.
+When there are as many as the helper's card boxes, card 1 (from the left) is
+box 1 and so on: a new card is learned with all that - no OCR, nothing
+guessed (Sure 100%, "read from the game"; flags mem, game=<its name>) - its
+picture still cut as above; a card it knows by its picture gets the game's
+name (if you gave it none), kind, number and pips put right, but never what
+you set yourself on the Spells tab. An enchanted card it doesn't know by its
+picture waits till it shows up plain. Your pips each round are the game's
+count then (generic 1, power and your school's pips 2, another school's 1),
+the pip row under your name still read each round, for the log and in case the game can't be read (debug.log:
+"pips=N (from the game; the pip row read M)" when they differ). navmem:0 in
+PlayerStats.txt switches it off with the walker's memory reading.
 Copies of a card shimmer a little, so a learned picture is cut solid from one
 copy and the pixels that differ in the next copies turn see-through by
 themselves. A pip cost that couldn't be read is guessed as the pips you had
@@ -672,7 +689,8 @@ read, whether it's a treasure card, when and at what size it was learned.
 Sure, out of 100%: its kind (40 - read alike twice or the same as its icon;
 25 read once), its number (35 - read alike twice; 15 once; a kind with no
 number gets all 35) and its pips (25 read off the card or X; 10 guessed).
-What you set yourself counts as sure; what's still blank doesn't. Under the
+Read from the game's memory: 100%. What you set yourself counts as sure;
+what's still blank doesn't. Under the
 picture: why. Sort by Sure (click its heading) to find the ones to check.
 Pick one to see its picture. Pick one or more and:
 	- Change kind...: what it really is. It's taken out of its slot (a hit

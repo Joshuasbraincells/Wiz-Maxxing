@@ -6,6 +6,8 @@
 
     mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), yaw, gid, template}], or None and why
 
+    hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
+
     python navmem.py [-n 5] [-i 1] [--path] [--mobs]   readings from the command line (and how long each took)
 
 SAFETY. The game is opened with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
@@ -932,12 +934,21 @@ class NavMem:
         self._items = {}
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
+        # the hand (handmem.py): its reader of the attached game, the thread making it (its classes looked up once, about
+        # half a second), why it couldn't be made (the game it was for, when to try again); the game opened for the
+        # cards alone when one of the walker's signatures isn't in this build (handmem.LightAttach)
+        self._hand, self._hand_thread, self._hand_fail, self._light = None, None, (None, 0.0, ""), None
+        self._failed_sig = False
 
     def close(self):
         with self.lock:
             if self.st:
                 self.st.close()
                 self.st = None
+            if self._light:
+                self._light.close()
+                self._light = None
+            self._hand = None
 
     def _attach(self, pid):
         try:
@@ -947,6 +958,7 @@ class NavMem:
             why = str(e) if sig else "can't read the game (%s)" % (e,)
             with self.lock:
                 self._failed = (pid, time.monotonic() + (self.RETRY_SIG if sig else self.RETRY_READ), why)
+                self._failed_sig = sig
             self.log("navmem: attaching to pid %d failed: %s" % (pid, why))
             return
         game_dir = ""
@@ -1040,6 +1052,92 @@ class NavMem:
     def describe(self):
         with self.lock:
             return self.st.describe() if self.st else "not attached"
+
+    # ------------------------------------------------------------ the hand (handmem.py)
+    def cards(self, want_effects=True, wait=0.5):
+        """(r, why): r = the cards in the wizard's hand and its pips, read now (handmem.HandMem.read: in_battle,
+        planning, settled, state, why, ms, me, cards) - through the same read-only handle on the game as everything
+        here, under the same lock; its reader made again when the game is (a restart). When one of the walker's
+        signatures isn't in this build the game is opened for the cards alone (handmem.LightAttach, read-only the
+        same way). None and why when the game can't be read (not running, being attached to, the reader being made).
+        Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                st, why = self._cards_light(why)
+                if st is None:
+                    return None, why
+            with self.lock:
+                if st is self.st and self._light is not None:      # (attached in full again: the extra handle closed)
+                    self._light.close()
+                    self._light = None
+                hm = self._hand
+                if hm is not None and hm.st is st:
+                    return hm.read(want_effects), ""
+                fst, again, fwhy = self._hand_fail
+                if fst is st and time.monotonic() < again:
+                    return None, fwhy
+                th = self._hand_thread
+                if th is None or not th.is_alive():
+                    self._hand = None
+                    th = self._hand_thread = threading.Thread(target=self._hand_make, args=(st,), name="hand", daemon=True)
+                    th.start()
+            th.join(wait)
+            with self.lock:
+                hm = self._hand
+                if hm is not None and hm.st is st:
+                    return hm.read(want_effects), ""
+                fst, again, fwhy = self._hand_fail
+                if fst is st:
+                    return None, fwhy
+            return None, "reading the game's card classes (once, about a second)"
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the hand failed (%r)" % (e,)
+
+    def _hand_make(self, st):
+        """the hand's reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import handmem
+            hm = handmem.HandMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the cards can't be read in this build: %s" % e) if sig else "the card classes couldn't be read (%r)" % (e,)
+            self.log("handmem: " + why)
+            with self.lock:
+                self._hand_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+            return
+        with self.lock:
+            self._hand = hm
+
+    def _cards_light(self, why):
+        """(the game opened for the cards alone, "") when navmem couldn't attach for a signature the walker needs (that
+        won't change while it runs), else (None, why)"""
+        with self.lock:
+            lt = self._light
+            if lt is not None and not lt.alive():
+                lt.close()
+                lt = self._light = None
+                self._hand = None
+            if lt is not None:
+                return lt, ""
+            sig, fpid = self._failed_sig, self._failed[0]
+        if not sig:
+            return None, why
+        pids = find_pids()
+        if fpid not in pids:
+            return None, why
+        try:
+            import handmem
+            lt = handmem.LightAttach(fpid, self.log)
+        except Exception as e:  # noqa: BLE001
+            return None, "%s; the game couldn't be opened for the cards (%r)" % (why, e)
+        with self.lock:
+            if self._light is None:
+                self._light = lt
+                self.log("navmem: the game opened for the cards alone (%s)" % why)
+            else:
+                lt.close()
+            return self._light, ""
 
     # ------------------------------------------------------------ the zone's mobs
     def mobs(self):

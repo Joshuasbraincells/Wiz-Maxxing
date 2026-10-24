@@ -14,6 +14,35 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /ping                                   -> "OK <version>"
   /cards?x1=&y1=&x2=&y2=&scale=&pics=balance/hit1,resources/sharpen,... -> one line per card found: "dir/name|x|y|dist" (x, y = the
                                              picture's top left on screen, like ImageSearch's), best first
+  /cards                                  -> (no rectangle) the cards in the wizard's hand and its pips, read from the
+                                             game's memory (read-only, see vision\handmem.py) - only in a battle's
+                                             planning phase with the hand settled (the cards shown are exactly the
+                                             wizard's hand list), else one line "none|<why>" (why "hand changing": the
+                                             game is dealing or laying out the cards - ask again in 100 ms; a card's been
+                                             chosen and the round is waited for; not in a battle...). Settled:
+                                               me|health|max|generic|power|balance|death|fire|ice|life|myth|storm|shadow|
+                                                  school                     (my pips of each kind; school: my own)
+                                               card|slot|x|name|display|school|type|pips|xpip|shadow|castable|tc|item|
+                                                  enchantment|accuracy|value|kind|dot|school pips|enchantment's effect|
+                                                  value with it|template id|text
+                                                                             (one a card, left to right as on screen:
+                                                  slot the game's window (Card1-7, PetCard), x its left edge (the game's
+                                                  units: only the order counts), name the spell's own name, display the
+                                                  name on the card, school and type as the game names them (Damage, AOE,
+                                                  Charm, Ward, Jinx...), pips (0 and xpip 1: an X-pip spell), shadow its
+                                                  shadow pips, castable 1/0 - an estimate for the normal mode (not while
+                                                  an enchantment or a target is being picked; "" not known: an astral
+                                                  spell...), tc a treasure card, item an item card (a wand's...),
+                                                  enchantment its enchantment's name ("" none), value its number as the
+                                                  bot keeps it - a hit "lo-hi" (every head added), "N/pip" (X pips), a
+                                                  heal "N", "N%" (shield, blade, trap, aura, weakness), "+N" (an enchant)
+                                                  - the card's own, without the enchantment, which is in the next fields
+                                                  ("kModifyCardDamage +175", the value with it); kind the bot's name for
+                                                  it: damage aoe heal ward blade trap aura weakness enchant dot stun
+                                                  dispel prism clear polymorph keep; dot the damage (healing) over time
+                                                  besides; school pips the pips of a school it wants besides "fire:1";
+                                                  text about as the card says it)
+                                               hand|<cards>|<ms>
   /badge?x1=&y1=&x2=&y2=&scale=&schools=  -> one line per school whose badge is there: "school|x|y|dist",
                                              best first ("unclear": two schools too close at the best spot)
   /hand?x1=&y1=&x2=&y2=&scale=&pics=&learned=<id>:<set folder>:<slot>,...&here=<set folder for this size>
@@ -1639,6 +1668,28 @@ def nav_reader():
         return NAV
 
 
+CARDS_LOGGED = {'text': None}
+
+
+def cards_answer():
+    """/cards with no rectangle: the hand and my pips from the game's memory (navmem's reader, read-only -
+    vision\\handmem.py), logged when the answer changes"""
+    import handmem
+    r, why = nav_reader().cards()
+    text = handmem.answer(r, why)
+    key = '\n'.join(ln for ln in text.split('\n') if not ln.startswith('hand|'))
+    if key != CARDS_LOGGED['text']:
+        CARDS_LOGGED['text'] = key
+        if text.startswith('none|'):
+            log('/cards (memory): ' + text)
+        else:
+            cards = [ln.split('|') for ln in text.split('\n') if ln.startswith('card|')]
+            log(f"/cards (memory) {r['ms'] if r else '?'} ms: " + text.split('\n')[0] + ' | '
+                + ', '.join(f"{c[4] or c[3]} ({c[16]}{' ' + c[15] if c[15] else ''}, {c[7]} pips{' X' if c[8] == '1' else ''}"
+                            f"{', tc' if c[11] == '1' else ''}{', ' + c[13] if c[13] else ''})" for c in cards))
+    return text
+
+
 def word_forms(w):
     """a word and its plurals: Soul / Souls, Fairy / Fairies, Wolf / Wolves, Axeman / Axemen"""
     out = {w, w + 's', w + 'es'}
@@ -2574,6 +2625,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + repr(e))
             if u.path == '/caught':
                 return self.reply(caught_line())
+            if u.path == '/cards' and 'x1' not in q:
+                return self.reply(cards_answer())
             if u.path == '/mobs':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

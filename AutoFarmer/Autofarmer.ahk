@@ -266,8 +266,9 @@ global BookSeenAt := 0
 ;When a battle round's Pass button was last seen, when the mouse was last moved onto the scene for one that wasn't, and
 ;how many times since (a button shown as hovered: see the main loop)
 global PassSeenAt := 0, PassNudgeAt := 0, PassNudges := 0, PassNudgeSaidAt := 0, PassHover := 0, PassHoverSaidAt := 0
-;Your pips this round, read off your nameplate (-1 = couldn't read)
-global PipsNow := -1
+;Your pips this round, from the game's memory or read off your nameplate (-1 = couldn't read; KillCalc.ahk PipsRead),
+;and what the log says about where they came from
+global PipsNow := -1, PipsNote := ""
 ;Boost cards cast since the last hit (Settings.ahk CardBoostOk: boostmax)
 global BoostRun := 0
 global BossMax := 0
@@ -1009,9 +1010,10 @@ if (HammerSchool != hitschool)
 if (PartySupport())
 	aura := 0
 
-;How many pips you have (the game doesn't grey out cards you can't afford)
-PipsNow := PipValue()
-DebugLog("  pips=" PipsNow)
+;How many pips you have (the game doesn't grey out cards you can't afford): the game's own count from its memory, else
+;off the pip row under your name (KillCalc.ahk PipsRead)
+PipsNow := PipsRead()
+DebugLog("  pips=" PipsNow PipsNote)
 DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant
 	. (PartySupport() ? " | " BattleRole ": the boosts to " HammerName " (" (HammerSchool = "" ? "school not known" : HammerSchool) ")" : ""))
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the

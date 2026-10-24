@@ -34,6 +34,14 @@
 ;     only kept, and recognised from then on (it's tried for a slot again whenever it's in hand)
 ; A pip cost that couldn't be read is guessed as the pips you have (the card's in colour), and brought down
 ; whenever the card shows up in colour with fewer; a digit read is the card's own and is kept.
+; The game's memory (Vision.ahk VisionCards - vision\handmem.py, read-only: nothing in the game is written, no key or
+; click): when it has the hand settled and as many cards as the helper has card boxes, card i of it (left to right) is box
+; i, and nothing above is guessed or OCR'd - a new card is learned with the game's name, kind, school (flag school=), pips
+; (X: flag xpip), numbers and treasure / item card (flags tc, item), flag mem (read from the game: Sure 100%) and game=<its
+; name in the game>; its picture is still cut as before (/cut). A card the bot knows by its picture gets what the game
+; says filled in - never what you set (flag user, a name you typed): only the learner's own guesses and OCR'd numbers.
+; An enchanted card the bot doesn't know by its picture isn't learned (its picture is the enchanted one's): it is when it
+; shows up plain. LearnMemHand, LearnMemRead, LearnApplyMem.
 ; Out of battle, once a run (LearnOutOfBattle): learned "cards" that aren't cards are moved to backups\learned
 ; junk\, and a learned card's picture left in a slot that isn't its own is taken out (backups\learned strays\).
 ; Everything learned is listed in learned\cards.txt (and on the dashboard's Spells tab); debug.log: "learned a
@@ -41,7 +49,11 @@
 
 global LearnedThisRound := 0
 ;The catalog (learned\cards.txt): [{id, sch, type, pips, guess, value, target, slot, scale, dir, when, text, name,
-;flags}] - flags a comma list (LearnFlag): ok, icon=<t>, tc, two, dot=<n>, xpip, user, hold, out=<id>, snap=<folder>
+;flags}] - flags a comma list (LearnFlag): ok, icon=<t>, tc, notc, item, two, dot=<n>, xpip, mem, game=<name>, school=<s>,
+;user, hold, out=<id>, snap=<folder>
+;(learned cards whose first pairing with the game's memory disagreed with them: the game's name seen, waiting to be seen
+;again - LearnSeenAgain)
+global LearnMemWait
 global LearnedCards := ""
 ;Whether each slot is free (LearnFree), asked once a round
 global LearnFreeCache := ""
@@ -275,11 +287,13 @@ LearnName(c)
 ;How sure the learner is of what it took card c for, 0-100 ({pct, why}): its kind (40 - read alike twice or its icon
 ;the same; 25 read once), its number (35 - read alike twice; 15 once; a kind with no number: all 35) and its pips
 ;(25 read off the card or an X; 10 guessed). Set by you (Spells tab): what's there counts as read alike twice - what's
-;blank still not known
+;blank still not known. Read from the game's memory (flag mem: its kind, number and pips the game's): 100%
 LearnSure(c)
 	{
 	if (!IsObject(c))
 		return {pct: 0, why: "-"}
+	if (LearnHasFlag(c, "mem"))
+		return {pct: 100, why: "read from the game"}
 	user := LearnHasFlag(c, "user")
 	two := user || LearnHasFlag(c, "two"), icon := LearnFlag(c, "icon")
 	if (c.type = "")
@@ -336,7 +350,7 @@ LearnWhyNot(c)
 		return "taken out by " (IsObject(o) ? LearnName(o) : out) ", a stronger hit"
 		}
 	if (c.type = "keep")
-		return "you chose not to use it"
+		return (LearnHasFlag(c, "mem") && !LearnHasFlag(c, "user")) ? "a kind the bot doesn't play (the game's: " c.text ")" : "you chose not to use it"
 	if (c.type = "")
 		return "a kind the bot doesn't know"
 	if (!LearnPlayed(c.type))
@@ -515,7 +529,9 @@ LearnCards()
 	;(a card learned at another UI size was cut into a new folder for this size: a picture set from now on)
 	if (InStr(FileExist(here), "D"))
 		LearnSetDir(true)
-	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length(), boxes := 0, notCards := 0, noPips := 0, onHand := 0
+	;(the cards as the game's memory has them - read, not guessed - laid on the boxes: LearnMemHand)
+	mem := LearnMemHand(answer)
+	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length(), boxes := 0, notCards := 0, noPips := 0, onHand := 0, enchNew := 0
 	Loop, Parse, answer, `n, `r
 		{
 		f := StrSplit(A_LoopField, "|")
@@ -530,7 +546,7 @@ LearnCards()
 			continue
 			}
 		card := {left: f[2] + 0, top: f[3] + 0, known: f[6], grey: f[8] + 0, type: f[9], pips: f[11], same: f[13] + 0
-			, isCard: (f.Length() >= 16 && f[15] = 1), tc: (f.Length() >= 16 && f[16] = 1)}
+			, isCard: (f.Length() >= 16 && f[15] = 1), tc: (f.Length() >= 16 && f[16] = 1), mem: (IsObject(mem) && mem.HasKey(boxes)) ? mem[boxes] : ""}
 		;(a slot's learned picture was just written - made see-through where this copy differs, or cut at
 		;this UI size - so the battle's own search finds the card if the hand's looked at again)
 		if (f[14] = 1)
@@ -543,21 +559,27 @@ LearnCards()
 		else if (card.same)
 			continue
 		;(learned only where the helper says it's a card, and with your pips read - unread, the hand may not be
-		;where it's looked for)
+		;where it's looked for; the game's memory has its pips itself)
 		else if (!card.isCard)
 			continue
-		else if (PipsNow < 0)
+		;(an enchanted card the bot doesn't know by its picture: its picture is the enchanted one's, not the card's -
+		;learned when it shows up plain)
+		else if (IsObject(card.mem) && card.mem.ench != "")
+			enchNew++
+		else if (PipsNow < 0 && !(IsObject(card.mem) && card.mem.pips != ""))
 			noPips++
 		;(the mouse moved onto the hand since - yours: the card under it zoomed up - none learned now, next round)
 		else if (onHand || LearnMouseOnHand())
 			onHand += 1
-		;(two new cards a round at most: each takes about half a second)
-		else if (fresh < 2)
+		;(two new cards a round at most: each takes about half a second - four from the game's memory: no OCR)
+		else if (fresh < 2 || (IsObject(card.mem) && fresh < 4))
 			{
 			fresh++
 			placed += LearnNew(card)
 			}
 		}
+	if (enchNew)
+		DebugLog("  " enchNew " enchanted card(s) in hand the bot doesn't know by their picture - learned when they show up plain")
 	if (boxes && notCards = boxes)
 		DebugLog("  none of the " boxes " box(es) where the hand should be looks like a card - the hand may not be where it's looked for (vision\vision.log): nothing learned")
 	if (greyNew)
@@ -592,35 +614,57 @@ LearnNew(card)
 			DebugLog("  a new card in hand couldn't be saved (vision\vision.log)")
 		return 0
 		}
-	r := LearnReadCard(card, card.type, hitschool)
-	if (!r.two && r.text != "")
+	;(the game's memory read it - its name, kind, numbers, pips, school, treasure / item card as they are: no OCR, nothing
+	;guessed; else its text read with OCR)
+	fromGame := IsObject(card.mem)
+	r := fromGame ? LearnMemRead(card.mem) : LearnReadCard(card, card.type, hitschool)
+	;(the game had no kind for it - its effects cut short: its kind and numbers read off the card as before; its name,
+	;school and pips still the game's)
+	if (fromGame && !r.sure)
+		{
+		ro := LearnReadCard(card, card.type, hitschool)
+		r.kind := ro.kind, r.value := ro.value, r.extra := ro.extra, r.two := ro.two
+		}
+	if (!fromGame && !r.two && r.text != "")
 		DebugLog("  the new card's text couldn't be read alike twice (""" r.text """) - " (r.kind = "" ? "its kind isn't known" : "its numbers count as unknown"))
-	c := {id: id, sch: hitschool, type: r.kind, pips: card.pips, guess: 0, value: r.value, target: (r.kind = "damage") ? 1 : 0, slot: ""
-		, scale: Round(UiScale, 3), dir: SubStr(setDir, StrLen(A_WorkingDir) + 2), when: A_Now, text: r.text, name: "", flags: "ok"}
+	c := {id: id, sch: hitschool, type: r.kind, pips: fromGame ? r.pips : card.pips, guess: 0, value: r.value, target: (r.kind = "damage") ? 1 : 0, slot: ""
+		, scale: Round(UiScale, 3), dir: SubStr(setDir, StrLen(A_WorkingDir) + 2), when: A_Now, text: r.text, name: fromGame ? r.name : "", flags: "ok"}
 	if (card.type != "")
 		LearnSetFlag(c, "icon", card.type)
-	if (card.tc)
+	if (fromGame)
+		{
+		LearnSetFlag(c, "game", r.game)
+		if (r.sure)
+			LearnSetFlag(c, "mem")
+		if (r.school != "" && r.school != hitschool)
+			LearnSetFlag(c, "school", r.school)
+		if (r.tc)
+			LearnSetFlag(c, "tc")
+		if (r.item)
+			LearnSetFlag(c, "item")
+		}
+	else if (card.tc)
 		LearnSetFlag(c, "tc")
-	if (r.two)
+	if (r.two && !fromGame)
 		LearnSetFlag(c, "two")
 	LearnSetExtra(c, r.extra)
 	;(no pip digit read: it's in colour, so it costs no more than the pips you have - a guess. A digit read is the
 	;card's own, kept even when it's more than you have: the game doesn't grey out every card you can't afford)
 	;(an X-pip spell - its text says per pip: its cost is X, all your pips (0 here), not a guess - an X isn't a digit)
-	;(a 0 read off any other deck hit is no pip count - the digit misread: guessed instead)
+	;(a 0 read off any other deck hit is no pip count - the digit misread: guessed instead - but not the game's own 0)
 	if (LearnHasFlag(c, "xpip"))
 		c.pips := 0, c.guess := 0
-	else if (c.pips = 0 && (c.type = "damage" || c.type = "aoe") && !card.tc)
+	else if (!fromGame && c.pips = 0 && (c.type = "damage" || c.type = "aoe") && !card.tc)
 		c.pips := ""
 	if (c.pips = "")
 		c.pips := PipsNow, c.guess := 1
-	else if (c.pips > PipsNow)
+	else if (!fromGame && c.pips > PipsNow)
 		DebugLog("  its pip digit reads " c.pips " - more than the " PipsNow " you have (kept: it's the card's own)")
 	LearnedCards.Push(c)
 	got := LearnPlace(c)
 	LearnSave()
 	where := c.slot != "" ? "using it as " c.slot : "kept, not used (" LearnWhyNot(c) ")"
-	DebugLog("  learned a new card: " LearnDescribe(c) " - " where " (picture: " c.dir "\learned\" id ".card.png)")
+	DebugLog("  learned a new card" (fromGame ? " (read from the game)" : "") ": " LearnDescribe(c) " - " where " (picture: " c.dir "\learned\" id ".card.png)")
 	TrayTip, Wizard101 bot, % "New card learned: " LearnDescribe(c) "`n" (c.slot != "" ? "Using it as " c.slot "." : "Kept, not used yet."), 5, 1
 	return got
 	}
@@ -838,7 +882,8 @@ LearnIconOf(c)
 ;now put it out of order too. how: for the log. 1 if anything changed
 LearnApplyRead(c, r, how)
 	{
-	if (LearnHasFlag(c, "user") || r.kind = "")
+	;(nor for one read from the game's memory: its kind and numbers are the game's - only its text, when it has none)
+	if (LearnHasFlag(c, "user") || LearnHasFlag(c, "mem") || r.kind = "")
 		{
 		if (c.text != "" || r.text = "")
 			return 0
@@ -911,17 +956,46 @@ LearnSeenAgain(card)
 			}
 		if (card.type != "" && LearnFlag(c, "icon") = "")
 			LearnSetFlag(c, "icon", card.type), changed := 1
-		if (card.tc && !LearnHasFlag(c, "tc") && !LearnHasFlag(c, "notc"))
+		;(the game's memory read it: what it says filled in - its name, kind, numbers, pips, school; never what you set -
+		;and nothing below guessed or read off the card)
+		;(a card never paired with the game before whose own kind or read pips the game's disagree with: the same game card
+		;in that box a second time first - one wrong pairing would rewrite a good card. One you set is yours to differ: only
+		;its blanks are filled in)
+		memR := IsObject(card.mem) ? LearnMemRead(card.mem) : ""
+		if (IsObject(memR) && LearnFlag(c, "game") = "" && memR.sure && !LearnHasFlag(c, "user")
+			&& ((c.type != "" && c.type != memR.kind) || (!c.guess && c.pips != "" && memR.pips != "" && c.pips != memR.pips)))
+			{
+			if (LearnMemWait[c.id] != memR.game)
+				{
+				LearnMemWait[c.id] := memR.game
+				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): the game says " memR.game " (" LearnKindLabel(memR.kind) ") - put in when it's seen so again")
+				memR := ""
+				}
+			else
+				LearnMemWait.Delete(c.id)
+			}
+		if (IsObject(memR))
+			{
+			memWas := LearnDescribe(c)
+			memGot := LearnApplyMem(c, memR)
+			if (memGot)
+				{
+				changed := 1, got := (memGot = 2) ? 1 : got
+				if (memWas != LearnDescribe(c))
+					DebugLog("  learned card " c.id " read from the game: " memWas " -> " LearnDescribe(c))
+				}
+			}
+		if (card.tc && !IsObject(card.mem) && !LearnHasFlag(c, "tc") && !LearnHasFlag(c, "notc"))
 			LearnSetFlag(c, "tc"), changed := 1
 		;(its pip digit read this time where the pips were only guessed: the card's own - a hit's never 0, that's X-pip)
-		if (c.guess && RegExMatch(card.pips, "^\d+$") && card.pips != c.pips && !(card.pips = 0 && (InStr(c.slot, "\hit") || ((c.type = "damage" || c.type = "aoe") && !LearnHasFlag(c, "tc")))))
+		if (c.guess && !IsObject(card.mem) && RegExMatch(card.pips, "^\d+$") && card.pips != c.pips && !(card.pips = 0 && (InStr(c.slot, "\hit") || ((c.type = "damage" || c.type = "aoe") && !LearnHasFlag(c, "tc")))))
 			{
 			DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its pip digit reads " card.pips " (was guessed)")
 			c.pips := card.pips + 0, c.guess := 0, changed := 1
 			if (c.slot != "")
 				LearnStats(c)
 			}
-		else if (c.guess && RegExMatch(card.pips, "^\d+$") && card.pips = c.pips)
+		else if (c.guess && !IsObject(card.mem) && RegExMatch(card.pips, "^\d+$") && card.pips = c.pips)
 			c.guess := 0, changed := 1
 		if (c.pips = "" && PipsNow >= 0)
 			{
@@ -932,7 +1006,7 @@ LearnSeenAgain(card)
 		;(its kind or numbers weren't read for sure when it was learned - e.g. in a small window: read again, once a
 		;run at each UI size, two cards a round at most - never one you set on the Spells tab)
 		rk := c.id "|" Round(UiScale, 2)
-		if (!LearnHasFlag(c, "user") && LearnRereadsLeft > 0 && !reread.HasKey(rk)
+		if (!LearnHasFlag(c, "user") && !LearnHasFlag(c, "mem") && !IsObject(card.mem) && LearnRereadsLeft > 0 && !reread.HasKey(rk)
 			&& (c.type = "" || c.text = "" || ((c.type = "damage" || c.type = "aoe" || c.type = "heal" || c.type = "enchant") && (c.value = "" || !LearnHasFlag(c, "two")))))
 			{
 			reread[rk] := 1, LearnRereadsLeft -= 1
@@ -946,7 +1020,7 @@ LearnSeenAgain(card)
 			}
 		;(a hit's pips never go to 0 that way: 0 means an X-pip spell there)
 		low := (InStr(c.slot, "\hit") || ((c.type = "damage" || c.type = "aoe") && !LearnHasFlag(c, "tc"))) ? 1 : 0
-		if (c.guess && PipsNow >= 0 && c.pips != "" && PipsNow < c.pips && PipsNow >= low)
+		if (c.guess && !IsObject(card.mem) && PipsNow >= 0 && c.pips != "" && PipsNow < c.pips && PipsNow >= low)
 			{
 			DebugLog("  " (c.slot != "" ? c.slot : "learned card " c.id) " is in colour with " PipsNow " pips: it costs no more than that (was guessed " c.pips ")")
 			c.pips := PipsNow, changed := 1
@@ -970,6 +1044,174 @@ LearnSeenAgain(card)
 		return got
 		}
 	return 0
+	}
+
+;---- The hand from the game's memory ----
+
+;The cards as the game's memory has them (Vision.ahk VisionCards - read-only: names, kinds, numbers, pips; nothing
+;guessed) laid on the helper's /hand answer: {n: the game's card} for its n-th card line - or "" when they can't be: no
+;memory read this round (the game not read, not settled within 1.5 s: debug.log says why), not as many cards as the
+;boxes that look like cards (left to right, card i is box i only when they're as many), or a box the bot knows as a
+;learned card that the game named otherwise before (flag game=: the boxes and the cards don't line up)
+LearnMemHand(answer)
+	{
+	static saidOff := {}
+	;(this pass's answer if it's 3 s old at most - PipsRead's: FindCards' VisionForget clears it when the hand changed)
+	lmhHand := VisionCards(1500, 3000)
+	if (!IsObject(lmhHand))
+		{
+		if (VisionCardsWhy != "" && !InStr(VisionCardsWhy, "navmem:0"))
+			DebugLog("  the hand from the game's memory: none (" VisionCardsWhy ")")
+		return ""
+		}
+	lmhBoxes := [], lmhN := 0
+	Loop, Parse, answer, `n, `r
+		{
+		lmhF := StrSplit(A_LoopField, "|")
+		if (lmhF.Length() < 12 || lmhF[1] != "card")
+			continue
+		lmhN += 1
+		if (lmhF.Length() >= 15 && lmhF[15] = "0")
+			continue
+		lmhBoxes.Push({n: lmhN, known: lmhF[6]})
+		}
+	if (lmhBoxes.Length() != lmhHand.cards.Length())
+		{
+		DebugLog("  the hand from the game's memory: " lmhHand.cards.Length() " card(s), the helper sees " lmhBoxes.Length() " card box(es) - not used this round")
+		return ""
+		}
+	lmhOut := {}, lmhNames := ""
+	for lmhI, lmhB in lmhBoxes
+		{
+		lmhM := lmhHand.cards[lmhI]
+		lmhC := (InStr(lmhB.known, "learned/") = 1) ? LearnCardOf(SubStr(lmhB.known, 9)) : LearnCardInSlot(StrReplace(lmhB.known, "/", "\"))
+		lmhWas := IsObject(lmhC) ? LearnFlag(lmhC, "game") : ""
+		;(a box the learned card in it isn't the game's card for: that box left out - one wrong pairing before mustn't stop
+		;the rest of the hand; said once a card)
+		if (lmhWas != "" && lmhWas != LearnMemGame(lmhM))
+			{
+			if (!saidOff.HasKey(lmhC.id))
+				saidOff[lmhC.id] := 1, DebugLog("  the hand from the game's memory: box " lmhI " is learned card " lmhC.id " (" lmhWas " in the game), the game has " LearnMemGame(lmhM) " there - that box left out (said once)")
+			continue
+			}
+		lmhOut[lmhB.n] := lmhM, lmhB.m := lmhM
+		lmhNames .= (lmhNames = "" ? "" : ", ") LearnMemGame(lmhM) (lmhM.ench != "" ? " (" lmhM.ench ")" : "")
+		}
+	;(two or more boxes found as one learned card, the game holding them differently - a pet's or treasure copy with its
+	;own numbers: the memory only on the plain copy, else on none - the card isn't flipped from one to the other)
+	lmhBy := {}
+	for lmhI, lmhB in lmhBoxes
+		if (lmhB.known != "" && IsObject(lmhB.m))
+			{
+			if (!lmhBy.HasKey(lmhB.known))
+				lmhBy[lmhB.known] := []
+			lmhBy[lmhB.known].Push(lmhB)
+			}
+	for lmhK, lmhL in lmhBy
+		{
+		if (lmhL.Length() < 2)
+			continue
+		lmhDiff := 0, lmhA := lmhL[1].m
+		for lmhJ, lmhB in lmhL
+			if (lmhB.m.num != lmhA.num || lmhB.m.kind != lmhA.kind || lmhB.m.pips != lmhA.pips || lmhB.m.tc != lmhA.tc || lmhB.m.item != lmhA.item)
+				lmhDiff := 1
+		if (!lmhDiff)
+			continue
+		lmhPlain := ""
+		for lmhJ, lmhB in lmhL
+			if (lmhPlain = "" && !lmhB.m.item && !lmhB.m.tc && lmhB.m.ench = "")
+				lmhPlain := lmhB.n
+		for lmhJ, lmhB in lmhL
+			if (lmhB.n != lmhPlain)
+				lmhOut.Delete(lmhB.n)
+		}
+	DebugLog("  the hand from the game's memory: " (lmhNames = "" ? "no cards" : lmhNames))
+	return lmhOut
+	}
+
+;A card's name in the game, as flag game= keeps it: the name on the card (else the spell's own), printable, no , | $ \
+LearnMemGame(m)
+	{
+	return RegExReplace(LearnClean(m.display != "" ? m.display : m.name), "[,|$\\]")
+	}
+
+;A card as the game's memory has it (VisionCards' card m) in the learner's words: {kind (LearnTypes' - one it doesn't
+;have: keep), value (the number the learner keeps: a hit's least damage, every head added - an X-pip hit's a pip -, a
+;heal's, the % of a shield, blade, trap, aura or weakness, an enchant's damage; "" none), extra (dot=<n>, xpip - as
+;LearnKindOf's), text (about as the card says it), name (the name on the card), game (LearnMemGame), school (lower
+;case, "" not one of LearnSchools), pips (0 for X; "" not read), xpip, tc, item, two: 0}
+LearnMemRead(m)
+	{
+	;(no kind from the game - its effects cut short: unknown, not "keep"; sure 0: its kind and numbers aren't the game's)
+	lmrKind := (m.kind = "") ? "" : "keep"
+	for lmrI, lmrT in LearnTypes()
+		if (lmrT.kind = m.kind && m.kind != "xpip")
+			lmrKind := m.kind
+	lmrValue := InStr(",damage,aoe,heal,ward,blade,trap,aura,weakness,enchant,", "," lmrKind ",") ? m.num : ""
+	lmrExtra := ((lmrKind = "damage" || lmrKind = "aoe" || lmrKind = "dot") && m.dot != "") ? "dot=" m.dot : ""
+	if (m.xpip)
+		lmrExtra .= (lmrExtra = "" ? "" : ",") "xpip"
+	lmrSch := ""
+	for lmrI, lmrS in LearnSchools()
+		if (lmrS = m.school)
+			lmrSch := lmrS
+	return {kind: lmrKind, value: lmrValue, extra: lmrExtra, two: 0, text: LearnClean(m.text), name: LearnClean(m.display != "" ? m.display : m.name)
+		, game: LearnMemGame(m), school: lmrSch, pips: m.xpip ? 0 : m.pips, xpip: m.xpip ? 1 : 0, tc: m.tc ? 1 : 0, item: m.item ? 1 : 0
+		, sure: (m.kind != "") ? 1 : 0}
+	}
+
+;What the game's memory says of learned card c (r: LearnMemRead) put into it - never what you set: a card you set on the
+;Spells tab (flag user) keeps its kind, number and pips (only pips the learner guessed are put right), a name you typed
+;stays (only a card with none gets the game's), a school, treasure card or not-a-treasure-card you set stays. Its text
+;becomes the game's words. Flag mem while what it holds is the game's (the same kind, number and pips: LearnSure 100%),
+;game=<its name in the game>. A card whose kind changed leaves its slot; one whose numbers or pips changed gets them in
+;PlayerStats.txt - out of its hit slot when they no longer keep the hits in order. Returns 0 nothing changed, 1 changed,
+;2 out of its slot
+LearnApplyMem(c, r)
+	{
+	;(an item or treasure card copy - a pet's, its own numbers - never over what the card's plain copy put in)
+	if ((r.item || r.tc) && LearnHasFlag(c, "mem") && !LearnHasFlag(c, "item") && !LearnHasFlag(c, "tc"))
+		return 0
+	lamWas := LearnLine(c), lamKind := c.type, lamValue := c.value, lamPips := c.pips
+	lamUser := LearnHasFlag(c, "user")
+	if (c.name = "" && r.name != "")
+		c.name := r.name
+	;(no kind from the game: its kind, numbers and pips stay as they are)
+	if (!lamUser && r.sure)
+		{
+		c.type := r.kind, c.value := r.value, c.target := (r.kind = "damage") ? 1 : 0
+		LearnDropFlag(c, "dot"), LearnDropFlag(c, "xpip"), LearnSetExtra(c, r.extra)
+		if (r.pips != "")
+			c.pips := r.pips, c.guess := 0
+		}
+	else if (c.guess && r.pips != "" && !r.xpip && !LearnHasFlag(c, "xpip"))
+		c.pips := r.pips, c.guess := 0
+	if (r.school != "" && r.school != c.sch && LearnFlag(c, "school") = "")
+		LearnSetFlag(c, "school", r.school)
+	if (r.tc && !LearnHasFlag(c, "tc") && !LearnHasFlag(c, "notc"))
+		LearnSetFlag(c, "tc")
+	if (r.item && !LearnHasFlag(c, "item"))
+		LearnSetFlag(c, "item")
+	if (r.text != "")
+		c.text := r.text
+	if (r.game != "")
+		LearnSetFlag(c, "game", r.game)
+	lamSame := r.sure && (c.type = r.kind && c.value = r.value && (r.pips = "" || c.pips = r.pips) && (LearnHasFlag(c, "xpip") ? 1 : 0) = r.xpip)
+	if (lamSame)
+		LearnSetFlag(c, "mem")
+	else
+		LearnDropFlag(c, "mem")
+	if (LearnLine(c) == lamWas)
+		return 0
+	if (c.slot != "" && c.type != lamKind)
+		return LearnUnplace(c, "the game says it's " LearnKindLabel(c.type)) ? 2 : 1
+	if (c.slot != "" && (c.value != lamValue || c.pips != lamPips))
+		{
+		if (RegExMatch(c.slot, "\\hit([1-4])$", lamHn) && !LearnHitFits(c, lamHn1))
+			return LearnUnplace(c, "its numbers from the game put it out of order with the other hits") ? 2 : 1
+		LearnStats(c)
+		}
+	return 1
 	}
 
 ;---- Slots ----
@@ -1041,9 +1283,10 @@ LearnSlotFor(c)
 		if (c.pips = "")
 			return ""
 		;(the wand's hit - free, no pips - only a treasure (item) card whose 0 was read off it: a deck spell's 0 is a
-		;misread or a guess, and as the wand it'd be cast with no pips and keep the bot from fleeing out of mana)
+		;misread or a guess, and as the wand it'd be cast with no pips and keep the bot from fleeing out of mana. An item
+		;card the game's memory says is one: flag item)
 		if (c.pips = 0)
-			return (!c.guess && LearnHasFlag(c, "tc") && !LearnHasFlag(c, "xpip") && LearnFree(sch "\wand")) ? sch "\wand" : ""
+			return (!c.guess && (LearnHasFlag(c, "tc") || LearnHasFlag(c, "item")) && !LearnHasFlag(c, "xpip") && LearnFree(sch "\wand")) ? sch "\wand" : ""
 		;(only where it keeps hit1-3 weakest to strongest - the battle casts hit3 first, then hit2, hit1 -
 		;else it's kept out of use rather than cast before a stronger hit; LearnHitFits)
 		Loop, 3
@@ -1129,19 +1372,20 @@ LearnStatOf(sch, key)
 	return Stats.HasKey(key) ? Stats[key] : ""
 	}
 
-;Learned card c's number when it's sure: two reads agreed on it, or you typed it (Spells tab) - else ""
+;Learned card c's number when it's sure: two reads agreed on it, you typed it (Spells tab) or it's the game's (flag mem)
+;- else ""
 LearnValueKnown(c)
 	{
-	return (c.value != "" && (LearnHasFlag(c, "two") || LearnHasFlag(c, "user"))) ? c.value : ""
+	return (c.value != "" && (LearnHasFlag(c, "two") || LearnHasFlag(c, "user") || LearnHasFlag(c, "mem"))) ? c.value : ""
 	}
 
 ;A learned hit's least damage, every head of it - the low end of each damage range on the card before any "over N
 ;rounds" (Hydra: its storm, fire and ice heads; LearnKindOf keeps the first range only) when its value is known, else
-;"" (a value you set on the Spells tab is taken as it is)
+;"" (a value you set on the Spells tab is taken as it is, and the game's - every head added already)
 LearnHitBase(c)
 	{
 	known := LearnValueKnown(c)
-	if (known = "" || LearnHasFlag(c, "user"))
+	if (known = "" || LearnHasFlag(c, "user") || LearnHasFlag(c, "mem"))
 		return known
 	lhbAt := RegExMatch(c.text, "i)over\s*\d|(?<![a-z])o\S{0,2}r\s*\d|\(\s*\S{0,2}\s*\d\s*\)|r[o0]unds?\b|\brds\b")
 	lhbHead := lhbAt ? SubStr(c.text, 1, lhbAt - 1) : c.text
@@ -1489,9 +1733,10 @@ LearnCheckCatalog()
 			LearnSetFlag(c, "icon", v[7])
 		if (v[2] = 1 && !LearnHasFlag(c, "notc"))
 			LearnSetFlag(c, "tc")
-		;(not pips you typed on the Spells tab - guessed ones are, even on a spell whose name or number you set)
+		;(not pips you typed on the Spells tab - guessed ones are, even on a spell whose name or number you set - nor the
+		;game's own: flag mem)
 		pd := v[8]
-		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && (!LearnHasFlag(c, "user") || c.guess) && !LearnHasFlag(c, "xpip"))
+		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && (!LearnHasFlag(c, "user") || c.guess) && !LearnHasFlag(c, "xpip") && !LearnHasFlag(c, "mem"))
 			{
 			if (pd = 0 && RegExMatch(c.slot, "\\hit\d$"))
 				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its pip digit reads 0 - not taken for a hit in " c.slot)
@@ -1627,8 +1872,9 @@ LearnDrop(c)
 	}
 
 ;Every learned card's text classified again (LearnKindOf, no OCR) with what's known now - its icon read since, the
-;newer rules (Choke a stun, Backfire "Clear"...). Never one you set on the Spells tab; a number found this way isn't
-;sure (one read) till two fresh reads agree. Returns how many changed
+;newer rules (Choke a stun, Backfire "Clear"...). Never one you set on the Spells tab, nor one read from the game's memory
+;(flag mem - its text is the game's words, not OCR); a number found this way isn't sure (one read) till two fresh reads
+;agree. Returns how many changed
 LearnRecheckTexts()
 	{
 	if (!IsObject(LearnedCards))
@@ -1636,7 +1882,7 @@ LearnRecheckTexts()
 	n := 0
 	for i, c in LearnedCards.Clone()
 		{
-		if (c.text = "" || LearnHasFlag(c, "user"))
+		if (c.text = "" || LearnHasFlag(c, "user") || LearnHasFlag(c, "mem"))
 			continue
 		r := LearnKindOf(c.text, LearnIconOf(c), c.sch)
 		r.two := 0, r.text := ""
@@ -2353,7 +2599,8 @@ LearnSetKind(id, kind)
 	if (c.slot != "" && !LearnUnplace(c, "its kind was changed on the Spells tab"))
 		return "not now: it's taken out of " c.slot " after this battle"
 	c.type := kind, c.target := (kind = "damage") ? 1 : 0
-	LearnSetFlag(c, "user"), LearnDropFlag(c, "out")
+	;(yours now, not the game's - flag mem again only while what you set is what the game says: LearnApplyMem)
+	LearnSetFlag(c, "user"), LearnDropFlag(c, "out"), LearnDropFlag(c, "mem")
 	got := VisionOn ? LearnPlace(c) : 0
 	LearnSave()
 	PicMade := {}, LearnFreeCache := {}
@@ -2390,9 +2637,10 @@ LearnEdit(id, name, value, pips, keepGuess := 0, nameOnly := 0)
 	;(keepGuess: only its name or number edited - the Spells list's cells: guessed pips stay guessed, still corrected
 	;from the card's pip digit)
 	c.name := LearnClean(name), c.value := value, c.pips := pips, c.guess := keepGuess && pips != "" ? c.guess : 0
-	;(nameOnly: only its name - the learner never changes a name, so not marked yours: its number and pips still read)
+	;(nameOnly: only its name - the learner never changes a name, so not marked yours: its number and pips still read.
+	;Else yours, not the game's - flag mem again only while what you set is what the game says: LearnApplyMem)
 	if (!nameOnly)
-		LearnSetFlag(c, "user")
+		LearnSetFlag(c, "user"), LearnDropFlag(c, "mem")
 	;(no longer fitting its slot: out first - one put in by an arrangement is put back with the numbers as they were -
 	;then where it fits; else its new numbers there)
 	if (c.slot != "")
@@ -2542,7 +2790,7 @@ LearnDescribe(c)
 	else if (kd = "xpip")
 		d := "an X-pip spell (" v " a pip)"
 	else if (kd = "keep")
-		d := "not used (your choice)"
+		d := (LearnHasFlag(c, "mem") && !LearnHasFlag(c, "user")) ? "a kind the bot doesn't play (" c.text ")" : "not used (your choice)"
 	else
 		d := "type unknown (""" c.text """)"
 	return (c.name != "" ? c.name ": " : "") d ", " pips
@@ -2622,7 +2870,7 @@ LearnSave()
 	{
 	out := "; Cards AutoFarmer learned by itself (CardLearn.ahk), one per line:`r`n"
 		. "; id|school it was learned for|kind (damage = one enemy, aoe = all, heal, ward = a shield, blade, trap, aura; not played: dot = damage over time, stun, dispel, prism, clear, weakness, xpip, keep; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it|name|flags`r`n"
-		. "; flags: ok = checked, it's a card; icon=<its type icon>; tc = a treasure card; two = two reads agreed; dot=<damage over time>; xpip; user = set on the Spells tab (never changed by itself); hold = never discarded; out=<id> = taken out of its slot by that card; snap=<backups folder of the hits it was put in by>`r`n"
+		. "; flags: ok = checked, it's a card; icon=<its type icon>; tc = a treasure card; item = an item card (the game's); two = two reads agreed; dot=<damage over time>; xpip; mem = read from the game's memory (kind, number, pips); game=<its name in the game>; school=<its own school>; user = set on the Spells tab (never changed by itself); hold = never discarded; out=<id> = taken out of its slot by that card; snap=<backups folder of the hits it was put in by>`r`n"
 		. "; Pictures: <picture set>\learned\<id>.card.png (whole card) and .png (the picture cut from it). Older versions read the first 12 fields only.`r`n"
 	for i, c in LearnedCards
 		{

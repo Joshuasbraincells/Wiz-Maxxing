@@ -813,6 +813,35 @@ Affordable(hitName)
 	return (cost = 0) ? (PipsNow >= 1) : (PipsNow >= cost)
 	}
 
+;Your pips this round (PipsNow): the game's own count from its memory when the hand's read there this round (Vision.ahk
+;VisionCards - /cards' me line, read-only), else off the orbs under your name (PipValue). The game counts pips for a spell
+;of your own school - the cards the bot plays - as:
+;  generic pip                                  1
+;  power pip                                    2
+;  school pip of your own school                2   (a power pip in your school's colours: it pays as one)
+;  school pip of another school                 1   (it pays as a power pip only for that school's spells)
+;  shadow pip                                   0   (it pays only a spell's shadow pips)
+;so PipsNow = generic + 2 x (power + your school's pips) + the other schools' pips. Your school: the game's, else the
+;badge by your name (school). The orbs are read anyway, for the slots filled (PipOrbs, for saving pips: the game's pips
+;counted one an orb when it read them) and for the log - pipsnote says "(from the game; the pip row read M)" when the
+;two differ. -1 when neither can be read
+PipsRead()
+	{
+	global school
+	prRow := PipValue(), PipsNote := ""
+	prHand := VisionCards(1500)
+	if (!IsObject(prHand) || !IsObject(prHand.me) || !prHand.me.ok)
+		return prRow
+	prOwn := prHand.me.school != "" ? prHand.me.school : Format("{:L}", school)
+	prNum := prHand.me.generic + 2 * prHand.me.power, prOrbs := prHand.me.generic + prHand.me.power
+	for prI, prSch in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
+		prNum += prHand.me[prSch] * (prSch = prOwn ? 2 : 1), prOrbs += prHand.me[prSch]
+	PipOrbs := Min(7, prOrbs)
+	if (prNum != prRow)
+		PipsNote := " (from the game; the pip row read " prRow ")"
+	return prNum
+	}
+
 ;Your pips, from the orbs under your name on your nameplate: white = 1, gold power pip = 2,
 ;gold with your school's symbol (school pip) = 2. Orbs fill from the left, 20 px apart at UI scale
 ;1 (11 px orbs). Returns -1 if your nameplate (resources\player.png) wasn't found this round
