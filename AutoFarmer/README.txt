@@ -249,8 +249,10 @@ most used settings and all of them (changes not saved yet are kept). Each is
 remembered (dashboard.ini [view]); a new install starts simple, one that ran
 before starts advanced.
 
-Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
-cast per card, passes, discards, kill-check hits, potions, cards learned),
+Dashboard (Dashboard.ahk): a window with statistics (battles, deaths - this run
+and all time, from the game's log: taken out of a battle without fleeing -
+rounds, cards cast per card, passes, discards, kill-check hits, potions, cards
+learned),
 what the bot sees right now (your health/mana/pips, the hand card by card - ?
 for a card it doesn't know, * for a greyed-out one - enemies' health, zone,
 the walker) and the log as it's written, coloured by what each line is about

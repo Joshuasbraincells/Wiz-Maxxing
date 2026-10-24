@@ -19,6 +19,8 @@
 global BlPos, BlHead, BlDuel, BlNames, BlSub, BlCasts, BlRound, BlReadAt
 ;The battle's last phase by the log (kPhase_Planning: a round up for your cards; kPhase_Execution: the spells) and when
 global BlPhase, BlPhaseAt
+;Fled this round (MSG_CombatFlee - the bot or you): the removal from the battle that follows isn't a defeat
+global BlFled
 ;Your own wizard's name: the one wizard on your side of a battle with no other (learned this run - party.ini [me] keeps
 ;the last for the next), and the character it's for (the game's log's CharID - another character logged in: not its)
 global BlMe, BlMeChar
@@ -90,9 +92,16 @@ BattleLogLine(blLine)
 	{
 	if (!InStr(blLine, "Combat") && !InStr(blLine, "Subcircle"))
 		return
-	;(out of the battle - fled: no phase line follows)
+	if (InStr(blLine, "MSG_CombatFlee"))
+		BlFled := 1
+	;(out of the battle - fled, or defeated: no phase line follows. Taken out with no flee before it: defeated - the
+	;game sends you to a safe spot; a won battle never takes you out. The dashboard counts it: Deaths)
 	if (InStr(blLine, "MSG_CombatRemove(Local Player)"))
-		BlPhase := "", BlPhaseAt := 0
+		{
+		if (!BlFled)
+			DebugLog("Defeated: the wizard was knocked out of the battle (the game's log: taken out of duel " BlDuel " without fleeing)")
+		BlPhase := "", BlPhaseAt := 0, BlFled := 0
+		}
 	if (RegExMatch(blLine, "Duel (\d+): MSG_CombatPhase\((kPhase_\w+)\)", blM))
 		{
 		BlPhase := blM2, BlPhaseAt := A_TickCount
@@ -101,6 +110,9 @@ BattleLogLine(blLine)
 		;(each planning phase names those still in the circle - one that died isn't: the names afresh)
 		else if (blM2 = "kPhase_Planning")
 			BlNames := {}, BlSub := ""
+		;(a new round: no flee chosen in it yet)
+		if (blM2 = "kPhase_Planning")
+			BlFled := 0
 		;(the planning over: one wizard on your side - that's you)
 		else if (blM2 = "kPhase_Execution" && IsObject(BlNames))
 			{

@@ -443,7 +443,7 @@ DashLogKinds()
 DashLogKind(line)
 	{
 	msg := SubStr(line, 10)
-	if (RegExMatch(msg, "i)NEEDS YOU|\bstuck\b|couldn't|can't|\bfailed\b|didn't work|gave up|giving up|\bERR\b|error|not found|wasn't found|hung"))
+	if (RegExMatch(msg, "i)^Defeated:|NEEDS YOU|\bstuck\b|couldn't|can't|\bfailed\b|didn't work|gave up|giving up|\bERR\b|error|not found|wasn't found|hung"))
 		return "problem"
 	if (RegExMatch(msg, "i)^Walk: (waiting|paused)|^Watching for a round|resting|^Walk: loading|loading screen|^Walk: speed: 1x"))
 		return "wait"
@@ -633,6 +633,8 @@ DashParse(line)
 		DashAdd("discards")
 	else if (InStr(msg, "  fleeing: ") = 1)
 		DashAdd("flees")
+	else if (InStr(msg, "Defeated:") = 1)
+		DashAdd("deaths"), DashDeathsAll(1)
 	else if (RegExMatch(msg, "^  kill check: (.*) -> (.*)$", m))
 		{
 		DashSees.enemies := m1
@@ -921,6 +923,7 @@ DashRefresh()
 	;(the cards cast one by one last: what the box's height cuts off)
 	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
 		. "Battles          " DashNum(battles) "`n"
+		. "Deaths           " DashNum(n.deaths) "   (all time: " DashDeathsAll() ")`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
@@ -960,6 +963,23 @@ DashCut(text)
 	}
 
 ;A count, right-aligned (blank = 0)
+;Deaths over every run (dashboard.ini [stats] deaths - updates keep it): add one or more, and the total
+DashDeathsAll(add := 0)
+	{
+	static total := ""
+	if (total = "")
+		{
+		IniRead, total, %A_ScriptDir%\dashboard.ini, stats, deaths, 0
+		total := RegExMatch(total, "^\d+$") ? total + 0 : 0
+		}
+	if (add)
+		{
+		total += add
+		IniWrite, %total%, %A_ScriptDir%\dashboard.ini, stats, deaths
+		}
+	return total
+	}
+
 DashNum(v)
 	{
 	return Format("{:6}", v = "" ? 0 : v)
