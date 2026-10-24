@@ -156,15 +156,17 @@ MenuNothing:
 return
 
 ;The latest release looked up now and then, out of this process (Wiz-Maxxing /latest writes updater.ini): the
-;dashboard's Updates button and STATISTICS say from it whether a newer version is out. 45 s after start, then every
-;2 hours
+;dashboard's Updates button and STATISTICS say from it whether a newer version is out - and UpdAuto installs it.
+;45 s after start, then every autoupdate minutes (Settings; 2 hours with it off)
 UpdPeekNow:
 ;(only with a program that can run it: Wiz-Maxxing.exe - or, run as a script, Wiz-Maxxing.ahk by this AutoHotkey)
 if (!A_IsCompiled || FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
 	BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/latest", A_ScriptDir "\..")
 else
 	IniWrite, Wiz-Maxxing.exe is missing, %A_ScriptDir%\..\updater.ini, latest, err
-SetTimer, UpdPeekNow, -7200000
+;(updating by itself - Settings: autoupdate: every that many minutes, 5 at least)
+updEvery := Stat("autoupdate") > 0 ? Max(5, Stat("autoupdate")) : 120
+SetTimer, UpdPeekNow, % -60000 * updEvery
 return
 
 MenuPotionRoute:
@@ -246,6 +248,10 @@ global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 ;"Play for me" (the dashboard's red button, the tray menu): every check for you off - nothing waits for you or keeps its
 ;hands off the mouse for you (UserIdle, Walker.ahk). Off at every start: the bot takes control only once you've said so
 global PlayForMe := 0
+;(started again by an update - Wiz-Maxxing /check passes /playforme on when it was on: kept on, you'd said so)
+for each, botArg in A_Args
+	if (botArg = "/playforme")
+		PlayForMe := 1
 ;The game log's planning phase the enemies' odds were last worked out for while you played (EnemyDanger)
 global EnemyPhaseDone := 0
 ;The battle (the game log's duel) your plate was last found in - playerX is that battle's
@@ -352,7 +358,9 @@ PlayForMeShow()
 GameFrontShow()
 BotOnShow()
 WatchShow()
-DebugLog("Started. Game area " GameLeft "," GameTop " " GameW "x" GameH)
+DebugLog("Started " BotVersion() ". Game area " GameLeft "," GameTop " " GameW "x" GameH)
+if (PlayForMe)
+	DebugLog("Play for me kept on: started again by an update while it was on")
 LoadPicSets()
 ;(nothing to tell the size by yet: the set this window size was last played at, else the main one)
 if (!DetectPicSet())
@@ -371,6 +379,23 @@ else
 
 ;Auto-reconnect (Reconnect.ahk): on from the start (tray menu switches it off and on)
 ReconnectInit()
+
+;(started again by an update: walking, auto-reconnect and Learn every card as they were - Wiz-Maxxing /check passes
+;them on, UpdBotArgs)
+for each, botArg in A_Args
+	if (botArg = "/nowalk" && Walking)
+		{
+		Walking := 0
+		DebugLog("Walking off: it was off before the update (F8 switches it on)")
+		}
+	else if (botArg = "/noreconnect" && RcOn)
+		{
+		RcOn := 0
+		Menu, Tray, Uncheck, Auto-reconnect on/off
+		DebugLog("Auto-reconnect off: it was off before the update")
+		}
+	else if (botArg = "/learnall" && !LearnAll && IsFunc("LearnAllToggle"))
+		Func("LearnAllToggle").Call()
 
 ;Stats (StatsRead.ahk): read by itself out of battle when the school it fights with has none yet, or
 ;when asked (tray menu, or StatsReader.ahk started while this runs - it sends message 0x5555)
@@ -416,8 +441,12 @@ loop,
 {
 	;Corrections made on the dashboard's Spells tab: applied here, out of battle only - never in a round, where a hit
 	;moved to another slot would take the round's enchants and saved pips with it (Spells.ahk). With the bot off too
+	;An update installed by itself (UpdAuto - Settings: autoupdate): out of battle only too
 	if (inbattle != 1)
+		{
 		SpApplyPending()
+		UpdAuto()
+		}
 	;Off (F6) - or opened by the game in standby: nothing till F6 (no battles, walking, potions or reconnecting).
 	;Opened in standby and never turned on: Wizard101 closing closes the bot too (it opens again with the game)
 	if (!BotOn)
@@ -1555,11 +1584,126 @@ BotVersion()
 ;again as it is now (off: /off, in standby: /standby). False (and a tray tip) if Wiz-Maxxing can't be started
 UpdCheckNow()
 	{
-	updArg := (BotStandby && !BotEverOn) ? " /standby" : !BotOn ? " /off" : ""
+	updArg := UpdBotArgs(), updArg := updArg = "" ? "" : " " updArg
 	if (BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check" updArg, A_ScriptDir "\.."))
 		return true
 	TrayTip, Wizard101 bot, % "Couldn't start Wiz-Maxxing for the update check (error " A_LastError ").", 8, 2
 	return false
+	}
+
+;Updates by itself (Settings: autoupdate - you asked 2026-10-23, so Claude's fixes get tried with nobody at the PC).
+;1. A newer release seen by the look-up (UpdPeekNow): Wiz-Maxxing /check /auto downloads it while the bot plays on.
+;2. It's ready (updater.ini [auto] ready, by a Wiz-Maxxing still running - readypid): the bot closes itself at a safe
+;point (UpdSafe), writing how it is (handover, args - UpdBotArgs), and Wiz-Maxxing installs it and starts it again so.
+;Never closed under it. A version tried 3 times in 6 hours (Updater.ahk UpAuto) is left to the Updates button
+UpdAuto()
+	{
+	static lookAt := 0, startAt := 0, ranAt := 0, saidTag := "", gaveUpTag := "", waitTag := "", aliveAt := 0, aliveTag := ""
+	static alive := false
+	if (A_TickCount - lookAt < 5000)
+		return
+	lookAt := A_TickCount
+	startAt := startAt ? startAt : A_TickCount
+	if (Stat("autoupdate") <= 0 || A_TickCount - startAt < 60000)
+		return
+	ini := A_ScriptDir "\..\updater.ini"
+	IniRead, ready, %ini%, auto, ready, %A_Space%
+	if (ready != "" && VersionCompare(ready, BotVersion()) > 0)
+		{
+		;(the Wiz-Maxxing that downloaded it still waiting - UpdReadyAlive; looked at every 30 s, and again just before
+		;closing)
+		if (A_TickCount - aliveAt > 30000 || aliveTag != ready)
+			alive := UpdReadyAlive(ini), aliveAt := A_TickCount, aliveTag := ready
+		if (!alive)
+			{
+			aliveAt := 0
+			return
+			}
+		;(the Updates button clicked meanwhile: closed for it as soon as it's out of battle - you asked)
+		IniRead, nowAsked, %ini%, auto, now, 0
+		if (!UpdSafe(nowAsked = 1))
+			{
+			if (waitTag != ready)
+				DebugLog("Updates: " ready " is downloaded - the bot closes for it once out of battle, nothing's loading and you've left the keys and mouse alone a minute")
+			waitTag := ready
+			return
+			}
+		if (!UpdReadyAlive(ini))
+			{
+			aliveAt := 0
+			return
+			}
+		hand := UpdBotArgs()
+		IniWrite, %hand%, %ini%, auto, args
+		IniWrite, 1, %ini%, auto, handover
+		DebugLog("Updates: closing for " ready " - Wiz-Maxxing installs it and starts the bot again as it is now" (hand = "" ? "" : " (" hand ")"))
+		ExitApp
+		}
+	upd := UpdState()
+	if (!upd.newer)
+		return
+	IniRead, triedTag, %ini%, auto, tag, %A_Space%
+	IniRead, tries, %ini%, auto, tries, 0
+	IniRead, triedAt, %ini%, auto, at, %A_Space%
+	age := A_Now
+	EnvSub, age, %triedAt%, Hours
+	if (triedTag = upd.latest && age != "" && age < 6 && tries >= 3)
+		{
+		if (gaveUpTag != upd.latest)
+			DebugLog("Updates: " upd.latest " didn't install by itself in 3 tries (updater.log) - left to the Updates button")
+		gaveUpTag := upd.latest
+		return
+		}
+	;(one download at a time - another try 15 minutes on, if this one's come to nothing)
+	if ((ranAt && A_TickCount - ranAt < 900000) || (A_IsCompiled && !FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe")))
+		return
+	ranAt := A_TickCount
+	if (saidTag != upd.latest)
+		DebugLog("Updates: " upd.latest " is out - downloading it (Settings: autoupdate); the bot plays on till it's ready")
+	saidTag := upd.latest
+	if (!BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check /auto", A_ScriptDir "\.."))
+		DebugLog("Updates: couldn't start Wiz-Maxxing to download " upd.latest " (error " A_LastError ")")
+	}
+
+;The Wiz-Maxxing that downloaded an update by itself still waiting for the bot to close (UpdAuto): its process there with
+;/auto, under 58 minutes since it said ready (it waits an hour: never closed just as it gives up). Else - the PC restarted, it was ended - nothing to close for (a recycled
+;process id taken for it would leave the bot closed): its marks cleared
+UpdReadyAlive(ini)
+	{
+	IniRead, readyPid, %ini%, auto, readypid, 0
+	IniRead, readyAt, %ini%, auto, readyat, %A_Space%
+	age := A_Now
+	EnvSub, age, %readyAt%, Minutes
+	if (RegExMatch(readyPid, "^\d+$") && age != "" && age < 58)
+		for p in ComObjGet("winmgmts:").ExecQuery("SELECT CommandLine FROM Win32_Process WHERE ProcessId=" readyPid)
+			if (InStr(p.CommandLine, "/auto"))
+				return true
+	for i, k in ["ready", "readypid", "readyat", "now"]
+		IniDelete, %ini%, auto, %k%
+	return false
+	}
+
+;A safe point to close the bot for an update (UpdAuto; out of battle: its caller): nothing loading, no login or restart of
+;the game going on, no dungeon run or recording under way, and the keyboard and mouse left alone a minute (Play for me:
+;never waited for; anyNow: you clicked Update). The loading / reconnect state only counts while it's kept up to date -
+;the bot on, auto-reconnect on and not told to leave the game closed ("stopped": it gave up - nothing going on)
+UpdSafe(anyNow := false)
+	{
+	rcBusy := BotOn && RcOn && !RcNoRelaunch && (RcLoadAt || (RcState != "" && RcState != "stopped"))
+	;(the game closed with no login to start it again with - or one it turned down: nothing going on either)
+	if (rcBusy && !RcLoadAt && RcState = "gone" && (RcLoginBad || !RcHaveLogin()))
+		rcBusy := false
+	return !(BattleLogInBattle() || rcBusy || IsObject(DgRun) || DgRecording || PotionRecording
+		|| (!anyNow && UserIdle() < 60000))
+	}
+
+;How the bot is, for starting it again so after an update (Wiz-Maxxing /check passes them on - StartBot): off or in
+;standby, Play for me on, walking (F8) or auto-reconnect off, Learn every card on
+UpdBotArgs()
+	{
+	a := (BotStandby && !BotEverOn) ? " /standby" : !BotOn ? " /off" : ""
+	a .= (PlayForMe ? " /playforme" : "") (!Walking ? " /nowalk" : "") (!RcOn ? " /noreconnect" : "") (LearnAll ? " /learnall" : "")
+	return Trim(a)
 	}
 
 ;"v0.25.2" vs "v0.25.1" (vMAJOR.MAIN.BUG): 1 newer, 0 the same, -1 older; "" is older than any

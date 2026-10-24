@@ -29,6 +29,11 @@ global SpPending, SpDirty, SpKinds, SpMovedPaths, SpNoteText
 global SpEdHwnd, SpEdId, SpEdName, SpEdValue, SpEdPips, SpEdNote
 ;(tests only: the answer to the Forget question without asking - blank: it's asked)
 global SpAskAnswer
+;A cell edited in the list itself (double-click - SpCellEdit): its little window, the spell, the column (name, value,
+;pips), what's typed
+global SpCellHwnd, SpCellId, SpCellCol, SpCellText, SpCellShown
+;(tests only: the cell's box made but not shown)
+global SpCellHidden
 
 ;Called once by DashInit, after the other tabs are made: the queue, the Change kind menu, the list
 SpInit()
@@ -352,6 +357,22 @@ SpQueue(op, arg, ids)
 	SpNote("Queued: " SpJobText(op, arg, ids) " - the bot applies it as soon as it's out of battle")
 	}
 
+;The newest edit of spell id still waiting in the queue ({name, value, pips, cols} - "" none): an edit made before the
+;bot has made the one before builds on it, not on the catalog's old numbers (which would undo it)
+SpPendingEdit(id)
+	{
+	if (!IsObject(SpPending))
+		return ""
+	i := SpPending.Length()
+	while (i >= 1)
+		{
+		job := SpPending[i], i -= 1
+		if (job.op = "edit" && job.ids.Length() = 1 && job.ids[1] = id)
+			return job.arg
+		}
+	return ""
+	}
+
 ;A correction in words
 SpJobText(op, arg, ids)
 	{
@@ -401,7 +422,18 @@ SpApplyPending()
 			if (job.op = "kind")
 				said.Push(who ": " SpDoKind(c, job.arg))
 			else if (job.op = "edit")
-				said.Push(who ": " SpCallLearn("LearnEdit", id, job.arg.name, job.arg.value, job.arg.pips))
+				{
+				;(cells - cols: only the columns typed in, the others as the card is now - the learner may have read its pips
+				;or number meanwhile; guessed pips stay guessed unless Pips was typed. The Edit window: all three)
+				e := job.arg, cols := e.cols
+				eName := cols = "" || InStr(cols, "name") ? e.name : c.name
+				eValue := cols = "" || InStr(cols, "value") ? e.value : c.value
+				ePips := cols = "" || InStr(cols, "pips") ? e.pips : c.pips
+				;(only the name typed: not marked yours - the learner never changes a name, and its number and pips stay
+				;the learner's to read)
+				nameOnly := cols != "" && !InStr(cols, "value") && !InStr(cols, "pips")
+				said.Push(who ": " SpCallLearn("LearnEdit", id, eName, eValue, ePips, cols != "" && !InStr(cols, "pips"), nameOnly))
+				}
 			else if (job.op = "forget")
 				said.Push(who ": " SpCallLearn("LearnForgetById", id))
 			else if (job.op = "hold")
@@ -465,6 +497,8 @@ SpEditShow(hidden := false)
 	if (SpEdHwnd)
 		Gui, SpEd:Destroy
 	SpEdId := c.id
+	;(an edit still waiting in the queue: shown as it will be)
+	b := SpPendingEdit(c.id), b := IsObject(b) ? b : c
 	Gui, SpEd:New, +OwnerDash +HwndSpEdHwnd -MaximizeBox -MinimizeBox, % "Wizard101 bot " BotVersion() " - edit a learned spell"
 	Gui, SpEd:Color, 1B1D22, 111317
 	Gui, SpEd:Margin, 12, 10
@@ -477,9 +511,9 @@ SpEditShow(hidden := false)
 	Gui, SpEd:Add, Text, x12 y137 w80 h18, Number
 	Gui, SpEd:Add, Text, x12 y167 w80 h18, Pips
 	Gui, SpEd:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, SpEd:Add, Edit, x96 y104 w296 h22 Limit40 vSpEdName, % c.name
-	Gui, SpEd:Add, Edit, x96 y134 w80 h22 Number Limit5 vSpEdValue, % c.value
-	Gui, SpEd:Add, Edit, x96 y164 w50 h22 Number Limit2 vSpEdPips, % c.pips
+	Gui, SpEd:Add, Edit, x96 y104 w296 h22 Limit40 vSpEdName, % b.name
+	Gui, SpEd:Add, Edit, x96 y134 w80 h22 Number Limit5 vSpEdValue, % b.value
+	Gui, SpEd:Add, Edit, x96 y164 w50 h22 Number Limit2 vSpEdPips, % b.pips
 	Gui, SpEd:Font, s9 w400 c9AA0A6, Segoe UI
 	Gui, SpEd:Add, Text, x156 y167 w236 h18, % c.guess && c.pips != "" ? "(guessed - Save makes it read)" : ""
 	Gui, SpEd:Font, s9 w400 cB9E2B9, Segoe UI
@@ -514,7 +548,8 @@ SpEdSaveNow()
 	if (pips = "" && RegExMatch(c.slot, "\\hit\d$"))
 		return SpEdSay("It's used as " c.slot ": a hit there needs its pips.")
 	value := value = "" ? "" : value + 0, pips := pips = "" ? "" : pips + 0
-	if (name == c.name && value = c.value && pips = c.pips && !(pips != "" && c.guess))
+	b := SpPendingEdit(SpEdId), b := IsObject(b) ? b : c
+	if (name == b.name && value = b.value && pips = b.pips && !(pips != "" && c.guess))
 		return SpEdSay("Nothing changed.")
 	SpQueue("edit", {name: name, value: value, pips: pips}, [SpEdId])
 	Gui, SpEd:Destroy
@@ -524,6 +559,140 @@ SpEdSaveNow()
 SpEdSay(text)
 	{
 	GuiControl, SpEd:, SpEdNote, %text%
+	}
+
+;---- A cell edited in the list itself, as in a spreadsheet (you asked, 2026-10-23) ----
+
+;A double-click on the list: the cell under the mouse - Name, Value or Pips: a box over it to type in (Enter keeps it,
+;Esc doesn't, clicking away keeps it); Kind: the Change kind menu there; any other: its picture, as before
+SpCellEdit(row, scMx := "", scMy := "")
+	{
+	;(a box still open - another cell double-clicked before the click away was seen: what's typed there kept first)
+	if (SpCellHwnd)
+		SpCellCommit()
+	GuiControlGet, scLv, Dash:Hwnd, SpList
+	if (!scLv)
+		return SpOpenPic(false)
+	;(where the double-click was - the mouse; tests: given)
+	if (scMx = "")
+		{
+		CoordMode, Mouse, Screen
+		MouseGetPos, scMx, scMy
+		}
+	VarSetCapacity(scPt, 8, 0), NumPut(scMx, scPt, 0, "Int"), NumPut(scMy, scPt, 4, "Int")
+	DllCall("ScreenToClient", "Ptr", scLv, "Ptr", &scPt)
+	VarSetCapacity(scHt, 24, 0), NumPut(NumGet(scPt, 0, "Int"), scHt, 0, "Int"), NumPut(NumGet(scPt, 4, "Int"), scHt, 4, "Int")
+	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1039, "Ptr", 0, "Ptr", &scHt)       ; LVM_SUBITEMHITTEST
+	scItem := NumGet(scHt, 12, "Int"), scSub := NumGet(scHt, 16, "Int")
+	;(the mouse moved off the double-clicked row before this ran - the bot busy: not another row's cell)
+	if (scItem < 0 || scItem + 1 != row)
+		return
+	prevLV := SpListSelect()
+	LV_GetText(scId, scItem + 1, 11)
+	SpListBack(prevLV)
+	c := SpL("LearnCardOf", scId)
+	if (!IsObject(c))
+		return
+	;(0 Name, 1 Kind, 3 Pips, 4 Value - the list's columns)
+	scCol := scSub = 0 ? "name" : scSub = 4 ? "value" : scSub = 3 ? "pips" : scSub = 1 ? "kind" : ""
+	if (scCol = "")
+		return SpOpenPic(false)
+	;(the cell's place on screen - for column 0 its label's, not the whole row's)
+	VarSetCapacity(scRc, 16, 0), NumPut(scSub, scRc, 4, "Int"), NumPut(scSub = 0 ? 2 : 0, scRc, 0, "Int")
+	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1038, "Ptr", scItem, "Ptr", &scRc)  ; LVM_GETSUBITEMRECT
+	VarSetCapacity(scP, 8, 0), NumPut(NumGet(scRc, 0, "Int"), scP, 0, "Int"), NumPut(NumGet(scRc, 4, "Int"), scP, 4, "Int")
+	DllCall("ClientToScreen", "Ptr", scLv, "Ptr", &scP)
+	scX := NumGet(scP, 0, "Int"), scY := NumGet(scP, 4, "Int")
+	scW := NumGet(scRc, 8, "Int") - NumGet(scRc, 0, "Int"), scH := NumGet(scRc, 12, "Int") - NumGet(scRc, 4, "Int")
+	if (scCol = "kind")
+		{
+		CoordMode, Menu, Screen
+		Menu, SpKindMenu, Show, %scX%, % scY + scH
+		return
+		}
+	SpCellClose()
+	SpCellId := c.id, SpCellCol := scCol
+	;(an edit of it still waiting in the queue: what it will be)
+	scB := SpPendingEdit(c.id), scB := IsObject(scB) ? scB : c
+	scNow := scCol = "name" ? scB.name : scCol = "value" ? scB.value : scB.pips
+	SpCellShown := scNow
+	;(DPI: the window's sizes are scaled by Windows - given in 96-dpi pixels)
+	scDpi := A_ScreenDPI / 96
+	Gui, SpCell:New, -Caption +ToolWindow +OwnerDash +Border +HwndSpCellHwnd
+	Gui, SpCell:Margin, 0, 0
+	Gui, SpCell:Color, 111317, 111317
+	Gui, SpCell:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, SpCell:Add, Edit, % "x0 y0 w" Max(60, Round(scW / scDpi)) " h" Max(20, Round(scH / scDpi) + 4) " -E0x200 vSpCellText" (scCol = "name" ? " Limit40" : scCol = "value" ? " Number Limit5" : " Number Limit2"), %scNow%
+	Gui, SpCell:Add, Button, x0 y0 w0 h0 Hidden Default gSpCellOk
+	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")
+	SendMessage, 0xB1, 0, -1, Edit1, ahk_id %SpCellHwnd%      ; EM_SETSEL: all of it, to type over
+	;(clicked away: kept - looked at every 150 ms)
+	SetTimer, SpCellWatch, 150
+	}
+
+;What's typed in the cell kept - checked as the Edit window's Save checks it, then queued (applied out of battle),
+;and shown in the list at once. byEnter: Enter pressed - guessed pips left as they were are made read (you said so);
+;clicked away from a cell left as it was: nothing
+SpCellCommit(byEnter := false)
+	{
+	if (!SpCellHwnd)
+		return
+	Gui, SpCell:Submit, NoHide
+	typed := Trim(SpCellText), col := SpCellCol
+	SpCellClose()
+	if (!byEnter && typed == Trim(SpCellShown))
+		return
+	c := SpL("LearnCardOf", SpCellId)
+	if (!IsObject(c))
+		return SpNote("That spell isn't in the list any more")
+	;(the other two from an edit of it still waiting in the queue - else the catalog's)
+	pend := SpPendingEdit(SpCellId), b := IsObject(pend) ? pend : c
+	name := b.name, value := b.value, pips := b.pips
+	if (col = "name")
+		name := Trim(RegExReplace(typed, "[^\x20-\x7E]|\|", ""))
+	else if (col = "value")
+		{
+		if (typed != "" && !RegExMatch(typed, "^\d{1,5}$"))
+			return SpNote("The number: digits only (or blank: not known)")
+		value := typed = "" ? "" : typed + 0
+		}
+	else
+		{
+		if (typed != "" && !(RegExMatch(typed, "^\d{1,2}$") && typed <= 14))
+			return SpNote("Pips: 0 to 14 (or blank: not known)")
+		if (typed = "" && RegExMatch(c.slot, "\\hit\d$"))
+			return SpNote("It's used as " c.slot ": a hit there needs its pips")
+		pips := typed = "" ? "" : typed + 0
+		}
+	;(the columns typed in - this one and a waiting edit's; "" a waiting Edit window's: all three. Only those are changed
+	;when the bot applies it, and guessed pips stay guessed unless Pips is one - the learner still corrects them from the
+	;card's pip digit)
+	cols := !IsObject(pend) ? col : pend.cols = "" ? "" : InStr(pend.cols, col) ? pend.cols : pend.cols " " col
+	guessOpen := c.guess && (!IsObject(pend) || (pend.cols != "" && !InStr(pend.cols, "pips")))
+	if (name == b.name && value = b.value && pips = b.pips && !(col = "pips" && pips != "" && guessOpen))
+		return
+	SpQueue("edit", {name: name, value: value, pips: pips, cols: cols}, [SpCellId])
+	;(the list shows it now - the bot's loop applies it out of battle and fills the list again)
+	prevLV := SpListSelect()
+	Loop, % LV_GetCount()
+		{
+		LV_GetText(rowId, A_Index, 11)
+		if (rowId = SpCellId)
+			{
+			LV_Modify(A_Index, "Col" (col = "name" ? 1 : col = "value" ? 5 : 4), (col = "name" ? name : col = "value" ? value : pips) " *")
+			break
+			}
+		}
+	SpListBack(prevLV)
+	}
+
+;The cell's box gone (nothing kept)
+SpCellClose()
+	{
+	SetTimer, SpCellWatch, Off
+	if (SpCellHwnd)
+		Gui, SpCell:Destroy
+	SpCellHwnd := 0
 	}
 
 ;---- The buttons' other work ----
@@ -641,7 +810,28 @@ SpListEvent:
 	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
 		SetTimer, SpPreviewTick, -60
 	else if (A_GuiEvent = "DoubleClick" && A_EventInfo)
-		SpOpenPic(false)
+		SpCellEdit(A_EventInfo)
+	return
+
+;(the cell's box: Enter keeps what's typed, Esc doesn't, clicking away keeps it)
+SpCellOk:
+	SpCellCommit(true)
+	return
+
+SpCellGuiEscape:
+SpCellGuiClose:
+	SpCellClose()
+	return
+
+SpCellWatch:
+	;(clicked away in the bot's own windows - the dashboard: kept. Another program in front - the bot bringing Wizard101
+	;up for a round, or you in another window: the box waits, nothing half-typed kept)
+	if (SpCellHwnd && !WinActive("ahk_id " SpCellHwnd))
+		{
+		WinGet, scActPid, PID, A
+		if (scActPid = DllCall("GetCurrentProcessId"))
+			SpCellCommit()
+		}
 	return
 
 ;(after a moment: a select-all doesn't load the picture once per row)

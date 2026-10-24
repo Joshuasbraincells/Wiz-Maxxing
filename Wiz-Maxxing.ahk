@@ -3,7 +3,12 @@
 ; Wiz-Maxxing.exe by build.ps1, with the wizard icon; Setup puts it in the Start menu and on the desktop.
 ;   Wiz-Maxxing.exe /check   only the update check, with a message either way (the tray menu's "Check for
 ;                            updates", the dashboard's Updates button); the bot is started again only if it was
-;                            updated - /check /off or /check /standby: started again as it was (off, in standby)
+;                            updated - /check /off or /check /standby: started again as it was (off, in standby);
+;                            /playforme /nowalk /noreconnect /learnall: Play for me still on, walking or
+;                            auto-reconnect still off, Learn every card still on
+;   Wiz-Maxxing.exe /check /auto   the same with no question and no window (the bot - Settings: autoupdate): a newer
+;                            one downloaded, the bot closes itself for it at a safe point, installed (Updater.ahk
+;                            UpAuto) and the bot started again as it was then
 ;   Wiz-Maxxing.exe /watch   the watcher ("Open with Wizard101" - started with Windows): opens the bot in standby
 ;                            when Wizard101 starts (Watch.ahk); F6 then starts it
 ;   Wiz-Maxxing.exe /latest  only looks up the latest release, into updater.ini (the dashboard's Updates button and
@@ -15,6 +20,14 @@
 #NoTrayIcon
 #SingleInstance off
 checkOnly := (A_Args[1] = "/check")
+;(/check's other words: /auto - an update by itself; how to start the bot again - off, in standby, Play for me on)
+autoUp := false, botArg := ""
+if (checkOnly)
+	for i, a in A_Args
+		if (a = "/auto")
+			autoUp := true
+		else if (BotArgOk(a))
+			botArg .= (botArg = "" ? "" : " ") a
 dir := A_ScriptDir "\AutoFarmer"
 if (A_Args[1] = "/watch")
 	{
@@ -37,27 +50,73 @@ if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
 	ExitApp
 	}
 ;(one check at a time: another running - its question brought forward - this one only starts the bot, or stops)
-if (!UpOnlyOne())
+if (!UpOnlyOne(!autoUp))
 	{
+	;(the Updates button while an update by itself is downloaded and waiting for the bot to close for it: it's asked to
+	;close for it now - as soon as it's out of battle with nothing loading, not waiting for you to leave the keys and
+	;mouse alone - and you're told)
+	if (checkOnly && !autoUp && UpAutoWaiting(waitTag))
+		{
+		IniWrite, 1, %A_ScriptDir%\updater.ini, auto, now
+		MsgBox, 262208, Wiz-Maxxing update, % waitTag " is downloaded - the bot closes for it as soon as it's out of battle with nothing loading, installs it and starts again as it is now.", 30
+		}
 	if (checkOnly)
 		ExitApp
 	updated := false
 	}
 else
-	updated := UpCheck(!checkOnly)
-if (checkOnly && !updated)
+	updated := autoUp ? UpAuto() : UpCheck(!checkOnly)
+;(an update by itself: the bot started again only when it closed itself for it - as it was then, whether the files
+;went in or were all put back; not when it's still running or you'd closed it)
+if (autoUp)
+	{
+	if (!UpHandedOver)
+		ExitApp
+	botArg := ""
+	Loop, Parse, UpHandArgs, %A_Space%
+		if (BotArgOk(A_LoopField))
+			botArg .= (botArg = "" ? "" : " ") A_LoopField
+	}
+;(after /check the bot is started again only when it was closed: updated - or closed for an update that then couldn't
+;replace the files and put everything back)
+else if (checkOnly && !updated && !UpBotsClosed)
 	ExitApp
-;(after an update from /check: the bot back as it was - off or in standby)
-botArg := (checkOnly && (A_Args[2] = "/off" || A_Args[2] = "/standby")) ? A_Args[2] : ""
 ;(started as a script - Wiz-Maxxing.ahk, e.g. with Smart App Control on: the bot as a script too, by this same
 ;AutoHotkey - Watch.ahk BotProgram)
 hasExe := A_IsCompiled && FileExist(dir "\Autofarmer.exe") != ""
-if (!BotRun(dir "\Autofarmer", botArg, dir))
+started := BotRun(dir "\Autofarmer", botArg, dir), runErr := A_LastError
+;(after an update by itself nobody may be there: tried again a few times, then the script by AutoHotkey if it's
+;installed - a new Autofarmer.exe is often held up by Windows Security a while - and said in updater.log)
+if (!started && autoUp)
 	{
-	runErr := A_LastError
-	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ".`n`n" LaunchWhy(hasExe, runErr)
+	UpLog("auto: couldn't start the bot (error " runErr ") - trying again")
+	Loop, 3
+		{
+		Sleep, 5000
+		if (started := BotRun(dir "\Autofarmer", botArg, dir))
+			break
+		runErr := A_LastError
+		}
+	if (!started && A_IsCompiled && A_AhkPath != "" && FileExist(A_AhkPath) && FileExist(dir "\Autofarmer.ahk"))
+		{
+		Run, % """" A_AhkPath """ """ dir "\Autofarmer.ahk""" (botArg = "" ? "" : " " botArg), %dir%, UseErrorLevel
+		started := !ErrorLevel
+		if (started)
+			UpLog("auto: started the bot as a script (Autofarmer.ahk by AutoHotkey) - Autofarmer.exe wouldn't run")
+		}
+	if (!started)
+		UpLog("auto: the bot couldn't be started: " RegExReplace(LaunchWhy(hasExe, runErr), "`n+", " "))
 	}
+if (!started)
+	MsgBox, 48, Wiz-Maxxing, % "Couldn't start the bot in " dir ".`n`n" LaunchWhy(hasExe, runErr)
 ExitApp
+
+;A word of /check's that says how to start the bot again (off, in standby, Play for me on, walking or auto-reconnect
+;off, Learn every card on)
+BotArgOk(a)
+	{
+	return a = "/off" || a = "/standby" || a = "/playforme" || a = "/nowalk" || a = "/noreconnect" || a = "/learnall"
+	}
 
 ;Why the bot didn't start: Autofarmer.exe there but Windows wouldn't run it (its error; a virus alarm - a false one,
 ;common with AutoHotkey programs - pointed at Windows Security's Protection history), or not there at all

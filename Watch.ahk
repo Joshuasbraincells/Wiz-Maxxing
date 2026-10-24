@@ -142,7 +142,7 @@ WatchGame(dir)
 				;the bot, so it's opened again, and the watcher starts again from the new Wiz-Maxxing.exe)
 				Sleep, 3000
 				WatchStartBot(dir)
-				if (IsFunc("UpCheck") && Func("UpCheck").Call(true))
+				if (IsFunc("UpCheck") && WatchUpCheck())
 					{
 					Sleep, 1500
 					if (!WatchBotRunning())
@@ -153,6 +153,22 @@ WatchGame(dir)
 			}
 		Sleep, 3000
 		}
+	}
+
+;The watcher's update check (UpCheck) - only when no other check or install is going on (the bot's update by
+;itself, the Updates button): the same lock as UpOnlyOne, let go of afterwards - the watcher runs for days. True if it
+;updated
+WatchUpCheck()
+	{
+	mutex := DllCall("CreateMutex", "Ptr", 0, "Int", 0, "Str", "Wiz-Maxxing update", "Ptr")
+	if (A_LastError = 183)
+		{
+		DllCall("CloseHandle", "Ptr", mutex)
+		return false
+		}
+	updated := Func("UpCheck").Call(true)
+	DllCall("CloseHandle", "Ptr", mutex)
+	return updated
 	}
 
 WatchMenuNothing:

@@ -1417,9 +1417,9 @@ LearnCheckCatalog()
 			LearnSetFlag(c, "icon", v[7])
 		if (v[2] = 1)
 			LearnSetFlag(c, "tc")
-		;(not pips you typed on the Spells tab)
+		;(not pips you typed on the Spells tab - guessed ones are, even on a spell whose name or number you set)
 		pd := v[8]
-		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && !LearnHasFlag(c, "user"))
+		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && (!LearnHasFlag(c, "user") || c.guess))
 			{
 			if (pd = 0 && RegExMatch(c.slot, "\\hit\d$"))
 				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its pip digit reads 0 - not taken for a hit in " c.slot)
@@ -2293,7 +2293,7 @@ LearnSetKind(id, kind)
 ;Learned card id's name, number and pips set as you typed them ("" for unknown; flag user, pips not guessed): its
 ;numbers in PlayerStats.txt again when it's in a slot - out of it (and into one it fits) when they no longer fit it.
 ;Returns what happened, for the log
-LearnEdit(id, name, value, pips)
+LearnEdit(id, name, value, pips, keepGuess := 0, nameOnly := 0)
 	{
 	if (!IsObject(LearnedCards))
 		LearnLoad()
@@ -2303,8 +2303,12 @@ LearnEdit(id, name, value, pips)
 	value := Trim(value), pips := Trim(pips)
 	if ((value != "" && !RegExMatch(value, "^\d+$")) || (pips != "" && !RegExMatch(pips, "^\d+$")))
 		return "the number and pips have to be whole numbers (or blank)"
-	c.name := LearnClean(name), c.value := value, c.pips := pips, c.guess := 0
-	LearnSetFlag(c, "user")
+	;(keepGuess: only its name or number edited - the Spells list's cells: guessed pips stay guessed, still corrected
+	;from the card's pip digit)
+	c.name := LearnClean(name), c.value := value, c.pips := pips, c.guess := keepGuess && pips != "" ? c.guess : 0
+	;(nameOnly: only its name - the learner never changes a name, so not marked yours: its number and pips still read)
+	if (!nameOnly)
+		LearnSetFlag(c, "user")
 	;(no longer fitting its slot: out first - one put in by an arrangement is put back with the numbers as they were -
 	;then where it fits; else its new numbers there)
 	if (c.slot != "")

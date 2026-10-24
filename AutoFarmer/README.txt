@@ -173,11 +173,22 @@ Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
 updates" does it any time - so does the dashboard's Updates button (top right),
 which says live whether a newer version is out ("Update to v..."; it looks it up
-45 s after the bot starts and every 2 hours, out of the bot's way). The version
+45 s after the bot starts and every autoupdate minutes, out of the bot's way). The version
 is in the windows' titles, the tray menu's first line and the dashboard's
 STATISTICS. Needs a GitHub token once per PC (Setup.exe, "GitHub updates").
 Your settings, learned cards, potion routes and pictures are kept.
 updater.log (next to Wiz-Maxxing.exe) says what it did.
+Updating by itself (Settings > UPDATES, autoupdate - on, every 10 minutes): the
+bot looks for a newer release every that many minutes and downloads it while
+it plays on; then it closes itself for it - never closed under it - once it's
+out of battle, nothing's loading or logging in, no dungeon run or recording is
+under way and you've left the keyboard and mouse alone a minute (Play for me:
+no wait), and it's installed with no question and no window. The bot starts
+again as it was: on, off or in standby, Play for me, walking (F8),
+auto-reconnect and Learn every card as they were (not if you closed it
+meanwhile). A version that won't install (a file in use) is put back and tried
+3 times, then left to the Updates button. 0 = only when you click.
+debug.log: "Updates: ..."; updater.log: "auto: ...".
 
 Party (Settings > PARTY; tray menu Party...): up to 4 wizards, one per PC on the
 same home network. One is the Leader - it quests as now, and stops while a
@@ -242,7 +253,10 @@ Dashboard (Dashboard.ahk): a window with statistics (battles, rounds, cards
 cast per card, passes, discards, kill-check hits, potions, cards learned),
 what the bot sees right now (your health/mana/pips, the hand card by card - ?
 for a card it doesn't know, * for a greyed-out one - enemies' health, zone,
-the walker) and the log as it's written. Windows+2 or the tray menu shows /
+the walker) and the log as it's written, coloured by what each line is about
+(movement blue, battle orange, waits grey, problems red, potions, reconnect,
+party, alerts, the bot itself - the Colours button over the log changes them,
+kept in dashboard.ini [logcolors]). Windows+2 or the tray menu shows /
 hides it; it opens on a monitor the game isn't on and remembers where you put
 it (dashboard.ini). It never takes the focus by itself. Its X (close) stops
 the bot; minimise it (or Windows+2) to just put it away. Next to STATISTICS:
@@ -608,6 +622,11 @@ picture. Pick one or more and:
 	  and out of use.
 	- Edit...: its name, its number (a hit's least damage, a heal, the % of a
 	  blade, trap, shield or aura) and its pips - e.g. a misread number.
+	  Or in the list itself, as in a spreadsheet: double-click a Name, Pips
+	  or Value cell and type over it - Enter (or clicking away) keeps it, Esc
+	  doesn't. Double-click a Kind cell: the Change kind menu opens there.
+	  Other cells open the card's picture. A changed cell shows a * till the
+	  bot has made the change.
 	- Forget: out of the list, its pictures to backups\learned forgotten\. A
 	  real card is learned again the next time it's in hand.
 	- Never discard: it stays in hand even when the bot doesn't play it.

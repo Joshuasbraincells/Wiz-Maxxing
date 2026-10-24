@@ -17,6 +17,10 @@
 
 ;(tests only: another address for GitHub's API, a token, and yes to the question)
 global UpTestApi, UpTestToken, UpTestYes
+;An update by itself (UpAuto): no window at all - nothing asked, no progress, failures only in updater.log. And whether
+;the running bot was closed (UpCloseBots) - Wiz-Maxxing.ahk then starts it again even when the update didn't go in.
+;UpHandedOver: the bot closed itself for an update by itself (UpAuto), UpHandArgs how to start it again (as it was)
+global UpQuiet, UpBotsClosed, UpHandedOver, UpHandArgs
 
 ;(the repo, and the token's name in Credential Manager - functions, since a global's starting value in an
 ;#Included file never runs)
@@ -117,7 +121,7 @@ UpPeekSave(tag, err)
 
 ;One update check / install at a time, across all the bot's processes (the dashboard's button clicked twice, the
 ;watcher's check, the tray's): true when this one may go on - else the other one's question is brought forward
-UpOnlyOne()
+UpOnlyOne(bringForward := true)
 	{
 	static mutex := 0
 	if (mutex)
@@ -127,9 +131,158 @@ UpOnlyOne()
 		return true
 	DllCall("CloseHandle", "Ptr", mutex)
 	mutex := 0
+	;(an update by itself: nothing brought forward)
+	if (!bringForward)
+		return false
 	WinActivate, Wiz-Maxxing update ahk_class #32770
 	WinActivate, Wiz-Maxxing updates ahk_class #32770
 	return false
+	}
+
+;Wiz-Maxxing /check /auto (the bot, Settings: autoupdate): the latest release installed with no question and no window -
+;nothing said when there's nothing to do or it fails (updater.log). One version is tried 3 times in 6 hours at most
+;(updater.ini [auto]; the bot looks there too). True if it updated
+UpAuto()
+	{
+	UpCleanup()
+	UpQuiet := true
+	token := UpToken()
+	if (token = "")
+		{
+		UpLog("auto: no GitHub token on this PC")
+		return false
+		}
+	rel := UpLatest(token, err, status)
+	token := ""
+	if (!IsObject(rel))
+		{
+		UpPeekSave("", err)
+		UpLog("auto: check failed: " err)
+		return false
+		}
+	UpPeekSave(rel.tag, "")
+	have := UpVersion()
+	if (UpCompare(rel.tag, have) <= 0)
+		{
+		UpLog("auto: up to date (" have ")")
+		return false
+		}
+	ini := A_ScriptDir "\updater.ini"
+	IniRead, triedTag, %ini%, auto, tag, %A_Space%
+	IniRead, tries, %ini%, auto, tries, 0
+	IniRead, triedAt, %ini%, auto, at, %A_Space%
+	age := A_Now
+	EnvSub, age, %triedAt%, Hours
+	if (triedTag != rel.tag || age = "" || age >= 6)
+		tries := 0
+	if (tries >= 3)
+		{
+		UpLog("auto: " rel.tag " already tried 3 times - left to the Updates button")
+		return false
+		}
+	IniWrite, % rel.tag, %ini%, auto, tag
+	IniWrite, % tries + 1, %ini%, auto, tries
+	IniWrite, %A_Now%, %ini%, auto, at
+	UpLog("auto: downloading " rel.tag " (you have " (have = "" ? "no version.txt" : have) ", try " tries + 1 ")")
+	if (!UpFetch(rel, tmp, src))
+		return false
+	;The bot closes itself for it at a safe point - out of battle, nothing loading, you away (AutoFarmer UpdAuto): told
+	;it's ready and by which process; it writes how it was (handover, args). Never closed under it here. An hour at
+	;most - then it's for another time (the try not counted). A bot started again meanwhile is waited for too
+	IniDelete, %ini%, auto, handover
+	IniDelete, %ini%, auto, args
+	IniDelete, %ini%, auto, now
+	;(ready last: whoever sees it sees by whom and since when too)
+	IniWrite, % DllCall("GetCurrentProcessId"), %ini%, auto, readypid
+	IniWrite, %A_Now%, %ini%, auto, readyat
+	IniWrite, % rel.tag, %ini%, auto, ready
+	waitUntil := A_TickCount + 3600000, said := false, extended := false, stuck := false
+	while (!stuck && (pids := UpBotPids(A_ScriptDir, true)).Length())
+		{
+		if (!said)
+			UpLog("auto: " rel.tag " ready - waiting for the bot to close itself at a safe point"), said := true
+		for i, pid in pids
+			{
+			Loop
+				{
+				Process, Exist, %pid%
+				if (!ErrorLevel)
+					break
+				if (A_TickCount > waitUntil)
+					{
+					;(closing for it at this very moment - its handover written: 2 minutes more, then it's closed here
+					;if it's stuck closing - UpApply - and started again)
+					IniRead, handing, %ini%, auto, handover, 0
+					if (handing = 1 && !extended)
+						{
+						extended := true, waitUntil := A_TickCount + 120000
+						continue
+						}
+					if (handing = 1)
+						{
+						stuck := true
+						break
+						}
+					UpAutoReadyOff()
+					IniWrite, %tries%, %ini%, auto, tries
+					FileRemoveDir, %tmp%, 1
+					UpLog("auto: the bot didn't get to a safe point in an hour - " rel.tag " another time")
+					return false
+					}
+				Sleep, 2000
+				}
+			if (stuck)
+				break
+			}
+		}
+	UpAutoReadyOff()
+	IniRead, handover, %ini%, auto, handover, 0
+	IniRead, handArgs, %ini%, auto, args, %A_Space%
+	IniDelete, %ini%, auto, handover
+	IniDelete, %ini%, auto, args
+	;(not handed over - you closed the bot meanwhile: installed, and not started again)
+	UpHandedOver := handover = 1, UpHandArgs := handArgs
+	UpLog("auto: " (UpHandedOver ? "the bot closed itself" (handArgs = "" ? "" : " (" handArgs ")") : "the bot isn't running (closed by you)") " - installing " rel.tag)
+	return UpApply(rel, tmp, src)
+	}
+
+;The waiting update by itself's marks gone from updater.ini (UpAuto): ready, by whom and since when, "now" asked
+UpAutoReadyOff()
+	{
+	ini := A_ScriptDir "\updater.ini"
+	for i, k in ["ready", "readypid", "readyat", "now"]
+		IniDelete, %ini%, auto, %k%
+	}
+
+;An update by itself downloaded and waiting for the bot to close for it (UpAuto - its process still running, under an
+;hour old): true, its tag in tag
+UpAutoWaiting(ByRef tag)
+	{
+	ini := A_ScriptDir "\updater.ini"
+	IniRead, tag, %ini%, auto, ready, %A_Space%
+	IniRead, pid, %ini%, auto, readypid, 0
+	IniRead, at, %ini%, auto, readyat, %A_Space%
+	age := A_Now
+	EnvSub, age, %at%, Minutes
+	if (tag = "" || !RegExMatch(pid, "^\d+$") || age = "" || age >= 58)
+		return false
+	for p in ComObjGet("winmgmts:").ExecQuery("SELECT CommandLine FROM Win32_Process WHERE ProcessId=" pid)
+		if (InStr(p.CommandLine, "/auto"))
+			return true
+	return false
+	}
+
+;The update's progress window - none for an update by itself (UpQuiet). text "Off" closes it; first: it's opened
+UpProgress(text, first := false)
+	{
+	if (UpQuiet)
+		return
+	if (text = "Off")
+		Progress, Off
+	else if (first)
+		Progress, b w360 zh0 fs10, %text%, Wiz-Maxxing update
+	else
+		Progress, , %text%
 	}
 
 ;"v0.10" vs "v0.09": 1 newer, 0 same, -1 older ("" counts as older than any)
@@ -195,12 +348,23 @@ UpLatest(token, ByRef err, ByRef status := 0)
 
 UpInstall(rel)
 	{
+	if (!UpFetch(rel, tmp, src))
+		return false
+	return UpApply(rel, tmp, src)
+	}
+
+;The release's zip downloaded and unpacked into tmp (the folder in it: src) - nothing changed yet. False (said) if it
+;can't be
+UpFetch(rel, ByRef tmp, ByRef src)
+	{
 	if (rel.zipUrl = "")
 		{
-		MsgBox, 48, Wiz-Maxxing update, % rel.tag " has no zip to download - get it from the GitHub Releases page."
+		UpLog(rel.tag " has no zip to download")
+		if (!UpQuiet)
+			MsgBox, 48, Wiz-Maxxing update, % rel.tag " has no zip to download - get it from the GitHub Releases page."
 		return false
 		}
-	Progress, b w360 zh0 fs10, % "Downloading " rel.zipName "...", Wiz-Maxxing update
+	UpProgress("Downloading " rel.zipName "...", true)
 	tmp := A_Temp "\wiz-maxxing-update"
 	FileRemoveDir, %tmp%, 1
 	FileCreateDir, %tmp%
@@ -210,12 +374,13 @@ UpInstall(rel)
 	token := ""
 	if (!ok)
 		{
-		Progress, Off
+		UpProgress("Off")
 		UpLog("download failed: " err)
-		MsgBox, 48, Wiz-Maxxing update, % "The download failed: " err "`n`nNothing was changed."
+		if (!UpQuiet)
+			MsgBox, 48, Wiz-Maxxing update, % "The download failed: " err "`n`nNothing was changed."
 		return false
 		}
-	Progress, , Unpacking...
+	UpProgress("Unpacking...")
 	RunWait, % "powershell -NoProfile -ExecutionPolicy Bypass -Command ""try { Expand-Archive -LiteralPath '" zip "' -DestinationPath '" tmp "\unzipped' -Force -ErrorAction Stop } catch { exit 1 }""", , Hide UseErrorLevel
 	unzipped := (ErrorLevel = 0)
 	src := ""
@@ -223,25 +388,33 @@ UpInstall(rel)
 		src := A_LoopFileFullPath
 	if (!unzipped || src = "" || !FileExist(src "\AutoFarmer\Autofarmer.ahk"))
 		{
-		Progress, Off
+		UpProgress("Off")
 		UpLog("the zip didn't unpack (" zip ")")
-		MsgBox, 48, Wiz-Maxxing update, The downloaded zip didn't unpack - nothing was changed.
+		if (!UpQuiet)
+			MsgBox, 48, Wiz-Maxxing update, The downloaded zip didn't unpack - nothing was changed.
 		FileRemoveDir, %tmp%, 1
 		return false
 		}
-	Progress, , Closing the bot...
+	return true
+	}
+
+;The unpacked release (UpFetch) put in: the bot closed if it's still running, the files copied - all or nothing - and
+;version.txt set. False (said) if it couldn't be, everything put back
+UpApply(rel, tmp, src)
+	{
+	UpProgress("Closing the bot...")
 	UpCloseBots()
-	Progress, , Copying the new files...
+	UpProgress("Copying the new files...")
 	res := UpCopy(src, A_ScriptDir, tmp "\rollback")
 	if (res.failed.Length())
 		{
 		UpRollback(res)
-		Progress, Off
+		UpProgress("Off")
 		list := ""
 		for i, f in res.failed
 			list .= "`n   " f
 		UpLog("update to " rel.tag " failed - put back as it was; couldn't write: " SubStr(StrReplace(list, "`n   ", " | "), 4))
-		if (!UpTestYes)
+		if (!UpTestYes && !UpQuiet)
 			MsgBox, 48, Wiz-Maxxing update, % "The update couldn't replace these files, so everything was put back as it was:" list "`n`nClose anything that has them open (Setup, an editor, the bot, the 'Open with Wizard101' watcher: its tray icon > Stop watching) and try again - the update is offered again next time."
 		FileRemoveDir, %tmp%, 1
 		return false
@@ -251,9 +424,10 @@ UpInstall(rel)
 	FileDelete, %A_ScriptDir%\version.txt
 	FileAppend, % rel.tag "`r`n", %A_ScriptDir%\version.txt
 	FileRemoveDir, %tmp%, 1
-	Progress, Off
+	UpProgress("Off")
 	UpLog("updated to " rel.tag ": " res.copied " file(s) replaced or added, " res.kept " of yours kept")
-	TrayTip, Wiz-Maxxing, % "Updated to " rel.tag ".", 5, 1
+	if (!UpQuiet)
+		TrayTip, Wiz-Maxxing, % "Updated to " rel.tag ".", 5, 1
 	return true
 	}
 
@@ -264,9 +438,27 @@ UpCloseBots(dir := "")
 	{
 	if (dir = "")
 		dir := A_ScriptDir
+	pids := UpBotPids(dir)
+	UpBotsClosed := UpBotsClosed || pids.Length() > 0
+	for i, pid in pids
+		WinClose, ahk_pid %pid% ahk_class AutoHotkey
+	for i, pid in pids
+		{
+		Process, WaitClose, %pid%, 10
+		if (ErrorLevel)
+			Process, Close, %pid%
+		UpLog("closed the running bot (pid " pid ")")
+		}
+	Sleep, % pids.Length() ? 1500 : 0
+	}
+
+;The bot's programs running from dir (UpCloseBots): their pids. main: only the bot itself (AutoFarmer\Autofarmer -
+;not the stats reader or the quester)
+UpBotPids(dir, main := false)
+	{
 	DetectHiddenWindows, On
 	pids := []
-	bots := "i)^(AutoFarmer\\Autofarmer|AutoFarmer\\StatsReader|AutoQuester\\AutoQuester)\."
+	bots := main ? "i)^(AutoFarmer\\Autofarmer)\." : "i)^(AutoFarmer\\Autofarmer|AutoFarmer\\StatsReader|AutoQuester\\AutoQuester)\."
 	for p in ComObjGet("winmgmts:").ExecQuery("SELECT ProcessId, ExecutablePath, CommandLine FROM Win32_Process")
 		{
 		path := p.ExecutablePath, cmd := p.CommandLine
@@ -283,16 +475,7 @@ UpCloseBots(dir := "")
 		if (mine && WinExist("ahk_pid " p.ProcessId " ahk_class AutoHotkey"))
 			pids.Push(p.ProcessId)
 		}
-	for i, pid in pids
-		WinClose, ahk_pid %pid% ahk_class AutoHotkey
-	for i, pid in pids
-		{
-		Process, WaitClose, %pid%, 10
-		if (ErrorLevel)
-			Process, Close, %pid%
-		UpLog("closed the running bot (pid " pid ")")
-		}
-	Sleep, % pids.Length() ? 1500 : 0
+	return pids
 	}
 
 ;Copies the new release's files over the folder, keeping yours (UpIsMine) - every file it replaces copied to

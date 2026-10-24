@@ -22,6 +22,8 @@ global DashCfgBtn
 ;The view: simple (1 - what it's doing and seeing, the main buttons: no hand pictures, no log) or advanced (0 -
 ;everything); its button (the bottom row's right end) and the LOG heading
 global DashSimple, DashViewBtn, DashLogHead
+;The log's Colours button (DashLogColorsWindow), and the Colours window's swatches and buttons
+global DashColBtn, LogColHwnd
 ;"Game to front" on/off (gamefront - Autofarmer.ahk GameFrontToggle)
 global DashFrontBtn
 ;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState); Report a
@@ -79,8 +81,14 @@ DashInit()
 	Gui, Dash:Add, Text, x372 y88 w400 h190 vDashSeeText
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y286 w200 h16 vDashLogHead, LOG
+	;(each kind of line in its colour - movement, battle, waits... - set with the small Colours button: a rich edit, as
+	;an Edit can't colour its lines; read-only, no wrap)
+	Gui, Dash:Font, s8 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x694 y283 w78 h20 gDashLogColorsBtn vDashColBtn, Colours
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
-	Gui, Dash:Add, Edit, x12 y306 w760 h452 ReadOnly -Wrap +HScroll +VScroll vDashConsole HwndDashCon
+	DllCall("LoadLibrary", "Str", "Msftedit.dll", "Ptr")
+	Gui, Dash:Add, Custom, ClassRICHEDIT50W x12 y306 w760 h452 +0x200000 +0x100000 +0x4 +0x800 +0x100 +0x40 +0x80 vDashConsole HwndDashCon
+	DashLogInit()
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	Gui, Dash:Add, Button, x12 y768 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
 	Gui, Dash:Add, Button, x130 y768 w80 h26 gDashClearLog vDashClearBtn, Clear
@@ -258,7 +266,7 @@ DashApplyView()
 	if (!DashHwnd)
 		return
 	act := DashSimple ? "Hide" : "Show"
-	for each, c in ["DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn"]
+	for each, c in ["DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn", "DashColBtn"]
 		GuiControl, Dash:%act%, %c%
 	GuiControl, Dash:, DashViewBtn, % DashSimple ? "Advanced view" : "Simple view"
 	Gui, % "Dash:+MinSize740x" (DashSimple ? 330 : 640)
@@ -416,22 +424,193 @@ DashLog(line)
 		DashAppend(line "`r`n")
 	}
 
-;Text onto the end of the log (the oldest half goes once it's long)
+;---- The log in colour: each line's kind (DashLogKind) in its colour (dashboard.ini [logcolors], the Colours button) ----
+
+;The kinds, in the order the Colours window lists them: [key, label, default colour RRGGBB]
+DashLogKinds()
+	{
+	static kinds := ""
+	if (!IsObject(kinds))
+		kinds := [["problem", "Problems (needs you, stuck, couldn't...)", "FF6B6B"], ["movement", "Movement (walking)", "7FB3FF"]
+			, ["battle", "Battle (rounds, cards, enemies)", "F2A65A"], ["wait", "Waits and delays", "8A8F98"]
+			, ["potion", "Potions", "C792EA"], ["reconnect", "Reconnect and the game's window", "E5C07B"]
+			, ["party", "Party", "56D4C9"], ["alert", "Discord alerts", "F78FB3"]
+			, ["system", "The bot itself (start, settings, pictures)", "B9E2B9"], ["other", "Everything else", "DADADA"]]
+	return kinds
+	}
+
+;Which kind a log line is ("HH:mm:ss text")
+DashLogKind(line)
+	{
+	msg := SubStr(line, 10)
+	if (RegExMatch(msg, "i)NEEDS YOU|\bstuck\b|couldn't|can't|\bfailed\b|didn't work|gave up|giving up|\bERR\b|error|not found|wasn't found|hung"))
+		return "problem"
+	if (RegExMatch(msg, "i)^Walk: (waiting|paused)|^Watching for a round|resting|^Walk: loading|loading screen|^Walk: speed: 1x"))
+		return "wait"
+	if (InStr(msg, "Walk:") = 1)
+		return "movement"
+	if (InStr(msg, "Potions:") = 1)
+		return "potion"
+	if (InStr(msg, "Reconnect:") = 1 || InStr(msg, "Wizard101 brought to the front") = 1)
+		return "reconnect"
+	if (InStr(msg, "Party:") = 1)
+		return "party"
+	if (InStr(msg, "Discord:") = 1)
+		return "alert"
+	if (RegExMatch(msg, "^(Round start|Round done|Out of battle|In a battle|Battle log|  )"))
+		return "battle"
+	if (RegExMatch(msg, "^(Started|Vision:|UI size|Pictures:|Settings|Play for me|Wait while I play|Bring Wizard101|Walking on|Walking off|Bot )"))
+		return "system"
+	return "other"
+	}
+
+;The colours in use: {kind: "RRGGBB"} - dashboard.ini [logcolors], else the defaults
+DashLogColors(reload := false)
+	{
+	static colours := ""
+	if (IsObject(colours) && !reload)
+		return colours
+	colours := {}
+	for each, k in DashLogKinds()
+		{
+		IniRead, c, %A_ScriptDir%\dashboard.ini, logcolors, % k[1], % k[3]
+		colours[k[1]] := RegExMatch(c, "^[0-9A-Fa-f]{6}$") ? c : k[3]
+		}
+	return colours
+	}
+
+;A colour RRGGBB as the COLORREF Windows wants (0x00BBGGRR)
+DashBGR(rgb)
+	{
+	;(a standalone += - "0x" rgb + 0 inside an expression comes out blank)
+	v := "0x" rgb
+	v += 0
+	return ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF)
+	}
+
+;The text that follows in the log box: in this colour (CHARFORMAT2W on the selection - the end, where it's added)
+DashLogColour(rgb)
+	{
+	VarSetCapacity(cf, 116, 0)
+	NumPut(116, cf, 0, "UInt"), NumPut(0x40000000, cf, 4, "UInt"), NumPut(DashBGR(rgb), cf, 20, "UInt")    ; CFM_COLOR, crTextColor
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x444, "Ptr", 1, "Ptr", &cf)    ; EM_SETCHARFORMAT, SCF_SELECTION
+	}
+
+;The log box's length in its own characters (a line break counts 1 - as EM_SETSEL counts)
+DashLogLen()
+	{
+	VarSetCapacity(gtl, 8, 0), NumPut(10, gtl, 0, "UInt"), NumPut(1200, gtl, 4, "UInt")       ; GTL_PRECISE|GTL_NUMCHARS, UTF-16
+	return DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x45F, "Ptr", &gtl, "Ptr", 0, "Ptr")  ; EM_GETTEXTLENGTHEX
+	}
+
+;The log box (a rich edit - an Edit can't colour its lines) set up: the dark background, Consolas 9, no word wrap
+DashLogInit()
+	{
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x443, "Ptr", 0, "Ptr", DashBGR("111317"))   ; EM_SETBKGNDCOLOR
+	VarSetCapacity(cf, 116, 0)
+	NumPut(116, cf, 0, "UInt"), NumPut(0xE0000000, cf, 4, "UInt")      ; CFM_SIZE | CFM_COLOR | CFM_FACE
+	NumPut(180, cf, 12, "Int"), NumPut(DashBGR("DADADA"), cf, 20, "UInt")
+	StrPut("Consolas", &cf + 26, 32, "UTF-16")
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x444, "Ptr", 4, "Ptr", &cf)    ; EM_SETCHARFORMAT, SCF_ALL
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x448, "Ptr", 0, "Ptr", 1)      ; EM_SETTARGETDEVICE: no wrap
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x435, "Ptr", 0, "Ptr", 0x7FFFFFFE)   ; EM_EXLIMITTEXT
+	}
+
+;Lines added to the log box, each in its kind's colour (runs of one kind added at once); the first half let go past
+;200000 characters
 DashAppend(text)
 	{
-	text := StrReplace(StrReplace(text, "`r`n", "`n"), "`n", "`r`n")
-	len := DllCall("GetWindowTextLength", "Ptr", DashCon)
+	;(a rich edit's own text ends its lines with a bare CR: DashLogRecolour)
+	text := StrReplace(StrReplace(text, "`r`n", "`n"), "`r", "`n")
+	len := DashLogLen()
 	if (len > 200000)
 		{
-		GuiControlGet, all, Dash:, DashConsole
-		all := SubStr(all, len // 2)
-		all := SubStr(all, InStr(all, "`n") + 1)
-		GuiControl, Dash:, DashConsole, %all%
-		len := DllCall("GetWindowTextLength", "Ptr", DashCon)
+		cutLine := DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x436, "Ptr", 0, "Ptr", len // 2, "Ptr")    ; EM_EXLINEFROMCHAR
+		cut := DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xBB, "Ptr", cutLine + 1, "Ptr", 0, "Ptr")      ; EM_LINEINDEX
+		if (cut > 0)
+			{
+			DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xB1, "Ptr", 0, "Ptr", cut)      ; EM_SETSEL
+			DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xC2, "Ptr", 0, "Str", "")       ; EM_REPLACESEL
+			}
+		len := DashLogLen()
 		}
-	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xB1, "Ptr", len, "Ptr", len)      ; EM_SETSEL (the end)
-	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xC2, "Ptr", 0, "Str", text)      ; EM_REPLACESEL
+	colours := DashLogColors()
+	run := "", runKind := ""
+	Loop, Parse, text, `n
+		{
+		if (A_LoopField = "" && A_Index > 1)
+			continue
+		k := DashLogKind(A_LoopField)
+		if (k != runKind && run != "")
+			DashAppendRun(run, colours[runKind]), run := ""
+		runKind := k, run .= A_LoopField "`r`n"
+		}
+	if (run != "")
+		DashAppendRun(run, colours[runKind])
 	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xB7, "Ptr", 0, "Ptr", 0)         ; EM_SCROLLCARET
+	}
+
+;One run of lines at the log box's end, in colour rgb
+DashAppendRun(run, rgb)
+	{
+	len := DashLogLen()
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xB1, "Ptr", len, "Ptr", len)      ; EM_SETSEL (the end)
+	DashLogColour(rgb)
+	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0xC2, "Ptr", 0, "Str", run)       ; EM_REPLACESEL
+	}
+
+;The Colours window: each kind of log line - a swatch of its colour, Change... (Windows' colour picker) - and Reset
+DashLogColorsWindow()
+	{
+	global
+	local kinds, colours, i, k, y, col
+	Gui, LogCol:New, +OwnerDash +ToolWindow +HwndLogColHwnd, Log colours
+	Gui, LogCol:Color, 1B1D22
+	Gui, LogCol:Font, s9 w400 cF2F2F2, Segoe UI
+	kinds := DashLogKinds(), colours := DashLogColors()
+	for i, k in kinds
+		{
+		y := 10 + (i - 1) * 28, col := colours[k[1]]
+		Gui, LogCol:Add, Progress, x10 y%y% w22 h18 Background%col% Disabled vLogColSw%i%
+		Gui, LogCol:Add, Text, x40 y%y% w270 h18 +0x200, % k[2]
+		Gui, LogCol:Font, s9 w400 c000000, Segoe UI
+		Gui, LogCol:Add, Button, x316 y%y% w76 h20 gDashLogColorPick vLogColBtn%i%, Change...
+		Gui, LogCol:Font, s9 w400 cF2F2F2, Segoe UI
+		}
+	y := 16 + kinds.Length() * 28
+	Gui, LogCol:Font, s9 w400 c000000, Segoe UI
+	Gui, LogCol:Add, Button, x10 y%y% w110 h24 gDashLogColorReset, Reset all
+	Gui, LogCol:Add, Button, x292 y%y% w100 h24 gDashLogColorClose, Close
+	Gui, LogCol:Show, AutoSize
+	}
+
+;Windows' colour picker, starting at rgb (RRGGBB): the colour chosen, "" cancelled
+DashPickColour(rgb, owner)
+	{
+	;(its 16 custom colours kept between opens - made once: the buffer read as text is "" whenever slot 1 is black)
+	static cust, custMade := 0
+	if (!custMade)
+		VarSetCapacity(cust, 64, 0), custMade := 1
+	size := A_PtrSize = 8 ? 72 : 36
+	VarSetCapacity(cc, size, 0)
+	NumPut(size, cc, 0, "UInt")
+	NumPut(owner, cc, A_PtrSize, "Ptr")                         ; hwndOwner
+	NumPut(DashBGR(rgb), cc, 3 * A_PtrSize, "UInt")             ; rgbResult
+	NumPut(&cust, cc, 4 * A_PtrSize, "Ptr")                     ; lpCustColors
+	NumPut(0x3, cc, 5 * A_PtrSize, "UInt")                      ; CC_RGBINIT | CC_FULLOPEN
+	if (!DllCall("comdlg32\ChooseColorW", "Ptr", &cc))
+		return ""
+	c := NumGet(cc, 3 * A_PtrSize, "UInt")
+	return Format("{:02X}{:02X}{:02X}", c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF)
+	}
+
+;The log box coloured afresh - its lines put back in, each in its kind's colour now
+DashLogRecolour()
+	{
+	GuiControlGet, lrAll, Dash:, DashConsole
+	GuiControl, Dash:, DashConsole,
+	if (lrAll != "")
+		DashAppend(lrAll)
 	}
 
 ;The counts and what it sees, from a log line ("HH:mm:ss text")
@@ -1113,6 +1292,42 @@ DashClearLog:
 	GuiControl, Dash:, DashConsole,
 	return
 
+;The log's Colours button, and its window's buttons: a kind's colour changed (kept in dashboard.ini [logcolors]), all
+;back to the defaults, the window closed - the log coloured afresh each time
+DashLogColorsBtn:
+	DashLogColorsWindow()
+	return
+
+DashLogColorPick:
+	lcI := RegExReplace(A_GuiControl, "\D")
+	lcKinds := DashLogKinds(), lcK := lcKinds[lcI], lcCols := DashLogColors()
+	lcNew := DashPickColour(lcCols[lcK[1]], LogColHwnd)
+	if (lcNew != "")
+		{
+		IniWrite, %lcNew%, %A_ScriptDir%\dashboard.ini, logcolors, % lcK[1]
+		DashLogColors(true)
+		GuiControl, LogCol:+Background%lcNew%, LogColSw%lcI%
+		DashLogRecolour()
+		}
+	return
+
+DashLogColorReset:
+	IniDelete, %A_ScriptDir%\dashboard.ini, logcolors
+	lcCols := DashLogColors(true), lcKinds := DashLogKinds()
+	for lcI, lcK in lcKinds
+		{
+		lcCol := lcCols[lcK[1]]
+		GuiControl, LogCol:+Background%lcCol%, LogColSw%lcI%
+		}
+	DashLogRecolour()
+	return
+
+DashLogColorClose:
+LogColGuiClose:
+LogColGuiEscape:
+	Gui, LogCol:Destroy
+	return
+
 DashOpenLog:
 	Run, notepad.exe "%A_ScriptDir%\debug.log"
 	return
@@ -1282,6 +1497,7 @@ DashGuiSize:
 	GuiControl, Dash:Move, DashCfgBtn, % "x" A_GuiWidth - 166 - DashTabOX
 	GuiControl, Dash:Move, DashSeeText, % "w" A_GuiWidth - 384
 	GuiControl, Dash:Move, DashConsole, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 352)
+	GuiControl, Dash:Move, DashColBtn, % "x" A_GuiWidth - 90 - DashTabOX
 	;(the Cards tab: the Learn button at the right end of the hand's row, its heading up to it; the enemies' list takes
 	;what's left)
 	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138 - DashTabOX
