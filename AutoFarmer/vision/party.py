@@ -76,6 +76,15 @@ def clean_state(q):
     for k in ('hits', 'hitr'):
         v = _f(q.get(k))
         s[k] = int(v) if v is not None and 0 <= v < 1e6 else None
+    # (the hitter's planned hit's schools - its supports boost for them - and its last hit's: a support's blades that fit
+    # none of those stay on it; the seven schools only, each once)
+    for k in ('plan', 'lasthit'):
+        seen = []
+        for p in str(q.get(k) or '').lower().split(','):
+            p = p.strip()
+            if p in SCHOOLS and p not in seen:
+                seen.append(p)
+        s[k] = ','.join(seen)
     return s
 
 
@@ -230,7 +239,7 @@ class Party:
         me = self._me()
         return {'v': 1, 'leader': me, 'others': [{k: o.get(k) for k in
                 ('name', 'zone', 'x', 'y', 'z', 'battle', 'hp', 'ready', 'walk', 'age', 'brole', 'wiz', 'school', 'hits',
-                 'hitr')} for o in others]}
+                 'hitr', 'plan', 'lasthit')} for o in others]}
 
     def _beat_out(self):
         """a follower's beat to the leader (its own thread); a failure backs off and says why"""
@@ -359,7 +368,7 @@ class Party:
                     str(age), dist, d.get('zone', ''), num(d.get('x')), num(d.get('y')), num(d.get('z')),
                     num(d.get('dx'), 3), num(d.get('dy'), 3), d.get('to', ''), num(b[0]), num(b[1]), num(b[2]),
                     L.get('hold') or '', L.get('brole') or '', L.get('wiz') or '', L.get('school') or '',
-                    num(L.get('hits')), num(L.get('hitr'))]))
+                    num(L.get('hits')), num(L.get('hitr')), L.get('plan') or '', L.get('lasthit') or '']))
                 # (the other followers: as the leader's own rows below - walk, loading and hold where it doesn't say)
                 for o in L.get('others') or []:
                     # (its age as the leader last heard it, and since that answer: a leader gone quiet takes them along)
@@ -368,7 +377,7 @@ class Party:
                                num(o.get('y')), num(o.get('z')), o.get('battle', '0'), num(o.get('hp')),
                                o.get('ready', '0'), str(oa + age) if isinstance(oa, int) else '', '', o.get('walk', '0'), '0', '',
                                o.get('brole') or '', o.get('wiz') or '', o.get('school') or '', num(o.get('hits')),
-                               num(o.get('hitr'))]))
+                               num(o.get('hitr')), o.get('plan') or '', o.get('lasthit') or '']))
             elif role == 'leader':
                 for v in self.members.values():
                     dist = ''
@@ -378,5 +387,6 @@ class Party:
                                num(v.get('y')), num(v.get('z')), v.get('battle', '0'), num(v.get('hp')),
                                v.get('ready', '0'), str(round((now - v['at']) * 1000)), dist, v.get('walk', '0'),
                                v.get('loading', '0'), v.get('hold') or '', v.get('brole') or '', v.get('wiz') or '',
-                               v.get('school') or '', num(v.get('hits')), num(v.get('hitr'))]))
+                               v.get('school') or '', num(v.get('hits')), num(v.get('hitr')), v.get('plan') or '',
+                               v.get('lasthit') or '']))
         return out

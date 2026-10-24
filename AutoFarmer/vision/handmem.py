@@ -1198,13 +1198,102 @@ def describe(card):
     return re.sub(r"\s+", " ", text).strip()[:120]
 
 
+# (the damage types counted head by head - /cards' heads; a pip-power one only on an X-pip card, where it's per pip)
+HEAD_TYPES = {"kDamage", "kDamageNoCrit", "kStealHealth"}
+ODD_HEADS = {"kMaxHealthDamage", "kDivideDamage", "kInstantKill"}
+LEAF_CLASSES = ("SpellEffect",)
+
+
+def read_complete(card):
+    """Whether everything the card does was read, so its heads and boosts can be trusted: its effects there and not cut
+    short (tpl_info's effects_cut), every effect's type and target named (a number: that enum's name wasn't read), and
+    every container (any class but SpellEffect - random, variable, list, conditional...) followed by its own effects one
+    deeper (a container whose list wasn't read - Phantastic Jinn's, Delusion's - is no head at all in heads())"""
+    fx = card.get("effects")
+    if not isinstance(fx, list) or card.get("effects_cut") or len(fx) >= 1000:
+        return False
+    for i, e in enumerate(fx):
+        t, tg = e.get("type"), e.get("target")
+        if isinstance(t, int) or t is None or (isinstance(tg, int) and tg != 0):
+            return False
+        if (e.get("class") or "SpellEffect") not in LEAF_CLASSES:
+            nxt = fx[i + 1] if i + 1 < len(fx) else None
+            if nxt is None or (nxt.get("depth") or 0) <= (e.get("depth") or 0):
+                return False
+    return True
+
+
+def heads_field(card):
+    """/cards' field 24: the up-front damage of a damage / aoe card by school, every head of it - "fire:230,ice:230,
+    storm:230" (a school's heads added, in the game's order; lower case, one of the seven). Each head its least: a random
+    effect's lowest choice, a variable or X-pip effect's one pip, a conditional's least-damage alternative (heads()) -
+    so the heads add up to /cards' value (an X-pip card: per pip). The enchantment on it isn't added (fields 20-21).
+    "" not a damage / aoe card (pure damage over time included); "?" don't trust it: not read_complete, a head of a kind
+    that isn't plain damage (max-health, divide, instant kill; pip power on a card that isn't X-pip), a head of no school
+    of the seven (All, blank, Sun / Moon / Star / Shadow), or no head counted at all"""
+    if card.get("kind") not in ("damage", "aoe"):
+        return ""
+    if not read_complete(card):
+        return "?"
+    hs = hits(heads(card.get("effects"), card.get("overrides")), DAMAGE | ODD_HEADS)
+    out = {}
+    for h in hs:
+        t = h["type"]
+        if t in ODD_HEADS or (t == "kDamagePerTotalPipPower" and not card.get("x_pips")):
+            return "?"
+        if t not in HEAD_TYPES and t != "kDamagePerTotalPipPower":
+            return "?"
+        s = (h.get("school") or "").strip().lower()
+        if s not in SCHOOL_PIPS:
+            return "?"
+        out[s] = out.get(s, 0) + (h["lo"] or 0)
+    if not out:
+        return "?"
+    return ",".join("%s:%d" % kv for kv in out.items())
+
+
+def boosts_field(card):
+    """/cards' field 25: what a blade, trap or aura boosts, by school - "ice:35,storm:35,fire:35" (Elemental Blade), "all:25"
+    (Balanceblade: damage type All, or none - every school), the largest % per school, the card's own (a Sharpened Blade
+    on it isn't added). A blade's or aura's: its kModifyOutgoingDamage effects of more than 0% not aimed at an enemy; a
+    trap's: its kModifyIncomingDamage ones of more than 0% on an enemy or on no one said (Feint's +30% on yourself left
+    out). "" not a blade, trap or aura; "?" not read_complete, one of those from a conditional, one of another school
+    (Sun, Moon, Star, Shadow), or none at all"""
+    kind = card.get("kind")
+    if kind not in ("blade", "trap", "aura"):
+        return ""
+    if not read_complete(card):
+        return "?"
+    out = {}
+    for h in heads(card.get("effects"), card.get("overrides")):
+        lo = h["lo"] or 0
+        if kind == "trap":
+            if h["type"] != "kModifyIncomingDamage" or lo <= 0 or not (h["target"] in ENEMY or h["target"] in (None, 0, "kInvalidTarget")):
+                continue
+        elif h["type"] != "kModifyOutgoingDamage" or lo <= 0 or h["target"] in ENEMY:
+            continue
+        if h.get("cond"):
+            return "?"
+        s = (h.get("school") or "").strip().lower()
+        s = "all" if s in ("", "all") else s
+        if s != "all" and s not in SCHOOL_PIPS:
+            return "?"
+        out[s] = max(out.get(s, 0), lo)
+    if not out:
+        return "?"
+    return ",".join("%s:%d" % kv for kv in out.items())
+
+
 def finish(card, want_effects=True):
-    """the card's kind, value, dot, text, its enchantment's effect - from what spell() read (in place)"""
+    """the card's kind, value, dot, text, its enchantment's effect, its heads and boosts by school - from what spell()
+    read (in place)"""
     kind, value, dot = kind_of(card)
     card.update(kind=kind, value=value, dot=dot)
     card["value_text"] = value_text(card, kind, value)
     card["text"] = describe(card)
     card["ench_effect"], card["value_ench"] = ench_bonus(card)
+    # (before the effects go: they're what these are worked out from)
+    card["heads_text"], card["boosts_text"] = heads_field(card), boosts_field(card)
     if not want_effects:
         card.pop("effects", None)
         card.pop("ench_effects", None)
@@ -1256,19 +1345,22 @@ def me_line(me):
 
 def card_line(c):
     """card|slot|x|name|display|school|type|pips|xpip|shadow|castable|tc|item|enchantment|accuracy|value|kind|dot|
-    school pips|enchantment's effect|value with it|template id|text"""
+    school pips|enchantment's effect|value with it|template id|text|heads|boosts - heads (field 24): a damage card's
+    damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap or aura
+    boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be trusted, "" none"""
     sp = ",".join("%s:%d" % kv for kv in sorted((c.get("school_pips") or {}).items()))
     return "|".join(["card", _f(c.get("slot")), _f(c.get("x")), _f(c.get("name")), _f(c.get("display")),
                      _f(c.get("school")), _f(c.get("type")), _f(c.get("pips")), _b(bool(c.get("x_pips"))),
                      _f(c.get("shadow_pips")), _b(c.get("castable")), _b(bool(c.get("treasure"))),
                      _b(bool(c.get("item_card"))), _f(c.get("enchantment") or ""), _f(c.get("accuracy")),
                      _f(c.get("value_text")), _f(c.get("kind")), _f(c.get("dot")), sp, _f(c.get("ench_effect")),
-                     _f(c.get("value_ench")), _f(c.get("template_id")), _f(c.get("text"))])
+                     _f(c.get("value_ench")), _f(c.get("template_id")), _f(c.get("text")),
+                     _f(c.get("heads_text")), _f(c.get("boosts_text"))])
 
 
 def answer(r, why=""):
     """/cards' answer: "none|<why>" unless in a battle, in the planning phase and settled; else one me| line, a card|
-    line for each card shown (left to right) and hand|<cards>|<ms>"""
+    line for each card shown (left to right: 25 fields - card_line) and hand|<cards>|<ms>"""
     if r is None:
         return "none|" + _f(why or "the game can't be read")
     if not (r.get("in_battle") and r.get("planning") and r.get("settled")):

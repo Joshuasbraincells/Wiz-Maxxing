@@ -159,6 +159,10 @@ VisionPicList()
 	list := ""
 	for each, name in ["hit1", "hit2", "hit3", "hit4", "blade", "trap", "aura", "bubble", "convert", "wand", "heal1", "heal2"]
 		list .= hitschool "/" name ","
+	;(and the other schools' blades and traps the planned hit wants this battle - KillCalc.ahk BoostSearch)
+	Loop, Parse, BoostExtra, `,
+		if (A_LoopField != "" && A_LoopField != hitschool && A_LoopField != "balance")
+			list .= A_LoopField "/blade," A_LoopField "/trap,"
 	for each, name in ["sharpen", "potent", "blade3", "blade4", "trap3", "trap4", "tower", "reshuffle", "feint", "epic", "colossal", "gargantuan", "monstrous", "giant", "strong", "elementalblade", "elementaltrap", "spiritblade", "spirittrap"]
 		list .= "resources/" name ","
 	return list "life/enchant"
@@ -171,7 +175,7 @@ VisionFind(dir, title, ByRef X, ByRef Y)
 	{
 	if (!VisionOn || hitschool = "")
 		return -1
-	key := hitschool "|" UiScale "|" ScreenX "|" ScreenY
+	key := hitschool "|" BoostExtra "|" UiScale "|" ScreenX "|" ScreenY
 	if (!IsObject(VisionCards) || A_TickCount - VisionCardsAt > 400 || key != VisionCardsKey)
 		{
 		answer := VisionGet("/cards?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList())
@@ -224,7 +228,10 @@ VisionForget()
 ;         "" none), acc, value (as /cards writes it: "255-285", "45/pip", "35%", "+175", "" none), num (value's first
 ;         number, "" none), kind (damage aoe heal ward blade trap aura weakness enchant dot stun dispel prism clear
 ;         polymorph keep), dot (damage over time besides, "" none), schoolpips ("fire:1"), enchfx, valueench, tid (the
-;         template id), text (about as the card says it)}]
+;         template id), text (about as the card says it), heads (a damage card's damage by school, every head of it:
+;         "fire:230,ice:230,storm:230" - KillCalc.ahk HeadsParse), boosts (what a blade, trap or aura boosts by school:
+;         "ice:35,storm:35,fire:35", "all:25" - BoostsParse; either "?" not to be trusted, "" none or an older helper), nf
+;         (the line's fields: 23 an older helper's, with no heads or boosts)}]
 ;  ms     how long the read took in the helper
 ;While the game says the hand is changing (dealing, laying the cards out) it's asked again every 100 ms, up to waitMs.
 ;maxAgeMs: the last answer (or its why) if it's no older than that - the hand doesn't change till a card's cast or
@@ -299,7 +306,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			vcCard := {slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
 				, pips: NavNum(vcF[8]), xpip: vcF[9] = 1, shadow: NavNum(vcF[10]), castable: vcF[11], tc: vcF[12] = 1, item: vcF[13] = 1
 				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(vcF[18]), schoolpips: vcF[19]
-				, enchfx: vcF[20], valueench: vcF[21], tid: vcF[22], text: vcF[23]}
+				, enchfx: vcF[20], valueench: vcF[21], tid: vcF[22], text: vcF[23], heads: vcF[24], boosts: vcF[25], nf: vcF.Length()}
 			vcCard.num := RegExMatch(vcCard.value, "\d+", vcNum) ? vcNum + 0 : ""
 			vcOut.cards.Push(vcCard)
 			}

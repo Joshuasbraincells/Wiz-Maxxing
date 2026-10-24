@@ -286,10 +286,25 @@ global PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := "",
 ;PartyReblade); your school (shared)
 global PartyHits := 0, PartyHitR := 0, PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyMySchool := ""
 ;A support's boosts: the round (the log's) each used flag's cast went out in ({n: round}), the battle that's for, the
-;round this round's cast goes out in (Party.ahk PartyNoteBoosts)
-global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := ""
+;round this round's cast goes out in, the round each treasure / item copy's cast went out in ({"storm/blade@tc": round} -
+;KillCalc.ahk BoostSrcUsed) (Party.ahk PartyNoteBoosts)
+global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := "", PartySrcRound := {}
 ;Where traps go this round: on (the boss picked with Alt+1, or a party support's pick) and where
 global TrapOn := 0, TrapAtX := 0, TrapAtY := 0
+;Blades and traps by damage school (KillCalc.ahk): the game's name of the card on each hit slot's picture ({"balance/hit3":
+;"Hydra"} - CardLearn.ahk LearnCards; kept across battles), each hit's heads this look (HitHeads), the % of each boost's
+;card in the game's hand, the aura's schools, the schools of the party's last hit (Party.ahk); the planned hit, its heads
+;and schools (BoostPick); the school blade's and trap's folders and used flags, the group's; the boosts found (SbFound,
+;GbFound), their copies in the game's hand and the treasure / item copies cast (BoostHand, BoostSrcUsed), the other
+;schools' pictures asked about this battle, the hitter's planned hit's schools (a support's - Party.ahk), the game's hand
+;read this look, what's been said once a battle, a support's misfit blades thrown away this round; the blades cast on you
+;that weren't seen there (UseBlade - reboost:1 casts them again after a hit they fit: ConsumeBoosts), the flags BoostOneOf
+;held back this round ({blade: [...], trap: [...]})
+global SlotGame := {}, HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := ""
+global PlanHit := "", PlanHeads := "", PlanList := ""
+global BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
+global SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
+global BoostUnrec := [], BoostOneOfOff := {}
 LoadStats()
 ;"Wait while I play" on, 3 s, at every start - the bot never takes the mouse from you as it starts (you asked,
 ;2026-10-23); the tray menu, the dashboard and Settings change it for the run
@@ -756,7 +771,7 @@ if (BossChoosen == 1)
 	BossX := GameLeft + Round(BossRelX * UiScale), BossY := GameTop + Round(BossRelY * UiScale)
 
 global inbattle = 1
-LearnedThisRound := 0, LastHandAnswer := "", DiscardedUnused := 0, DiscardOffCount := 0
+LearnedThisRound := 0, LastHandAnswer := "", DiscardedUnused := 0, DiscardOffCount := 0, BoostMisfitDone := 0
 
 ;Both windows share one record of blades/traps in dual mode, so the kill check is off for that whole battle
 if (dualmode == 1)
@@ -888,46 +903,16 @@ if (Manual = 1)
 	hammerX := ManualX, hammerY := ManualY, HammerSchool := ManualSchool != "" ? ManualSchool : hitschool
 PartyBattleRole()
 HammerGroup := SchoolGroup(HammerSchool)
-	
-if (HammerGroup = "balance" || HammerGroup = "")
-	{
-	blade2 := 0
-	trap2 := 0
-	} else if (HammerGroup = "elemental")
-	{
-	if Tri("elemental", "blade")
-		{
-		blade2 := 1
-		} else if (Tri("elemental", "trap"))
-			{
-			trap2 := 1
-			} else
-				{
-				blade2 := 0
-				trap2 := 0
-				}
-	} else
-		{
-		if Tri("spirit", "blade")
-			{
-			blade2 := 1
-			} else if (Tri("spirit", "trap"))
-				{
-				trap2 := 1
-				} else
-					{
-					blade2 := 0
-					trap2 := 0
-					}
-		}
+;(the elemental / spirit blades and traps are looked for by the planned hit's schools now - KillCalc.ahk BoostSearch)
 
 ;Looks at the hand (and again after discarding, since the cards shift)
 if (!RoundAgain)
 	Discards := 0
 FindCards:
 
-;Enchants (and a fresh look at the hand for the vision helper)
+;Enchants (and a fresh look at the hand for the vision helper; each hit's heads looked at afresh - KillCalc.ahk HitHeads)
 VisionForget()
+HeadsMemo := {}
 FindEnchant()
 
 ;Finds cards avaliable
@@ -938,8 +923,9 @@ Find("sharpen", sharpen, SharpX, SharpY, "resources")
 global potent := 0
 Find("potent", potent, PotentX, PotentY, "resources") 
 
+;(the school blades and traps - yours and those of every school the hits need: KillCalc.ahk BoostSearch, once the pips
+;are read)
 global blade := 0
-Find("blade", blade, BladeX, BladeY, hitschool)
 
 global blade3 := 0
 Find("blade3", blade3, Blade3X, Blade3Y, "resources")
@@ -948,7 +934,6 @@ global blade4 := 0
 Find("blade4", blade4, Blade4X, Blade4Y, "resources")
 
 global trap := 0
-Find("trap", trap, trapX, trapY, hitschool)
 
 global trap3 := 0
 Find("trap3", trap3, trap3X, trap3Y, "resources")
@@ -1003,10 +988,11 @@ if (hitter != 0)
 ;(the deck in use's slots it doesn't play: out of this round's hand - Decks.ahk)
 DeckFilterHand()
 
-;(the boosts going to another school's wizard - Alt+2's pick, a party battle's hitter: your school's blade, trap and
-;bubble only boost your school's hits - not cast; a blader's or healer's aura only boosts itself)
+;(the boosts going to another school's wizard - Alt+2's pick, a party battle's hitter: your school's bubble only boosts
+;your school's hits - not cast; its blades and traps are looked for in its school's folder - BoostSearch; a blader's or
+;healer's aura only boosts itself)
 if (HammerSchool != hitschool)
-	blade := 0, trap := 0, bubble := 0
+	bubble := 0
 if (PartySupport())
 	aura := 0
 
@@ -1016,6 +1002,9 @@ PipsNow := PipsRead()
 DebugLog("  pips=" PipsNow PipsNote)
 DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant
 	. (PartySupport() ? " | " BattleRole ": the boosts to " HammerName " (" (HammerSchool = "" ? "school not known" : HammerSchool) ")" : ""))
+;The blades and traps of every school the hits need - a Balance Hydra's fire, ice and storm (KillCalc.ahk BoostSearch: the
+;game's memory, read-only, says what's in hand; without it, your school's as before)
+BoostSearch()
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the
 ;hitter can be an ally)
 if (PlateByName || !PlayerPlates2())
@@ -1174,6 +1163,17 @@ if (!BotOn)
 	BlockInput, MouseMoveOff
 	Goto, TestRound
 	}
+;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
+;PartyTrapTarget); else none
+TrapOn := (BossChoosen == 1), TrapAtX := bossX, TrapAtY := bossY
+if (!TrapOn && PartySupport() && PartyTrapTarget(TrapAtX, TrapAtY))
+	TrapOn := 1
+
+;The hit this round's boosts are for - with the game's hand read, the one dealing the most with the boosts in hand and on;
+;a blader's or healer's: the hitter's - and the blades and traps that fit its schools, the most that adds first
+;(KillCalc.ahk BoostPick; CastBestHit casts that hit first)
+BoostPick()
+
 ;(a blader or healer: no hit first, no boost limit - boosting is what it's for)
 HitsTried := 0
 if (!PartySupport()) && CardHitFirst()
@@ -1184,13 +1184,8 @@ if (!PartySupport()) && CardHitFirst()
 	}
 BoostOk := PartySupport() ? 1 : CardBoostOk()
 
-;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
-;PartyTrapTarget); else none
-TrapOn := (BossChoosen == 1), TrapAtX := bossX, TrapAtY := bossY
-if (!TrapOn && PartySupport() && PartyTrapTarget(TrapAtX, TrapAtY))
-	TrapOn := 1
-
 ;Automatic Battle code
+;(each school's blade and trap with its own used flags - KillCalc.ahk KeyFlags: BoostPick names them)
 if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("feint", feint, Used1, Used2, "resources")
 	{
 	BoostRun++
@@ -1198,11 +1193,11 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 	} else if (convert == 1) && (NeedsConvert == 1) && (BossChoosen == 1) && UseConvert("convert", convert, hitschool)
 		{
 		Goto, EndRound
-		} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used3, used4, hitschool)
+		} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used%TrapU1%, used%TrapU2%, TrapDir)
 			{
 			BoostRun++
 			Goto, EndRound
-			} else if (trap2 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(traptype, %traptype%, used5, used6, "resources")
+			} else if (trap2 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(traptype, %traptype%, used%Trap2U1%, used%Trap2U2%, "resources")
 				{
 				BoostRun++
 				Goto, EndRound
@@ -1214,11 +1209,11 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 						{
 						BoostRun++
 						Goto, EndRound
-						} else if (blade == 1) && BoostOk && Stat("useblades") && UseBlade("blade", blade, used11, used12, hitschool)
+						} else if (blade == 1) && BoostOk && Stat("useblades") && UseBlade("blade", blade, used%BladeU1%, used%BladeU2%, BladeDir)
 							{
 							BoostRun++
 							Goto, EndRound
-							} else if (blade2 == 1) && BoostOk && Stat("useblades") && UseBlade(bladetype, %bladetype%, used13, used14, "resources")
+							} else if (blade2 == 1) && BoostOk && Stat("useblades") && UseBlade(bladetype, %bladetype%, used%Blade2U1%, used%Blade2U2%, "resources")
 								{
 								BoostRun++
 								Goto, EndRound
@@ -1239,6 +1234,8 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 												if Click("aura", aura, hitschool)
 													{
 													AuraRounds := 4
+													;(the schools it boosts: its card's in the game's hand, else yours)
+													AuraSch := BoostAuraSchools()
 													BoostRun++
 													}
 												} else if (BattleRole = "blader") && PartyShield()
@@ -1247,7 +1244,7 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 													} else if (!HitsTried) && CastBestHit()
 													{
 													Goto, EndRound
-													} else if (wand == 1) && Stat("usewand") && UseHit("wand", wand, hitschool)
+													} else if (wand == 1) && Stat("usewand") && !WandWastes() && UseHit("wand", wand, hitschool)
 														{
 														BoostRun := 0
 														Goto, EndRound
@@ -1876,15 +1873,9 @@ Tri(type1, type2)
 		{
 		%type2%2X := typeX
 		%type2%2Y := typeY
-		if (type1 = "elemental")
-			{
-			bladetype := "elementalblade"
-			traptype := "elementaltrap"
-			} else if (type1 = "spirit")
-				{
-				bladetype := "spiritblade"
-				traptype := "spirittrap"
-				}
+		;(the blade found names the blade kind, the trap found the trap kind - each by itself: an Elemental Blade in hand no
+		;longer stands for an Elemental Trap)
+		%type2%type := type1 type2
 		return true
 		} else 
 			{
@@ -1980,15 +1971,34 @@ UseOnHammer(ByRef title, ByRef card, ByRef dir, tx := "", ty := "")
 	return card == 1
 	}
 	
-UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir) 
+UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 	{
 	global
+	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved
 	Find(title, blade, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" blade " at " foundX - GameLeft "," foundY - GameTop)
-	
+
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
 	Find("sharpen", sharpen, SharpX, SharpY, "resources")
-	if (sharpen == 1) && (blade == 1) && (Use1 != 1)
+	;(the game's hand read this look - KillCalc.ahk BoostSearch: which copy of the card this is. A pet's or gear's - an item
+	;card - is never sharpened: it can't be enchanted. A treasure or item card's copy stacks with the deck's - the user,
+	;2026-10-24 - so it goes once a battle besides the deck's casts; a copy that can't go swapped for one that can)
+	ubKey := BoostKey(title, dir), ubSrc := "", ubItem := 0, ubMoved := 0
+	if (blade == 1 && IsObject(BoostHand) && BoostHand.HasKey(ubKey))
+		{
+		ubCp := BoostCopyPick(ubKey, foundX, foundY, sharpen == 1, Use1, Use2)
+		if (!IsObject(ubCp))
+			{
+			DebugLog("  " ubKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Sharpen it can't get)")
+			;(the blades held back this round for it go on instead - KillCalc.ahk BoostOneOf: the chain's next one)
+			BoostOneOfBack("blade")
+			return false
+			}
+		ubSrc := ubCp.src, ubItem := ubCp.item, ubMoved := ubCp.moved
+		}
+	ubGo1 := (ubSrc = "") ? (Use1 != 1) : !BoostSrcUsed.HasKey(ubKey "@" ubSrc)
+	ubGo2 := (ubSrc = "") ? (Use2 != 1) : ubGo1
+	if (sharpen == 1) && (blade == 1) && ubGo1 && !ubItem && !ubMoved
 		{
 		boostX := SharpX
 		ClickAt(SharpX, SharpY, 150)
@@ -2007,19 +2017,27 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 			ClickAt(hammerX, hammerY, 200)
 			}
 		boosts++
-		Use1 := 1
+		if (ubSrc = "")
+			Use1 := 1
+		else
+			BoostSrcUsed[ubKey "@" ubSrc] := 1
 		if BladeOnUs(title)
 			{
-			AddBoost(AppliedBlades, title, Stat("sharpen"))
+			AddBoost(AppliedBlades, ubKey, Stat("sharpen"), ubSrc)
 			}
+		;(cast on you but not seen there - your plate or badge not read this round: noted, so reboost:1 casts it again after
+		;a hit it fits - KillCalc.ahk ConsumeBoosts; not Alt+2's pick's or a party support's: those went on another wizard)
+		else if (Manual != 1 && !PartySupport())
+			BoostUnrec.Push(ubKey (ubSrc != "" ? "@" ubSrc : "") "+")
 		return true
-		} else if (blade == 1) && (Use2 != 1)
+		} else if (blade == 1) && ubGo2
 			{
 			n := PicPath(dir "\" title ".png")
-			;If the card can't be found again, click where it was
+			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick)
 			keepX := foundX, keepY := foundY
-			ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
-			if (ErrorLevel)
+			if (!ubMoved)
+				ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
+			if (ErrorLevel || ubMoved)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -2031,11 +2049,17 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 				ClickAt(hammerX, hammerY, 200)
 				}
 			boosts++
-			Use2 := 1
+			if (ubSrc = "")
+				Use2 := 1
+			else
+				BoostSrcUsed[ubKey "@" ubSrc] := 1
 			if BladeOnUs(title)
 				{
-				AddBoost(AppliedBlades, title, 0)
+				AddBoost(AppliedBlades, ubKey, 0, ubSrc)
 				}
+			;(cast on you but not seen there: noted, as above)
+			else if (Manual != 1 && !PartySupport())
+				BoostUnrec.Push(ubKey (ubSrc != "" ? "@" ubSrc : ""))
 			return true
 			} else
 				{
@@ -2043,15 +2067,35 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 				}
 	}
 
-UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir) 
+UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 	{
 	global
+	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved
 	Find(title, trap, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" trap " at " foundX - GameLeft "," foundY - GameTop)
-	
+
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
 	Find("potent", potent, PotentX, PotentY, "resources")
-	if (TrapOn == 1) && (potent == 1) && (trap == 1) && (Use1 != 1)
+	;(which copy of the card this is, as UseBlade: an item card's never made potent; a treasure or item card's goes once a
+	;battle besides the deck's)
+	utKey := BoostKey(title, dir), utSrc := "", utItem := 0, utMoved := 0
+	if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.HasKey(utKey))
+		{
+		utCp := BoostCopyPick(utKey, foundX, foundY, potent == 1, Use1, Use2)
+		if (!IsObject(utCp))
+			{
+			DebugLog("  " utKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Potent it can't get)")
+			;(the traps held back this round for it go on instead - KillCalc.ahk BoostOneOf; not for a Feint or trap4: they
+			;aren't among those it picks from, so nothing was held back for them)
+			if (utKey != "feint" && utKey != "trap4")
+				BoostOneOfBack("trap")
+			return false
+			}
+		utSrc := utCp.src, utItem := utCp.item, utMoved := utCp.moved
+		}
+	utGo1 := (utSrc = "") ? (Use1 != 1) : !BoostSrcUsed.HasKey(utKey "@" utSrc)
+	utGo2 := (utSrc = "") ? (Use2 != 1) : utGo1
+	if (TrapOn == 1) && (potent == 1) && (trap == 1) && utGo1 && !utItem && !utMoved
 		{
 		boostX := PotentX
 		ClickAt(potentX, potentY, 150)
@@ -2067,18 +2111,22 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 		ClickAt(foundX, foundY, 150)
 		ClickAt(TrapAtX, TrapAtY, 200)
 		boosts++
-		Use1 := 1
+		if (utSrc = "")
+			Use1 := 1
+		else
+			BoostSrcUsed[utKey "@" utSrc] := 1
 		;(the kill check counts the boss's traps - a party support's on another enemy aren't)
 		if (BossChoosen == 1)
-			AddBoost(BossTraps, title, Stat("potent"))
+			AddBoost(BossTraps, utKey, Stat("potent"), utSrc)
 		return true
-		} else if (TrapOn == 1) && (trap == 1) && (Use2 != 1)
+		} else if (TrapOn == 1) && (trap == 1) && utGo2
 			{
 			n := PicPath(dir "\" title ".png")
-			;If the card can't be found again, click where it was
+			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick)
 			keepX := foundX, keepY := foundY
-			ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
-			if (ErrorLevel)
+			if (!utMoved)
+				ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
+			if (ErrorLevel || utMoved)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -2087,9 +2135,12 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 			ClickAt(foundX, foundY, 150)
 			ClickAt(TrapAtX, TrapAtY, 200)
 			boosts++
-			Use2 := 1
+			if (utSrc = "")
+				Use2 := 1
+			else
+				BoostSrcUsed[utKey "@" utSrc] := 1
 			if (BossChoosen == 1)
-				AddBoost(BossTraps, title, 0)
+				AddBoost(BossTraps, utKey, 0, utSrc)
 			return true
 			} else 
 				{
@@ -2118,6 +2169,10 @@ UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
 		return false
 		}
 	if (PipSaveFor != "" && title = "wand")
+		useEnchant := 0
+	;(never on an item card - the wand's own, a pet's or gear's: it can't be enchanted - the user, 2026-10-24; the game's
+	;hand or the learned card says which is one - KillCalc.ahk HitHeads)
+	if (useEnchant && (title = "wand" || HitHeads(title).item))
 		useEnchant := 0
 	Find(title, hit, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" hit " at " foundX - GameLeft "," foundY - GameTop)
@@ -2446,14 +2501,17 @@ Spam(key)
 	
 ResetUsed()
 	{
-	;Assume-global so used1..used20 are the battle code's flags, not locals that vanish on return
+	;Assume-global so used1..used52 are the battle code's flags, not locals that vanish on return (21-52: each school's
+	;blade and trap, the spirit ones - KillCalc.ahk KeyFlags); and the treasure / item copies cast (BoostSrcUsed), the
+	;blades cast on you that weren't seen there (BoostUnrec: UseBlade)
 	global
 	local n := 0
-	while (n <= 20)
+	while (n <= 52)
 		{
 		used%n% := 0
 		n++
 		}
+	BoostSrcUsed := {}, BoostUnrec := []
 	}
 	
 ResetVariables() 
@@ -2514,6 +2572,11 @@ ResetVariables()
 	AppliedBlades := {}
 	BossTraps := {}
 	AuraRounds := 0
+	;(blades and traps by damage school - KillCalc.ahk; SlotGame is kept: the slots' cards don't change with the battle)
+	HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := "", PlanList := ""
+	BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
+	SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
+	BoostUnrec := [], BoostOneOfOff := {}
 	EnemyHP := ""
 	BossSlot := 0
 	BossMax := 0
@@ -2935,6 +2998,9 @@ if (devmode != 1)
 if (devmode == 1)
 {
 HealthInfo := HealthText()
+;(the school blade's and trap's flags, the group's - this round's: KillCalc.ahk BoostPick)
+DevB1 := used%BladeU2%, DevSB1 := used%BladeU1%, DevB2 := used%Blade2U2%, DevSB2 := used%Blade2U1%
+DevT1 := used%TrapU2%, DevPT1 := used%TrapU1%, DevT2 := used%Trap2U2%, DevPT2 := used%Trap2U1%
 MsgBox,
 ( 
 GENERAL:
@@ -2968,12 +3034,12 @@ Reshuffle:(%reshuffle%)
 
      USED:
  F(%used2%)   pF(%used1%) 
-B1(%Used12%) sB1(%Used11%)  
-B2(%Used14%) sB2(%Used13%)
+B1(%DevB1%) sB1(%DevSB1%) %BladeDir%
+B2(%DevB2%) sB2(%DevSB2%)
 B3(%Used16%) sB3(%Used15%)
 B4(%Used18%) sB4(%Used17%)
-T1(%Used4%)  pT1(%Used3%)
-T2(%Used6%)  pT2(%Used5%)
+T1(%DevT1%)  pT1(%DevPT1%) %TrapDir%
+T2(%DevT2%)  pT2(%DevPT2%)
 T3(%Used8%)  pT3(%Used7%)
 T4(%Used10%) pT4(%Used9%)
 
@@ -3447,7 +3513,8 @@ CastLearnedHit()
 		;(an enchant in hand: on the hit first - then the hand closes up round the gap it left, the hit half a card's
 		;width towards it)
 		enchanted := false
-		if (A_Index = 1)
+		;(never on an item card - a pet's or gear's: it can't be enchanted)
+		if (A_Index = 1 && !LearnHasFlag(c.c, "item"))
 			{
 			FindEnchant()
 			if (enchant >= 1 && enchantX != "" && Abs(enchantX - c.x) > HalfPitch)
@@ -3466,7 +3533,8 @@ CastLearnedHit()
 			HitTarget("learned hit", hitschool, 1, LearnedHitDamage(c.c, enchanted))
 		if (CastWentOut())
 			{
-			ConsumeBoosts()
+			;(the blades and traps that fit its heads used up - KillCalc.ahk)
+			ConsumeBoosts(LearnHitHeads(c.c))
 			DashCast("learned/" c.id)
 			return true
 			}
@@ -3560,8 +3628,9 @@ CastResult(title, ByRef hit, dir, enchanted, consume := true)
 	if (CastWentOut())
 		{
 		EnchantedHits.Delete(title)
+		;(the blades and traps that fit its heads used up - KillCalc.ahk HitHeads, ConsumeBoosts)
 		if (consume)
-			ConsumeBoosts()
+			ConsumeBoosts(HitHeads(title))
 		DashCast(title)
 		return true
 		}
@@ -3578,23 +3647,49 @@ CastResult(title, ByRef hit, dir, enchanted, consume := true)
 DiscardSpare()
 	{
 	global
-	local did := 0
+	local did := 0, dsK, dsF, dsKeys, dsI, dsSharpUsed, dsNeed, dsC
 	;(a party battle's blader or healer casts its blades again after each of the hitter's hits: none is spare - not with
-	;Alt+2's pick, whose hits nothing follows)
+	;Alt+2's pick, whose hits nothing follows; but one that boosts neither the hitter's planned hit nor its own school
+	;goes - KillCalc.ahk BoostMisfitDiscard)
 	if (PartySupport() && HammerSlot)
-		return 0
-	;A blade whose sharpened and plain casts have both been used this battle won't stack again
-	if (blade == 1) && (used11 == 1) && (used12 == 1)
-		did += DiscardCard("blade", hitschool)
-	if (blade2 == 1) && (used13 == 1) && (used14 == 1)
-		did += DiscardCard(bladetype, "resources")
-	if (blade3 == 1) && (used15 == 1) && (used16 == 1)
-		did += DiscardCard("blade3", "resources")
-	if (blade4 == 1) && (used17 == 1) && (used18 == 1)
-		did += DiscardCard("blade4", "resources")
-	;Sharpen is spare once a sharpened blade has been used and no blade in hand still needs sharpening
-	if (sharpen == 1) && (used11 == 1 || used13 == 1 || used15 == 1 || used17 == 1)
-		&& !((blade == 1 && used11 != 1) || (blade2 == 1 && used13 != 1) || (blade3 == 1 && used15 != 1) || (blade4 == 1 && used17 != 1))
+		return BoostMisfitDiscard()
+	;A blade whose sharpened and plain casts have both been used this battle won't stack again - each school's (SbFound),
+	;the group's (GbFound), Balanceblade, Bladestorm (a treasure or item card's copy still to go - the game's hand - stays)
+	dsKeys := []
+	for dsK in SbFound
+		if (BoostKind(dsK) = "blade")
+			dsKeys.Push(dsK)
+	for dsK in GbFound
+		if (BoostKind(dsK) = "blade")
+			dsKeys.Push(dsK)
+	for dsI, dsK in ["blade3", "blade4"]
+		if (%dsK% == 1)
+			dsKeys.Push(dsK)
+	for dsI, dsK in dsKeys
+		{
+		dsF := KeyFlags(dsK)
+		if (IsObject(dsF) && UsedFlag(dsF[1]) == 1 && UsedFlag(dsF[2]) == 1 && !BoostCanGo(dsK))
+			did += InStr(dsK, "/") ? DiscardCard("blade", SubStr(dsK, 1, InStr(dsK, "/") - 1)) : DiscardCard(dsK, "resources")
+		}
+	;Sharpen is spare once a sharpened blade has been used and no blade in hand still needs sharpening (an item card's never
+	;does: it can't be enchanted)
+	dsSharpUsed := 0, dsNeed := 0
+	for dsI, dsK in ["blade3", "blade4", "elementalblade", "spiritblade", "storm/blade", "fire/blade", "myth/blade", "ice/blade", "life/blade", "death/blade"]
+		if (UsedFlag(KeyFlags(dsK)[1]) == 1)
+			dsSharpUsed := 1
+	for dsI, dsK in dsKeys
+		{
+		dsF := KeyFlags(dsK)
+		if (IsObject(BoostHand) && BoostHand.HasKey(dsK))
+			{
+			for dsC, dsF in BoostHand[dsK]
+				if (!dsF.item && (dsF.src = "" ? UsedFlag(KeyFlags(dsK)[1]) != 1 : !BoostSrcUsed.HasKey(dsK "@" dsF.src)))
+					dsNeed := 1
+			}
+		else if (UsedFlag(dsF[1]) != 1)
+			dsNeed := 1
+		}
+	if (sharpen == 1) && dsSharpUsed && !dsNeed
 		did += DiscardCard("sharpen", "resources")
 	return did
 	}

@@ -92,10 +92,13 @@ DamageMultiplier(D)
 	return 1 + L - L / Exp(k * D - n)
 	}
 
-;Remembers a blade/trap we cast, keyed by card so recasting the same card doesn't count twice
-AddBoost(list, card, bonus)
+;Remembers a blade/trap we cast, keyed by card so recasting the same card doesn't count twice: key is BoostKey's
+;("storm/blade", "blade3", "elementalblade"...), src "tc" / "item" a treasure or item card's copy ("@tc", "@item" after it -
+;the game stacks it with the deck's: a deck Stormblade and a pet's both count, the user 2026-10-24), "+" when it was
+;sharpened / potent (bonus). Its % the game's (the card in hand, BoostPctMem) else PlayerStats.txt's (BoostPct)
+AddBoost(list, key, bonus, src := "")
 	{
-	list[card . (bonus ? "+" : "")] := Stat(card) + bonus
+	list[key (src != "" ? "@" src : "") (bonus ? "+" : "")] := BoostPctFor(key, src) + bonus
 	}
 
 BoostMult(list)
@@ -106,6 +109,1162 @@ BoostMult(list)
 		mult *= 1 + pct / 100
 		}
 	return mult
+	}
+
+;---- Blades and traps by damage school (TODO.md goal 3, 2026-10-24) ----
+;Each hit's damage schools head by head (HitHeads: Hydra's fire, ice and storm - the game's memory, vision\handmem.py,
+;read-only), the boosts that fit the planned hit's schools found and cast (BoostSearch, BoostPick), the kill check by
+;head (HitDamage: each head times the blades, traps and aura that fit it), the boosts a hit uses up by fit
+;(ConsumeBoosts). Without the game's memory: PlayerStats.txt's <school>.hit<N><school> keys, else one head of your
+;school - as before
+
+;A boost card's key in AppliedBlades / BossTraps and the used flags (KeyFlags): its slot's name for one every school
+;shares (resources\: blade3, blade4, elementalblade, spiritblade, trap3, elementaltrap, spirittrap, feint), "<school>/blade"
+;/ "<school>/trap" for a school's own. Balance's own blade and trap are Balanceblade and Hex (balance\blade.png is
+;resources\blade3.png): keyed as those, never counted twice
+BoostKey(title, dir)
+	{
+	if (dir = "" || dir = "resources")
+		return title
+	if (dir = "balance" && (title = "blade" || title = "trap"))
+		return (title = "blade") ? "blade3" : "trap3"
+	return dir "/" title
+	}
+
+;A key without its copy ("@tc", "@item") and "+" (sharpened / potent): "storm/blade@item+" -> "storm/blade"
+BoostBase(key)
+	{
+	return RegExReplace(key, "(@[a-z]+)?\+?$")
+	}
+
+;The kind of boost key: "blade" or "trap" ("" neither)
+BoostKind(key)
+	{
+	bkB := BoostBase(key)
+	;(trap3 and trap4 too - Hex is trap3: SubStr(bkB, -3) is its last four letters, "rap3")
+	if (bkB = "feint" || RegExMatch(bkB, "trap[34]?$"))
+		return "trap"
+	return SubStr(bkB, -4) = "blade" || RegExMatch(bkB, "^blade[34]$") ? "blade" : ""
+	}
+
+;The schools boost card key fits: "all", or a comma list in a-z order, as the game has them (its memory, 2026-10-24:
+;Balanceblade, Bladestorm, Hex and Feint boost every school - damage type All -, Elemental Blade / Trap fire, ice and
+;storm, Spirit Blade / Trap death, life and myth, a school's blade and trap its own school; the aura: its card's as the
+;game read it when cast - AuraSch -, else yours); "" not known (never multiplied, always used up)
+BoostSchools(key)
+	{
+	global hitschool, AuraSch
+	bsK := BoostBase(key)
+	if (RegExMatch(bsK, "^([a-z]+)/(blade|trap)$", bsM))
+		return bsM1
+	if (bsK = "elementalblade" || bsK = "elementaltrap")
+		return "fire,ice,storm"
+	if (bsK = "spiritblade" || bsK = "spirittrap")
+		return "death,life,myth"
+	if (bsK = "blade3" || bsK = "blade4" || bsK = "trap3" || bsK = "trap4" || bsK = "feint")
+		return "all"
+	if (bsK = "aura")
+		return AuraSch != "" ? AuraSch : hitschool
+	;(an older key with no school: your school's)
+	if (bsK = "blade" || bsK = "trap")
+		return hitschool
+	return ""
+	}
+
+;Whether boost card key boosts a head of school sch
+BoostFits(key, sch)
+	{
+	bfS := BoostSchools(key)
+	return bfS = "all" || (bfS != "" && sch != "" && InStr("," bfS ",", "," sch ","))
+	}
+
+;Whether boost card key fits any of the schools in list (a comma list)
+BoostFitsAny(key, list)
+	{
+	Loop, Parse, list, `,
+		if (A_LoopField != "" && BoostFits(key, A_LoopField))
+			return true
+	return false
+	}
+
+;The % boost card key adds as PlayerStats.txt has it: a school's own blade / trap - your school's at blade / trap as Stat
+;has it (the deck's, your school's, the plain one), another school's at blade.<school> / trap.<school> (a pet's Stormblade
+;on a Balance wizard: blade.storm - storm.blade is the Storm wizard's own blade, as Stat has it), else the plain blade /
+;trap -, the others at their slot's (blade3, elementalblade, trap3...) as before
+BoostPct(key)
+	{
+	global hitschool
+	bpK := BoostBase(key)
+	if (!RegExMatch(bpK, "^([a-z]+)/(blade|trap)$", bpM))
+		return Stat(bpK)
+	if (bpM1 = hitschool)
+		return Stat(bpM2)
+	return Stats.HasKey(bpM2 "." bpM1) ? Stats[bpM2 "." bpM1] : Stats.HasKey(bpM2) ? Stats[bpM2] : 0
+	}
+
+;The % boost key's copy src ("" the deck's, "tc", "item") adds: the least of its cards in the game's hand this look
+;(BoostSearch - a pet's 40% Mythblade at 40), else PlayerStats.txt's (BoostPct)
+BoostPctFor(key, src := "")
+	{
+	global BoostPctMem
+	bpfK := BoostBase(key)
+	if (IsObject(BoostPctMem))
+		{
+		if (BoostPctMem.HasKey(bpfK "@" (src = "" ? "deck" : src)))
+			return BoostPctMem[bpfK "@" (src = "" ? "deck" : src)]
+		if (BoostPctMem.HasKey(bpfK))
+			return BoostPctMem[bpfK]
+		}
+	return BoostPct(bpfK)
+	}
+
+;The boosts in list that fit school sch, multiplied (BoostMult's, only those)
+BoostMultFor(list, sch)
+	{
+	bmfMult := 1
+	for bmfKey, bmfPct in list
+		if (BoostFits(bmfKey, sch))
+			bmfMult *= 1 + bmfPct / 100
+	return bmfMult
+	}
+
+;"fire:230,ice:230,storm:230" (the helper's heads field; a learned card's flag heads= has + for ,) into out's heads
+;({school: least damage}), total and sure (1). False - out untouched - when it isn't all known: "", "?", a school not one
+;of the seven, nothing
+HeadsParse(text, out)
+	{
+	if (text = "" || text = "?")
+		return false
+	hpHeads := {}, hpTotal := 0
+	Loop, Parse, text, `,+
+		{
+		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):(\d+)$", hpM) || !BadgeNumber(hpM1))
+			return false
+		hpHeads[hpM1] := (hpHeads.HasKey(hpM1) ? hpHeads[hpM1] : 0) + hpM2, hpTotal += hpM2
+		}
+	if (hpTotal <= 0)
+		return false
+	out.heads := hpHeads, out.total := hpTotal, out.sure := 1
+	return true
+	}
+
+;"ice:35,storm:35,fire:35" (the helper's boosts field) -> {sch: "fire,ice,storm" (a-z, as BoostSchools has them) or
+;"all", pct: its least %}; "" when it isn't known ("", "?", a school that isn't one)
+BoostsParse(text)
+	{
+	if (text = "" || text = "?")
+		return ""
+	bpaL := "", bpaPct := "", bpaAll := 0
+	Loop, Parse, text, `,
+		{
+		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):(\d+)$", bpaM))
+			return ""
+		if (bpaM1 = "all")
+			bpaAll := 1
+		else if (!BadgeNumber(bpaM1))
+			return ""
+		else if (!InStr("`n" bpaL "`n", "`n" bpaM1 "`n"))
+			bpaL .= (bpaL = "" ? "" : "`n") bpaM1
+		if (bpaPct = "" || bpaM2 + 0 < bpaPct)
+			bpaPct := bpaM2 + 0
+		}
+	if (bpaPct = "")
+		return ""
+	Sort, bpaL
+	return {sch: bpaAll ? "all" : StrReplace(bpaL, "`n", ","), pct: bpaPct}
+	}
+
+;A boost card's % in the game's hand (VisionCards' card): its boosts' least, else its number ("" none)
+BoostCardPct(c)
+	{
+	bcpB := BoostsParse(c.boosts)
+	return IsObject(bcpB) ? bcpB.pct : c.num
+	}
+
+;Which copy a card in the game's hand is: "" the deck's, "tc" a treasure card, "item" an item card (a pet's, gear's) -
+;copies of one boost from each stack in the game
+BoostSrcOf(c)
+	{
+	return c.item ? "item" : c.tc ? "tc" : ""
+	}
+
+;The cards of the game's hand (VisionCards' cards) that are boost key's card, as their numbers in cards: its kind (blade /
+;trap) and schools (BoostSchools) - those whose boosts weren't read only when no card read for sure is (they match any of
+;their kind); one every school shares (blade3, blade4, trap3, feint) only those at its % (PlayerStats.txt's: Balanceblade's
+;25, Bladestorm's 20) when any are
+BoostMatches(key, cards)
+	{
+	bmOut := [], bmKind := BoostKind(key), bmSch := BoostSchools(key), bmUnsure := []
+	if (bmKind = "" || bmSch = "" || !IsObject(cards))
+		return bmOut
+	for bmI, bmC in cards
+		{
+		if (bmC.kind != bmKind)
+			continue
+		bmB := BoostsParse(bmC.boosts)
+		if (!IsObject(bmB))
+			bmUnsure.Push(bmI)
+		else if (bmB.sch = bmSch)
+			bmOut.Push(bmI)
+		}
+	if (!bmOut.Length())
+		bmOut := bmUnsure
+	if (bmSch = "all" && bmOut.Length())
+		{
+		bmAt := [], bmWant := BoostPct(key)
+		for bmI, bmN in bmOut
+			if (BoostCardPct(cards[bmN]) = bmWant)
+				bmAt.Push(bmN)
+		if (bmAt.Length())
+			return bmAt
+		}
+	return bmOut
+	}
+
+;The slot a boost of kind ("blade" / "trap") boosting schools sch (BoostsParse's - "fire,ice,storm", "all") at pct % is
+;cast from: "<school>\blade", "resources\elementalblade", "resources\blade3" (every school: by its % - Balanceblade's,
+;Bladestorm's, Hex's, Feint's as PlayerStats.txt has them)... "" none (Balance alone - its own are blade3, trap3 -, two
+;schools, another %). For school wsch's wizard (its numbers)
+BoostSlotFor(kind, sch, pct, wsch := "")
+	{
+	if (sch = "fire,ice,storm")
+		return "resources\elemental" kind
+	if (sch = "death,life,myth")
+		return "resources\spirit" kind
+	if (sch = "all")
+		{
+		for bsfI, bsfK in (kind = "blade" ? ["blade3", "blade4"] : ["trap3", "feint"])
+			if (pct != "" && pct + 0 = BoostStatOf(wsch, bsfK))
+				return "resources\" bsfK
+		return ""
+		}
+	return (BadgeNumber(sch) && sch != "balance") ? sch "\" kind : ""
+	}
+
+;PlayerStats.txt's key for school sch's wizard (<sch>.key), else the plain key ("" none)
+BoostStatOf(sch, key)
+	{
+	if (sch != "" && Stats.HasKey(sch "." key))
+		return Stats[sch "." key]
+	return Stats.HasKey(key) ? Stats[key] : ""
+	}
+
+;The used flags of boost key (used<n>: UseBlade's / UseTrap's Use1 - sharpened / potent - and Use2 - plain - for its
+;deck copy, cast once each a battle): [n1, n2], "" none. Every school's own blade and trap its pair (balance: blade3,
+;trap3); 0, 3, 4, 11, 12 and 20 aren't used any more (19: Party.ahk PartyShield's)
+KeyFlags(key)
+	{
+	static kfT := ""
+	if (!IsObject(kfT))
+		kfT := {feint: [1, 2], elementaltrap: [5, 6], trap3: [7, 8], trap4: [9, 10], elementalblade: [13, 14], blade3: [15, 16]
+			, blade4: [17, 18], spiritblade: [49, 50], spirittrap: [51, 52]}
+	kfB := BoostBase(key)
+	if (kfT.HasKey(kfB))
+		return kfT[kfB]
+	if (RegExMatch(kfB, "^([a-z]+)/(blade|trap)$", kfM) && kfM1 != "balance" && (kfN := BadgeNumber(kfM1)))
+		return (kfM2 = "blade") ? [21 + 4 * (kfN - 1), 22 + 4 * (kfN - 1)] : [23 + 4 * (kfN - 1), 24 + 4 * (kfN - 1)]
+	return ""
+	}
+
+;The boost key used flag n belongs to ("" none: 19 is the tower's)
+FlagKey(n)
+	{
+	for fkI, fkK in ["feint", "elementaltrap", "trap3", "trap4", "elementalblade", "blade3", "blade4", "spiritblade", "spirittrap"
+		, "storm/blade", "storm/trap", "fire/blade", "fire/trap", "myth/blade", "myth/trap", "ice/blade", "ice/trap"
+		, "life/blade", "life/trap", "death/blade", "death/trap"]
+		{
+		fkF := KeyFlags(fkK)
+		if (IsObject(fkF) && (fkF[1] = n || fkF[2] = n))
+			return fkK
+		}
+	return ""
+	}
+
+;The battle code's used flag n (used<n>, a global: here so a function's own doesn't take its place)
+UsedFlag(n)
+	{
+	global
+	return used%n%
+	}
+
+UsedFlagSet(n, v)
+	{
+	global
+	used%n% := v
+	}
+
+;A hit's damage by school - its heads (Hydra: fire, ice and storm, 230 each): {heads: {school: least damage}, total, sure
+;(1: its schools are known - the game's or yours; 0: taken as your school's, as always), xpip (its numbers a pip's), src
+;(for the log), one (1 one enemy, 0 all, "" not known), item (1 an item card - never enchanted)}. Looked at once a look at
+;the hand (HeadsMemo, emptied at FindCards) - HitHeadsFind
+HitHeads(hitName)
+	{
+	global hitschool, HeadsMemo
+	if (!IsObject(HeadsMemo))
+		HeadsMemo := {}
+	if (!HeadsMemo.HasKey(hitName "|" hitschool))
+		HeadsMemo[hitName "|" hitschool] := HitHeadsFind(hitName)
+	return HeadsMemo[hitName "|" hitschool]
+	}
+
+;HitHeads' look, in this order: the game's memory - the card on the slot's picture (SlotGame: its name in the game, from
+;CardLearn.ahk LearnCards' look at the hand; else the slot's learned card's flag game=), the card itself in the game's hand
+;(VisionCards: its heads field); the slot's learned card's heads as the game had them (flag heads=); PlayerStats.txt's
+;<school>.<hit><head's school> keys (balance.hit3fire:230, balance.hit3ice:230, balance.hit3storm:230) while they add up
+;to <school>.<hit> (or it isn't set); else one head of your school, <school>.<hit> (sure 0). A learned card with a number
+;you set on the Spells tab (flag user): the game's schools, your number (HeadsToYours)
+HitHeadsFind(hitName)
+	{
+	global hitschool, SlotGame, BoostSaid
+	hhOut := {heads: {}, total: 0, sure: 0, xpip: 0, src: "", one: "", item: (hitName = "wand") ? 1 : 0}
+	if (hitschool = "")
+		return hhOut
+	hhName := IsObject(SlotGame) ? SlotGame[hitschool "/" hitName] : ""
+	hhLc := IsFunc("LearnCardInSlot") ? Func("LearnCardInSlot").Call(hitschool "\" hitName) : ""
+	if (hhName = "" && IsObject(hhLc))
+		hhName := Func("LearnFlag").Call(hhLc, "game")
+	if (hhName != "" && IsFunc("VisionCards"))
+		{
+		;(the hand read this look - no new read)
+		hhHand := Func("VisionCards").Call(300, 5000)
+		if (IsObject(hhHand))
+			for hhI, hhM in hhHand.cards
+				if ((IsFunc("LearnMemGame") ? Func("LearnMemGame").Call(hhM) : hhM.name) = hhName && (hhM.kind = "damage" || hhM.kind = "aoe") && HeadsParse(hhM.heads, hhOut))
+					{
+					hhOut.xpip := (hhM.xpip && hitName != "wand") ? 1 : 0, hhOut.src := "the game", hhOut.one := (hhM.kind = "damage") ? 1 : 0
+					hhOut.item := (hhM.item || hitName = "wand") ? 1 : 0
+					;(the slot's learned card - this card, by its game name - with a number you set on the Spells tab: yours)
+					if (IsObject(hhLc) && Func("LearnHasFlag").Call(hhLc, "user") && IsFunc("LearnHitBase")
+						&& (Func("LearnFlag").Call(hhLc, "game") = "" || Func("LearnFlag").Call(hhLc, "game") = hhName))
+						HeadsToYours(hhOut, Func("LearnHitBase").Call(hhLc))
+					return hhOut
+					}
+		}
+	if (IsObject(hhLc) && HeadsParse(Func("LearnFlag").Call(hhLc, "heads"), hhOut))
+		{
+		hhOut.xpip := (Func("LearnHasFlag").Call(hhLc, "xpip") && hitName != "wand") ? 1 : 0, hhOut.src := "the game (learned card)"
+		hhOut.item := (Func("LearnHasFlag").Call(hhLc, "item") || hitName = "wand") ? 1 : 0
+		if (Func("LearnHasFlag").Call(hhLc, "user") && IsFunc("LearnHitBase"))
+			HeadsToYours(hhOut, Func("LearnHitBase").Call(hhLc))
+		return hhOut
+		}
+	hhOut.xpip := (hitName != "wand" && Stat(hitschool "." hitName "pips") = 0) ? 1 : 0
+	;(PlayerStats.txt's heads only while they add up to <school>.<hit>, or it isn't set - the learner writes both, CardLearn.ahk
+	;LearnStats: a number put there since - the Settings window, another card in the slot, the picture cut again - is the
+	;slot's card now, not the old heads)
+	hhSum := 0, hhPer := {}
+	for hhI, hhS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
+		if ((hhV := Stat(hitschool "." hitName hhS)) > 0)
+			hhPer[hhS] := hhV, hhSum += hhV
+	hhV := Stat(hitschool "." hitName)
+	if (hhSum > 0 && (hhV <= 0 || hhV = hhSum))
+		{
+		hhOut.heads := hhPer, hhOut.total := hhSum, hhOut.sure := 1, hhOut.src := "PlayerStats.txt"
+		return hhOut
+		}
+	if (hhSum > 0 && IsObject(BoostSaid) && !BoostSaid.HasKey("heads|" hitschool "." hitName))
+		BoostSaid["heads|" hitschool "." hitName] := 1, DebugLog("  PlayerStats.txt: the heads of " hitschool "." hitName " (" HeadsText({heads: hhPer})
+			. ") add up to " hhSum ", not its " hitschool "." hitName ":" hhV " - left out, one head of your school counted")
+	if (hhV > 0)
+		hhOut.heads[hitschool] := hhV, hhOut.total := hhV, hhOut.src := "your school's"
+	return hhOut
+	}
+
+;A hit's heads (HitHeads') brought to number uv you set for its learned card on the Spells tab (flag user - never what you
+;set, as CardLearn.ahk LearnHitBase): each head its share of uv, floored, what that leaves on the biggest - the game's
+;schools, your number. Not when uv isn't a number above 0 or is their total already
+HeadsToYours(hh, uv)
+	{
+	if (uv = "" || !(uv > 0) || hh.total <= 0 || uv = hh.total)
+		return
+	htyOut := {}, htySum := 0, htyBig := ""
+	for htyS, htyB in hh.heads
+		{
+		htyOut[htyS] := Floor(htyB * uv / hh.total), htySum += htyOut[htyS]
+		if (htyBig = "" || htyB > hh.heads[htyBig])
+			htyBig := htyS
+		}
+	htyOut[htyBig] += uv - htySum
+	hh.heads := htyOut, hh.total := uv + 0, hh.src := "your value (the game's schools)"
+	}
+
+;A learned hit's heads (LearnedHitDamage, ConsumeBoosts after one): as the game had them (flag heads=) - a number you set
+;on the Spells tab (flag user) kept: the game's schools, your number (HeadsToYours) -, else one head of its own school
+;(flag school=, the Spells tab - one of the seven) or yours, its least damage (LearnHitBase)
+LearnHitHeads(c)
+	{
+	global hitschool
+	lhOut := {heads: {}, total: 0, sure: 0, xpip: 0, src: "", one: "", item: 0}
+	if (!IsObject(c))
+		return lhOut
+	lhOut.xpip := (IsFunc("LearnHasFlag") && Func("LearnHasFlag").Call(c, "xpip")) ? 1 : 0
+	lhOut.item := (IsFunc("LearnHasFlag") && Func("LearnHasFlag").Call(c, "item")) ? 1 : 0
+	if (IsFunc("LearnFlag") && HeadsParse(Func("LearnFlag").Call(c, "heads"), lhOut))
+		{
+		lhOut.src := "the game (learned card)"
+		if (IsFunc("LearnHasFlag") && Func("LearnHasFlag").Call(c, "user") && IsFunc("LearnHitBase"))
+			HeadsToYours(lhOut, Func("LearnHitBase").Call(c))
+		return lhOut
+		}
+	lhBase := IsFunc("LearnHitBase") ? Func("LearnHitBase").Call(c) : ""
+	if (lhBase = "" || lhBase <= 0)
+		return lhOut
+	lhS := IsFunc("LearnFlag") ? Func("LearnFlag").Call(c, "school") : ""
+	lhS := BadgeNumber(lhS) ? lhS : hitschool
+	lhOut.heads[lhS] := lhBase, lhOut.total := lhBase, lhOut.src := "its school's"
+	return lhOut
+	}
+
+;Least damage of a hit with heads hh (HitHeads'): each head times per (an X-pip hit's pips) with the boosts that fit its
+;school (HitDamageFrom), floored and added; the enchant's add (once - it's one card) on the head where it adds the least
+HeadsDamage(hh, per, add, toBoss)
+	{
+	hdD := {}, hdSum := 0
+	for hdS, hdB in hh.heads
+		hdD[hdS] := HitDamageFrom(hdB * per, toBoss, hdS), hdSum += hdD[hdS]
+	if (add <= 0)
+		return hdSum
+	hdBest := ""
+	for hdS, hdB in hh.heads
+		{
+		hdT := hdSum - hdD[hdS] + HitDamageFrom(hdB * per + add, toBoss, hdS)
+		if (hdBest = "" || hdT < hdBest)
+			hdBest := hdT
+		}
+	return hdBest = "" ? 0 : hdBest
+	}
+
+;"fire 230 + ice 230 + storm 230 (the game)" - a hit's heads for the log
+HeadsText(hh)
+	{
+	htOut := ""
+	for htS, htB in hh.heads
+		htOut .= (htOut = "" ? "" : " + ") htS " " htB
+	return htOut (hh.src != "" ? " (" hh.src ")" : "")
+	}
+
+;The heads' schools, your school first, then as BadgeNumber orders them: [school...]
+HeadsOrder(heads)
+	{
+	global hitschool
+	hoOut := []
+	if (IsObject(heads) && heads.HasKey(hitschool))
+		hoOut.Push(hitschool)
+	for hoI, hoS in ["storm", "fire", "myth", "balance", "ice", "life", "death"]
+		if (hoS != hitschool && IsObject(heads) && heads.HasKey(hoS))
+			hoOut.Push(hoS)
+	return hoOut
+	}
+
+;The blade and trap groups of schools list: "elemental" (fire, ice, storm), "spirit" (myth, life, death), each once, in
+;list's order - Balance has none
+PlanGroups(list)
+	{
+	pgOut := [], pgSeen := ","
+	for pgI, pgS in list
+		{
+		pgG := SchoolGroup(pgS)
+		if ((pgG = "elemental" || pgG = "spirit") && !InStr(pgSeen, "," pgG ","))
+			pgOut.Push(pgG), pgSeen .= pgG ","
+		}
+	return pgOut
+	}
+
+;Whether a copy of boost key (its src: "" the deck's, "tc", "item") can still be cast: the deck's sharpened (sharp: a
+;Sharpen / Potent in hand; never an item card's) while use1 isn't set, plain while use2 isn't; a treasure or item card's
+;once a battle (BoostSrcUsed) - it stacks with the deck's
+BoostCopyCanGo(key, src, item, sharp, use1, use2)
+	{
+	global BoostSrcUsed
+	if (src = "")
+		return (sharp && !item && use1 != 1) || use2 != 1
+	return !(IsObject(BoostSrcUsed) && BoostSrcUsed.HasKey(BoostBase(key) "@" src))
+	}
+
+;Whether boost key can still go this round: a copy of it in the game's hand that can (BoostHand, BoostCopyCanGo); without
+;it, as ever - its sharpened cast (a Sharpen / Potent in hand) or its plain one not used this battle
+BoostCanGo(key)
+	{
+	global
+	local bcgF, bcgI, bcgC, bcgSharp
+	bcgF := KeyFlags(key)
+	if (!IsObject(bcgF))
+		return false
+	if (BoostKind(key) = "trap")
+		{
+		if (TrapOn != 1)
+			return false
+		bcgSharp := (potent == 1)
+		}
+	else
+		bcgSharp := (sharpen == 1)
+	if (IsObject(BoostHand) && BoostHand.HasKey(key))
+		{
+		for bcgI, bcgC in BoostHand[key]
+			if (BoostCopyCanGo(key, bcgC.src, bcgC.item, bcgSharp, UsedFlag(bcgF[1]), UsedFlag(bcgF[2])))
+				return true
+		return false
+		}
+	return (bcgSharp && UsedFlag(bcgF[1]) != 1) || UsedFlag(bcgF[2]) != 1
+	}
+
+;The card boxes of a fresh look at the hand (CardLearn.ahk LearnHandRead), each with the game's card on it - VisionCards',
+;left to right, only when they're as many: [{l, t, w, h, known, m, n (its number in the game's hand)}]; "" they aren't,
+;or either isn't there
+BoostBoxes()
+	{
+	bbHand := IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : ""
+	if (!IsObject(bbHand) || !IsFunc("LearnHandRead"))
+		return ""
+	bbAns := Func("LearnHandRead").Call()
+	bbOut := []
+	Loop, Parse, bbAns, `n, `r
+		{
+		bbF := StrSplit(A_LoopField, "|")
+		if (bbF.Length() < 12 || bbF[1] != "card" || (bbF.Length() >= 15 && bbF[15] = "0"))
+			continue
+		bbOut.Push({l: bbF[2] + 0, t: bbF[3] + 0, w: bbF[4] + 0, h: bbF[5] + 0, known: bbF[6]})
+		}
+	if (!bbOut.Length() || bbOut.Length() != bbHand.cards.Length())
+		return ""
+	for bbI, bbB in bbOut
+		bbB.m := bbHand.cards[bbI], bbB.n := bbI
+	return {boxes: bbOut, hand: bbHand}
+	}
+
+;Which copy of boost card key in hand the card at x, y is - UseBlade, UseTrap, with the game's hand read (BoostHand):
+;{src ("" the deck's, "tc", "item"), item (1: an item card - never sharpened or made potent), moved (1: that copy can't go
+;- its casts used this battle - so x, y are now another copy's that can, plain: one moved to is never sharpened)}; "" none
+;that's in hand can go. Its copies all one kind (the same src, item card or not), or the boxes and the game's cards not
+;lining up: the first kind of its copies that can go, the deck's first - never sharpened if any is an item card
+BoostCopyPick(key, ByRef x, ByRef y, sharp, use1, use2)
+	{
+	;(every copy in hand one kind - as most often, one copy: a fresh look at the hand can't change which goes, so none is
+	;asked for - each is a /hand read for the helper, about 0.1 s)
+	bcpF := "", bcpOne := 1
+	for bcpI, bcpC in BoostHand[key]
+		bcpT := bcpC.src "|" (bcpC.item ? 1 : 0), bcpOne := bcpOne && (bcpF = "" || bcpT = bcpF), bcpF := bcpT
+	;(and only while the game's hand holds no other blade or trap - a click found on another boost's box is then moved onto
+	;the real card by the look; this look's cached hand: no read)
+	bcpHand := bcpOne && IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : "", bcpN := 0
+	if (IsObject(bcpHand))
+		for bcpI, bcpC in bcpHand.cards
+			bcpN += (bcpC.kind = "blade" || bcpC.kind = "trap") ? 1 : 0
+	bcpOne := bcpOne && IsObject(bcpHand) && bcpN = BoostHand[key].Length()
+	bcpAll := bcpOne ? "" : BoostBoxes()
+	if (IsObject(bcpAll))
+		{
+		bcpIs := {}
+		for bcpI, bcpN in BoostMatches(key, bcpAll.hand.cards)
+			bcpIs[bcpN] := 1
+		bcpAt := "", bcpGo := ""
+		for bcpI, bcpB in bcpAll.boxes
+			{
+			if (!bcpIs.HasKey(bcpB.n))
+				continue
+			bcpSrc := BoostSrcOf(bcpB.m), bcpItem := bcpB.m.item ? 1 : 0
+			if (x >= bcpB.l - 5 && x <= bcpB.l + bcpB.w + 5)
+				bcpAt := {src: bcpSrc, item: bcpItem, can: BoostCopyCanGo(key, bcpSrc, bcpItem, sharp, use1, use2), moved: 0}
+			;(another copy's box: only one that can go plain - UseBlade / UseTrap never sharpen or make potent a copy moved to)
+			else if (!IsObject(bcpGo) && BoostCopyCanGo(key, bcpSrc, bcpItem, 0, use1, use2))
+				bcpGo := {src: bcpSrc, item: bcpItem, can: 1, moved: 1, x: Round(bcpB.l + bcpB.w / 2), y: Round(bcpB.t + bcpB.h * 0.45)}
+			}
+		if (IsObject(bcpAt) && bcpAt.can)
+			return bcpAt
+		if (IsObject(bcpGo))
+			{
+			x := bcpGo.x, y := bcpGo.y
+			DebugLog("  " key ": the copy found can't go again this battle - its " (bcpGo.src = "" ? "deck" : bcpGo.src) " copy instead, at " x - GameLeft "," y - GameTop)
+			return bcpGo
+			}
+		if (IsObject(bcpAt))
+			return ""
+		}
+	;(one kind, or the boxes and the cards don't line up: by the copies BoostSearch saw - each kind of them in turn, the
+	;deck's, then an item card's, then a treasure card's: the first that can go, as BoostCanGo has it)
+	bcpSrcs := {}, bcpAny := 0
+	for bcpI, bcpC in BoostHand[key]
+		bcpSrcs[bcpC.src = "" ? "deck" : bcpC.src] := 1, bcpAny := bcpAny || bcpC.item
+	for bcpS in bcpSrcs
+		{
+		bcpSrc := (bcpS = "deck") ? "" : bcpS
+		if (BoostCopyCanGo(key, bcpSrc, bcpAny, sharp, use1, use2))
+			return {src: bcpSrc, item: bcpAny, can: 1, moved: 0}
+		}
+	return ""
+	}
+
+;The schools of the aura card just cast, as the game's hand has it (AuraSch: "all", "fire,ice" - one aura card in hand
+;read for sure), else "" (yours)
+BoostAuraSchools()
+	{
+	basHand := IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : ""
+	basOut := "", basN := 0
+	if (IsObject(basHand))
+		for basI, basC in basHand.cards
+			if (basC.kind = "aura")
+				basN += 1, basB := BoostsParse(basC.boosts), basOut := IsObject(basB) ? basB.sch : ""
+	return basN = 1 ? basOut : ""
+	}
+
+;FindCards, once the pips are read (and before the hand's read for learning: the helper's /hand must know these pictures,
+;or a pictured Storm Blade is learned again): the blades and traps of every school this round's hits need, by their
+;pictures - SbFound {"<school>/blade" / "<school>/trap": {x, y}}, GbFound {"elementalblade"...: 1} - and blade, trap,
+;blade2, trap2 for the log and the discards (BoostPick picks this round's). The schools: a party battle's blader's or
+;healer's - and Alt+2's pick of another school's wizard - the hitter's: its planned hit's (HammerPlan, Party.ahk), else its
+;school; else yours, every head of the hits in hand (HitHeads: a Balance Hydra's fire, ice and storm) and of every hit in
+;the game's hand. Balance's own blade and trap are Balanceblade and Hex (resources\blade3, trap3): its folder isn't
+;searched. With the game's hand read (VisionCards), a picture found for a card that isn't in it is a false match - not
+;used -, each boost found counts at the % of its card in hand (BoostPctMem) and its copies are noted (BoostHand: a
+;treasure or item card's stacks with the deck's)
+BoostSearch()
+	{
+	global
+	local bsHand, bsWant, bsSeen, bsI, bsS, bsH, bsHh, bsC, bsF, bsX, bsY, bsG, bsK, bsKeys, bsM, bsJ, bsN, bsP, bsSrc, bsLog, bsTr, bsHas, bsB, bsSlot, bsNm
+	SbFound := {}, GbFound := {}, BoostPctMem := {}, BoostHand := {}, BoostMemOk := 0
+	blade := 0, trap := 0, blade2 := 0, trap2 := 0, BladeDir := "", TrapDir := "", bladetype := "", traptype := ""
+	if (!IsObject(BoostSrcUsed))
+		BoostSrcUsed := {}
+	if (!IsObject(BoostSaid))
+		BoostSaid := {}
+	if (hitschool = "")
+		return
+	;(the game's hand as the helper read it this look - an older helper's, with no heads or boosts, isn't used here: the
+	;cards are played as before)
+	bsHand := VisionCards(300, 5000)
+	BoostMemOk := (IsObject(bsHand) && (!bsHand.cards.Length() || bsHand.cards[1].nf >= 25)) ? 1 : 0
+	if (!BoostMemOk)
+		bsHand := ""
+	bsWant := [], bsSeen := ","
+	if (PartySupport() || (Manual = 1 && HammerSchool != hitschool))
+		{
+		bsH := HammerPlan != "" ? HammerPlan : HammerSchool
+		Loop, Parse, bsH, `,
+			if (BadgeNumber(A_LoopField) && !InStr(bsSeen, "," A_LoopField ","))
+				bsWant.Push(A_LoopField), bsSeen .= A_LoopField ","
+		}
+	else
+		{
+		bsWant.Push(hitschool), bsSeen .= hitschool ","
+		;(hit4 only on a picked boss - it's cast on bosses only)
+		for bsI, bsH in ["hit4", "hit3", "hit2", "hit1"]
+			if (%bsH% == 1 && (bsH != "hit4" || BossChoosen == 1))
+				for bsS in HitHeads(bsH).heads
+					if (!InStr(bsSeen, "," bsS ","))
+						bsWant.Push(bsS), bsSeen .= bsS ","
+		if (BoostMemOk)
+			for bsI, bsC in bsHand.cards
+				{
+				bsHh := {}
+				if ((bsC.kind = "damage" || bsC.kind = "aoe") && HeadsParse(bsC.heads, bsHh))
+					for bsS in bsHh.heads
+						if (!InStr(bsSeen, "," bsS ","))
+							bsWant.Push(bsS), bsSeen .= bsS ","
+				}
+		}
+	;(the wand's heads too, looked at now - the kill check asks)
+	if (wand == 1)
+		HitHeads("wand")
+	;(the other schools' pictures the helper is asked about from now on this battle - Vision.ahk VisionPicList)
+	for bsI, bsS in bsWant
+		if (bsS != hitschool && bsS != "balance" && !InStr("," BoostExtra ",", "," bsS ","))
+			BoostExtra .= (BoostExtra = "" ? "" : ",") bsS
+	for bsI, bsS in bsWant
+		{
+		if (bsS = "balance")
+			continue
+		bsF := 0, bsX := "", bsY := ""
+		Find("blade", bsF, bsX, bsY, bsS)
+		if (bsF == 1)
+			SbFound[bsS "/blade"] := {x: bsX, y: bsY}
+		bsF := 0, bsX := "", bsY := ""
+		Find("trap", bsF, bsX, bsY, bsS)
+		if (bsF == 1)
+			SbFound[bsS "/trap"] := {x: bsX, y: bsY}
+		}
+	for bsI, bsG in PlanGroups(bsWant)
+		{
+		if (Tri(bsG, "blade"))
+			GbFound[bsG "blade"] := 1
+		if (Tri(bsG, "trap"))
+			GbFound[bsG "trap"] := 1
+		}
+	;(the game's hand read: a picture found for a card it doesn't have is a false match; each one's cards - their % and copies)
+	if (BoostMemOk)
+		{
+		bsKeys := [], bsHas := {}
+		for bsK in SbFound
+			bsKeys.Push(bsK)
+		for bsK in GbFound
+			bsKeys.Push(bsK)
+		for bsI, bsK in ["blade3", "blade4", "trap3", "feint"]
+			if (%bsK% == 1)
+				bsKeys.Push(bsK)
+		for bsI, bsK in bsKeys
+			{
+			bsM := BoostMatches(bsK, bsHand.cards)
+			if (!bsM.Length())
+				{
+				if (SbFound.HasKey(bsK))
+					SbFound.Delete(bsK)
+				else if (GbFound.HasKey(bsK))
+					GbFound.Delete(bsK)
+				else
+					%bsK% := 0
+				if (!BoostSaid.HasKey("false|" bsK))
+					BoostSaid["false|" bsK] := 1, DebugLog("  the " bsK " picture matched, but the game has no such card in hand - a false match, not used")
+				continue
+				}
+			BoostHand[bsK] := []
+			for bsJ, bsN in bsM
+				{
+				bsC := bsHand.cards[bsN], bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsHas[bsN] := 1
+				BoostHand[bsK].Push({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP})
+				if (bsP != "")
+					{
+					if (!BoostPctMem.HasKey(bsK) || bsP < BoostPctMem[bsK])
+						BoostPctMem[bsK] := bsP
+					bsS := bsK "@" (bsSrc = "" ? "deck" : bsSrc)
+					if (!BoostPctMem.HasKey(bsS) || bsP < BoostPctMem[bsS])
+						BoostPctMem[bsS] := bsP
+					}
+				}
+			}
+		;(the game's blades and traps in hand no picture found: said once a battle - the learner puts them in their slot)
+		for bsI, bsC in bsHand.cards
+			{
+			if ((bsC.kind != "blade" && bsC.kind != "trap") || bsHas.HasKey(bsI))
+				continue
+			bsB := BoostsParse(bsC.boosts), bsNm := IsFunc("LearnMemGame") ? Func("LearnMemGame").Call(bsC) : bsC.name
+			if (!IsObject(bsB) || BoostSaid.HasKey("miss|" bsNm))
+				continue
+			BoostSaid["miss|" bsNm] := 1, bsSlot := BoostSlotFor(bsC.kind, bsB.sch, bsB.pct, hitschool)
+			DebugLog("  in hand (the game): " bsNm " (" bsC.kind " " bsB.sch " " bsB.pct "%) - no picture found it" (bsSlot != "" ? " (" bsSlot "); the learner puts it there when it's free" : " (no slot is for it)"))
+			}
+		}
+	;(this look's: the first school blade and trap in the schools' order, the first group's)
+	for bsI, bsS in bsWant
+		{
+		if (!blade && SbFound.HasKey(bsS "/blade"))
+			blade := 1, BladeDir := bsS, BladeX := SbFound[bsS "/blade"].x, BladeY := SbFound[bsS "/blade"].y
+		if (!trap && SbFound.HasKey(bsS "/trap"))
+			trap := 1, TrapDir := bsS, trapX := SbFound[bsS "/trap"].x, trapY := SbFound[bsS "/trap"].y
+		}
+	for bsI, bsG in PlanGroups(bsWant)
+		{
+		if (!blade2 && GbFound.HasKey(bsG "blade"))
+			blade2 := 1, bladetype := bsG "blade"
+		if (!trap2 && GbFound.HasKey(bsG "trap"))
+			trap2 := 1, traptype := bsG "trap"
+		}
+	;(said when it's more than your own school's - a plain one-school battle's log as before)
+	if (bsWant.Length() != 1 || bsWant[1] != hitschool || BoostMemOk)
+		{
+		bsLog := "", bsTr := ""
+		for bsK in SbFound
+			if (InStr(bsK, "/blade"))
+				bsLog .= (bsLog = "" ? "" : ", ") bsK
+			else
+				bsTr .= (bsTr = "" ? "" : ", ") bsK
+		for bsK in GbFound
+			if (InStr(bsK, "blade"))
+				bsLog .= (bsLog = "" ? "" : ", ") bsK
+			else
+				bsTr .= (bsTr = "" ? "" : ", ") bsK
+		for bsI, bsK in ["blade3", "blade4"]
+			if (%bsK% == 1)
+				bsLog .= (bsLog = "" ? "" : ", ") bsK
+		for bsI, bsK in ["trap3", "feint"]
+			if (%bsK% == 1)
+				bsTr .= (bsTr = "" ? "" : ", ") bsK
+		bsS := ""
+		for bsI, bsH in bsWant
+			bsS .= (bsS = "" ? "" : ",") bsH
+		DebugLog("  boosts searched for " (bsS = "" ? "no school (the hitter's isn't known: only every school's)" : bsS) ": " (bsLog = "" ? "no blade" : bsLog) "; traps: " (bsTr = "" ? "none" : bsTr) (BoostMemOk ? " (the game's hand)" : ""))
+		}
+	}
+
+;The planned hit's share of damage boost key fits (1: every school's boost)
+BoostShare(key)
+	{
+	global PlanHeads
+	if (BoostSchools(key) = "all")
+		return 1
+	if (!IsObject(PlanHeads) || PlanHeads.total <= 0)
+		return 0
+	bshN := 0
+	for bshS, bshV in PlanHeads.heads
+		if (BoostFits(key, bshS))
+			bshN += bshV
+	return bshN / PlanHeads.total
+	}
+
+;Of the boosts in list (SbFound / GbFound) of kind ("blade" / "trap"), the one that adds the most to the planned hit and
+;can still go (BoostCanGo): its % (BoostPctFor) x the share of the hit's damage it fits (BoostShare) - ties: your school's,
+;then as BadgeNumber orders them. "" none fits
+BoostBest(list, kind)
+	{
+	global hitschool
+	bbBest := "", bbGain := 0, bbRank := 99
+	for bbK in list
+		{
+		if (BoostKind(bbK) != kind)
+			continue
+		bbG := BoostPctFor(bbK) * BoostShare(bbK)
+		if (bbG <= 0 || !BoostCanGo(bbK))
+			continue
+		bbS := InStr(bbK, "/") ? SubStr(bbK, 1, InStr(bbK, "/") - 1) : ""
+		bbR := (bbS != "" && bbS = hitschool) ? 0 : (bbS != "") ? BadgeNumber(bbS) : InStr(bbK, "elemental") ? 8 : 9
+		if (bbG > bbGain || (bbG = bbGain && bbR < bbRank))
+			bbBest := bbK, bbGain := bbG, bbRank := bbR
+		}
+	return bbBest
+	}
+
+;The hit planned, for the log: "Hydra (hit3)", "hit3", "the hitter's", "learned hit <id>"
+PlanName()
+	{
+	global PlanHit, hitschool
+	if (PlanHit = "hitter")
+		return "the hitter's hit"
+	if (InStr(PlanHit, "learned/") = 1)
+		return "learned hit " SubStr(PlanHit, 9)
+	pnN := (IsFunc("DashShortName") && RegExMatch(PlanHit, "^hit\d$")) ? Func("DashShortName").Call(PlanHit, hitschool) : ""
+	return (pnN != "" && pnN != PlanHit) ? pnN " (" PlanHit ")" : PlanHit != "" ? PlanHit : "no hit"
+	}
+
+;The damage hit hitN would deal this round against the enemies left (PlanChoose: the planned hit deals the most) -
+;HitDamage with the blades and traps on and those in hand that can still go (each once, at its %: SbFound, GbFound,
+;blade3, blade4, trap3 - traps when they go on the boss), an enchant in hand on it: an all-enemies hit on each enemy
+;left (its health the most it can take), a one-enemy hit on the one it does the most to; their health not read: an
+;all-enemies hit times the plates found
+PlanProject(hitN)
+	{
+	global
+	local ppKeepB, ppKeepT, ppB, ppT, ppK, ppL, ppI, ppJ, ppE, ppD, ppSum, ppBest, ppOne, ppUe, ppHh, ppKeys
+	ppKeepB := AppliedBlades, ppKeepT := BossTraps
+	ppB := AppliedBlades.Clone(), ppT := BossTraps.Clone(), ppKeys := []
+	for ppI, ppL in [SbFound, GbFound]
+		for ppK in ppL
+			ppKeys.Push(ppK)
+	for ppI, ppK in ["blade3", "blade4", "trap3"]
+		if (%ppK% == 1)
+			ppKeys.Push(ppK)
+	for ppI, ppK in ppKeys
+		if (BoostCanGo(ppK) && !ppB.HasKey(ppK) && !ppT.HasKey(ppK))
+			{
+			if (BoostKind(ppK) = "trap")
+				ppT[ppK] := BoostPctFor(ppK)
+			else
+				ppB[ppK] := BoostPctFor(ppK)
+			}
+	AppliedBlades := ppB, BossTraps := ppT
+	ppHh := HitHeads(hitN), ppUe := (enchant >= 1 && !ppHh.item)
+	ppOne := (ppHh.one != "") ? ppHh.one : (Stat(hitschool "." hitN "target") = 1)
+	if (IsObject(EnemyHP) && EnemyHP.Length())
+		{
+		ppSum := 0, ppBest := 0
+		for ppI, ppE in EnemyHP
+			{
+			ppD := Min(HitDamage(hitN, ppUe, ppI == BossSlot), ppE.cur)
+			ppSum += ppD, ppBest := Max(ppBest, ppD)
+			}
+		ppD := ppOne ? ppBest : ppSum
+		}
+	else
+		ppD := HitDamage(hitN, ppUe, BossChoosen == 1) * ((ppOne || EnemyPlates.Length() < 1) ? 1 : EnemyPlates.Length())
+	AppliedBlades := ppKeepB, BossTraps := ppKeepT
+	return ppD
+	}
+
+;The hit this round's boosts are for (BoostPick) - the one CastBestHit casts first: the kill check's own pick when it can
+;kill now; with the game's hand read this look (the user, 2026-10-24), the one dealing the most (PlanProject) of hit4 (a
+;picked boss only), hit3, hit2, hit1 in hand you can pay for now (pips saved for one: that one), else of those in hand;
+;without it as ever: the first of them you can pay for and aren't saving pips against, else the one pips are saved for,
+;else the first in hand. None in hand: the strongest learned hit in no slot ("learned/<id>"); none: ""
+PlanChoose()
+	{
+	global
+	local pcL, pcI, pcH, pcBest, pcBestV, pcV, pcLh, pcPass
+	if (RegExMatch(KillHit, "^hit[1-4]$"))
+		if (%KillHit% == 1)
+			return KillHit
+	pcL := (BossChoosen == 1) ? ["hit4", "hit3", "hit2", "hit1"] : ["hit3", "hit2", "hit1"]
+	if (BoostMemOk)
+		{
+		pcBest := "", pcBestV := -1
+		Loop, 2
+			{
+			pcPass := A_Index
+			for pcI, pcH in pcL
+				if (%pcH% == 1 && (pcPass = 2 || (PipSaveFor != "" ? PipSaveFor = pcH : Affordable(pcH))))
+					{
+					pcV := PlanProject(pcH)
+					if (pcV > pcBestV)
+						pcBest := pcH, pcBestV := pcV
+					}
+			if (pcBest != "")
+				return pcBest
+			}
+		}
+	else
+		{
+		for pcI, pcH in pcL
+			if (%pcH% == 1 && Affordable(pcH) && (PipSaveFor = "" || PipSaveFor = pcH))
+				return pcH
+		if (RegExMatch(PipSaveFor, "^hit[1-4]$"))
+			if (%PipSaveFor% == 1)
+				return PipSaveFor
+		for pcI, pcH in pcL
+			if (%pcH% == 1)
+				return pcH
+		}
+	if (IsFunc("LearnHitCards") && LastHandAnswer != "")
+		{
+		pcLh := Func("LearnHitCards").Call(LastHandAnswer)
+		if (pcLh.Length())
+			return "learned/" pcLh[1].id
+		}
+	return ""
+	}
+
+;Right before the round's cards are played (after the kill check - it can name the hit, and PipSaveFor is this round's):
+;the planned hit (PlanHit, PlanHeads, PlanList: its schools - a party's supports boost for them, Party.ahk) - a blader's or
+;healer's, Alt+2's pick's: the hitter's -, and of the blades and traps found (BoostSearch) the ones the chain casts: the
+;school blade and trap that add the most to it (blade, BladeDir and its flags BladeU1/2; trap, TrapDir, TrapU1/2), the
+;group's (blade2, bladetype, Blade2U1/2; trap2, traptype, Trap2U1/2); every school's (blade3, blade4, trap3, feint) as
+;found. A hit of two or more schools (Hydra): only the blade and the trap that add the most go this round - Elemental Blade
+;(all three heads) before Balanceblade, before a Storm Blade (one head)
+BoostPick()
+	{
+	global
+	local bpL, bpS, bpK, bpF, bpN, bpBest, bpG, bpC, bpI, bpFit, bpNot, bpLog, bpLc, bpCand, bpMax, bpWho
+	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := {}
+	if (hitschool = "")
+		return
+	if (PartySupport() || (Manual = 1 && HammerSchool != hitschool))
+		{
+		PlanHit := "hitter", PlanHeads := {heads: {}, total: 0, sure: 0, src: "the hitter's"}
+		bpL := HammerPlan != "" ? HammerPlan : (BadgeNumber(HammerSchool) ? HammerSchool : "")
+		Loop, Parse, bpL, `,
+			if (BadgeNumber(A_LoopField) && !PlanHeads.heads.HasKey(A_LoopField))
+				PlanHeads.heads[A_LoopField] := 1, PlanHeads.total += 1
+		}
+	else
+		{
+		PlanHit := PlanChoose()
+		if (InStr(PlanHit, "learned/") = 1)
+			PlanHeads := LearnHitHeads(IsFunc("LearnCardOf") ? Func("LearnCardOf").Call(SubStr(PlanHit, 9)) : "")
+		else if (PlanHit != "")
+			PlanHeads := HitHeads(PlanHit)
+		if (!IsObject(PlanHeads) || PlanHeads.total <= 0)
+			{
+			PlanHeads := {heads: {}, total: 1, sure: 0, src: "your school's"}
+			PlanHeads.heads[hitschool] := 1
+			}
+		;(its schools for the party's supports only when they're known - the game's, PlayerStats.txt's heads: one taken as
+		;your school's goes out blank, so a support never throws a blade away for a guess - BoostMisfitDiscard)
+		if (PlanHeads.sure)
+			for bpI, bpS in HeadsOrder(PlanHeads.heads)
+				PlanList .= (PlanList = "" ? "" : ",") bpS
+		}
+	;(the school blade and trap, the group's)
+	blade := 0, BladeDir := "", BladeU1 := "", BladeU2 := ""
+	bpK := BoostBest(SbFound, "blade")
+	if (bpK != "")
+		bpF := KeyFlags(bpK), blade := 1, BladeDir := SubStr(bpK, 1, InStr(bpK, "/") - 1), BladeU1 := bpF[1], BladeU2 := bpF[2]
+	trap := 0, TrapDir := "", TrapU1 := "", TrapU2 := ""
+	bpK := BoostBest(SbFound, "trap")
+	if (bpK != "")
+		bpF := KeyFlags(bpK), trap := 1, TrapDir := SubStr(bpK, 1, InStr(bpK, "/") - 1), TrapU1 := bpF[1], TrapU2 := bpF[2]
+	blade2 := 0, Blade2U1 := "", Blade2U2 := ""
+	bpK := BoostBest(GbFound, "blade")
+	if (bpK != "")
+		bpF := KeyFlags(bpK), blade2 := 1, bladetype := bpK, Blade2U1 := bpF[1], Blade2U2 := bpF[2]
+	trap2 := 0, Trap2U1 := "", Trap2U2 := ""
+	bpK := BoostBest(GbFound, "trap")
+	if (bpK != "")
+		bpF := KeyFlags(bpK), trap2 := 1, traptype := bpK, Trap2U1 := bpF[1], Trap2U2 := bpF[2]
+	bpN := 0
+	for bpS in PlanHeads.heads
+		bpN += 1
+	;(what fits the plan, for the log - said when it's more than one school, the game's hand was read, or for the hitter)
+	bpWho := (bpN >= 2 || BoostMemOk || PlanHit = "hitter")
+	if (bpWho)
+		{
+		bpFit := "", bpNot := ""
+		for bpI, bpLc in [SbFound, GbFound]
+			for bpK in bpLc
+				{
+				bpG := BoostShare(bpK)
+				if (bpG > 0)
+					bpFit .= (bpFit = "" ? "" : ", ") bpK " " BoostPctFor(bpK) "%" (bpG < 1 ? " (" BoostHeadsText(bpK) ")" : "")
+				else
+					bpNot .= (bpNot = "" ? "" : ", ") bpK
+				}
+		for bpI, bpK in ["blade3", "blade4", "trap3", "feint"]
+			if (%bpK% == 1)
+				bpFit .= (bpFit = "" ? "" : ", ") bpK " " BoostPctFor(bpK) "%"
+		}
+	;(a hit of two or more schools: the one blade and the one trap that add the most this round)
+	if (bpN >= 2)
+		{
+		BoostOneOf([["blade", BladeDir "/blade"], ["blade2", bladetype], ["blade3", "blade3"], ["blade4", "blade4"]], "blade")
+		BoostOneOf([["trap", TrapDir "/trap"], ["trap2", traptype], ["trap3", "trap3"]], "trap")
+		}
+	if (bpWho)
+		{
+		bpLog := ""
+		for bpI, bpC in [["feint", "feint"], ["trap", TrapDir "/trap"], ["trap2", traptype], ["trap3", "trap3"], ["blade", BladeDir "/blade"], ["blade2", bladetype], ["blade3", "blade3"], ["blade4", "blade4"]]
+			{
+			bpS := bpC[1]
+			if (%bpS% == 1 && (BoostKind(bpC[2]) = "blade" || TrapOn == 1) && BoostCanGo(bpC[2]))
+				bpLog .= (bpLog = "" ? "" : ", ") bpC[2]
+			}
+		DebugLog("  plan: " PlanName() (PlanHeads.total > 0 && PlanHit != "hitter" ? ": " HeadsText(PlanHeads) : PlanList != "" ? " (" PlanList ")" : "")
+			. (PlanHit = "hitter" ? " - its schools: " (HammerPlan != "" ? HammerPlan " (its planned hit)" : HammerSchool != "" ? HammerSchool : "not known") : "")
+			. " - fits: " (bpFit = "" ? "nothing in hand" : bpFit) (bpNot != "" ? " - not for it: " bpNot : "") "; this round: " (bpLog = "" ? "none" : bpLog))
+		}
+	}
+
+;"1 of 3 heads" - how many of the planned hit's heads boost key fits (BoostPick's log)
+BoostHeadsText(key)
+	{
+	global PlanHeads
+	bhtN := 0, bhtF := 0
+	for bhtS in PlanHeads.heads
+		bhtN += 1, bhtF += BoostFits(key, bhtS) ? 1 : 0
+	return bhtF " of " bhtN " heads"
+	}
+
+;Of the battle code's flags in list ([its variable's name, its boost key]) of kind ("blade" / "trap") set (1) whose boost
+;can go, only the one adding the most to the planned hit stays set this round (ties: list's order - the chain's); the
+;others 0 - noted (BoostOneOfOff[kind]) and set again if the one kept can't be cast after all (BoostOneOfBack)
+BoostOneOf(list, kind)
+	{
+	global
+	local booI, booP, booV, booK, booG, booBest, booBestG, booOff
+	booBest := "", booBestG := -1, booOff := []
+	for booI, booP in list
+		{
+		booV := booP[1], booK := booP[2]
+		if (%booV% != 1)
+			continue
+		if (!BoostCanGo(booK))
+			{
+			%booV% := 0
+			continue
+			}
+		booG := BoostPctFor(booK) * BoostShare(booK)
+		if (booG > booBestG)
+			booBest := booV, booBestG := booG
+		}
+	for booI, booP in list
+		{
+		booV := booP[1]
+		if (booV != booBest)
+			{
+			if (%booV% == 1)
+				booOff.Push(booV)
+			%booV% := 0
+			}
+		}
+	if (!IsObject(BoostOneOfOff))
+		BoostOneOfOff := {}
+	BoostOneOfOff[kind] := booOff
+	}
+
+;The flags of kind ("blade" / "trap") BoostOneOf took off this round set again: the one it kept can't be cast after all
+;(no copy of it in hand can go now - BoostCopyPick: UseBlade, UseTrap), so the chain goes on to the next that can
+BoostOneOfBack(kind)
+	{
+	global
+	local boobI, boobV, boobL
+	if (!IsObject(BoostOneOfOff) || !IsObject(BoostOneOfOff[kind]) || !BoostOneOfOff[kind].Length())
+		return
+	boobL := ""
+	for boobI, boobV in BoostOneOfOff[kind]
+		%boobV% := 1, boobL .= (boobL = "" ? "" : ", ") boobV
+	BoostOneOfOff[kind] := []
+	DebugLog("  the " kind "s held back this round can go instead: " boobL)
+	}
+
+;The wand's card isn't cast while it would use up a blade or trap on you meant for the planned hit - both their heads the
+;game's (or PlayerStats.txt's): a boost on that fits a head of each. Else (not known) it's cast, as before
+WandWastes()
+	{
+	global
+	local wwW, wwI, wwL, wwK, wwV, wwS, wwT
+	if (!IsObject(PlanHeads) || !PlanHeads.sure || !RegExMatch(PlanHit, "^hit[1-4]$"))
+		return false
+	wwW := HitHeads("wand")
+	if (!wwW.sure)
+		return false
+	for wwI, wwL in [AppliedBlades, BossTraps]
+		for wwK, wwV in wwL
+			for wwS in wwW.heads
+				if (BoostFits(wwK, wwS))
+					for wwT in PlanHeads.heads
+						if (BoostFits(wwK, wwT))
+							{
+							DebugLog("  wand not cast: it would use up " BoostBase(wwK) " (" wwV "%) meant for " PlanName())
+							return true
+							}
+	return false
+	}
+
+;A party battle's blader or healer (the user, 2026-10-24): a blade in hand - the game's - that boosts neither the hitter's
+;planned hit (its schools as the hitter knows them for sure: HammerPlan, Party.ahk - not heard yet, round 1 before its
+;first plan, a plan it isn't sure of, an older bot: nothing goes, a discard can't be undone) nor this wizard's own school
+;is right-clicked away, by its box (a fresh look at the hand laid on the game's cards - BoostBoxes); never a treasure
+;card, never one you said never to discard (Spells tab), nothing while you play; once a round, at most discardmax.
+;Returns how many
+BoostMisfitDiscard()
+	{
+	global
+	local bmdAll, bmdWant, bmdI, bmdB, bmdP, bmdC, bmdLc, bmdDid, bmdMost, bmdS, bmdFits, bmdK, bmdO, bmdX, bmdY
+	if (BoostMisfitDone || !BoostMemOk || !Stat("discardunused") || LearnAll)
+		return 0
+	BoostMisfitDone := 1
+	;(the hitter's plan only - never its school taken for it)
+	bmdWant := HammerPlan
+	if (bmdWant = "" || hitschool = "" || (IsFunc("PlayerActing") && Func("PlayerActing").Call()))
+		return 0
+	bmdAll := BoostBoxes()
+	if (!IsObject(bmdAll))
+		return 0
+	bmdDid := 0, bmdMost := StatOr("discardmax", 3) + 0, bmdI := 1
+	while (bmdI <= bmdAll.boxes.Length() && bmdDid < bmdMost)
+		{
+		bmdB := bmdAll.boxes[bmdI], bmdC := bmdB.m, bmdP := BoostsParse(bmdC.boosts), bmdLc := ""
+		if (InStr(bmdB.known, "learned/") = 1 && IsFunc("LearnCardOf"))
+			bmdLc := Func("LearnCardOf").Call(SubStr(bmdB.known, 9))
+		else if (bmdB.known != "" && IsFunc("LearnCardInSlot"))
+			bmdLc := Func("LearnCardInSlot").Call(StrReplace(bmdB.known, "/", "\"))
+		bmdFits := !IsObject(bmdP) || bmdP.sch = "all"
+		if (!bmdFits)
+			Loop, Parse, % bmdP.sch, `,
+				if (A_LoopField = hitschool || InStr("," bmdWant ",", "," A_LoopField ","))
+					bmdFits := true
+		if (bmdC.kind != "blade" || bmdFits || bmdC.tc || (IsObject(bmdLc) && (Func("LearnHasFlag").Call(bmdLc, "hold") || Func("LearnHasFlag").Call(bmdLc, "tc"))))
+			{
+			bmdI += 1
+			continue
+			}
+		bmdX := Round(bmdB.l + bmdB.w / 2), bmdY := Round(bmdB.t + bmdB.h * 0.6)
+		MoveToCard(bmdX, bmdY)
+		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
+		Click, right
+		bmdDid += 1
+		DebugLog("  Discarded " (IsFunc("LearnMemGame") ? Func("LearnMemGame").Call(bmdC) : bmdC.name) " - it boosts " bmdP.sch ", not the hitter's " bmdWant " nor your " hitschool " (right-click at " bmdX - GameLeft "," bmdY - GameTop ")")
+		bmdAll.boxes.RemoveAt(bmdI)
+		for bmdK, bmdO in bmdAll.boxes
+			bmdO.l += (bmdK < bmdI ? HalfPitch : -HalfPitch)
+		s(Stat("discardafter"))
+		}
+	if (bmdDid)
+		CenterMouse(), VisionForget()
+	return bmdDid
 	}
 
 ;Blades only count toward our hits when they went on our own wizard: the hammer is our school icon
@@ -120,14 +1279,88 @@ BladeOnUs(card)
 ;A hit uses up the hammer's blades and the boss's traps. With reboost:1 the battle code may also cast
 ;its blades/traps again for the next hit (normally each is cast once per battle). The hits counted, and the round of the
 ;last (the game's log): a party's bladers and healers see them - their blades on this wizard are spent (Party.ahk); a
-;blader's or healer's own blades went on the hitter: cast again after the hitter's hit, not its own
-ConsumeBoosts()
+;blader's or healer's own blades went on the hitter: cast again after the hitter's hit, not its own.
+;hh: the hit's heads (HitHeads, LearnHitHeads). Known (the game's, or PlayerStats.txt's): only the blades and traps that
+;fit one of its schools go - a Power Nova leaves an Elemental Blade on, a Hydra takes it; one whose schools aren't known
+;goes - and the party's told its schools (PartyLastSch: a support's blades that fit none stay on); with reboost:1 only
+;those are cast again, and the blades cast on you that weren't seen there (BoostUnrec: UseBlade) that fit it. Not known:
+;all of them, as before
+ConsumeBoosts(hh := "")
 	{
-	AppliedBlades := {}
-	BossTraps := {}
+	cbSure := IsObject(hh) && hh.sure && hh.total > 0
+	cbGone := []
+	if (cbSure)
+		{
+		cbStill := ""
+		for cbI, cbList in [AppliedBlades, BossTraps]
+			{
+			cbOut := []
+			for cbKey in cbList
+				{
+				cbFit := (BoostSchools(cbKey) = "")
+				for cbS in hh.heads
+					if (BoostFits(cbKey, cbS))
+						cbFit := true
+				if (cbFit)
+					cbOut.Push(cbKey)
+				else
+					cbStill .= (cbStill = "" ? "" : ", ") cbKey
+				}
+			for cbJ, cbKey in cbOut
+				cbList.Delete(cbKey), cbGone.Push(cbKey)
+			}
+		PartyLastSch := ""
+		for cbS in hh.heads
+			PartyLastSch .= (PartyLastSch = "" ? "" : ",") cbS
+		if (cbStill != "")
+			{
+			cbText := ""
+			for cbJ, cbKey in cbGone
+				cbText .= (cbText = "" ? "" : ", ") cbKey
+			DebugLog("  used up by " HeadsText(hh) ": " (cbText = "" ? "nothing" : cbText) "; still on: " cbStill)
+			}
+		}
+	else
+		{
+		AppliedBlades := {}
+		BossTraps := {}
+		PartyLastSch := ""
+		}
 	PartyHits := (PartyHits ? PartyHits : 0) + 1, PartyHitR := (BlRound ? BlRound : 0) + 1
 	if (Stat("reboost") == 1 && !PartySupport())
-		ResetUsed()
+		{
+		if (!cbSure)
+			ResetUsed()
+		else
+			{
+			;(and each blade cast on you that wasn't seen there - your plate or badge not read that round: BoostUnrec - that
+			;fits one of its schools, or whose schools aren't known: used up with it as well)
+			cbReset := cbGone.Clone(), cbLeft := []
+			for cbJ, cbKey in (IsObject(BoostUnrec) ? BoostUnrec : [])
+				{
+				cbFit := (BoostSchools(cbKey) = "")
+				for cbS in hh.heads
+					if (BoostFits(cbKey, cbS))
+						cbFit := true
+				if (cbFit)
+					cbReset.Push(cbKey)
+				else
+					cbLeft.Push(cbKey)
+				}
+			BoostUnrec := cbLeft
+			for cbJ, cbKey in cbReset
+				{
+				;(a treasure or item card's copy: its own once-a-battle; the deck's: its sharpened or plain flag)
+				if (RegExMatch(cbKey, "@([a-z]+)\+?$", cbM))
+					{
+					if (IsObject(BoostSrcUsed))
+						BoostSrcUsed.Delete(BoostBase(cbKey) "@" cbM1)
+					}
+				else if (IsObject(cbF := KeyFlags(cbKey)))
+					UsedFlagSet(SubStr(cbKey, 0) = "+" ? cbF[1] : cbF[2], 0)
+				}
+			}
+		}
 	}
 
 ;Returns [{cur, max}, ...] for every "current/max" in the OCR text, or "" if anything health-like couldn't be read
@@ -670,32 +1903,36 @@ HealthDigits(text, gl)
 HitDamage(hitName, useEnchant, toBoss)
 	{
 	global hitschool, enchant
-	base := Stat(hitschool . "." . hitName)
-	if (base <= 0)
+	;(head by head - HitHeads: Hydra's fire, ice and storm each with the blades and traps that fit it; one head of your
+	;school - its PlayerStats.txt number - when they aren't known, as before)
+	hdHh := HitHeads(hitName)
+	if (hdHh.total <= 0)
 		return 0
 	;X-pip spells (pip cost 0) are stored as damage per pip: they spend all your pips (not the wand's card:
 	;it costs nothing)
-	if (hitName != "wand" && Stat(hitschool . "." . hitName . "pips") = 0)
-		base *= (PipsNow > 0 ? PipsNow : 1)
+	hdPer := (hdHh.xpip && hitName != "wand") ? (PipsNow > 0 ? PipsNow : 1) : 1
+	hdAdd := 0
 	if (EnchantedHits[hitName])
-		base += Stat("enchant" . EnchantedHits[hitName])
-	else if (useEnchant && enchant >= 1)
-		base += Stat("enchant" . enchant)
-	return HitDamageFrom(base, toBoss)
+		hdAdd := Stat("enchant" . EnchantedHits[hitName])
+	;(never on an item card - a pet's, the wand's: it can't be enchanted)
+	else if (useEnchant && enchant >= 1 && !hdHh.item)
+		hdAdd := Stat("enchant" . enchant)
+	return HeadsDamage(hdHh, hdPer, hdAdd, toBoss)
 	}
 
 ;A hit's least damage from its base (its card's, an enchant added): your damage %, the blades and aura on, the traps on
-;the boss (solotraps), the enemies' resist less your pierce - HitDamage's, and a learned hit's in no slot (HitTarget)
-HitDamageFrom(base, toBoss := false)
+;the boss (solotraps), the enemies' resist less your pierce - HitDamage's, and a learned hit's in no slot (HitTarget).
+;sch: the head's school - only the blades, aura and traps that fit it count; "*" every one, as before
+HitDamageFrom(base, toBoss := false, sch := "*")
 	{
 	if (base <= 0)
 		return 0
-	dmg := base * DamageMultiplier(Stat("damage")) * BoostMult(AppliedBlades)
-	if (AuraRounds > 0)
+	dmg := base * DamageMultiplier(Stat("damage")) * (sch = "*" ? BoostMult(AppliedBlades) : BoostMultFor(AppliedBlades, sch))
+	if (AuraRounds > 0 && (sch = "*" || BoostFits("aura", sch)))
 		dmg *= 1 + Stat("aura") / 100
 	;Another player's hit on the boss uses up our traps without us seeing it
 	if (toBoss && Stat("solotraps") == 1)
-		dmg *= BoostMult(BossTraps)
+		dmg *= (sch = "*" ? BoostMult(BossTraps) : BoostMultFor(BossTraps, sch))
 	resist := Stat("enemyresist") - Stat("pierce")
 	if (resist > 0)
 		dmg *= 1 - resist / 100
@@ -707,15 +1944,12 @@ HitDamageFrom(base, toBoss := false)
 LearnedHitDamage(c, enchanted)
 	{
 	global enchant, BossChoosen
-	lhdBase := IsFunc("LearnHitBase") ? Func("LearnHitBase").Call(c) : ""
-	if (lhdBase = "" || lhdBase <= 0)
+	;(head by head: LearnHitHeads - the game's heads, else one of its school)
+	lhdHh := LearnHitHeads(c)
+	if (lhdHh.total <= 0)
 		return ""
 	;(an X-pip hit: its number is a pip's - all your pips go)
-	if (IsFunc("LearnHasFlag") && Func("LearnHasFlag").Call(c, "xpip"))
-		lhdBase *= Max(PipsNow, 1)
-	if (enchanted && enchant >= 1)
-		lhdBase += Stat("enchant" . enchant)
-	return HitDamageFrom(lhdBase, BossChoosen == 1)
+	return HeadsDamage(lhdHh, lhdHh.xpip ? Max(PipsNow, 1) : 1, (enchanted && enchant >= 1) ? Stat("enchant" . enchant) : 0, BossChoosen == 1)
 	}
 
 IsLethal(hitName, useEnchant)
@@ -947,8 +2181,10 @@ KillHitsText()
 		;(a wand's hit is always one enemy's)
 		khOne := kh = "wand" || Stat(hitschool "." kh "target") = 1
 		khBoost := (kh != "wand" && enchant >= 1) ? HitDamage(kh, true, false) : 0
+		;(its heads, when they're known - the game's: [fire 230 + ice 230 + storm 230 (the game)])
+		khHh := HitHeads(kh)
 		out .= (out = "" ? "" : "; ") (khName != "" && khName != kh ? khName " (" kh ")" : kh) " " khDmg (khOne ? " one enemy" : " all enemies")
-			. (khBoost > khDmg ? ", " khBoost " with the enchant" : "")
+			. (khBoost > khDmg ? ", " khBoost " with the enchant" : "") (khHh.sure ? " [" HeadsText(khHh) "]" : "")
 		}
 	return out
 	}

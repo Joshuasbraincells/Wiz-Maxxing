@@ -592,10 +592,19 @@ CardHitCanGo(name)
 	}
 
 ;The biggest hit in hand it can cast (hit4 only on a picked boss) - not the wand's - else a learned hit in no slot
-;(CastLearnedHit). True if one was cast
+;(CastLearnedHit). True if one was cast. With the game's hand read this look, the planned hit first (KillCalc.ahk
+;BoostPick - the one dealing the most with the boosts in hand and on, the user 2026-10-24), then the others as ever
 CastBestHit()
 	{
 	global
+	local cbhP
+	cbhP := PlanHit
+	if (BoostMemOk && RegExMatch(cbhP, "^hit[1-4]$") && (cbhP != "hit4" || BossChoosen = 1))
+		if (%cbhP% == 1 && UseHit(cbhP, %cbhP%, hitschool))
+			{
+			BoostRun := 0
+			return true
+			}
 	if ((hit4 == 1) && (BossChoosen = 1) && UseHit("hit4", hit4, hitschool))
 		|| ((hit3 == 1) && UseHit("hit3", hit3, hitschool))
 		|| ((hit2 == 1) && UseHit("hit2", hit2, hitschool))
@@ -614,15 +623,18 @@ CastBestHit()
 DiscardSwitchedOff()
 	{
 	global
-	local did := 0
+	local did := 0, dsoK
 	if (Stat("discardunused") != 1 || DiscardOffCount >= Stat("discardmax") || PlayerActing())
 		return 0
+	;(each school's blades and traps found, the group's - KillCalc.ahk BoostSearch: SbFound, GbFound)
 	if (!Stat("useblades"))
 		{
-		if (blade == 1)
-			did += DiscardOffOne("blade", hitschool)
-		if (blade2 == 1 && bladetype != "")
-			did += DiscardOffOne(bladetype, "resources")
+		for dsoK in SbFound
+			if (BoostKind(dsoK) = "blade")
+				did += DiscardOffOne("blade", SubStr(dsoK, 1, InStr(dsoK, "/") - 1))
+		for dsoK in GbFound
+			if (BoostKind(dsoK) = "blade")
+				did += DiscardOffOne(dsoK, "resources")
 		if (blade3 == 1)
 			did += DiscardOffOne("blade3", "resources")
 		if (blade4 == 1)
@@ -632,10 +644,12 @@ DiscardSwitchedOff()
 		}
 	if (!Stat("usetraps"))
 		{
-		if (trap == 1)
-			did += DiscardOffOne("trap", hitschool)
-		if (trap2 == 1 && traptype != "")
-			did += DiscardOffOne(traptype, "resources")
+		for dsoK in SbFound
+			if (BoostKind(dsoK) = "trap")
+				did += DiscardOffOne("trap", SubStr(dsoK, 1, InStr(dsoK, "/") - 1))
+		for dsoK in GbFound
+			if (BoostKind(dsoK) = "trap")
+				did += DiscardOffOne(dsoK, "resources")
 		if (trap3 == 1)
 			did += DiscardOffOne("trap3", "resources")
 		if (feint == 1)

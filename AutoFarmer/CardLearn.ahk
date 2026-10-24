@@ -361,6 +361,8 @@ LearnWhyNot(c)
 				return "no free slot - room is made for it after this battle if it's strong enough"
 	if ((c.type = "damage" || c.type = "aoe") && LearnValueKnown(c) = "")
 		return "no free slot for it (its numbers weren't read for sure)"
+	if ((c.type = "blade" || c.type = "trap") && LearnFlag(c, "boost") != "")
+		return "no free slot for a " c.type " that boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) (c.value != "" ? " at " c.value "%" : "")
 	if (c.type = "blade" || c.type = "trap" || c.type = "aura")
 		return "no free slot for it at its % (PlayerStats.txt counts its slot at another)"
 	return "no free slot for it"
@@ -547,6 +549,15 @@ LearnCards()
 			}
 		card := {left: f[2] + 0, top: f[3] + 0, known: f[6], grey: f[8] + 0, type: f[9], pips: f[11], same: f[13] + 0
 			, isCard: (f.Length() >= 16 && f[15] = 1), tc: (f.Length() >= 16 && f[16] = 1), mem: (IsObject(mem) && mem.HasKey(boxes)) ? mem[boxes] : ""}
+		;(the game's name of the card on a hit slot's picture - your own cut one too: its heads are read off the game's hand
+		;by it - KillCalc.ahk HitHeads; the newest wins)
+		if (IsObject(card.mem) && RegExMatch(card.known, "^(\w+)/(hit[1-4]|wand)$", lcSg) && lcSg1 = hitschool)
+			{
+			if (!IsObject(SlotGame))
+				SlotGame := {}
+			if (SlotGame[card.known] != LearnMemGame(card.mem))
+				SlotGame[card.known] := LearnMemGame(card.mem), HeadsMemo := {}
+			}
 		;(a slot's learned picture was just written - made see-through where this copy differs, or cut at
 		;this UI size - so the battle's own search finds the card if the hand's looked at again)
 		if (f[14] = 1)
@@ -642,6 +653,12 @@ LearnNew(card)
 			LearnSetFlag(c, "tc")
 		if (r.item)
 			LearnSetFlag(c, "item")
+		;(what it does by school, as the game has it: a hit's heads - Hydra's fire, ice and storm, KillCalc.ahk HitHeads -, a
+		;blade's or trap's schools - the slot it goes in, LearnBoostSlot)
+		if (r.sure && (r.kind = "damage" || r.kind = "aoe") && r.heads != "")
+			LearnSetFlag(c, "heads", r.heads)
+		if (r.sure && (r.kind = "blade" || r.kind = "trap" || r.kind = "aura") && r.boost != "")
+			LearnSetFlag(c, "boost", r.boost)
 		}
 	else if (card.tc)
 		LearnSetFlag(c, "tc")
@@ -1139,7 +1156,9 @@ LearnMemGame(m)
 ;have: keep), value (the number the learner keeps: a hit's least damage, every head added - an X-pip hit's a pip -, a
 ;heal's, the % of a shield, blade, trap, aura or weakness, an enchant's damage; "" none), extra (dot=<n>, xpip - as
 ;LearnKindOf's), text (about as the card says it), name (the name on the card), game (LearnMemGame), school (lower
-;case, "" not one of LearnSchools), pips (0 for X; "" not read), xpip, tc, item, two: 0}
+;case, "" not one of LearnSchools), pips (0 for X; "" not read), xpip, tc, item, two: 0, heads (a hit's damage by school as
+;flag heads= keeps it: "fire:230+ice:230+storm:230"; "" not known), boost (what a blade, trap or aura boosts, as flag boost=
+;keeps it: "fire+ice+storm", "all"; "" not known)}
 LearnMemRead(m)
 	{
 	;(no kind from the game - its effects cut short: unknown, not "keep"; sure 0: its kind and numbers aren't the game's)
@@ -1157,7 +1176,26 @@ LearnMemRead(m)
 			lmrSch := lmrS
 	return {kind: lmrKind, value: lmrValue, extra: lmrExtra, two: 0, text: LearnClean(m.text), name: LearnClean(m.display != "" ? m.display : m.name)
 		, game: LearnMemGame(m), school: lmrSch, pips: m.xpip ? 0 : m.pips, xpip: m.xpip ? 1 : 0, tc: m.tc ? 1 : 0, item: m.item ? 1 : 0
-		, sure: (m.kind != "") ? 1 : 0}
+		, sure: (m.kind != "") ? 1 : 0, heads: RegExMatch(m.heads, "^[a-z]+:\d+(,[a-z]+:\d+)*$") ? StrReplace(m.heads, ",", "+") : ""
+		, boost: IsFunc("LearnBoostSchools") ? Func("LearnBoostSchools").Call(m.boosts) : ""}
+	}
+
+;What a blade, trap or aura boosts (the game's: /cards' boosts - "ice:35,storm:35,fire:35") as flag boost= keeps it: its
+;schools a-z, each once, joined with + ("fire+ice+storm"), "all" if it boosts every school; "" not known ("", "?")
+LearnBoostSchools(lbsText)
+	{
+	;(lbsText, not "boosts": that's the battle code's boost count, a super-global)
+	lbsOut := ""
+	if (lbsText = "" || lbsText = "?")
+		return ""
+	Loop, Parse, lbsText, `,
+		{
+		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):\d+$", lbsM))
+			return ""
+		lbsOut .= (lbsOut = "" ? "" : "`n") lbsM1
+		}
+	Sort, lbsOut, U
+	return InStr("`n" lbsOut "`n", "`nall`n") ? "all" : StrReplace(lbsOut, "`n", "+")
 	}
 
 ;What the game's memory says of learned card c (r: LearnMemRead) put into it - never what you set: a card you set on the
@@ -1196,6 +1234,18 @@ LearnApplyMem(c, r)
 		c.text := r.text
 	if (r.game != "")
 		LearnSetFlag(c, "game", r.game)
+	;(what it does by school, as the game has it - flags heads=, boost=: its kind the game's)
+	if (r.sure)
+		{
+		if ((r.kind = "damage" || r.kind = "aoe") && r.heads != "")
+			LearnSetFlag(c, "heads", r.heads)
+		else
+			LearnDropFlag(c, "heads")
+		if ((r.kind = "blade" || r.kind = "trap" || r.kind = "aura") && r.boost != "")
+			LearnSetFlag(c, "boost", r.boost)
+		else
+			LearnDropFlag(c, "boost")
+		}
 	lamSame := r.sure && (c.type = r.kind && c.value = r.value && (r.pips = "" || c.pips = r.pips) && (LearnHasFlag(c, "xpip") ? 1 : 0) = r.xpip)
 	if (lamSame)
 		LearnSetFlag(c, "mem")
@@ -1203,6 +1253,11 @@ LearnApplyMem(c, r)
 		LearnDropFlag(c, "mem")
 	if (LearnLine(c) == lamWas)
 		return 0
+	;(a blade or trap in a slot its schools aren't for - an Ice wizard's Elemental Blade, "+35% to next Ice, Storm, Fire
+	;spell", went in ice\blade: out of it, and put where they say - LearnSeenAgain, LearnBoostSlot)
+	if (!lamUser && c.slot != "" && LearnFlag(c, "boost") != "" && IsFunc("LearnBoostSlotOf") && Func("LearnBoostSlotIs").Call(c.slot)
+		&& Func("LearnBoostSlotOf").Call(c) != c.slot)
+		return LearnUnplace(c, "the game says it boosts " LearnFlag(c, "boost")) ? 2 : 1
 	if (c.slot != "" && c.type != lamKind)
 		return LearnUnplace(c, "the game says it's " LearnKindLabel(c.type)) ? 2 : 1
 	if (c.slot != "" && (c.value != lamValue || c.pips != lamPips))
@@ -1270,6 +1325,9 @@ LearnPlace(c)
 	;(numbers you had for the slot are kept too - put back when it's taken out)
 	LearnStatsKeep(c.sch, slot, c.id)
 	c.slot := slot
+	;(the slot's card is this one now: the game's name seen for it before is another's)
+	if (IsObject(SlotGame))
+		SlotGame.Delete(StrReplace(slot, "\", "/")), HeadsMemo := {}
 	LearnStats(c)
 	return 1
 	}
@@ -1309,6 +1367,11 @@ LearnSlotFor(c)
 		}
 	if (kd = "ward")
 		return LearnFree("resources\tower") ? "resources\tower" : ""
+	;(a blade or trap whose schools the game's memory read - flag boost=: the slot they say, LearnBoostSlot - an Elemental
+	;Blade in resources\elementalblade, a pet's Stormblade in storm\blade; not by its text, which put an Ice wizard's
+	;Elemental Blade - "+35% to next Ice, Storm, Fire spell" - in ice\blade)
+	if ((kd = "blade" || kd = "trap") && LearnFlag(c, "boost") != "")
+		return LearnBoostSlot(c)
 	;(cast on yourself before a hit, as a cut one would be: Balanceblade - "+25% to next spell", no school named - as
 	;blade3, one naming your school as your school's blade; only at the % PlayerStats.txt counts for that slot - the
 	;kill check adds it - else none: kept, not used. The card's school's own % first)
@@ -1340,6 +1403,47 @@ LearnSlotFor(c)
 		return (LearnFree(slot) || !LearnRealPic(A_WorkingDir (c.dir = "" ? "" : "\" c.dir) "\" slot ".png")) ? slot : ""
 		}
 	return ""
+	}
+
+;The slot learned blade or trap c goes in by its schools as the game read them (flag boost=), free or not: one school's
+;"<school>\blade" / "\trap" (not Balance's: its own are Balanceblade and Hex), fire+ice+storm resources\elemental<kind>,
+;death+life+myth resources\spirit<kind>, every school's by its %: resources\blade3 (Balanceblade's), blade4 (Bladestorm's),
+;trap3 (Hex's), feint (Feint's) as PlayerStats.txt has them; "" none (balance alone, two schools, another %)
+LearnBoostSlotOf(c)
+	{
+	lbsoS := LearnFlag(c, "boost")
+	if (lbsoS = "" || (c.type != "blade" && c.type != "trap"))
+		return ""
+	lbsoS := (lbsoS = "all") ? "all" : StrReplace(lbsoS, "+", ",")
+	return BoostSlotFor(c.type, lbsoS, c.value, c.sch)
+	}
+
+;The free slot for learned blade or trap c with flag boost= (LearnSlotFor): LearnBoostSlotOf's, when it's free and the
+;card's % is at least what PlayerStats.txt counts for that slot (a stronger card is counted at the slot's when the game's
+;memory isn't read - never more than it does; with it, at its own: KillCalc.ahk BoostPctMem); "" none
+LearnBoostSlot(c)
+	{
+	lbsSlot := LearnBoostSlotOf(c)
+	if (lbsSlot = "" || !LearnFree(lbsSlot))
+		return ""
+	lbsV := LearnValueKnown(c)
+	if (lbsV = "")
+		return ""
+	SplitPath, lbsSlot, lbsName, lbsDir
+	;(the % for it: one every school shares, or your school's own - your wizard's <school>.<key>, else the plain one; another
+	;school's - blade.storm for a pet's Stormblade on your Balance wizard, storm.blade being the Storm wizard's own -, else
+	;the plain one: KillCalc.ahk BoostPct)
+	if (lbsDir = "resources" || lbsDir = c.sch)
+		lbsWant := LearnStatOf(c.sch, lbsName)
+	else
+		lbsWant := Stats.HasKey(lbsName "." lbsDir) ? Stats[lbsName "." lbsDir] : LearnStatOf("", lbsName)
+	return (lbsWant = "" || lbsV + 0 >= lbsWant + 0) ? lbsSlot : ""
+	}
+
+;Whether slot rel is a blade's or trap's: <school>\blade, \trap, resources\blade3, blade4, trap3, feint, elementalblade...
+LearnBoostSlotIs(rel)
+	{
+	return RegExMatch(rel, "i)^(resources\\(blade3|blade4|trap3|feint|elementalblade|elementaltrap|spiritblade|spirittrap)|[a-z]+\\(blade|trap))$")
 	}
 
 ;Learned enchant c in the slot for its number (EnchantList's picture for its level)
@@ -1576,7 +1680,10 @@ LearnFree(rel)
 	}
 
 ;Learned card c's numbers into PlayerStats.txt (a number not sure - LearnValueKnown - is 0: the kill check never
-;counts on it, never the number of the card the slot was meant for)
+;counts on it, never the number of the card the slot was meant for). A hit's heads by school too (flag heads=, the
+;game's - Hydra's fire, ice and storm: <school>.<hit>fire... lines adding up to its number, the kill check's without the
+;game's memory - KillCalc.ahk HitHeadsFind); one head of its own school, or a number not sure: none - those the slot's
+;card before had taken out
 LearnStats(c)
 	{
 	slot := c.slot
@@ -1589,6 +1696,10 @@ LearnStats(c)
 		if (name != "wand" && c.pips != "")
 			pairs.Push([key "pips", c.pips])
 		pairs.Push([key "target", c.target])
+		lstHh := (v != "" && IsFunc("LearnHitHeads")) ? Func("LearnHitHeads").Call(c) : ""
+		lstMany := IsObject(lstHh) && lstHh.sure && lstHh.total = v && !(lstHh.heads.Count() = 1 && lstHh.heads.HasKey(c.sch))
+		for lstI, lstS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
+			pairs.Push([key lstS, (lstMany && lstHh.heads.HasKey(lstS)) ? lstHh.heads[lstS] : ""])
 		}
 	else if (InStr(name, "heal") = 1 && c.pips != "")
 		{
@@ -1606,14 +1717,18 @@ LearnStatsNote(c)
 	return "learned " SubStr(c.when, 1, 8) ": " LearnClean(c.text) (c.guess ? " (pips guessed: brought down as it shows up in colour with fewer)" : "") " - picture " c.dir "\learned\" c.id ".card.png"
 	}
 
-;PlayerStats.txt's keys for slot rel of school sch: hitN's damage, pips and target, the wand's, a heal's pips ([] none)
+;PlayerStats.txt's keys for slot rel of school sch: hitN's damage, pips and target, the wand's, their heads by school
+;(<school>.<hit><head's school>: LearnStats), a heal's pips ([] none)
 LearnSlotKeys(sch, rel)
 	{
 	SplitPath, rel, nm
-	if (RegExMatch(nm, "^hit\d$"))
-		return [sch "." nm, sch "." nm "pips", sch "." nm "target"]
-	if (nm = "wand")
-		return [sch ".wand", sch ".wandtarget"]
+	if (RegExMatch(nm, "^hit\d$") || nm = "wand")
+		{
+		lskOut := (nm = "wand") ? [sch ".wand", sch ".wandtarget"] : [sch "." nm, sch "." nm "pips", sch "." nm "target"]
+		for lskI, lskS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
+			lskOut.Push(sch "." nm lskS)
+		return lskOut
+		}
 	if (RegExMatch(nm, "^heal\d$"))
 		return [sch "." nm "pips"]
 	return []
@@ -1960,8 +2075,14 @@ LearnReconcile()
 ;The slots a learned card of school sch can be in
 LearnSlotNames(sch)
 	{
-	return [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", "resources\blade3", "resources\trap3", "resources\tower"
-		, "resources\strong", "resources\giant", "resources\monstrous", "resources\gargantuan", "resources\colossal", "resources\epic"]
+	lsnOut := [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", "resources\blade3", "resources\trap3", "resources\tower"
+		, "resources\strong", "resources\giant", "resources\monstrous", "resources\gargantuan", "resources\colossal", "resources\epic"
+		, "resources\blade4", "resources\feint", "resources\elementalblade", "resources\elementaltrap", "resources\spiritblade", "resources\spirittrap"]
+	;(and every other school's blade and trap: a pet's Stormblade on a Balance wizard goes in storm\blade - LearnBoostSlot)
+	for lsnI, lsnS in ["storm", "fire", "ice", "myth", "life", "death"]
+		if (lsnS != sch)
+			lsnOut.Push(lsnS "\blade"), lsnOut.Push(lsnS "\trap")
+	return lsnOut
 	}
 
 ;---- Making room in hit1-3 for a stronger learned hit ----

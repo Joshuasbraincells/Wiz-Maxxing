@@ -70,10 +70,13 @@ PartyTick()
 			schoolChar := psChar, PartyMySchool := StatsSchoolOf(psChar)
 		}
 	ready := BotOn && Walking && !PlayerActive && GameActive() && !PotionResting ? 1 : 0
+	;(plan: the hitter's planned hit's schools - a support boosts for them; lasthit: its last hit's - a support's blades that
+	;fit none of those stay on it - KillCalc.ahk BoostPick, ConsumeBoosts)
 	q := "/party?role=" role "&name=" NavUri(PartyIni("name")) "&leader=" NavUri(PartyIni("leader"))
 		. "&port=" Stat("partyport") "&battle=" (inbattle = 1 ? 1 : 0) "&hp=" hp "&ready=" ready "&walk=" (Walking ? 1 : 0)
 		. "&bot=" (BotOn ? 1 : 0) "&loading=" (WkLoading ? 1 : 0) "&hold=" NavUri(SubStr(PartyHolding, 1, 80))
 		. "&brole=" PartyBattleSet() "&wiz=" NavUri(OwnName()) "&school=" PartyMySchool "&hits=" (PartyHits ? PartyHits : 0) "&hitr=" (PartyHitR ? PartyHitR : 0)
+		. "&plan=" NavUri(PartySupport() ? "" : PlanList) "&lasthit=" NavUri(PartyLastSch)
 	ans := VisionGet(q, 600, true)
 	PartyAskAt := A_TickCount
 	if (ans = "")
@@ -98,10 +101,12 @@ PartyTick()
 		else if (f[1] = "leader")
 			leader := {name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
 				, walk: f[11], age: f[12], dist: f[13], dzone: f[14], dx: f[15], dy: f[16], dz: f[17], ddx: f[18], ddy: f[19]
-				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]}
+				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]
+				, plan: f[30], lasthit: f[31]}
 		else if (f[1] = "member")
 			members.Push({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
-				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]})
+				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]
+				, plan: f[20], lasthit: f[21]})
 		}
 	PartyLeader := leader, PartyMembers := members
 	if (IsFunc("DashSee"))
@@ -142,7 +147,7 @@ PartyBattleRole()
 	{
 	global
 	local want, h, p, bx, by
-	BattleRole := "hitter", HammerName := "", HammerSlot := 0
+	BattleRole := "hitter", HammerName := "", HammerSlot := 0, HammerPlan := ""
 	want := PartyBattleSet()
 	if (want = "hitter" || DualBattle = 1 || BattleTeam() < 2)
 		return
@@ -164,6 +169,8 @@ PartyBattleRole()
 	;(its school: as it says, else its plate's badge - left of its name)
 	HammerSchool := BadgeNumber(h.school) ? h.school : BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), bx, by, p.x - Px(45), p.y + Px(15))
 	BattleRole := want, HammerName := h.wiz, HammerSlot := h.slot
+	;(its planned hit's schools - the boosts are for them: KillCalc.ahk BoostSearch, BoostPick)
+	HammerPlan := PartySchools(h.plan)
 	PartyNoteBoosts()
 	PartyReblade(h)
 	}
@@ -200,7 +207,7 @@ PartyHitter()
 		phM := phC.m, phK := PartyKey(phM.wiz)
 		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.HasKey(phK) || phTwice.HasKey(phK))
 			continue
-		phW := {wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK]}
+		phW := {wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit}
 		if (phC.lead)
 			phLead := phW
 		if (phM.brole = "hitter" && (phC.lead || (!IsObject(phBest) || (phBestK != "lead" && phK < phBestK))))
@@ -209,15 +216,31 @@ PartyHitter()
 	return IsObject(phBest) ? phBest : phLead
 	}
 
-;A blader's or healer's boosts cast last round: each used flag (used0-20: UseBlade, UseTrap, PartyShield) newly set since
-;the last look went out in the round noted then - the game's log's (PartyCastRound). Called at each round's start
+;The schools in a comma list (a peer's plan / lasthit), the seven only, each once: "storm,fire,ice" ("" none)
+PartySchools(list)
+	{
+	psOut := ","
+	Loop, Parse, list, `,
+		{
+		psS := Format("{:L}", Trim(A_LoopField))
+		if (BadgeNumber(psS) && !InStr(psOut, "," psS ","))
+			psOut .= psS ","
+		}
+	return Trim(psOut, ",")
+	}
+
+;A blader's or healer's boosts cast last round: each used flag (used0-52: UseBlade, UseTrap, PartyShield - KillCalc.ahk
+;KeyFlags) newly set since the last look went out in the round noted then - the game's log's (PartyCastRound); each
+;treasure or item card's copy newly cast (KillCalc.ahk BoostSrcUsed) the same (PartySrcRound). Called at each round's start
 PartyNoteBoosts()
 	{
 	global
-	local n
+	local n, pnbK, pnbI, pnbGone
 	if (PartyFlagDuel != BlDuel || !IsObject(PartyFlagRound))
-		PartyFlagDuel := BlDuel, PartyFlagRound := {}, PartyCastRound := ""
-	Loop, 21
+		PartyFlagDuel := BlDuel, PartyFlagRound := {}, PartyCastRound := "", PartySrcRound := {}
+	if (!IsObject(PartySrcRound))
+		PartySrcRound := {}
+	Loop, 53
 		{
 		n := A_Index - 1
 		if (used%n% = 1)
@@ -228,6 +251,16 @@ PartyNoteBoosts()
 		else
 			PartyFlagRound.Delete(n)
 		}
+	pnbGone := []
+	for pnbK in PartySrcRound
+		if (!IsObject(BoostSrcUsed) || !BoostSrcUsed.HasKey(pnbK))
+			pnbGone.Push(pnbK)
+	for pnbI, pnbK in pnbGone
+		PartySrcRound.Delete(pnbK)
+	if (IsObject(BoostSrcUsed))
+		for pnbK in BoostSrcUsed
+			if (!PartySrcRound.HasKey(pnbK))
+				PartySrcRound[pnbK] := PartyCastRound != "" ? PartyCastRound : 0
 	;(this round's cast goes out in the log's next round)
 	PartyCastRound := (BlRound ? BlRound : 0) + 1
 	}
@@ -239,7 +272,7 @@ PartyNoteBoosts()
 PartyReblade(h)
 	{
 	global
-	local ours, theirs, i, c, wait, n, at, spent, kept
+	local ours, theirs, i, c, wait, n, at, spent, kept, prLast, prK, prGone
 	if (h.hits = "")
 		return
 	if (PartyHitsDuel != BlDuel)
@@ -268,7 +301,9 @@ PartyReblade(h)
 				theirs := i
 			}
 	spent := 0, kept := 0
-	Loop, 21
+	;(the schools of its hit, as the hitter read them - "" not known: an older bot, or its heads weren't: every boost spent)
+	prLast := PartySchools(h.lasthit)
+	Loop, 53
 		{
 		n := A_Index - 1
 		if (used%n% != 1)
@@ -276,11 +311,36 @@ PartyReblade(h)
 		at := (IsObject(PartyFlagRound) && PartyFlagRound.HasKey(n)) ? PartyFlagRound[n] : 0
 		if (at > PartyHitsWait || (at = PartyHitsWait && ours && theirs && ours > theirs))
 			kept += 1
+		;(one that boosts none of its hit's schools is still on it: a Storm Blade through the hitter's Power Nova)
+		else if (prLast != "" && (prK := FlagKey(n)) != "" && !BoostFitsAny(prK, prLast))
+			kept += 1
 		else
 			{
 			used%n% := 0, spent += 1
 			if (IsObject(PartyFlagRound))
 				PartyFlagRound.Delete(n)
+			}
+		}
+	;(a treasure or item card's copy cast on it - KillCalc.ahk BoostSrcUsed: spent the same way - one cast after its hit, or
+	;that boosts none of its hit's schools, is still on it: cast again, a second treasure card wouldn't stack with it)
+	if (IsObject(BoostSrcUsed))
+		{
+		prGone := []
+		for prK in BoostSrcUsed
+			{
+			at := (IsObject(PartySrcRound) && PartySrcRound.HasKey(prK)) ? PartySrcRound[prK] : 0
+			if (at > PartyHitsWait || (at = PartyHitsWait && ours && theirs && ours > theirs))
+				kept += 1
+			else if (prLast = "" || BoostFitsAny(prK, prLast))
+				prGone.Push(prK)
+			else
+				kept += 1
+			}
+		for i, prK in prGone
+			{
+			BoostSrcUsed.Delete(prK), spent += 1
+			if (IsObject(PartySrcRound))
+				PartySrcRound.Delete(prK)
 			}
 		}
 	DebugLog("  " h.wiz " hit (" h.hits " hits so far, round " PartyHitsWait "): " spent " of our boosts on it spent - cast again" (kept ? "; " kept " still on it (cast after its hit)" : ""))

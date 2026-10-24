@@ -557,6 +557,62 @@ health, or no hit is enough yet, it plays exactly like before.
 	- It's switched off in Dual mode, since both windows share what's been
 	  cast and it can't tell what has landed yet.
 
+Blades and traps by damage school (v0.50.0):
+A hit can do damage of more than one school - Hydra hits with fire, ice and
+storm heads. With the game's memory (navmem:1, read-only, as the cards
+above) the bot knows each hit's heads and what each blade and trap in hand
+boosts, and plays them by that:
+	- The hit it boosts for (the planned hit) is the one that would deal the
+	  most this round with the blades and traps in hand and those already on,
+	  against the enemies left: an all-enemies hit counts on each enemy (no
+	  more than its health), a one-enemy hit on one. hit4 only on a boss you
+	  picked (Alt+1), only a hit you can pay for now (or the one pips are saved
+	  for), and the kill check's own hit when it kills now. That hit is also
+	  the one cast first when it's time to hit.
+	- It looks for the blades and traps of every school the planned hit and
+	  the other hits in hand need - not just your own school's: a Balance
+	  wizard's Hydra gets the Elemental Blade, Balanceblade, and a pet's
+	  Stormblade (storm head only). Balanceblade, Bladestorm, Hex and Feint
+	  boost every school. On a hit of two or more schools it puts up the one
+	  that adds the most first: Elemental Blade (all three heads) before
+	  Balanceblade, before a Storm Blade (one head).
+	- The kill check counts each head with only the blades, traps and aura
+	  that fit it; an enchant on a hit of several heads is counted once, on the
+	  head where it adds the least (the safe side).
+	- A hit uses up only the boosts that fit its heads: a Power Nova leaves an
+	  Elemental Blade on for the next Hydra.
+	- The same blade from different places stacks: a deck Stormblade and a
+	  pet's (or a treasure card's) both go on before one hit, and both count.
+	- A pet's or gear's card (an item card) is never sharpened, made potent or
+	  enchanted - the game doesn't allow it. The wand's own card is never
+	  enchanted either.
+	- The wand's free hit waits while it would use up a blade or trap meant
+	  for the planned hit.
+	- A blade picture that matches but isn't in the game's hand is a false
+	  match: not used (debug.log says so once).
+	- In a party battle the hitter tells its supports its planned hit's
+	  schools: a Balance blader puts its pet's Stormblade on a Storm hitter, or
+	  on a Balance hitter planning Hydra. A blader's blade that fits neither
+	  the hitter's planned hit nor the blader's own school is thrown away -
+	  only once the hitter has said which schools it plans for and is sure of
+	  them (never a treasure card, never one you said never to discard). A
+	  blade that doesn't fit the hitter's last hit, or that went on after it,
+	  stays counted as on it.
+	- New blades and traps learned from the game go in the slot their schools
+	  say (resources\elementalblade, storm\blade, resources\blade3...).
+	- Without the game's memory (navmem:0, an older helper, no helper) it
+	  plays as before, by the pictures and PlayerStats.txt. Hits of more than
+	  one school can then be typed in PlayerStats.txt, one line a head:
+	  balance.hit3fire:230, balance.hit3ice:230, balance.hit3storm:230, with
+	  balance.hit3 their sum (690) - heads that don't add up to it aren't
+	  used. The card learner writes them for a learned hit.
+	  Another school's blade or trap counts at blade.<school> / trap.<school>
+	  (e.g. blade.storm:35 - storm.blade is your Storm wizard's own), else at
+	  blade / trap.
+	- debug.log: "plan: ...", "boosts searched for ...", "used up by ...;
+	  still on: ...", "wand not cast: ...", and the hits' heads after "your
+	  hits now:".
+
 Stats reader (any window size, any wizard):
 The kill check needs your wizard's Damage and Armor Piercing for the school it
 hits with. They're read off the Spellbook's stats pages (it presses C, which

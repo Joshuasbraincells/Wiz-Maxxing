@@ -198,7 +198,14 @@ potionfromhome:1
 
 ; ---- Blades on your hitter (%) ----
 blade:35
-; ^ your school's blade (Stormblade/Fireblade/Mythblade)
+; ^ your school's blade (Stormblade/Fireblade/Mythblade); another school's (a pet's Stormblade on a Balance
+; wizard): blade.<school>, e.g. blade.storm:35, else this one (storm.blade is the Storm wizard's own blade).
+; With the game's memory each card counts at its own %.
+; Balance's own blade and trap are Balanceblade and Hex (blade3, trap3).
+; A hit of more than one school, when the game's memory can't be read: one line a head, e.g. Hydra in hit3 -
+; balance.hit3fire:230, balance.hit3ice:230, balance.hit3storm:230 (each blade then counts on the heads it fits).
+; balance.hit3 is then their sum (690) - the card learner writes both; heads that don't add up to it aren't used (one
+; head of your school at balance.hit3 is).
 elementalblade:35
 spiritblade:35
 blade3:25
@@ -210,7 +217,7 @@ sharpen:10
 
 ; ---- Traps on the boss (%) ----
 trap:40
-; ^ your school's trap
+; ^ your school's trap; another school's: trap.<school>, e.g. trap.storm:40, else this one
 elementaltrap:30
 spirittrap:30
 trap3:30

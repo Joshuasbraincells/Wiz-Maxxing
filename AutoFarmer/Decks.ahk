@@ -379,6 +379,11 @@ DeckDamage(d)
 		if (!DeckStatFor(d, sch, "use" slot) && (IsObject(d) && d.vals.HasKey("use" slot)))
 			continue
 		lo := Stats.HasKey(sch "." slot) ? Stats[sch "." slot] : 0
+		;(none: its heads typed one line a head - balance.hit3fire, .hit3ice, .hit3storm for a Hydra - added up, as the kill
+		;check counts them: KillCalc.ahk HitHeadsFind)
+		if (lo <= 0)
+			for ddI, ddS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
+				lo += Stats.HasKey(sch "." slot ddS) ? Stats[sch "." slot ddS] : 0
 		if (lo <= 0)
 			continue
 		hi := DeckSlotHigh(sch, slot)
@@ -417,12 +422,15 @@ DeckDamage(d)
 		}
 	;(every boost it plays, once each)
 	;(the second blade and trap the school's: Elemental for fire, ice and storm, Spirit for life, death and myth - none
-	;for balance)
+	;for balance. Balance's own blade and trap are Balanceblade and Hex - blade3, trap3: counted once, as the kill check
+	;does - KillCalc.ahk BoostKey)
 	boost := 1, names := ""
 	grp := IsFunc("SchoolGroup") ? Func("SchoolGroup").Call(sch) : ""
 	b2 := grp = "elemental" ? "elementalblade" : grp = "spirit" ? "spiritblade" : ""
 	t2 := grp = "elemental" ? "elementaltrap" : grp = "spirit" ? "spirittrap" : ""
-	for i, b in [["useblades", ["blade", b2, "blade3", "blade4"]], ["usetraps", ["trap", t2, "trap3", "trap4", "feint"]], ["useaura", ["aura"]], ["usebubble", ["bubble"]]]
+	ddB := (sch = "balance") ? [b2, "blade3", "blade4"] : ["blade", b2, "blade3", "blade4"]
+	ddT := (sch = "balance") ? [t2, "trap3", "trap4", "feint"] : ["trap", t2, "trap3", "trap4", "feint"]
+	for i, b in [["useblades", ddB], ["usetraps", ddT], ["useaura", ["aura"]], ["usebubble", ["bubble"]]]
 		{
 		if (!DeckStatFor(d, sch, b[1]))
 			continue

@@ -24,7 +24,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   school                     (my pips of each kind; school: my own)
                                                card|slot|x|name|display|school|type|pips|xpip|shadow|castable|tc|item|
                                                   enchantment|accuracy|value|kind|dot|school pips|enchantment's effect|
-                                                  value with it|template id|text
+                                                  value with it|template id|text|heads|boosts
                                                                              (one a card, left to right as on screen:
                                                   slot the game's window (Card1-7, PetCard), x its left edge (the game's
                                                   units: only the order counts), name the spell's own name, display the
@@ -41,7 +41,13 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   it: damage aoe heal ward blade trap aura weakness enchant dot stun
                                                   dispel prism clear polymorph keep; dot the damage (healing) over time
                                                   besides; school pips the pips of a school it wants besides "fire:1";
-                                                  text about as the card says it)
+                                                  text about as the card says it; heads a damage card's damage by
+                                                  school, every head of it, each its least: "fire:230,ice:230,storm:230"
+                                                  (Hydra; the enchantment not added); boosts what a blade, trap or aura
+                                                  boosts by school: "ice:35,storm:35,fire:35", "all:25" (every school);
+                                                  either "?" when it can't be trusted (not all of the card read, a head
+                                                  of an odd kind or school), "" none - handmem.heads_field /
+                                                  boosts_field; an older helper has no fields 24-25)
                                                hand|<cards>|<ms>
   /badge?x1=&y1=&x2=&y2=&scale=&schools=  -> one line per school whose badge is there: "school|x|y|dist",
                                              best first ("unclear": two schools too close at the best spot)
@@ -1686,8 +1692,22 @@ def cards_answer():
             cards = [ln.split('|') for ln in text.split('\n') if ln.startswith('card|')]
             log(f"/cards (memory) {r['ms'] if r else '?'} ms: " + text.split('\n')[0] + ' | '
                 + ', '.join(f"{c[4] or c[3]} ({c[16]}{' ' + c[15] if c[15] else ''}, {c[7]} pips{' X' if c[8] == '1' else ''}"
-                            f"{', tc' if c[11] == '1' else ''}{', ' + c[13] if c[13] else ''})" for c in cards))
+                            f"{', tc' if c[11] == '1' else ''}{', ' + c[13] if c[13] else ''}){cards_by_school(c)}" for c in cards))
     return text
+
+
+def cards_by_school(c):
+    """a card line's heads or boosts (fields 24-25) for the log: " [fire 230 + ice 230 + storm 230]", " [blade
+    ice,storm,fire 35%]", " [heads ?]"; "" none (or an older line)"""
+    if len(c) > 23 and c[23]:
+        return ' [heads ?]' if c[23] == '?' else ' [' + ' + '.join(h.replace(':', ' ') for h in c[23].split(',')) + ']'
+    if len(c) > 24 and c[24]:
+        if c[24] == '?':
+            return f' [{c[16]} ?]'
+        parts = [p.split(':') for p in c[24].split(',')]
+        pct = sorted({p[1] for p in parts if len(p) == 2})
+        return f" [{c[16]} {','.join(p[0] for p in parts)} {'/'.join(pct)}%]"
+    return ''
 
 
 def word_forms(w):
@@ -2746,7 +2766,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(netmon().command(q.get('id', ''), q.get('c', '')))
             if u.path == '/party':
                 # (AutoFarmer's party settings and state in - role, name, leader, port, battle, hp, ready, walk, bot,
-                # hold, brole, wiz, school, hits, hitr; the party as this PC sees it out: party|.., me|.., leader|..,
+                # hold, brole, wiz, school, hits, hitr, plan, lasthit; the party as this PC sees it out: party|.., me|.., leader|..,
                 # member|.. - party.py)
                 return self.reply('\n'.join(party().update(q)))
             if u.path in ('/cards', '/badge'):
