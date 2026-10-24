@@ -832,7 +832,7 @@ PipValue()
 	total := 0
 	Loop, 7
 		{
-		slot := A_Index - 1, purple := 0, blue := 0, yellow := 0, white := 0
+		slot := A_Index - 1, purple := 0, blue := 0, yellow := 0, white := 0, vivid := 0, dull := 0, grey := 0
 		Loop, %h%
 			{
 			row := (A_Index - 1) * w + Round(20 * UiScale * slot)
@@ -848,9 +848,20 @@ PipValue()
 					yellow++
 				else if (r > 215 && g > 205 && b > 180)
 					white++
+				;(each school's own pip - a gold rim round its school's sign, 2026-10-24 at 1440p: Fire's orange flame,
+				;Ice's snowflake, Life's leaf, Balance's red-orange, Myth's triangle, the power pip's gold: strongly
+				;coloured, 86+ px a slot where an empty one has 42 at most; Death's skull is dark grey in a grey glow -
+				;dark scenery under an empty slot has the dark but not the glow)
+				mx := Max(r, g, b), mn := Min(r, g, b)
+				if (mx - mn > 90 && mx > 120)
+					vivid++
+				else if (mx < 110 && mx - mn < 25)
+					dull++
+				else if (mn > 140 && mx - mn < 30 && mx < 225)
+					grey++
 				}
 			}
-		if (purple + blue + yellow >= 30 * area)
+		if (purple + blue + yellow >= 30 * area || vivid >= 60 * area || (dull >= 70 * area && grey >= 8 * area))
 			total += 2
 		else if (white >= 50 * area)
 			total += 1
