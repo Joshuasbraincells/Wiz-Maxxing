@@ -531,6 +531,11 @@ DIGITS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'digits')
 # the art / text box border right across (eTxt), some yellow pip digit and not a yellow banner or the timer
 # (pipYel), no white popup over it (white), something like a type icon where it goes (iconD)
 REAL_ETXT, REAL_PIP, REAL_WHITE, REAL_ICON = 0.80, (0.04, 0.30), 0.10, 90.0
+# A Myth card's gold frame round the pip digit counts as its yellow: 0.33-0.46 (2026-10-24, 1440p - every Myth card was
+# "not a card"). With the text box border clear right across (eTxt >= REAL_ETXT_SURE) up to REAL_PIP_GOLD is a card:
+# of 147 saved 1440p screens, everything else with that much yellow had no border at all (eTxt 0.00 - the shop, a
+# monitor's screen), and no real card of another school went over 0.26
+REAL_ETXT_SURE, REAL_PIP_GOLD = 0.90, 0.60
 # a treasure card: its text box is lavender, not parchment (median blue / median red: Sandstorm 1.59, deck
 # cards 0.58-0.60; an item card - the wand's Minor Clash - is lavender too, 1.59)
 TC_BR = 1.2
@@ -771,8 +776,9 @@ def card_feats(img, sc, left, top, icon_d):
 
 
 def is_real(f):
-    """a card (card_feats): see REAL_*"""
-    return (f['eTxt'] >= REAL_ETXT and REAL_PIP[0] <= f['pipYel'] <= REAL_PIP[1] and f['white'] < REAL_WHITE
+    """a card (card_feats): see REAL_* (a Myth card's gold frame: REAL_PIP_GOLD)"""
+    pip_hi = REAL_PIP_GOLD if f['eTxt'] >= REAL_ETXT_SURE else REAL_PIP[1]
+    return (f['eTxt'] >= REAL_ETXT and REAL_PIP[0] <= f['pipYel'] <= pip_hi and f['white'] < REAL_WHITE
             and f['iconD'] < REAL_ICON)
 
 
