@@ -93,6 +93,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
                                              faces to the wizard (0: straight ahead of it), or "none (<why>)"
+  /items[?goal=<the quest's goal line>]   -> the things lying about the zone a quest has you collect (the game's
+                                             memory, read-only - Piece Of Coral), nearest first:
+                                             item|name|x|y|z|distance|quest (1: the goal line names it)|gid,
+                                             or "none (<why>)"
                                              A field that can't be read for sure is left empty (target|||): goal, target,
                                              dist and path while the quest helper is still on the last zone, target and
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
@@ -1574,6 +1578,9 @@ MAP_ME = (242, 242, 242)
 MAP_TEXT = (154, 160, 166)
 MAP_MOB = (240, 82, 82)             # a mob kept away from
 MAP_MOB_QUEST = (245, 166, 35)      # ...one the quest is about (walked to)
+MAP_ITEM = (120, 200, 140)          # a thing lying about the zone a quest has you collect
+MAP_ITEM_QUEST = (60, 235, 110)     # ...one the goal wants (walked to and picked up)
+ITEMS_SHOWN = {}                    # the walker's last /items: {'quest': {gids}, 'at': time} - for the map
 QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this zone) is what the goal is
 MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
 
@@ -1699,6 +1706,17 @@ def mobs_now(r, goal_line='', trail=False):
         MOB_TRAIL.append((time.time(), tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
                                                        for m in mobs}))
     return mobs, ''
+
+
+def items_now(goal_line=''):
+    """(the zone's quest items [{name, pos, yaw, gid, template, quest}], why) - quest: the goal line names it
+    ("Collect Piece Of Coral in The Grotto (0 of 4)"); none ([], why) when they can't be read"""
+    items, why = nav_reader().items()
+    if items is None:
+        return [], why
+    for it in items:
+        it['quest'] = bool(goal_line) and name_in_line(it['name'], goal_line)
+    return items, ''
 
 
 # The mobs read lately: (time, the wizard's x, y, z, {gid: (name, x, y, z, yaw)}) - /caught looks back along it
@@ -2180,10 +2198,11 @@ def height_rgb(level):
     return np.stack([np.interp(lv, MAP_HEIGHT_STOPS, cols[:, c]) for c in range(3)], -1).astype(np.uint8)
 
 
-def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False):
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None):
     """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
     planned route's answer (navroute) to draw, if any; mobs: the zone's mobs (mobs_now) - red dots, the quest's
-    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across"""
+    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across; items:
+    the things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named"""
     from PIL import ImageDraw
     upp = span / min(w, h)
     ukey = round(upp, 4)
@@ -2290,6 +2309,18 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
         d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=col + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.7)))
         if k < 6 and on_pic(q, 4 * unit):
             d.text((q[0] + s * 1.6, q[1]), m['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
+    # the quest items: a green diamond each (the goal's brighter, named); the goal's off the picture: a pointer
+    for it in sorted(items or [], key=lambda it: not it.get('quest')):
+        q = at(it['pos'])
+        col = MAP_ITEM_QUEST if it.get('quest') else MAP_ITEM
+        if not on_pic(q, 3 * unit):
+            if it.get('quest'):
+                edge_pointer(q, col)
+            continue
+        s = 3.4 * unit
+        d.polygon([(q[0], q[1] - s), (q[0] + s, q[1]), (q[0], q[1] + s), (q[0] - s, q[1])], fill=col + (255,), outline=MAP_BG + (255,))
+        if it.get('quest'):
+            d.text((q[0] + s * 1.5, q[1]), it['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
     if r['target'] is not None:
         q = at(r['target'])
         if on_pic(q, 4 * unit):
@@ -2514,6 +2545,20 @@ class Handler(BaseHTTPRequestHandler):
                     f"mob|{m['name'].replace('|', ' ')}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
                     f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m['quest'] else 0}|{off_facing(m)}"
                     for m in sorted(mobs, key=lambda m: math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]))))
+            if u.path == '/items':
+                nm = nav_reader()
+                r, why = nm.read(path=False)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                items, why = items_now(q.get('goal', ''))
+                ITEMS_SHOWN.update(quest={it['gid'] for it in items if it['quest']}, at=time.time())
+                if not items:
+                    return self.reply('none' + (' (' + why + ')' if why else ''))
+                me = r['pos'] or (0.0, 0.0, 0.0)
+                return self.reply('\n'.join(
+                    f"item|{it['name'].replace('|', ' ')}|{it['pos'][0]:.1f}|{it['pos'][1]:.1f}|{it['pos'][2]:.1f}|"
+                    f"{math.hypot(it['pos'][0] - me[0], it['pos'][1] - me[1]):.0f}|{1 if it['quest'] else 0}|{it['gid']}"
+                    for it in sorted(items, key=lambda it: math.hypot(it['pos'][0] - me[0], it['pos'][1] - me[1]))))
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
                 with_route = q.get('route', '0') not in ('', '0')
@@ -2572,8 +2617,13 @@ class Handler(BaseHTTPRequestHandler):
                                                       cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE)
                 except Exception:  # noqa: BLE001 - the map without it
                     route = None
+                # (the quest items as the walker's last /items split them)
+                items, _ = items_now()
+                ifresh = time.time() - (ITEMS_SHOWN.get('at') or 0) < 10
+                for it in items:
+                    it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
                 with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')))
+                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items)
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':

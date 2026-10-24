@@ -467,6 +467,10 @@ OBJ_QUICK, OBJ_FULL, OBJ_IDLE, OBJ_SETTLE, OBJ_SETTLE_EVERY = 3.0, 15.0, 120.0, 
 OBJ_SPAN = 0x138                     # an object read from +0 to past its zone pointer (+0x130)
 MOB_KEY = re.compile(r"^(\w*Mobs)_(\d+)$")
 MOB_TABLES = ("WizardMobs", "Mobs")
+# a thing lying about the zone that a quest has you collect (Piece Of Coral: CL-Coral-Object, WizItems_00001638) -
+# its template's display key is in the items name table
+ITEM_KEY = re.compile(r"^(WizItems)_(\d+)$")
+ITEM_TABLES = ("WizItems",)
 
 
 def scan(code):
@@ -768,9 +772,10 @@ class _Attached:
         return found, where
 
     def template_kind(self, tpl, names, cache):
-        """(mob name or "", template name) of a template - a mob's display name is in one of the *Mobs name
-        tables (names: {key: English name}) and has a name, and it has a school (Fire, Storm...: one that fights - a
-        teleporter can borrow a mob's name, Wormguts Tower); None if tpl isn't a template (cached per template)"""
+        """(mob name or "", template name, item name or "") of a template - a mob's display name is in one of the
+        *Mobs name tables (names: {key: English name}) and has a name, and it has a school (Fire, Storm...: one that
+        fights - a teleporter can borrow a mob's name, Wormguts Tower); an item's (a thing a quest has you collect) is
+        in the items table; None if tpl isn't a template (cached per template)"""
         if tpl in cache:
             return cache[tpl]
         k = None
@@ -779,7 +784,8 @@ class _Attached:
             key = self.p.try_string(tpl + DATA["tpl_display"]) or ""
             m = MOB_KEY.match(key)
             fights = bool(m) and bool((self.p.try_string(tpl + DATA["tpl_school"]) or "").strip())
-            k = ((names.get(key) or "") if fights else "", self.p.try_string(tpl + DATA["tpl_name"]) or "")
+            item = (names.get(key) or "") if ITEM_KEY.match(key) else ""
+            k = ((names.get(key) or "") if fights else "", self.p.try_string(tpl + DATA["tpl_name"]) or "", item)
         if len(cache) > 20000:
             cache.clear()
         cache[tpl] = k
@@ -917,8 +923,10 @@ class NavMem:
         self._failed = (0, 0.0, "")      # pid, when to try again, why
         self._last_why = None
         # the zone's mobs (the objects thread): {object address: (gid, name, template name)}, the zone they're
-        # of, why there are none, when last asked for, the English names of the *Mobs tables
+        # of, why there are none, when last asked for, the English names of the *Mobs tables (and the items table);
+        # the things lying about it a quest has you collect: the same, {object address: (gid, item name, template)}
         self._objs, self._obj_cz, self._obj_why, self._obj_asked = {}, 0, "not looked yet", 0.0
+        self._items = {}
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
 
@@ -1035,13 +1043,24 @@ class NavMem:
         """(mobs, why): mobs = [{name, pos (x, y, z), yaw, gid, template}] - the mobs in the game's zone, their
         positions and facing (yaw, radians, forward = (-sin yaw, -cos yaw); None if unread) read now - or None and why
         (not attached, not looked yet, the names unreadable...). Never raises."""
+        return self._live("mobs")
+
+    def items(self):
+        """(items, why): items = [{name, pos (x, y, z), yaw, gid, template}] - the things lying about the game's zone
+        that a quest has you collect (their template's display name is in the items table: Piece Of Coral), read now -
+        one picked up is gone from it; None and why as mobs(). Never raises."""
+        return self._live("items")
+
+    def _live(self, which):
+        """mobs() / items(): the objects thread's of that kind still the same live objects, their places read now"""
         try:
             with self.lock:
                 self._obj_asked = time.monotonic()
                 if self._obj_thread is None or not self._obj_thread.is_alive():
                     self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
                     self._obj_thread.start()
-                st, cz, objs, why = self.st, self._obj_cz, list(self._objs.items()), self._obj_why
+                st, cz, why = self.st, self._obj_cz, self._obj_why
+                objs = list((self._objs if which == "mobs" else self._items).items())
             if st is None or not cz or why:
                 return None, why or "not attached"
             out, gids = [], set()
@@ -1062,7 +1081,7 @@ class NavMem:
                     out.append({"name": name, "pos": pos[:3], "yaw": pos[3], "gid": gid, "template": tname})
             return out, ""
         except Exception as e:  # noqa: BLE001 - never into the server
-            return None, "reading the mobs failed (%r)" % (e,)
+            return None, "reading the %s failed (%r)" % (which, e)
 
     @staticmethod
     def _mob_pos(st, obj, raw):
@@ -1098,8 +1117,8 @@ class NavMem:
                 import os
                 import navgeo
                 root = os.path.join(self.game_dir or navgeo.GAME_DIR, "Data", "GameData", "Root.wad")
-                files = navgeo.read_wad_files(root, ["Locale/en-US/%s.lang" % t for t in MOB_TABLES])
-                for tbl in MOB_TABLES:
+                files = navgeo.read_wad_files(root, ["Locale/en-US/%s.lang" % t for t in MOB_TABLES + ITEM_TABLES])
+                for tbl in MOB_TABLES + ITEM_TABLES:
                     data = files.get("Locale/en-US/%s.lang" % tbl)
                     if not data:
                         continue
@@ -1118,9 +1137,9 @@ class NavMem:
                 self._names_retry = time.monotonic() + 60.0
         return self._mob_names
 
-    def _set_objs(self, cz, objs, why):
+    def _set_objs(self, cz, objs, why, items=None):
         with self.lock:
-            self._obj_cz, self._objs, self._obj_why = cz, objs, why
+            self._obj_cz, self._objs, self._obj_why, self._items = cz, objs, why, items or {}
 
     def _objects_run(self):
         """the objects thread: the zone's mobs looked for every OBJ_QUICK s (see the top) while anyone asks"""
@@ -1156,7 +1175,7 @@ class NavMem:
                     found, where = st.scan_objects(cz, None if full else regions)
                     if full:
                         regions, last_full = where, t0
-                    objs = {}
+                    objs, items = {}, {}
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -1170,8 +1189,10 @@ class NavMem:
                         k = st.template_kind(tpl, names, cache)
                         if k and k[0]:
                             objs[obj] = (gid, k[0], k[1], vt)
-                    self._set_objs(cz, objs, "")
-                    self.obj_stats = {"objects": len(found), "mobs": len(objs), "full": full,
+                        elif k and k[2]:
+                            items[obj] = (gid, k[2], k[1], vt)
+                    self._set_objs(cz, objs, "", items)
+                    self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
             except Exception as e:  # noqa: BLE001 - tried again next time
                 self._set_objs(0, {}, "the zone's objects couldn't be read (%r)" % (e,))

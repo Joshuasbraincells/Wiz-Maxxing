@@ -164,8 +164,11 @@ if (!A_IsCompiled || FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
 	BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/latest", A_ScriptDir "\..")
 else
 	IniWrite, Wiz-Maxxing.exe is missing, %A_ScriptDir%\..\updater.ini, latest, err
-;(updating by itself - Settings: autoupdate: every that many minutes, 5 at least)
+;(updating by itself - Settings: autoupdate: every that many minutes, 5 at least. Wiz-Maxxing.exe not found: again in a
+;minute - 2026-10-23 23:22 it wasn't for a moment while Windows Security restarted, and the look-up waited 10 minutes)
 updEvery := Stat("autoupdate") > 0 ? Max(5, Stat("autoupdate")) : 120
+if (A_IsCompiled && !FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
+	updEvery := 1
 SetTimer, UpdPeekNow, % -60000 * updEvery
 return
 
@@ -3845,6 +3848,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Dashboard.ahk
 #Include %A_ScriptDir%\BugReport.ahk
 #Include %A_ScriptDir%\Dungeons.ahk
+#Include %A_ScriptDir%\Collect.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

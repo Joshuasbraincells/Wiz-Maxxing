@@ -2634,7 +2634,8 @@ StartCollect(text, why)
 	SetStatus("collecting - " SubStr(text, 1, 60))
 	}
 
-;One step of collecting. Monster name labels on screen: walk into the biggest (a battle starts on
+;One step of collecting. Things the goal names lying about the zone, by the game's memory (AutoFarmer Collect.ahk):
+;walked to one by one. Else monster name labels on screen: walk into the biggest (a battle starts on
 ;contact; AutoFarmer fights it). None: roam about the spot in a widening square (walking over things
 ;picks them up; their "Press X" prompts are taken above), heading back once RoamRadius away. Ends when
 ;the goal line under the arrow changes (done, or the next goal), or after CollectMax
@@ -2693,6 +2694,10 @@ CollectStep(seen, h, dist)
 		Sleep, 50
 		return true
 		}
+	;Things lying about the zone that the goal names, by the game's memory (AutoFarmer Collect.ahk): walked to and picked
+	;up one by one. None seen: monsters and roaming as before
+	if (IsFunc("CollectItemStep") && Func("CollectItemStep").Call(WkCollect.last != "" ? WkCollect.last : WkCollect.text))
+		return Walking ? true : false
 	;Monsters?
 	if (A_TickCount - WkFoesAt > 600)
 		{

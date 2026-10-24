@@ -178,6 +178,14 @@ is in the windows' titles, the tray menu's first line and the dashboard's
 STATISTICS. Needs a GitHub token once per PC (Setup.exe, "GitHub updates").
 Your settings, learned cards, potion routes and pictures are kept.
 updater.log (next to Wiz-Maxxing.exe) says what it did.
+Collect quest items by the game's memory (Settings > WALKING, collectmem - on):
+a "Collect N <things>" goal whose things lie about the zone (Piece Of Coral in
+The Grotto, from the game's item names) - each one's place is read from the
+game's memory (read-only), the nearest walked to round walls and mobs and
+stepped onto (picked up; still there after a moment: X), then the next. One it
+can't reach in a minute waits 3 minutes. None seen: it roams and walks into
+monsters as before. The dashboard's map shows them as green diamonds (the
+goal's brighter, named). debug.log: "Walk: collect: ...".
 Updating by itself (Settings > UPDATES, autoupdate - on, every 10 minutes): the
 bot looks for a newer release every that many minutes and downloads it while
 it plays on; then it closes itself for it - never closed under it - once it's
