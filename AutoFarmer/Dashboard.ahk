@@ -64,7 +64,7 @@ DashInit()
 	;Four tabs: Bot (statistics, what it sees, the log), Dungeons (Dungeons.ahk), Spells (the cards the bot learned by
 	;itself: Spells.ahk) and Cards (your hand, the enemies' spells)
 	Gui, Dash:Font, s9 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells|Cards
+	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells|Cards|Network
 	Gui, Dash:Tab, 1
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y68 w86 h16, STATISTICS
@@ -170,6 +170,30 @@ DashInit()
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
 	Gui, Dash:Add, ListView, x12 y248 w760 h544 vDashFoeList NoSort -Multi Background111317 cDADADA, Enemy|Spell|This round|Pips, what it does|This battle|Seen (all battles)
 	LV_ModifyCol(1, 130), LV_ModifyCol(2, 170), LV_ModifyCol(3, 76), LV_ModifyCol(4, 186), LV_ModifyCol(5, 84), LV_ModifyCol(6, 96)
+	;The Network tab: every bot on your home network (Network.ahk) - pick one: its log and its game; the buttons send it
+	;a command (with the network PIN)
+	Gui, Dash:Tab, 5
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y68 w400 h16, BOTS ON YOUR NETWORK
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x12 y88 w760 h32 vNetHelp, Every PC on your home network running the bot with Settings > NETWORK > neton. Pick one to see its log and its game. The buttons need the network PIN, the same on both PCs (Settings: netpin); Play for me can only be switched off from here.
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x12 y124 w80 h26 gDashNetOn vNetOnBtn, Bot on
+	Gui, Dash:Add, Button, x98 y124 w80 h26 gDashNetOff vNetOffBtn, Bot off
+	Gui, Dash:Add, Button, x184 y124 w120 h26 gDashNetPfm vNetPfmBtn, Play for me off
+	Gui, Dash:Add, Button, x310 y124 w80 h26 gDashNetRestart vNetRestartBtn, Restart
+	Gui, Dash:Add, Button, x396 y124 w80 h26 gDashNetRefresh vNetRefreshBtn, Refresh
+	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
+	Gui, Dash:Add, Text, x12 y156 w760 h30 vNetStatus, Network: off (Settings > NETWORK > neton)
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y190 w760 h150 vNetList gDashNetListEvent AltSubmit -Multi Background111317 cDADADA, PC|Version|Wizard|Zone|Bot|Play for me|Doing|Health|Mana|Deaths|Seen|Id
+	LV_ModifyCol(1, 110), LV_ModifyCol(2, 58), LV_ModifyCol(3, 110), LV_ModifyCol(4, 130), LV_ModifyCol(5, 52), LV_ModifyCol(6, 72)
+	LV_ModifyCol(7, 96), LV_ModifyCol(8, 74), LV_ModifyCol(9, 60), LV_ModifyCol(10, 54), LV_ModifyCol(11, 60), LV_ModifyCol(12, 0)
+	Gui, Dash:Font, s8 w400 cDADADA, Consolas
+	Gui, Dash:Add, Edit, x12 y348 w380 h440 ReadOnly -Wrap +HScroll +VScroll vNetLog
+	Gui, Dash:Add, Picture, x400 y348 w372 h210 vNetPic
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x400 y564 w372 h60 vNetPicNote, Pick a bot to see its log and its game.
 	Gui, Dash:Tab
 	;The red Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
 	;room: every check for you off till you click it again; off at every start. A red bar - a Progress control takes a
@@ -403,6 +427,76 @@ DashSaveWin(hwnd, section)
 	return true
 	}
 
+;---- The Network tab (Network.ahk) ----
+
+;The Network tab is the one showing (and the window's up)
+DashNetShown()
+	{
+	if (!DashHwnd || !DashShown)
+		return false
+	GuiControlGet, netTab, Dash:, DashTabs
+	return netTab = "Network"
+	}
+
+;The Network tab's list and status line afresh (NetTick, every 2 s): this PC first, then every bot heard - the one
+;picked kept picked
+DashNetFill()
+	{
+	if (!DashHwnd)
+		return
+	n := IsObject(NetPeers) ? NetPeers.Length() : 0
+	DashSet("NetStatus", "Network: " NetState (NetWhy != "" ? " - " NetWhy : "") (NetState = "on" ? "`n" n " other bot" (n = 1 ? "" : "s") " heard on your home network" (n ? "" : " - is neton switched on there, and Python allowed through its firewall?") : ""))
+	if (!DashNetShown())
+		return
+	wasCrit := A_IsCritical
+	Critical
+	Gui, Dash:Default
+	prevLV := A_DefaultListView
+	Gui, Dash:ListView, NetList
+	GuiControl, Dash:-Redraw, NetList
+	LV_Delete()
+	LV_Add("", A_ComputerName " (this PC)", BotVersion(), OwnName(), WalkZone(), (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
+		, PlayForMe ? "ON" : "off", "-", RegExReplace(IsObject(DashSees) ? DashSees.hp : "", "\s*\(.*"), IsObject(DashSees) ? DashSees.mana : ""
+		, IsObject(DashN) && DashN.deaths ? DashN.deaths : 0, "now", "")
+	for i, p in NetPeers
+		{
+		row := LV_Add("", p.pc, p.ver, p.wiz (p.school != "" ? " (" p.school ")" : ""), p.zone, p.bot, p.pfm = 1 ? "ON" : "off", p.doing
+			, p.hp, p.mana, p.deaths (p.dall != "" ? " / " p.dall : ""), p.age > 15 ? NetAge(p.age) " ago (quiet)" : "now", p.id)
+		if (p.id = NetSel)
+			LV_Modify(row, "Select Focus")
+		}
+	GuiControl, Dash:+Redraw, NetList
+	if (prevLV != "" && prevLV != "NetList")
+		Gui, Dash:ListView, %prevLV%
+	CfgUncritical(wasCrit, 0)
+	}
+
+;The picked bot's log and picture onto the tab (NetFetchPicked); pic "" - none, why says why
+DashNetShow(log, pic, why)
+	{
+	if (!DashHwnd)
+		return
+	if (log != "")
+		{
+		GuiControl, Dash:, NetLog, %log%
+		;(the log's end in view)
+		GuiControlGet, netLogHwnd, Dash:Hwnd, NetLog
+		SendMessage, 0x115, 7, 0, , ahk_id %netLogHwnd%
+		}
+	if (pic != "")
+		{
+		GuiControl, Dash:, NetPic, *w372 *h-1 %pic%
+		GuiControl, Dash:Show, NetPic
+		GuiControl, Dash:, NetPicNote, % "Its game, " A_Hour ":" A_Min ":" A_Sec (why != "" ? " - " why : "")
+		}
+	else
+		{
+		;(no picture this time: the last one isn't left up under it)
+		GuiControl, Dash:Hide, NetPic
+		GuiControl, Dash:, NetPicNote, % why != "" ? why : "No picture"
+		}
+	}
+
 DashOnExit(reason, code)
 	{
 	DashSavePlace()
@@ -415,6 +509,8 @@ DashOnExit(reason, code)
 ;Every DebugLog line (with its time): onto the log, and into the counts
 DashLog(line)
 	{
+	;(the last line written - the Network tab's "last" for the other bots, Network.ahk)
+	NetLastLine := line
 	if (!DashHwnd)
 		return
 	DashParse(line)
@@ -1312,6 +1408,39 @@ DashClearLog:
 	GuiControl, Dash:, DashConsole,
 	return
 
+;The Network tab: a bot picked (its log and picture fetched now), and the buttons for it
+DashNetListEvent:
+	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
+		{
+		Gui, Dash:ListView, NetList
+		LV_GetText(DashNetId, A_EventInfo, 12)
+		if (DashNetId != NetSel)
+			{
+			;(kept by its PC: a bot started again has a new id)
+			NetSelPc := ""
+			if (DashNetId != "")
+				LV_GetText(NetSelPc, A_EventInfo, 1)
+			NetSel := DashNetId, NetLogAt := 0, NetSnapAt := "", NetRefresh := 1
+			GuiControl, Dash:, NetLog,
+			GuiControl, Dash:Hide, NetPic
+			GuiControl, Dash:, NetPicNote, % NetSel = "" ? "This PC - its log is the Bot tab's." : "Fetching its log and game..."
+			}
+		}
+	return
+
+DashNetOn:
+DashNetOff:
+DashNetPfm:
+DashNetRestart:
+	DashNetCmd := {DashNetOn: "on", DashNetOff: "off", DashNetPfm: "pfmoff", DashNetRestart: "restart"}[A_ThisLabel]
+	DashSet("NetStatus", "Network: " NetSend(DashNetCmd))
+	NetLogAt := A_TickCount - 4000
+	return
+
+DashNetRefresh:
+	NetRefresh := 1
+	return
+
 ;The log's Colours button, and its window's buttons: a kind's colour changed (kept in dashboard.ini [logcolors]), all
 ;back to the defaults, the window closed - the log coloured afresh each time
 DashLogColorsBtn:
@@ -1524,6 +1653,13 @@ DashGuiSize:
 	GuiControl, Dash:Move, DashHandHead, % "w" A_GuiWidth - 154
 	GuiControl, Dash:Move, DashFoeHead, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DashFoeList, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 260)
+	;(the Network tab: the list across, the log under it on the left, the game's picture on the right)
+	GuiControl, Dash:Move, NetHelp, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, NetStatus, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, NetList, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, NetLog, % "w" Max(200, A_GuiWidth - 404) " h" Max(40, A_GuiHeight - 360)
+	GuiControl, Dash:Move, NetPic, % "x" A_GuiWidth - 384 - DashTabOX
+	GuiControl, Dash:Move, NetPicNote, % "x" A_GuiWidth - 384 - DashTabOX
 	;(the tabs fill the window under the heading; the Dungeons tab's list takes what's left)
 	GuiControl, Dash:Move, DashTabs, % "w" A_GuiWidth - 12 " h" A_GuiHeight - 42
 	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24

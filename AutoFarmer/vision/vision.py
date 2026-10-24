@@ -1585,6 +1585,19 @@ QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this 
 MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
 
 
+# ---------------------------------------------------------------- the Network tab (netmon.py)
+NETMON = None
+
+
+def netmon():
+    """this PC's part of the Network tab, made on first use (its sockets open only while it's on - Settings: neton)"""
+    global NETMON
+    if NETMON is None:
+        import netmon as netmon_mod
+        NETMON = netmon_mod.NetMon(grab_screen, os.path.join(ROOT, 'debug.log'), log=log)
+    return NETMON
+
+
 # ---------------------------------------------------------------- party (party.py)
 PARTY = None
 
@@ -1607,6 +1620,8 @@ def party():
 def party_stop():
     if PARTY is not None:
         PARTY.stop()
+    if NETMON is not None:
+        NETMON.stop()
 
 
 def nav_reader():
@@ -2631,6 +2646,16 @@ class Handler(BaseHTTPRequestHandler):
                 party_stop()
                 threading.Thread(target=self.server.shutdown, daemon=True).start()
                 return
+            if u.path == '/net':
+                # (AutoFarmer's network settings and state in - on, port, pin, pc, ver, wiz, school, zone, bot, pfm,
+                # doing, hp, mana, deaths, dall, up, status, last, front, gx, gy, gw, gh; out: net|state|why, me|id|port,
+                # peer|id|ip|age|pc|ver|wiz|school|zone|bot|pfm|doing|hp|mana|deaths|dall|up|status|last, cmd|c|from)
+                return self.reply('\n'.join(netmon().update(q)))
+            if u.path == '/netpeer':
+                # (the bot picked on the Network tab - /net's sel: its log and game as the fetch thread has them)
+                return self.reply('\n'.join(netmon().picked(q.get('id', ''))))
+            if u.path == '/netcmd':
+                return self.reply(netmon().command(q.get('id', ''), q.get('c', '')))
             if u.path == '/party':
                 # (AutoFarmer's party settings and state in - role, name, leader, port, battle, hp, ready, walk, bot,
                 # hold, brole, wiz, school, hits, hitr; the party as this PC sees it out: party|.., me|.., leader|..,

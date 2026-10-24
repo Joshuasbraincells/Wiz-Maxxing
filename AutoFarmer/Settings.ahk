@@ -132,6 +132,13 @@ CfgList()
 		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."})
 	list.Push({key: "learnupgrade", label: "Make room for stronger learned hits", kind: "check", def: 1
 		, help: "A learned hit 15% or more stronger than your weakest in hit1-3 takes its place, out of battle; hit1-3 stay weakest to strongest (the cheapest, your only all-enemies hit, X-pip and hitNkeep:1 slots stay put). Undo: Forget it or change its kind on the Spells tab. One school off: <school>.learnupgrade:0."})
+	list.Push({key: "-", label: "NETWORK (THE DASHBOARD'S NETWORK TAB)"})
+	list.Push({key: "neton", label: "Show this bot to the others on your home network", kind: "check", def: 0
+		, help: "Its state (PC, version, wizard, zone, on/off, Play for me, what it's doing, health, mana, deaths, last log line) goes to every bot on your home network with this on, and theirs shows on the dashboard's Network tab - with their log and game when you pick one. Windows asks once to let Python through its firewall: allow it on Private networks (your network has to be set to Private). Off: nothing sent or listened for."})
+	list.Push({key: "netport", label: "...on the port", kind: "num", lo: 1024, hi: 65535, def: 47150
+		, help: "The same on every PC. UDP for finding each other, TCP for the log, the picture and commands."})
+	list.Push({key: "netpin", label: "...network PIN for commands (0 = none)", kind: "num", lo: 0, hi: 99999999, def: 0
+		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on needs pimpmeout typed at that PC."})
 	list.Push({key: "-", label: "UPDATES"})
 	list.Push({key: "autoupdate", label: "Update by itself: look every (minutes, 0 = never)", kind: "num", lo: 0, hi: 1440, def: 10
 		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking (F8), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."})

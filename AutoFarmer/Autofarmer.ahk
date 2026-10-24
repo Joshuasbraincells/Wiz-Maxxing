@@ -413,6 +413,8 @@ OnMessage(0x5555, "StatsAsked")
 VisionStart()
 ;(the party - Party.ahk: this bot's state to the helper and the party back, every half second, battles too)
 SetTimer, PartyTimer, 500
+;(the Network tab - Network.ahk: this bot's state to the others on your home network, theirs and commands back)
+SetTimer, NetTick, 2000
 OnExit("VisionOnExit")
 
 ;Initializes modes
@@ -478,7 +480,15 @@ loop,
 	if (A_TickCount - LastBeat > 10000)
 		{
 		LastBeat := A_TickCount
+		;(another program's window: only its program's name - its title can be anything of yours, and the log goes to the
+		;OneDrive copy, bug reports and the Network tab)
 		WinGetTitle, activeTitle, A
+		WinGet, activePid, PID, A
+		if (!GameActive() && activePid != DllCall("GetCurrentProcessId"))
+			{
+			WinGet, activeExe, ProcessName, A
+			activeTitle := "another program (" (activeExe != "" ? activeExe : "?") ")"
+			}
 		DebugLog("Watching for a round. Active window: " activeTitle " | game area " GameLeft "," GameTop " " GameW "x" GameH)
 		}
 	;You're playing (a key, click or mouse move of yours in the last handsoff seconds): the bot waits - no
@@ -3854,6 +3864,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\BugReport.ahk
 #Include %A_ScriptDir%\Dungeons.ahk
 #Include %A_ScriptDir%\Collect.ahk
+#Include %A_ScriptDir%\Network.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

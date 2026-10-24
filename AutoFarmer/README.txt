@@ -191,6 +191,16 @@ debug.log: "Walk: collect: ...".
 Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
 kept off (mobgrow); every 10 minutes of walking without one it's made a fifth
 smaller again, down to 300 / 120 (mobshrink).
+The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
+every bot on your home network - its PC, version, wizard, zone, on/off, Play
+for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines
+and a picture of its game (only while Wizard101 is the window in front there -
+nothing else on its screen is sent), every 6 s. Its buttons turn that bot on
+or off, switch its Play for me off, or restart it - only between bots with the
+same network PIN (netpin, not 0); Play for me can't be switched on from the
+network (pimpmeout at that PC). Windows asks once on each PC to let Python
+through its firewall: allow it on Private networks. Both PCs' clocks have to
+be right (2 minutes apart at most). debug.log: "Network: ...".
 Updating by itself (Settings > UPDATES, autoupdate - on, every 10 minutes): the
 bot looks for a newer release every that many minutes and downloads it while
 it plays on; then it closes itself for it - never closed under it - once it's
