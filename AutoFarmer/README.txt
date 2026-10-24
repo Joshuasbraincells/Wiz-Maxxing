@@ -682,7 +682,8 @@ Pick one to see its picture. Pick one or more and:
 	  for the pips: an X-pip spell (all your pips; its number then its damage
 	  a pip) - learned as one by itself when its text says "per pip".
 	  Or in the list itself, as in a spreadsheet: double-click a Name, Pips
-	  or Value cell and type over it - Enter (or clicking away) keeps it, Esc
+	  or Value cell and type over it - Tab keeps it and goes right (Shift+Tab
+	  left), Enter down (Shift+Enter up); clicking away keeps it too, Esc
 	  doesn't. Double-click a Kind cell: the Change kind menu opens there.
 	  Other cells open the card's picture. A changed cell shows a * till the
 	  bot has made the change.

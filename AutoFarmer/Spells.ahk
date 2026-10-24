@@ -609,16 +609,36 @@ SpCellEdit(row, scMx := "", scMy := "")
 	;(the mouse moved off the double-clicked row before this ran - the bot busy: not another row's cell)
 	if (scItem < 0 || scItem + 1 != row)
 		return
+	;(0 Name, 1 Kind, 3 Pips, 4 Value - the list's columns)
+	if (scSub != 0 && scSub != 1 && scSub != 3 && scSub != 4)
+		return SpOpenPic(false)
+	SpCellOpen(scItem + 1, scSub)
+	}
+
+;The box over row's cell in column sub (0 Name, 1 Kind - its menu, 3 Pips, 4 Value), the row scrolled into view and
+;picked; false if there's no such spell
+SpCellOpen(row, scSub)
+	{
+	GuiControlGet, scLv, Dash:Hwnd, SpList
+	if (!scLv)
+		return false
 	prevLV := SpListSelect()
-	LV_GetText(scId, scItem + 1, 12)
+	if (row < 1 || row > LV_GetCount())
+		{
+		SpListBack(prevLV)
+		return false
+		}
+	LV_GetText(scId, row, 12)
+	LV_Modify(0, "-Select")
+	LV_Modify(row, "Select Focus Vis")
 	SpListBack(prevLV)
+	scItem := row - 1
 	c := SpL("LearnCardOf", scId)
 	if (!IsObject(c))
-		return
-	;(0 Name, 1 Kind, 3 Pips, 4 Value - the list's columns)
+		return false
 	scCol := scSub = 0 ? "name" : scSub = 4 ? "value" : scSub = 3 ? "pips" : scSub = 1 ? "kind" : ""
 	if (scCol = "")
-		return SpOpenPic(false)
+		return false
 	;(the cell's place on screen - for column 0 its label's, not the whole row's)
 	VarSetCapacity(scRc, 16, 0), NumPut(scSub, scRc, 4, "Int"), NumPut(scSub = 0 ? 2 : 0, scRc, 0, "Int")
 	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1038, "Ptr", scItem, "Ptr", &scRc)  ; LVM_GETSUBITEMRECT
@@ -630,7 +650,7 @@ SpCellEdit(row, scMx := "", scMy := "")
 		{
 		CoordMode, Menu, Screen
 		Menu, SpKindMenu, Show, %scX%, % scY + scH
-		return
+		return true
 		}
 	SpCellClose()
 	SpCellId := c.id, SpCellCol := scCol
@@ -650,6 +670,44 @@ SpCellEdit(row, scMx := "", scMy := "")
 	SendMessage, 0xB1, 0, -1, Edit1, ahk_id %SpCellHwnd%      ; EM_SETSEL: all of it, to type over
 	;(clicked away: kept - looked at every 150 ms)
 	SetTimer, SpCellWatch, 150
+	return true
+	}
+
+;Moving on from the cell, as in a spreadsheet: what's typed kept, then the cell beside it - Tab right (the next row's
+;Name after Value), Shift+Tab left, Enter down, Shift+Enter up; past the first or last row: just kept. The cells typed
+;in are Name, Pips and Value (Kind is its menu: passed over). A guessed pips is made read only if you typed in its
+;cell - passing through doesn't
+SpCellMove(dRow, dCol)
+	{
+	if (!SpCellHwnd)
+		return
+	id := SpCellId, col := SpCellCol
+	SendMessage, 0xB8, 0, 0, Edit1, ahk_id %SpCellHwnd%      ; EM_GETMODIFY: typed in
+	typedIn := ErrorLevel != "FAIL" && ErrorLevel
+	SpCellCommit(typedIn)
+	prevLV := SpListSelect()
+	row := 0
+	Loop, % LV_GetCount()
+		{
+		LV_GetText(rowId, A_Index, 12)
+		if (rowId = id)
+			{
+			row := A_Index
+			break
+			}
+		}
+	n := LV_GetCount()
+	SpListBack(prevLV)
+	if (!row)
+		return
+	cols := [0, 3, 4], at := col = "name" ? 1 : col = "pips" ? 2 : 3
+	at += dCol, row += dRow
+	if (at > cols.Length())
+		at := 1, row += 1
+	else if (at < 1)
+		at := cols.Length(), row -= 1
+	if (row >= 1 && row <= n)
+		SpCellOpen(row, cols[at])
 	}
 
 ;What's typed in the cell kept - checked as the Edit window's Save checks it, then queued (applied out of battle),
@@ -839,7 +897,7 @@ SpListEvent:
 
 ;(the cell's box: Enter keeps what's typed, Esc doesn't, clicking away keeps it)
 SpCellOk:
-	SpCellCommit(true)
+	SpCellMove(1, 0)
 	return
 
 SpCellGuiEscape:
@@ -918,3 +976,21 @@ SpRefreshClick:
 	SpQueue("reload", "", [])
 	SpListFill()
 	return
+
+;The cell's keys while its box is in front: Tab / Shift+Tab right and left, Enter / Shift+Enter down and up (SpCellMove)
+#If SpCellHwnd && WinActive("ahk_id " SpCellHwnd)
+Tab::
+	SpCellMove(0, 1)
+	return
++Tab::
+	SpCellMove(0, -1)
+	return
+Enter::
+NumpadEnter::
+	SpCellMove(1, 0)
+	return
++Enter::
++NumpadEnter::
+	SpCellMove(-1, 0)
+	return
+#If
