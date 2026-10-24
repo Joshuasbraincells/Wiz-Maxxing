@@ -2062,6 +2062,11 @@ WalkGoalLine()
 		text := OcrRect(Round(px - 450 * s), Round(py + 28 * s), Round(900 * s), Round(60 * s))
 		text := ErrorLevel ? "" : Trim(RegExReplace(text, "\s+", " "))
 		}
+	;(what the quest's goal line says, in the log when it changes - which mobs are the quest's comes from it: at most once
+	;in 30 s, OCR slips change it too)
+	static said := "", saidAt := 0
+	if (text != "" && text != said && (!saidAt || A_TickCount - saidAt > 30000))
+		said := text, saidAt := A_TickCount, WalkLog("the quest's goal line: " SubStr(text, 1, 120))
 	WkGoalLine := text
 	return text
 	}

@@ -1702,6 +1702,28 @@ def name_in_line(name, line):
     return k in L or _approx_in(k, L, max(1, len(k) // 6))
 
 
+# Words of a mob's name that say nothing about its kind (a goal line's "Defeat the Dark ..." mustn't take every Dark one)
+FAMILY_SKIP = {'the', 'of', 'and', 'lord', 'lady', 'king', 'queen', 'prince', 'princess', 'master', 'elder', 'great', 'grand',
+               'young', 'old', 'dark', 'evil', 'giant', 'little', 'big', 'captain', 'chief', 'sir', 'dame', 'boss', 'mighty',
+               # (ranks and titles: Optio Misemos isn't the Optio Agenor a goal names)
+               'optio', 'centurion', 'decurion', 'legate', 'tribune', 'praetor', 'general', 'commander', 'sergeant', 'corporal',
+               'private', 'baron', 'baroness', 'duke', 'duchess', 'count', 'countess', 'earl', 'admiral', 'colonel', 'major',
+               'lieutenant', 'professor', 'doctor', 'madame', 'mister', 'father', 'mother', 'brother', 'sister', 'uncle', 'aunt'}
+
+
+@functools.lru_cache(maxsize=1024)
+def family_in_line(name, line):
+    """one word of the mob's name - 4 letters or more, not a FAMILY_SKIP one - in the goal line as a word, plural too
+    ("Gobbler Scavenger" in "Defeat Gobblers in Colossus Boulevard (0 of 4)")"""
+    words = set(re.sub(r'[^a-z0-9 ]', ' ', (line or '').lower()).split())
+    if not words:
+        return False
+    for w in re.sub(r'[^a-z0-9 ]', ' ', (name or '').lower()).split():
+        if len(w) >= 4 and w not in FAMILY_SKIP and word_forms(w) & words:
+            return True
+    return False
+
+
 def quest_mob(m, r, goal_line):
     """the quest is about this mob: its name is in the goal line ("Defeat 3 Lost Souls ..."), or - the goal a fight
     (or no goal line read) - it stands by the quest's goal in this zone (a boss the arrow leads to). Not a mob
@@ -1711,6 +1733,10 @@ def quest_mob(m, r, goal_line):
     g = r.get('goal') if r else None
     if goal_line and not FIGHT_GOAL.search(goal_line):
         return False
+    # (a fight goal naming the mob's kind, not its whole name - "Defeat Gobblers" for a Gobbler Scavenger: 2026-10-24
+    # the wizard waited and backed away from the very mobs its quest wanted)
+    if goal_line and family_in_line(m['name'], goal_line):
+        return True
     return (g is not None and r.get('hops') == 0
             and math.hypot(m['pos'][0] - g[0], m['pos'][1] - g[1]) <= QUEST_NEAR and abs(m['pos'][2] - g[2]) <= 260)
 
