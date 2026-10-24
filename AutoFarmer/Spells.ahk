@@ -112,7 +112,7 @@ SpListFill()
 	row := 0
 	while (row := LV_GetNext(row))
 		{
-		LV_GetText(id, row, 11)
+		LV_GetText(id, row, 12)
 		keep[id] := 1
 		}
 	GuiControl, Dash:-Redraw, SpList
@@ -120,8 +120,8 @@ SpListFill()
 	if (IsObject(LearnedCards))
 		for i, c in LearnedCards
 			{
-			row := LV_Add("", SpName(c), SpKindText(c), c.sch, SpPipsText(c), SpValueText(c), SpInUse(c), c.text, SpFlag(c, "tc") ? "yes" : ""
-				, SpWhen(c.when), c.dir = "" ? "main" : c.dir, c.id)
+			row := LV_Add("", SpName(c), SpKindText(c), c.sch, SpPipsText(c), SpValueText(c), SpSureText(c), SpInUse(c), c.text
+				, SpFlag(c, "tc") ? "yes" : "", SpWhen(c.when), c.dir = "" ? "main" : c.dir, c.id)
 			if (keep.HasKey(c.id))
 				LV_Modify(row, "Select")
 			}
@@ -160,7 +160,7 @@ SpSelectedIds()
 	row := 0
 	while (row := LV_GetNext(row))
 		{
-		LV_GetText(id, row, 11)
+		LV_GetText(id, row, 12)
 		if (id != "")
 			ids.Push(id)
 		}
@@ -227,6 +227,9 @@ SpKindText(c)
 ;The Pips column: ? not known, 3? guessed (not read off the card)
 SpPipsText(c)
 	{
+	;(an X-pip spell: all your pips)
+	if (SpFlag(c, "xpip"))
+		return "X"
 	if (c.pips = "")
 		return "?"
 	return c.pips (c.guess ? "?" : "")
@@ -239,6 +242,13 @@ SpValueText(c)
 	if (c.value = "")
 		return (c.type = "" || c.type = "keep" || c.type = "stun" || c.type = "dispel" || c.type = "prism" || c.type = "clear") ? "" : "?"
 	return c.value (dot != "" && dot != 1 ? " (+" dot " over time)" : "")
+	}
+
+;The Sure column: how sure the learner is of what it took it for (CardLearn.ahk LearnSure), as a %
+SpSureText(c)
+	{
+	s := SpL("LearnSure", c)
+	return IsObject(s) ? s.pct "%" : ""
 	}
 
 ;The In use column: its slot, else why it's kept (LearnInUse: from the catalog alone - never asks the helper)
@@ -292,6 +302,9 @@ SpAbout(c)
 	desc := SpL("LearnDescribe", c)
 	t := SpName(c) (desc != "" ? ": " desc : "")
 	t .= "`nText read: " (c.text = "" ? "-" : c.text)
+	sure := SpL("LearnSure", c)
+	if (IsObject(sure))
+		t .= "`nSure: " sure.pct "% (" sure.why ")"
 	t .= "`nLearned " SpWhen(c.when) (c.scale != "" ? " at UI " c.scale : "") " (" (c.dir = "" ? "main" : c.dir) ")"
 	if (SpFlag(c, "tc"))
 		t .= "`nA treasure card"
@@ -359,6 +372,14 @@ SpQueue(op, arg, ids)
 
 ;The newest edit of spell id still waiting in the queue ({name, value, pips, cols} - "" none): an edit made before the
 ;bot has made the one before builds on it, not on the catalog's old numbers (which would undo it)
+;The pips to show for editing: X for an X-pip spell (or one a waiting edit made X), else the number
+SpPipsEditText(c, b)
+	{
+	if (IsObject(b) && b != c)
+		return (b.pips = "x" || b.pips = "X") ? "X" : (b.cols = "" || InStr(b.cols, "pips")) ? b.pips : SpFlag(c, "xpip") ? "X" : b.pips
+	return SpFlag(c, "xpip") ? "X" : c.pips
+	}
+
 SpPendingEdit(id)
 	{
 	if (!IsObject(SpPending))
@@ -513,7 +534,7 @@ SpEditShow(hidden := false)
 	Gui, SpEd:Font, s9 w400 cF2F2F2, Segoe UI
 	Gui, SpEd:Add, Edit, x96 y104 w296 h22 Limit40 vSpEdName, % b.name
 	Gui, SpEd:Add, Edit, x96 y134 w80 h22 Number Limit5 vSpEdValue, % b.value
-	Gui, SpEd:Add, Edit, x96 y164 w50 h22 Number Limit2 vSpEdPips, % b.pips
+	Gui, SpEd:Add, Edit, x96 y164 w50 h22 Limit2 vSpEdPips, % SpPipsEditText(c, b)
 	Gui, SpEd:Font, s9 w400 c9AA0A6, Segoe UI
 	Gui, SpEd:Add, Text, x156 y167 w236 h18, % c.guess && c.pips != "" ? "(guessed - Save makes it read)" : ""
 	Gui, SpEd:Font, s9 w400 cB9E2B9, Segoe UI
@@ -543,13 +564,14 @@ SpEdSaveNow()
 		return SpEdSay("That spell isn't in the list any more.")
 	if (value != "" && !RegExMatch(value, "^\d{1,5}$"))
 		return SpEdSay("The number: digits only (or blank: not known).")
-	if (pips != "" && !(RegExMatch(pips, "^\d{1,2}$") && pips <= 14))
-		return SpEdSay("Pips: 0 to 14 (or blank: not known).")
+	;(X: an X-pip spell - all your pips)
+	if (pips != "" && !RegExMatch(pips, "^[xX]$") && !(RegExMatch(pips, "^\d{1,2}$") && pips <= 14))
+		return SpEdSay("Pips: 0 to 14, or X for an X-pip spell (or blank: not known).")
 	if (pips = "" && RegExMatch(c.slot, "\\hit\d$"))
 		return SpEdSay("It's used as " c.slot ": a hit there needs its pips.")
-	value := value = "" ? "" : value + 0, pips := pips = "" ? "" : pips + 0
+	value := value = "" ? "" : value + 0, pips := pips = "" ? "" : RegExMatch(pips, "^[xX]$") ? "x" : pips + 0
 	b := SpPendingEdit(SpEdId), b := IsObject(b) ? b : c
-	if (name == b.name && value = b.value && pips = b.pips && !(pips != "" && c.guess))
+	if (name == b.name && value = b.value && pips = b.pips && !(pips != "" && c.guess) && !(pips = "x" && !SpFlag(c, "xpip")) && !(pips != "x" && SpFlag(c, "xpip")))
 		return SpEdSay("Nothing changed.")
 	SpQueue("edit", {name: name, value: value, pips: pips}, [SpEdId])
 	Gui, SpEd:Destroy
@@ -588,7 +610,7 @@ SpCellEdit(row, scMx := "", scMy := "")
 	if (scItem < 0 || scItem + 1 != row)
 		return
 	prevLV := SpListSelect()
-	LV_GetText(scId, scItem + 1, 11)
+	LV_GetText(scId, scItem + 1, 12)
 	SpListBack(prevLV)
 	c := SpL("LearnCardOf", scId)
 	if (!IsObject(c))
@@ -614,7 +636,7 @@ SpCellEdit(row, scMx := "", scMy := "")
 	SpCellId := c.id, SpCellCol := scCol
 	;(an edit of it still waiting in the queue: what it will be)
 	scB := SpPendingEdit(c.id), scB := IsObject(scB) ? scB : c
-	scNow := scCol = "name" ? scB.name : scCol = "value" ? scB.value : scB.pips
+	scNow := scCol = "name" ? scB.name : scCol = "value" ? scB.value : SpPipsEditText(c, scB)
 	SpCellShown := scNow
 	;(DPI: the window's sizes are scaled by Windows - given in 96-dpi pixels)
 	scDpi := A_ScreenDPI / 96
@@ -622,7 +644,7 @@ SpCellEdit(row, scMx := "", scMy := "")
 	Gui, SpCell:Margin, 0, 0
 	Gui, SpCell:Color, 111317, 111317
 	Gui, SpCell:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, SpCell:Add, Edit, % "x0 y0 w" Max(60, Round(scW / scDpi)) " h" Max(20, Round(scH / scDpi) + 4) " -E0x200 vSpCellText" (scCol = "name" ? " Limit40" : scCol = "value" ? " Number Limit5" : " Number Limit2"), %scNow%
+	Gui, SpCell:Add, Edit, % "x0 y0 w" Max(60, Round(scW / scDpi)) " h" Max(20, Round(scH / scDpi) + 4) " -E0x200 vSpCellText" (scCol = "name" ? " Limit40" : scCol = "value" ? " Number Limit5" : " Limit2"), %scNow%
 	Gui, SpCell:Add, Button, x0 y0 w0 h0 Hidden Default gSpCellOk
 	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")
 	SendMessage, 0xB1, 0, -1, Edit1, ahk_id %SpCellHwnd%      ; EM_SETSEL: all of it, to type over
@@ -658,25 +680,27 @@ SpCellCommit(byEnter := false)
 		}
 	else
 		{
-		if (typed != "" && !(RegExMatch(typed, "^\d{1,2}$") && typed <= 14))
-			return SpNote("Pips: 0 to 14 (or blank: not known)")
+		;(X: an X-pip spell - all your pips)
+		if (typed != "" && !RegExMatch(typed, "^[xX]$") && !(RegExMatch(typed, "^\d{1,2}$") && typed <= 14))
+			return SpNote("Pips: 0 to 14, or X for an X-pip spell (or blank: not known)")
 		if (typed = "" && RegExMatch(c.slot, "\\hit\d$"))
 			return SpNote("It's used as " c.slot ": a hit there needs its pips")
-		pips := typed = "" ? "" : typed + 0
+		pips := typed = "" ? "" : RegExMatch(typed, "^[xX]$") ? "x" : typed + 0
 		}
 	;(the columns typed in - this one and a waiting edit's; "" a waiting Edit window's: all three. Only those are changed
 	;when the bot applies it, and guessed pips stay guessed unless Pips is one - the learner still corrects them from the
 	;card's pip digit)
 	cols := !IsObject(pend) ? col : pend.cols = "" ? "" : InStr(pend.cols, col) ? pend.cols : pend.cols " " col
 	guessOpen := c.guess && (!IsObject(pend) || (pend.cols != "" && !InStr(pend.cols, "pips")))
-	if (name == b.name && value = b.value && pips = b.pips && !(col = "pips" && pips != "" && guessOpen))
+	if (name == b.name && value = b.value && pips = b.pips && !(col = "pips" && pips != "" && guessOpen)
+		&& !(col = "pips" && (pips = "x") != SpFlag(c, "xpip")))
 		return
 	SpQueue("edit", {name: name, value: value, pips: pips, cols: cols}, [SpCellId])
 	;(the list shows it now - the bot's loop applies it out of battle and fills the list again)
 	prevLV := SpListSelect()
 	Loop, % LV_GetCount()
 		{
-		LV_GetText(rowId, A_Index, 11)
+		LV_GetText(rowId, A_Index, 12)
 		if (rowId = SpCellId)
 			{
 			LV_Modify(A_Index, "Col" (col = "name" ? 1 : col = "value" ? 5 : 4), (col = "name" ? name : col = "value" ? value : pips) " *")

@@ -454,6 +454,8 @@ loop,
 		{
 		SpApplyPending()
 		UpdAuto()
+		;(the deck for what's ahead - Decks.ahk)
+		DeckTick()
 		}
 	;Off (F6) - or opened by the game in standby: nothing till F6 (no battles, walking, potions or reconnecting).
 	;Opened in standby and never turned on: Wizard101 closing closes the bot too (it opens again with the game)
@@ -849,6 +851,10 @@ if (hitter = 0) && (player == 1)
 		DebugLog("  no school badge found on the name plates - this character fought as " knownSchool " before: using that, with your own plate as the hitter's")
 		}
 	}
+;(the deck for this battle, once the school's known - the badge's or the one fought as before: a new battle, or your
+;Alt+1 boss pick: Decks.ahk)
+if (hitter != 0)
+	DeckRound()
 
 ;A character the bot has no pictures for (no school icon it knows on the screen, e.g. a new wizard of
 ;another school): leave the round to you rather than passing it, and keep a picture of the round so
@@ -994,6 +1000,8 @@ if (hitter != 0)
 	global heal2 := 0
 	Find("heal2", heal2, heal2X, heal2Y, hitschool)
 	}
+;(the deck in use's slots it doesn't play: out of this round's hand - Decks.ahk)
+DeckFilterHand()
 
 ;(the boosts going to another school's wizard - Alt+2's pick, a party battle's hitter: your school's blade, trap and
 ;bubble only boost your school's hits - not cast; a blader's or healer's aura only boosts itself)
@@ -2211,7 +2219,7 @@ OwnHealthLow(quiet := false)
 	{
 	global
 	local pct, limit, bestN, cur, most, r
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	limit := StatOr("healat", 40)
 	if (OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 15000 && OwnHpWin = WinExist("A"))
 		{
 		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
@@ -3865,6 +3873,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Dungeons.ahk
 #Include %A_ScriptDir%\Collect.ahk
 #Include %A_ScriptDir%\Network.ahk
+#Include %A_ScriptDir%\Decks.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

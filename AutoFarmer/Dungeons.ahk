@@ -25,7 +25,9 @@ global DgRun
 global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt, DgRecPrev, DgRecOut
 ;The Dungeons tab's controls (Dashboard.ahk makes them)
 global DashTabs, DgList, DgHelp, DgRecBtn, DgRecStopBtn, DgRunBtn, DgStopBtn, DgDelBtn, DgFolderBtn, DgTimes, DgTimesUD
-global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote
+global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote, DgDeck, DgDeckT
+;(the Deck box's decks by their place in it - 2 on; 1 is "(none)")
+global DgDeckIds
 
 ;The folder the runs are kept in
 DgDir()
@@ -36,7 +38,7 @@ DgDir()
 ;A run's file read: {name, file, steps} - "" if it can't be read or has fewer than two steps
 DgLoad(file)
 	{
-	steps := [], name := ""
+	steps := [], name := "", deck := ""
 	Loop, Read, %file%
 		{
 		line := Trim(A_LoopReadLine)
@@ -45,6 +47,9 @@ DgLoad(file)
 		f := StrSplit(line, "|")
 		if (f[1] = "name")
 			name := f[2]
+		;(the deck the run's fought with - Decks.ahk; older versions skip the line)
+		else if (f[1] = "deck")
+			deck := RegExReplace(f[2], "[^\w-]")
 		else if (RegExMatch(f[1], "^(walk|x|fight)$") && f.Length() >= 5 && f[3] f[4] f[5] != "")
 			steps.Push({kind: f[1], zone: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0})
 		}
@@ -52,7 +57,7 @@ DgLoad(file)
 		return ""
 	if (name = "")
 		SplitPath, file, , , , name
-	return {name: name, file: file, steps: steps}
+	return {name: name, file: file, steps: steps, deck: deck}
 	}
 
 ;The list on the Dungeons tab filled from the folder (the run being walked selected)
@@ -287,7 +292,7 @@ DgRunStart(file, times, avoid)
 		return
 		}
 	DgRun := {name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: times + 0, avoid: avoid, misses: 0, seen: battles
-		, fightUntil: 0, loadUntil: 0, push: ""}
+		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck}
 	;(not at the start: on from the nearest spot in this zone)
 	k := DgNearest(nav)
 	if (!k)
@@ -433,6 +438,9 @@ DgNext()
 ;Turns h degrees (+ right) walking on: by the game's memory when it can, else by time
 DgTurn(h)
 	{
+	;(by the mouse first - running or standing (MouseSteer.ahk MouseTurnAny); the keys only when it couldn't: 2026-10-24)
+	if (IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500) && MouseTurnAny(h) != "")
+		return
 	if ((WkNavTrusted || WkNavChecked) && NavTurn(h))
 		return
 	PotionTurnBy(h)
@@ -622,13 +630,21 @@ DgSteer(nav, p, d)
 	;it (2026-10-24: you asked); standing - the mouse turns only the camera then - or the mouse can't: on the spot, A/D)
 	if (Abs(h) > 60 && d < 250)
 		{
-		if (HeldW && Abs(h) <= 150 && MouseSteerWhyNot(true, false) = "" && MouseTurn(h, false) != "")
+		if (HeldW && Abs(h) <= 150 && (WkNavTrusted || WkNavChecked) && MouseSteerWhyNot(true, false) = "" && MouseTurn(h, false) != "")
 			{
 			Sleep, 60
 			return
 			}
+		;(standing, or the running turn missed: turned from standing - DgTurn: the mouse first, then the keys; closer than
+		;150 the mouse's step from standing would overshoot it (a quest item: round and round) - on the spot)
 		HoldW(0)
-		DgTurn(h)
+		if (d < 150)
+			{
+			if (!((WkNavTrusted || WkNavChecked) && NavTurn(h)))
+				PotionTurnBy(h)
+			}
+		else
+			DgTurn(h)
 		}
 	else
 		{
@@ -640,7 +656,7 @@ DgSteer(nav, p, d)
 			why := MouseSteerWhyNot(true, false)
 			if (why = "just set off" && Abs(h) <= 45)
 				h := 0
-			else if (Abs(h) > 150 || MouseTurn(h, false) = "")
+			else if (Abs(h) > 150 || !(WkNavTrusted || WkNavChecked) || MouseTurn(h, false) = "")
 				DgTurn(h)
 			}
 		}
@@ -741,4 +757,70 @@ DgFolderClick:
 DgListEvent:
 	if (A_GuiEvent = "DoubleClick" && !DgRecording && !IsObject(DgRun))
 		gosub, DgRunClick
+	;(a run picked: its deck in the Deck box)
+	else if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
+		DgDeckShow()
 	return
+
+;The Deck box picked: the run's file gets its deck| line (Decks.ahk picks that deck while the run's walked)
+DgDeckPick:
+	DgDeckSet()
+	return
+
+;The Deck box filled with your decks (by place: two may share a name, one's name may start another's), the picked run's
+;own chosen - again after a deck's saved, made or deleted on the Cards tab (DeckLoadAll)
+DgDeckShow()
+	{
+	if (!DashHwnd)
+		return
+	if (!IsObject(DeckList) && IsFunc("DeckLoadAll"))
+		Func("DeckLoadAll").Call()
+	prevLV := A_DefaultListView
+	file := DgSelected()
+	if (prevLV != "" && prevLV != "DgList")
+		Gui, Dash:ListView, %prevLV%
+	d := file != "" ? DgLoad(file) : ""
+	items := "|(none)", want := 1, DgDeckIds := []
+	for i, k in IsObject(DeckList) ? DeckList : []
+		{
+		items .= "|" k.name
+		DgDeckIds.Push(k.id)
+		if (IsObject(d) && d.deck = k.id)
+			want := i + 1
+		}
+	GuiControl, Dash:, DgDeck, %items%
+	GuiControl, Dash:Choose, DgDeck, %want%
+	}
+
+;The picked run's deck written into its file (deck|<id>; none: the line taken out) - its steps kept as they are
+DgDeckSet()
+	{
+	file := DgSelected()
+	if (file = "" || !FileExist(file))
+		return
+	;(AltSubmit: the place picked)
+	GuiControlGet, pos, Dash:, DgDeck
+	id := (IsObject(DgDeckIds) && pos >= 2 && pos - 1 <= DgDeckIds.Length()) ? DgDeckIds[pos - 1] : ""
+	pick := ""
+	for i, k in IsObject(DeckList) ? DeckList : []
+		if (k.id = id)
+			pick := k.name
+	FileGetTime, made, %file%, M
+	FileRead, text, %file%
+	text := RegExReplace(text, "m)^deck\|[^\r\n]*\R?", "")
+	if (id != "")
+		text := RegExMatch(text, "m)^name\|") ? RegExReplace(text, "m)^(name\|[^\r\n]*\R?)", "$1deck|" id "`r`n", , 1) : "deck|" id "`r`n" text
+	;(written as it was read - the ANSI code page, as FileAppend recorded it - and its date kept: the list's Recorded)
+	f := FileOpen(file ".tmp", "w", "CP0")
+	if (!IsObject(f))
+		return
+	f.Write(text)
+	f.Close()
+	FileMove, % file ".tmp", %file%, 1
+	if (made != "")
+		FileSetTime, %made%, %file%, M
+	;(the run being walked: its deck from now on, not from its next start)
+	if (IsObject(DgRun) && DgRun.file = file)
+		DgRun.deck := id, DeckDirty := 1
+	DebugLog("Dungeons: " file " - its deck " (id != "" ? pick : "none (the usual pick)"))
+	}

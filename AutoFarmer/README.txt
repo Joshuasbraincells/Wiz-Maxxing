@@ -192,11 +192,32 @@ Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
 kept off (mobgrow); every 10 minutes of walking without one it's made a tenth
 smaller again - never below what you set yourself in Settings (mobshrink).
 A collect goal keeps them off too (all but the mobs its goal line names).
-Turning: by the mouse wherever it can (the wizard running) - getting out of a
-mob's reach, walking to a quest item, following the party's leader, a dungeon
-run, close by its target too (no stopping); the keys (A/D) only for a big
-turn standing still - the mouse turns a standing wizard's camera, not him - or
-when the mouse can't (it failed, a window over the game).
+Turning: by the mouse - any turn while the wizard runs, backing up (turned
+round, walked off, turned back - not the S key), getting out of a mob's reach,
+walking to a quest item, following the party's leader, a dungeon run, close by
+its target too - and from standing (the camera turned with the right button,
+then W: he faces the camera's way). The keys (A/D, S) only when the mouse fails
+(two misses from standing: not tried that way for 10 minutes - debug.log
+"mouse steering: ...").
+Decks (the dashboard's Cards tab - its row of buttons: Hand & enemies, your
+decks, + Deck): a "Small deck" (collect goals and anything else) and a "Large
+deck" (bosses) to start with, more with + Deck or Copy (6 at most). Each has:
+its school (or any), what it's used for (anything else, collect goals, bosses -
+your Alt+1 pick for now, dungeon runs, farming - loop/lore mode), a priority (of
+two for the same, the higher), the game's Equipment Set that puts its in-game
+deck on (Ctrl+1-9: set the sets up in the game - they swap gear, pet and mount
+too; pressed out of battle with you away, once a minute at most), and the
+settings it has of its own (pick one in its list, type the value, Set - empty:
+your Settings'): card logic, blades, traps, aura, bubble, healing, pips,
+discards, which of hit1-4 and the heals it plays. Its damage a hit as a range:
+its weakest hit with nothing on it to its strongest at its best roll with every
+boost it plays and a critical (x2 - its most, against no block; with your
+damage % and critical for that school - the community's crit model, KingsIsle
+doesn't publish one). Save keeps it (decks\<name>.txt - updates keep them);
+"pinned" uses it whatever's ahead. Before each fight the bot picks one - the
+dungeon run's (its Deck box on the Dungeons tab), a pinned one, the boss's,
+collect's, farming's, anything else's - and logs "Deck: <name> (why)". No deck
+set up, or one that sets nothing: it plays exactly as without.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines
@@ -644,15 +665,22 @@ debug.log names the backup folder). <school>.learnupgrade:0
 switches it off for one school. Updates keep the pictures it moved.
 Learned spells (the dashboard's Spells tab, or tray menu "Learned spells"):
 every card the bot learned, with its kind, school, pips (3? = guessed),
-number, where it's used (or why not), the text it read, whether it's a
-treasure card, when and at what size it was learned. Pick one to see its
-picture. Pick one or more and:
+number, how sure it is (Sure), where it's used (or why not), the text it
+read, whether it's a treasure card, when and at what size it was learned.
+Sure, out of 100%: its kind (40 - read alike twice or the same as its icon;
+25 read once), its number (35 - read alike twice; 15 once; a kind with no
+number gets all 35) and its pips (25 read off the card or X; 10 guessed).
+What you set yourself counts as sure; what's still blank doesn't. Under the
+picture: why. Sort by Sure (click its heading) to find the ones to check.
+Pick one to see its picture. Pick one or more and:
 	- Change kind...: what it really is. It's taken out of its slot (a hit
 	  that made room for itself puts the hits it moved back) and gets the
 	  slot the new kind fits, if one is free. "Not used" keeps it in the list
 	  and out of use.
 	- Edit...: its name, its number (a hit's least damage, a heal, the % of a
-	  blade, trap, shield or aura) and its pips - e.g. a misread number.
+	  blade, trap, shield or aura) and its pips - e.g. a misread number. X
+	  for the pips: an X-pip spell (all your pips; its number then its damage
+	  a pip) - learned as one by itself when its text says "per pip".
 	  Or in the list itself, as in a spreadsheet: double-click a Name, Pips
 	  or Value cell and type over it - Enter (or clicking away) keeps it, Esc
 	  doesn't. Double-click a Kind cell: the Change kind menu opens there.
@@ -699,7 +727,9 @@ know until there are pips to show them in colour, heals if your health is
 low, and passes - it casts nothing else. It stops by itself when the deck is
 used up (two rounds with an empty hand) or nothing new has come for three
 rounds, and says how many it learned; then finish or flee that battle
-yourself. debug.log: "learn every card: ...".
+yourself. debug.log: "learn every card: ...". The hand is read with the
+mouse off it (a card under the mouse is drawn zoomed up); if you move the
+mouse onto the hand meanwhile, no new card is learned that round.
 
 Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %

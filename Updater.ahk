@@ -589,7 +589,7 @@ UpIsMine(rel, slots)
 	{
 	if (RegExMatch(rel, "i)^AutoFarmer\\(PlayerStats\.txt|dashboard\.ini|resources\\characters\.txt)$"))
 		return true
-	if (RegExMatch(rel, "i)(^|\\)(learned|routes|backups|generated|dungeons)\\"))
+	if (RegExMatch(rel, "i)(^|\\)(learned|routes|backups|generated|dungeons|decks)\\"))
 		return true
 	if (RegExMatch(rel, "i)^AutoQuester\\resources\\(walk_memory|known_zones)\.txt$"))
 		return true

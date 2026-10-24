@@ -18,6 +18,11 @@ global MsK, MsKSign, MsOffUntil, MsFails, MsHeld, MsWinAt, MsWinOk, MsWinWhy, Ms
 ;Measured mouse turns that didn't turn the wizard, in a row (two: the count's worth measured again - one alone is
 ;likely the moment's: a battle pulling him round, a window)
 global MsMiss
+;When a mouse turn last missed (it isn't tried again at once by another way round - Turn, BackUp, DgTurn); one that
+;worked doesn't count
+global MsTriedAt
+;Turns from standing by the mouse that didn't turn the wizard, in a row, and till when they aren't tried (two: 10 minutes)
+global MsStandMiss, MsStandOff
 
 ;The setting (mousesteer, on unless 0) and the game's memory there to read the facing by
 MouseSteerOn()
@@ -264,8 +269,9 @@ MouseTurn(h, byMem := true)
 					turned += msC * MsK
 					break
 					}
-				now := MouseSteerTurned(msY, yaw0)
-				want := msC * MsK, got := now - turned
+				;(summed look by look - this look's own turn, wrapped - so a turn past 180 isn't read as one the other way)
+				got := ArrowWrap(MouseSteerTurned(msY, yaw0) - turned), now := turned + got
+				want := msC * MsK
 				;(turned the wrong way: measured again next time - the camera snapped, a battle pulled him round)
 				if (want * got < 0 && Abs(got) >= 3)
 					{
@@ -301,7 +307,10 @@ MouseTurn(h, byMem := true)
 		return turned
 	;(nothing sent, or the measuring found no turn - not read, or none: A/D does this one)
 	if (!sent || (probed && MsK = ""))
+		{
+		MsTriedAt := A_TickCount
 		return ""
+		}
 	;(measured before, and the mouse doesn't turn him now - a window, the game's menu: A/D, which notices and deals with
 	;it; measured again next time - three of those with no turn switch the mouse off)
 	if (!probed && Abs(h) > 6 && Abs(turned) < 2)
@@ -312,6 +321,7 @@ MouseTurn(h, byMem := true)
 		MouseSteerNote("the mouse didn't turn the wizard (" Abs(sent) " counts) - A/D this once" (MsMiss >= 2 ? ", measured again next time" : ""))
 		if (MsMiss >= 2)
 			MsK := "", MsMiss := 0
+		MsTriedAt := A_TickCount
 		return ""
 		}
 	MsMiss := 0
@@ -320,4 +330,104 @@ MouseTurn(h, byMem := true)
 	if (Abs(turned) >= 15)
 		WkTurnAt := A_TickCount
 	return turned
+	}
+
+;A turn from standing by the mouse (2026-10-24: the keyboard only when the mouse fails): the right button held, the
+;camera turned h degrees' worth of counts (the right button turns only the camera while he stands), then W tapped with
+;the button still down - the wizard faces where the camera does (a step that way). Checked by the game's memory: within
+;25 degrees of h - else "" (A/D then). He's left standing, as a turn on the spot leaves him. Only once a count's worth
+;is measured. Two misses in a row: not tried for 10 minutes (said in the log)
+MouseStandTurn(h)
+	{
+	;(the memory's heading turned round since the count was measured: so is the count - as MouseTurn)
+	if (MsK != "" && MsKSign != WkNavSign)
+		MsK := -MsK, MsKSign := WkNavSign
+	if (MsK = "" || Abs(h) < 3 || (MsStandOff && A_TickCount < MsStandOff) || (MsTriedAt && A_TickCount - MsTriedAt < 500))
+		return ""
+	;(the heading's sign not checked yet: a mouse turn can't tell it turned the wrong way - A/D's check does)
+	if (!WkNavTrusted && !WkNavChecked)
+		return ""
+	;(the W tap is a step: not with a mob's reach or sight ahead - on the spot by A/D instead)
+	if (IsObject(WkNavObj) && WkNavObj.blindahead != "" && IsObject(WkNavPrev) && A_TickCount - WkNavPrev.at < 1500)
+		return ""
+	if (MouseSteerWhyNot(false, false) != "")
+		return ""
+	yaw0 := MouseSteerYaw()
+	if (yaw0 = "")
+		return ""
+	MsTriedAt := A_TickCount
+	wasCrit := A_IsCritical
+	Critical
+	if (!Walking || inbattle || !GameActive() || PlayerActive || UserIdle() < 3000)
+		{
+		if (!wasCrit)
+			Critical, Off
+		return ""
+		}
+	MouseGetPos, msX0, msY0
+	MouseSteerPoint(msPx, msPy)
+	MouseMove, %msPx%, %msPy%, 0
+	yaw1 := ""
+	try
+		{
+		MouseSteerButton(1)
+		Sleep, 60
+		;(the counts for h in looks of 90 degrees' worth at most, a third of the game's width at most each)
+		want := Round(h / MsK), most := Min(Round(90 / Abs(MsK)), Round(GameW * 0.3))
+		while (want != 0)
+			{
+			c := want > most ? most : want < -most ? -most : want
+			MouseSteerMove(c), want -= c
+			Sleep, 35
+			}
+		Sleep, 40
+		;(W tapped here, inside the Critical - HoldW lets other threads in, with the button and W down - a short step at
+		;any speed)
+		KeysDown := 1
+		Send, {Blind}{w down}
+		HeldW := 1, WkWalkFrom := A_TickCount
+		Sleep, % Max(40, Round(120 / (SpeedNow ? SpeedNow : 1)))
+		Send, {Blind}{w up}
+		HeldW := 0
+		Sleep, 40
+		yaw1 := MouseSteerYaw()
+		if (yaw1 = "")
+			{
+			Sleep, 60
+			yaw1 := MouseSteerYaw()
+			}
+		}
+	finally
+		{
+		MouseSteerButton(0)
+		Sleep, 20
+		if (!MouseSteerYours(A_TickCount - 1000))
+			MouseMove, %msX0%, %msY0%, 0
+		if (!wasCrit)
+			Critical, Off
+		}
+	turned := yaw1 != "" ? MouseSteerTurned(yaw1, yaw0) : ""
+	;(off from h by the wrap - a turn of 180 reads -180 as often as 180)
+	if (turned != "" && Abs(ArrowWrap(turned - h)) <= 25)
+		{
+		MsStandMiss := 0
+		WkTurnAt := A_TickCount
+		if (IsObject(WkMet))
+			WkMet.mturns := (WkMet.mturns ? WkMet.mturns : 0) + 1
+		return h + ArrowWrap(turned - h)
+		}
+	MsTriedAt := A_TickCount
+	MsStandMiss := (MsStandMiss ? MsStandMiss : 0) + 1
+	MouseSteerNote("a turn from standing by the mouse didn't turn the wizard (" Round(h) " wanted, " (turned = "" ? "not read" : Round(turned)) ") - A/D" (MsStandMiss >= 2 ? ", and not tried from standing for 10 minutes" : ""))
+	if (MsStandMiss >= 2)
+		MsStandMiss := 0, MsStandOff := A_TickCount + 600000
+	return ""
+	}
+
+;Any turn by the mouse: running - MouseTurn; standing - MouseStandTurn (still standing after it). "" it couldn't
+MouseTurnAny(h)
+	{
+	if (HeldW)
+		return MouseTurn(h, false)
+	return MouseStandTurn(h)
 	}

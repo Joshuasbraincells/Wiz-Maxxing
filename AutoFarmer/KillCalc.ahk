@@ -61,11 +61,24 @@ ParseStat(line)
 
 Stat(key)
 	{
+	;The deck in use's own first (Decks.ahk - only the settings a deck may set)
+	if (IsObject(DeckNow) && IsObject(DeckNow.vals) && DeckNow.vals.HasKey(key))
+		return DeckNow.vals[key]
 	;A value for one school's wizard first (e.g. myth.damage, myth.pierce for the Myth wizard - each
 	;wizard has its own stats), when the battle is being fought as that school
 	if (hitschool != "" && !InStr(key, ".") && Stats.HasKey(hitschool "." key))
 		return Stats[hitschool "." key]
 	return Stats.HasKey(key) ? Stats[key] : 0
+	}
+
+;A setting as Stat has it - the deck in use's, your school's, the plain one - else def (not in PlayerStats.txt at all)
+StatOr(key, def)
+	{
+	if (IsObject(DeckNow) && IsObject(DeckNow.vals) && DeckNow.vals.HasKey(key))
+		return DeckNow.vals[key]
+	if (hitschool != "" && !InStr(key, ".") && Stats.HasKey(hitschool "." key))
+		return Stats[hitschool "." key]
+	return Stats.HasKey(key) ? Stats[key] : def
 	}
 
 ;Outgoing damage % stat -> multiplier (PvE curve: linear to 150%, then limited towards +200%)
@@ -697,6 +710,9 @@ LearnedHitDamage(c, enchanted)
 	lhdBase := IsFunc("LearnHitBase") ? Func("LearnHitBase").Call(c) : ""
 	if (lhdBase = "" || lhdBase <= 0)
 		return ""
+	;(an X-pip hit: its number is a pip's - all your pips go)
+	if (IsFunc("LearnHasFlag") && Func("LearnHasFlag").Call(c, "xpip"))
+		lhdBase *= Max(PipsNow, 1)
 	if (enchanted && enchant >= 1)
 		lhdBase += Stat("enchant" . enchant)
 	return HitDamageFrom(lhdBase, BossChoosen == 1)

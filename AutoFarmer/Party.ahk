@@ -298,7 +298,7 @@ PartyLowest()
 	if (PartyLowKey = key)
 		return PartyLowName != ""
 	PartyLowKey := key, PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := ""
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	limit := StatOr("healat", 40)
 	ReadSidePlates()
 	for i, p in SidePlates
 		{
@@ -330,7 +330,7 @@ PartyHealAlly()
 	{
 	global
 	local limit, hcard, each
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	limit := StatOr("healat", 40)
 	if (!PartyLowest() || PartyLowPct >= limit)
 		return false
 	;(you lower - a reading your own heal acts on, 3 of its 4 reads agreeing: your own heal, next)
@@ -358,7 +358,7 @@ PartyShield()
 	local limit, tx, ty, who
 	if (tower != 1 || !Stat("usetower") || used19 = 1)
 		return false
-	limit := Stats.HasKey("healat") ? Stats["healat"] : 40
+	limit := StatOr("healat", 40)
 	if (BattleRole = "healer" && PartyLowest() && PartyLowPct < 2 * limit)
 		tx := PartyLowX, ty := PartyLowY, who := PartyLowName " (" PartyLowPct "%)"
 	else

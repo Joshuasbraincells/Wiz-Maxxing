@@ -29,3 +29,5 @@ AutoQuester/resources/nav_calibration.txt
 # the updater's own state (token warning, the latest release looked up)
 updater.ini
 updater.log
+# Your decks (the dashboard's Cards tab - Decks.ahk)
+AutoFarmer/decks/

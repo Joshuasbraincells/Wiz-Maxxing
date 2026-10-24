@@ -1149,6 +1149,23 @@ WalkStep()
 			WkBackOutStill := 0
 		WkBackOutX := WkNavObj.x, WkBackOutY := WkNavObj.y
 		}
+	;(the way out behind: turned toward it by the mouse - running, MouseTurn; standing, MouseStandTurn - and run on out,
+	;not turned back toward the mob (2026-10-24: no S key, the mouse is the steadier); the mouse can't: backed out with S)
+	if (escaping && Abs(steer) > 120 && MsK != "" && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500)
+		&& MouseSteerWhyNot(HeldW ? true : false, false) = "")
+		{
+		turned := MouseTurnAny(steer)
+		if (turned != "" && !HeldW)
+			HoldW(1, true)
+		if (turned != "" && Abs(turned) >= 90)
+			{
+			SetStatus("turning out of " WkNavObj.escape "'s reach by the mouse - the way out is behind")
+			if (!Walking)
+				return false
+			WkBestTime := A_TickCount
+			return true
+			}
+		}
 	;(another mob's reach behind - BackUp won't: turned walking on instead)
 	if (escaping && Abs(steer) > 120 && WkBackOutStill < 2 && BackUp(400))
 		{
@@ -2246,6 +2263,15 @@ Turn(h)
 	;(a game sped up more than 5 times turns too far in the shortest key press: turns at normal speed)
 	if (SpeedNow > 5)
 		SpeedSet(0, "a turn")
+	;(by the mouse - steadier than A/D (2026-10-24: the keyboard only when the mouse fails): running, the mouse turns him;
+	;standing, it turns the camera and W sends him the new way - MouseSteer.ahk. A/D when it couldn't)
+	;(only with the heading's sign checked: the mouse can't tell it turned the wrong way - A/D's check below does)
+	if (Abs(h) >= 3 && Abs(h) <= 180 && MsK != "" && IsFunc("MouseTurnAny") && !(MsTriedAt && A_TickCount - MsTriedAt < 500)
+		&& WkNavChecked && WkNavTrusted && MouseSteerWhyNot(HeldW ? true : false, false) = "")
+		{
+		if (MouseTurnAny(h) != "")
+			return
+		}
 	if (WkNavUse && NavTurn(h))
 		return
 	Critical
@@ -2317,6 +2343,30 @@ BackUp(ms)
 			WkBlindBackSaid := A_TickCount, WalkLog("not backing up: " WkNavObj.blindback "'s reach or sight is behind the wizard")
 		return false
 		}
+	;(the wizard running: by the mouse - turned round, walked off for as long, turned back to face the way he was: no S
+	;key (2026-10-24: the mouse is the steadier). Standing - the mouse turns only the camera then - or the mouse can't:
+	;S, as before)
+	if (MsK != "" && IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500)
+		&& MouseSteerWhyNot(HeldW ? true : false, false) = "")
+		{
+		round1 := MouseTurnAny(180)
+		if (round1 != "" && Abs(round1) >= 120)
+			{
+			;(walked off - long enough that the mouse turns him back running, not standing with a step back in)
+			HoldW(1, true)
+			HoldFor(Max(Round(ms / SpeedNow), 650))
+			;(running: turned back by the mouse - not running long enough for that yet: standing, MouseStandTurn, then A/D)
+			back := MouseTurnAny(-round1)
+			;(the turn back by the mouse missed: standing, by the mouse again - else A/D - he mustn't walk on the wrong way)
+			if (back = "")
+				HoldW(0), NavTurnOrKeys(-round1)
+			WkTurnAt := A_TickCount
+			return true
+			}
+		;(turned part of the way and stopped: turned back first)
+		if (round1 != "" && Abs(round1) >= 3)
+			MouseTurn(-round1, false)
+		}
 	HoldW(0)
 	Critical
 	if (!Walking || !GameActive())
@@ -2331,6 +2381,30 @@ BackUp(ms)
 	Send, {Blind}{s up}
 	WkTurnAt := A_TickCount
 	return true
+	}
+
+;A turn standing still (BackUp's way back when the mouse's missed): by the game's memory if it can, else A/D held
+NavTurnOrKeys(h)
+	{
+	if (MouseStandTurn(h) != "")
+		return
+	if ((WkNavUse || WkNavTrusted || WkNavChecked) && NavTurn(h))
+		return
+	key := h < 0 ? "a" : "d"
+	ms := Round(Abs(h) / (TurnRate * (SpeedNow ? SpeedNow : 1)))
+	ms := ms < 30 ? 30 : ms > 800 ? 800 : ms
+	Critical
+	if (!Walking || !GameActive())
+		{
+		Critical, Off
+		return
+		}
+	KeysDown := 1
+	Send, {Blind}{%key% down}
+	Critical, Off
+	HoldFor(ms)
+	Send, {Blind}{%key% up}
+	WkTurnAt := A_TickCount
 	}
 
 ;Waits ms, but returns early (false) once walking is stopped or Wizard101 loses focus

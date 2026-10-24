@@ -329,7 +329,7 @@ EnemyDanger()
 		OwnHealthLow(true)
 	edHealth := (OwnHpCur != "" && OwnHpRound = roundnumber && OwnHpWin = WinExist("A")) ? OwnHpCur : ""
 	;(a low reading only 2 of its 4 reads agreed on - 775 read as 75 - isn't trusted: as for a heal)
-	if (edHealth != "" && OwnHpVotes < 3 && 100 * OwnHpCur / OwnHpMax < (Stats.HasKey("healat") ? Stats["healat"] : 40))
+	if (edHealth != "" && OwnHpVotes < 3 && 100 * OwnHpCur / OwnHpMax < StatOr("healat", 40))
 		edHealth := ""
 	;(the casts so far: round:enemy index (its place among the enemies):spell)
 	edHist := ""

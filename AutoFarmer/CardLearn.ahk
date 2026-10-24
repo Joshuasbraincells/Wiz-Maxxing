@@ -77,7 +77,7 @@ DiscardUnused()
 	DiscardedUnused := 1
 	if (IsFunc("PlayerActing") && Func("PlayerActing").Call())
 		return 0
-	most := Stats.HasKey("discardmax") ? Stats["discardmax"] + 0 : 3
+	most := StatOr("discardmax", 3) + 0
 	cards := []
 	Loop, Parse, LastHandAnswer, `n, `r
 		{
@@ -202,6 +202,9 @@ LearnHitCards(answer)
 LearnHitRank(c)
 	{
 	v := LearnValueKnown(c)
+	;(an X-pip hit: its damage a pip times the pips you have)
+	if (v != "" && LearnHasFlag(c, "xpip"))
+		v *= Max(PipsNow, 1)
 	if (v != "")
 		return 100000 + v
 	return (c.pips != "" && !c.guess) ? c.pips + 0 : 0
@@ -269,6 +272,43 @@ LearnName(c)
 	return "?"
 	}
 
+;How sure the learner is of what it took card c for, 0-100 ({pct, why}): its kind (40 - read alike twice or its icon
+;the same; 25 read once), its number (35 - read alike twice; 15 once; a kind with no number: all 35) and its pips
+;(25 read off the card or an X; 10 guessed). Set by you (Spells tab): what's there counts as read alike twice - what's
+;blank still not known
+LearnSure(c)
+	{
+	if (!IsObject(c))
+		return {pct: 0, why: "-"}
+	user := LearnHasFlag(c, "user")
+	two := user || LearnHasFlag(c, "two"), icon := LearnFlag(c, "icon")
+	if (c.type = "")
+		k := 0, kw := "kind not known"
+	else if (two || (icon != "" && icon = c.type))
+		k := 40, kw := "kind read " (two ? "alike twice" : "and its icon agree")
+	else
+		k := 25, kw := "kind read once"
+	if (!InStr(",damage,aoe,heal,ward,blade,trap,aura,dot,enchant,", "," c.type ","))
+		v := c.type = "" ? 0 : 35, vw := c.type = "" ? "" : "no number needed"
+	else if (c.value = "")
+		v := 0, vw := "number not read"
+	else if (two)
+		v := 35, vw := "number read alike twice"
+	else
+		v := 15, vw := "number read once"
+	if (LearnHasFlag(c, "xpip"))
+		p := 25, pw := "X pips"
+	else if (c.pips = "")
+		p := 0, pw := "pips not known"
+	else if (c.guess)
+		p := 10, pw := "pips guessed"
+	else
+		p := 25, pw := "pips read"
+	if (user)
+		return {pct: k + v + p, why: "set by you" (c.type = "" ? ", kind not known" : "") (v = 0 && c.type != "" ? ", number not known" : "") (p < 25 ? ", " pw : "")}
+	return {pct: k + v + p, why: kw (vw != "" ? ", " vw : "") ", " pw}
+	}
+
 ;A card whose icon wasn't one the helper knows (a blade's is a charm's), whose text says it's a blade: "+25% to next
 ;spell" - the + often read as something else, or lost. Not a "-25%" (a weakness, a shield), nor a Sharpen (it's put
 ;on a blade - its text says so). Now only for cards an older version learned (LearnLoad): new ones need the charm icon
@@ -328,6 +368,25 @@ LearnInUse(c)
 ;up (two rounds with an empty hand) or nothing new has come for three rounds.
 
 ;On / off
+;The mouse on the hand - where a card under it is drawn zoomed up (2026-10-24 at 1440p, UI 1.144: a card 655-781 high
+;grows to 620-815 hovered, over its neighbours): cut or read like that, it's learned wrong
+LearnMouseOnHand()
+	{
+	MouseGetPos, mx, my
+	return (Abs(mx - ScreenX) <= HandHalf && my >= ScreenY - Px(95) && my <= ScreenY + Px(85))
+	}
+
+;Before the hand's read for learning: the mouse off it (above the hand, on the scene - not Pass or Draw) and a moment
+;for a zoomed card to go back down, the hand looked at afresh. Already off it (the round's CenterMouse): nothing
+LearnMouseClear()
+	{
+	if (!LearnMouseOnHand())
+		return
+	MouseMove, ScreenX, Min(GameTop + Round(GameH * 0.4), ScreenY - Px(150)), MouseSpeedNow()
+	Sleep, 250
+	VisionForget()
+	}
+
 LearnAllToggle()
 	{
 	if (!IsObject(LearnedCards))
@@ -445,6 +504,8 @@ LearnCards()
 			}
 	here := LearnSetDir(false)
 	hereRel := SubStr(here, StrLen(A_WorkingDir) + 2)
+	;(no card zoomed up by the mouse when it's read)
+	LearnMouseClear()
 	answer := VisionGet("/hand?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList() learnedPics "&learned=" LearnUri(learnedList) "&here=" LearnUri(hereRel) "&thumbs=" LearnUri(A_ScriptDir "\generated\hand"), 3000)
 	if (answer = "")
 		return false
@@ -454,7 +515,7 @@ LearnCards()
 	;(a card learned at another UI size was cut into a new folder for this size: a picture set from now on)
 	if (InStr(FileExist(here), "D"))
 		LearnSetDir(true)
-	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length(), boxes := 0, notCards := 0, noPips := 0
+	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length(), boxes := 0, notCards := 0, noPips := 0, onHand := 0
 	Loop, Parse, answer, `n, `r
 		{
 		f := StrSplit(A_LoopField, "|")
@@ -487,6 +548,9 @@ LearnCards()
 			continue
 		else if (PipsNow < 0)
 			noPips++
+		;(the mouse moved onto the hand since - yours: the card under it zoomed up - none learned now, next round)
+		else if (onHand || LearnMouseOnHand())
+			onHand += 1
 		;(two new cards a round at most: each takes about half a second)
 		else if (fresh < 2)
 			{
@@ -500,6 +564,8 @@ LearnCards()
 		DebugLog("  " greyNew " card(s) in hand the bot doesn't know are greyed out (not enough pips) - learned once they're in colour")
 	if (noPips)
 		DebugLog("  " noPips " new card(s) in hand not learned: your pips couldn't be read this round")
+	if (onHand)
+		DebugLog("  " onHand " new card(s) in hand not learned this round: the mouse is on the hand (a card under it is drawn zoomed up)")
 	;(new pictures in a slot, or a new picture set: the helper and PicPath look again)
 	if (placed || PicSets.Length() != setsBefore)
 		{
@@ -540,8 +606,11 @@ LearnNew(card)
 	LearnSetExtra(c, r.extra)
 	;(no pip digit read: it's in colour, so it costs no more than the pips you have - a guess. A digit read is the
 	;card's own, kept even when it's more than you have: the game doesn't grey out every card you can't afford)
-	;(a 0 read off a deck hit is no pip count - the digit misread: guessed instead)
-	if (c.pips = 0 && (c.type = "damage" || c.type = "aoe") && !card.tc)
+	;(an X-pip spell - its text says per pip: its cost is X, all your pips (0 here), not a guess - an X isn't a digit)
+	;(a 0 read off any other deck hit is no pip count - the digit misread: guessed instead)
+	if (LearnHasFlag(c, "xpip"))
+		c.pips := 0, c.guess := 0
+	else if (c.pips = 0 && (c.type = "damage" || c.type = "aoe") && !card.tc)
 		c.pips := ""
 	if (c.pips = "")
 		c.pips := PipsNow, c.guess := 1
@@ -655,8 +724,9 @@ LearnKindOf(text, icon, sch := "")
 		nums := [], p := 1
 		while (p := RegExMatch(head, "\d{2,}", nm, p))
 			nums.Push(nm + 0), p += StrLen(nm)
+		;(an X-pip hit - "85 per pip", its cost an X: all your pips - a hit, one enemy or all, played as one: 2026-10-24)
 		if (RegExMatch(low, "per\s*p[il1]p"))
-			return {kind: "xpip", value: nums.Length() ? nums[1] : "", extra: "xpip"}
+			return {kind: (icon != "") ? icon : RegExMatch(low, "a[l1][l1]\s*enem") ? "aoe" : "damage", value: nums.Length() ? nums[1] : "", extra: "xpip"}
 		if (RegExMatch(head, "O)(\d+)\s*-\s*(\d+)", rm))
 			{
 			kd := (icon != "") ? icon : RegExMatch(low, "a[l1][l1]\s*enem") ? "aoe" : ""
@@ -794,6 +864,8 @@ LearnApplyRead(c, r, how)
 		else
 			LearnDropFlag(c, "two")
 		LearnDropFlag(c, "dot"), LearnDropFlag(c, "xpip"), LearnSetExtra(c, r.extra)
+		if (LearnHasFlag(c, "xpip"))
+			c.pips := 0, c.guess := 0
 		}
 	if (r.text != "" && (c.text = "" || r.two))
 		c.text := r.text
@@ -971,7 +1043,7 @@ LearnSlotFor(c)
 		;(the wand's hit - free, no pips - only a treasure (item) card whose 0 was read off it: a deck spell's 0 is a
 		;misread or a guess, and as the wand it'd be cast with no pips and keep the bot from fleeing out of mana)
 		if (c.pips = 0)
-			return (!c.guess && LearnHasFlag(c, "tc") && LearnFree(sch "\wand")) ? sch "\wand" : ""
+			return (!c.guess && LearnHasFlag(c, "tc") && !LearnHasFlag(c, "xpip") && LearnFree(sch "\wand")) ? sch "\wand" : ""
 		;(only where it keeps hit1-3 weakest to strongest - the battle casts hit3 first, then hit2, hit1 -
 		;else it's kept out of use rather than cast before a stronger hit; LearnHitFits)
 		Loop, 3
@@ -1419,7 +1491,7 @@ LearnCheckCatalog()
 			LearnSetFlag(c, "tc")
 		;(not pips you typed on the Spells tab - guessed ones are, even on a spell whose name or number you set)
 		pd := v[8]
-		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && (!LearnHasFlag(c, "user") || c.guess))
+		if (RegExMatch(pd, "^\d+$") && (c.guess || c.pips != pd) && (!LearnHasFlag(c, "user") || c.guess) && !LearnHasFlag(c, "xpip"))
 			{
 			if (pd = 0 && RegExMatch(c.slot, "\\hit\d$"))
 				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its pip digit reads 0 - not taken for a hit in " c.slot)
@@ -2301,8 +2373,19 @@ LearnEdit(id, name, value, pips, keepGuess := 0, nameOnly := 0)
 	if (!IsObject(c))
 		return "no learned card " id
 	value := Trim(value), pips := Trim(pips)
-	if ((value != "" && !RegExMatch(value, "^\d+$")) || (pips != "" && !RegExMatch(pips, "^\d+$")))
-		return "the number and pips have to be whole numbers (or blank)"
+	;(X: an X-pip spell - all your pips; the number then its damage a pip)
+	xp := RegExMatch(pips, "^[xX]$")
+	if ((value != "" && !RegExMatch(value, "^\d+$")) || (pips != "" && !xp && !RegExMatch(pips, "^\d+$")))
+		return "the number has to be a whole number, the pips a whole number or X (or blank)"
+	;(the pips typed - not a name or number alone: X or not, as typed)
+	if (!keepGuess && !nameOnly)
+		{
+		if (xp)
+			LearnSetFlag(c, "xpip")
+		else
+			LearnDropFlag(c, "xpip")
+		}
+	pips := xp ? 0 : pips
 	;(keepGuess: only its name or number edited - the Spells list's cells: guessed pips stay guessed, still corrected
 	;from the card's pip digit)
 	c.name := LearnClean(name), c.value := value, c.pips := pips, c.guess := keepGuess && pips != "" ? c.guess : 0
@@ -2368,7 +2451,7 @@ LearnToggleHold(id)
 ;What learned card c is, for you
 LearnDescribe(c)
 	{
-	pips := (c.pips = "") ? "pips unknown" : c.pips " pip" (c.pips = 1 ? "" : "s") (c.guess ? " (guessed)" : "")
+	pips := LearnHasFlag(c, "xpip") ? "X pips (all you have)" : (c.pips = "") ? "pips unknown" : c.pips " pip" (c.pips = 1 ? "" : "s") (c.guess ? " (guessed)" : "")
 	v := (c.value = "") ? "?" : c.value, dt := LearnFlag(c, "dot"), kd := c.type
 	ot := (dt != "") ? " (+" dt " over time)" : ""
 	if (kd = "damage")

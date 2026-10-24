@@ -119,7 +119,12 @@ DashInit()
 	Gui, Dash:Add, UpDown, vDgTimesUD Range0-9999 0x80, 0
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
 	Gui, Dash:Add, Text, x126 y182 w220 h18 vDgTimesNote, times (0 = until you stop it)
-	Gui, Dash:Add, Checkbox, x360 y182 w300 h18 vDgAvoid, Keep away from mobs on the way
+	Gui, Dash:Add, Checkbox, x352 y182 w186 h18 vDgAvoid, Keep away from mobs on the way
+	;(the deck a run's fought with - kept in its file: Decks.ahk)
+	Gui, Dash:Add, Text, x542 y182 w36 h18 vDgDeckT, Deck
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, DropDownList, x580 y179 w190 AltSubmit vDgDeck gDgDeckPick, (none)
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
 	Gui, Dash:Add, Text, x12 y208 w760 h52 vDgStatus, Not running.
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
@@ -144,9 +149,9 @@ DashInit()
 	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
 	Gui, Dash:Add, Text, x12 y156 w760 h30 vSpStatus
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
-	Gui, Dash:Add, ListView, x12 y190 w612 h598 vSpList gSpListEvent AltSubmit Background111317 cDADADA, Name|Kind|School|Pips|Value|In use|Text read|TC|Learned|Set|Id
-	LV_ModifyCol(1, 96), LV_ModifyCol(2, 84), LV_ModifyCol(3, 50), LV_ModifyCol(4, 34), LV_ModifyCol(5, 66), LV_ModifyCol(6, 112)
-	LV_ModifyCol(7, 100), LV_ModifyCol(8, 26), LV_ModifyCol(9, 96), LV_ModifyCol(10, 50), LV_ModifyCol(11, 0)
+	Gui, Dash:Add, ListView, x12 y190 w612 h598 vSpList gSpListEvent AltSubmit Background111317 cDADADA, Name|Kind|School|Pips|Value|Sure|In use|Text read|TC|Learned|Set|Id
+	LV_ModifyCol(1, 96), LV_ModifyCol(2, 84), LV_ModifyCol(3, 50), LV_ModifyCol(4, 34), LV_ModifyCol(5, 66), LV_ModifyCol(6, "44 Integer")
+	LV_ModifyCol(7, 112), LV_ModifyCol(8, 100), LV_ModifyCol(9, 26), LV_ModifyCol(10, 96), LV_ModifyCol(11, 50), LV_ModifyCol(12, 0)
 	;(the spell picked: its picture, and what the bot took it for under it)
 	Gui, Dash:Add, Picture, x632 y190 w140 h233 Hidden vSpPreview
 	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
@@ -154,22 +159,76 @@ DashInit()
 	;The Cards tab: your hand - each card as the bot saw it this round, and what it took it for (DashHandSeen) - and the
 	;enemies' spells: what each is likely to cast this round (EnemySpells.ahk EnemyDanger: DashFoesSeen)
 	Gui, Dash:Tab, 4
-	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y70 w630 h16 vDashHandHead, YOUR HAND - nothing read yet (once a round in battle)
+	;(its row of views: your hand and the enemies, or one of your decks - Decks.ahk; push-like radio buttons: tabs inside a
+	;tab can't be)
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
-	Gui, Dash:Add, Button, x646 y64 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
+	Gui, Dash:Add, Radio, x12 y62 w110 h24 +0x1000 Group Checked gDeckViewClick vDeckView0, Hand && enemies
+	Loop, 6
+		{
+		dx := 126 + (A_Index - 1) * 96
+		Gui, Dash:Add, Radio, x%dx% y62 w92 h24 +0x1000 Hidden gDeckViewClick vDeckView%A_Index%, Deck %A_Index%
+		}
+	Gui, Dash:Add, Button, x704 y62 w72 h24 gDeckAddClick vDeckAddBtn, + Deck
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y100 w630 h16 vDashHandHead, YOUR HAND - nothing read yet (once a round in battle)
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x646 y94 w130 h24 gDashLearnAll vDashLearnBtn, Learn every card
 	Gui, Dash:Font, s8 w400 cDADADA, Segoe UI
 	Loop, 7
 		{
 		cx := 12 + (A_Index - 1) * 72
-		Gui, Dash:Add, Picture, x%cx% y92 w58 h97 Hidden vDashCardPic%A_Index%
-		Gui, Dash:Add, Text, x%cx% y191 w66 h28 Hidden vDashCardTxt%A_Index%
+		Gui, Dash:Add, Picture, x%cx% y122 w58 h97 Hidden vDashCardPic%A_Index%
+		Gui, Dash:Add, Text, x%cx% y221 w66 h28 Hidden vDashCardTxt%A_Index%
 		}
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Dash:Add, Text, x12 y228 w760 h16 vDashFoeHead, ENEMIES - nothing yet (each battle round, with Settings > Predict the enemies' spells on)
+	Gui, Dash:Add, Text, x12 y258 w760 h16 vDashFoeHead, ENEMIES - nothing yet (each battle round, with Settings > Predict the enemies' spells on)
 	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
-	Gui, Dash:Add, ListView, x12 y248 w760 h544 vDashFoeList NoSort -Multi Background111317 cDADADA, Enemy|Spell|This round|Pips, what it does|This battle|Seen (all battles)
+	Gui, Dash:Add, ListView, x12 y278 w760 h514 vDashFoeList NoSort -Multi Background111317 cDADADA, Enemy|Spell|This round|Pips, what it does|This battle|Seen (all battles)
 	LV_ModifyCol(1, 130), LV_ModifyCol(2, 170), LV_ModifyCol(3, 76), LV_ModifyCol(4, 186), LV_ModifyCol(5, 84), LV_ModifyCol(6, 96)
+	;(a deck's view: what it is, what it's for, its damage, and the settings it has of its own - hidden till one's picked)
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x12 y101 w44 h18 Hidden vDeckFNameT, Name
+	Gui, Dash:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Edit, x58 y98 w180 h22 Limit30 Hidden vDeckFName
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x250 y101 w48 h18 Hidden vDeckFSchoolT, School
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, DropDownList, x300 y98 w90 Hidden vDeckFSchool, any|storm|fire|myth|balance|ice|life|death
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x402 y101 w96 h18 Hidden vDeckFSetT, Equipment Set
+	Gui, Dash:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Edit, x498 y98 w30 h22 Number Limit1 Hidden vDeckFSet
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x534 y101 w240 h18 Hidden vDeckFSetN, (its Ctrl+1-9 puts its in-game deck on; 0: none)
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Text, x12 y131 w64 h18 Hidden vDeckFWhenT, Used for
+	Gui, Dash:Add, Checkbox, x78 y130 w104 h20 Hidden vDeckFWDefault, anything else
+	Gui, Dash:Add, Checkbox, x186 y130 w104 h20 Hidden vDeckFWCollect, collect goals
+	Gui, Dash:Add, Checkbox, x294 y130 w112 h20 Hidden vDeckFWBoss, bosses (Alt+1)
+	Gui, Dash:Add, Checkbox, x410 y130 w104 h20 Hidden vDeckFWDungeon, dungeon runs
+	Gui, Dash:Add, Checkbox, x518 y130 w104 h20 Hidden vDeckFWFarm, farming (loop)
+	Gui, Dash:Add, Text, x630 y131 w48 h18 Hidden vDeckFPriT, Priority
+	Gui, Dash:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Edit, x680 y128 w40 h22 Number Limit3 Hidden vDeckFPri
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, Checkbox, x12 y160 w380 h20 Hidden vDeckFPin, Use this deck now, whatever's ahead (pinned)
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x480 y157 w90 h24 Hidden gDeckSaveClick vDeckFSave, Save
+	Gui, Dash:Add, Button, x576 y157 w90 h24 Hidden gDeckCopyClick vDeckFCopy, Copy
+	Gui, Dash:Add, Button, x672 y157 w90 h24 Hidden gDeckDelClick vDeckFDel, Delete
+	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
+	Gui, Dash:Add, Text, x12 y188 w760 h44 Hidden vDeckFDmg
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y236 w760 h470 Hidden vDeckFList gDeckListEvent AltSubmit -Multi NoSort Background111317 cDADADA, Setting|This deck|Everywhere else|Key
+	LV_ModifyCol(1, 360), LV_ModifyCol(2, 170), LV_ModifyCol(3, 200), LV_ModifyCol(4, 0)
+	Gui, Dash:Add, Text, x12 y715 w128 h18 Hidden vDeckFValT, Value for this deck:
+	Gui, Dash:Font, s9 w400 cF2F2F2, Segoe UI
+	Gui, Dash:Add, Edit, x142 y712 w70 h22 Hidden vDeckFVal
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x218 y711 w60 h24 Hidden gDeckValSet vDeckFValSet, Set
+	Gui, Dash:Add, Button, x284 y711 w150 h24 Hidden gDeckValClear vDeckFValClear, Not set by this deck
+	Gui, Dash:Font, s9 w400 cB9E2B9, Segoe UI
+	Gui, Dash:Add, Text, x442 y715 w330 h36 Hidden vDeckFNote
 	;The Network tab: every bot on your home network (Network.ahk) - pick one: its log and its game; the buttons send it
 	;a command (with the network PIN)
 	Gui, Dash:Tab, 5
@@ -811,8 +870,7 @@ DashHandSeen(answer)
 	Loop, % 7 - Min(n, 7)
 		{
 		slot := n + A_Index
-		GuiControl, Dash:Hide, DashCardPic%slot%
-		GuiControl, Dash:Hide, DashCardTxt%slot%
+		DashCardShow(slot, 0, 0)
 		}
 	FormatTime, now, , HH:mm:ss
 	GuiControl, Dash:, DashHandHead, % "YOUR HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
@@ -856,14 +914,32 @@ DashHandCard(n, name, known, grey, pips, box := "")
 		{
 		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
 		GuiControl, Dash:, DashCardPic%n%, % "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
-		GuiControl, Dash:Show, DashCardPic%n%
+		DashCardShow(n, 1, "")
 		}
 	else
-		GuiControl, Dash:Hide, DashCardPic%n%
+		DashCardShow(n, 0, "")
 	colour := grey ? "8A8A8A" : known = "" ? "F2C14E" : "E8E8E8"
 	GuiControl, Dash:+c%colour%, DashCardTxt%n%
 	GuiControl, Dash:, DashCardTxt%n%, % SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "")
-	GuiControl, Dash:Show, DashCardTxt%n%
+	DashCardShow(n, "", 1)
+	}
+
+;A hand card's picture (pic) and words (txt) shown (1) or not (0) - "" left as they are: kept for the hand's view, shown
+;only while it's the one up (a deck's view over it: Decks.ahk DeckViewShow puts them back)
+DashCardShow(n, pic, txt)
+	{
+	if (!IsObject(DashCardWant))
+		DashCardWant := {}
+	if (pic != "")
+		DashCardWant["p" n] := pic
+	if (txt != "")
+		DashCardWant["t" n] := txt
+	if (DeckView)
+		return
+	if (pic != "")
+		GuiControl, % "Dash:" (pic ? "Show" : "Hide"), DashCardPic%n%
+	if (txt != "")
+		GuiControl, % "Dash:" (txt ? "Show" : "Hide"), DashCardTxt%n%
 	}
 
 ;The Cards tab's enemies (EnemySpells.ahk EnemyDanger, each round): each one - its school, rank and health off the wiki,
@@ -1652,7 +1728,25 @@ DashGuiSize:
 	GuiControl, Dash:Move, DashLearnBtn, % "x" A_GuiWidth - 138 - DashTabOX
 	GuiControl, Dash:Move, DashHandHead, % "w" A_GuiWidth - 154
 	GuiControl, Dash:Move, DashFoeHead, % "w" A_GuiWidth - 24
-	GuiControl, Dash:Move, DashFoeList, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 260)
+	GuiControl, Dash:Move, DashFoeList, % "w" A_GuiWidth - 24 " h" Max(40, A_GuiHeight - 290)
+	;(a deck's view: its settings list takes what's left, the value's row under it; the right end's buttons at the right
+	;end - the window can be narrower than they were placed for)
+	GuiControl, Dash:Move, DeckFDmg, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, DeckFList, % "w" A_GuiWidth - 24 " h" Max(60, A_GuiHeight - 330)
+	DashDeckRowY := Max(236 + 60 + 6, A_GuiHeight - 88) - DashTabOY
+	GuiControl, Dash:Move, DeckFValT, % "y" DashDeckRowY + 4
+	GuiControl, Dash:Move, DeckFVal, % "y" DashDeckRowY + 1
+	GuiControl, Dash:Move, DeckFValSet, % "y" DashDeckRowY
+	GuiControl, Dash:Move, DeckFValClear, % "y" DashDeckRowY
+	GuiControl, Dash:Move, DeckFNote, % "y" DashDeckRowY + 4 " w" Max(120, A_GuiWidth - 454)
+	GuiControl, Dash:Move, DeckAddBtn, % "x" A_GuiWidth - 80 - DashTabOX
+	GuiControl, Dash:Move, DeckFSave, % "x" A_GuiWidth - 304 - DashTabOX
+	GuiControl, Dash:Move, DeckFCopy, % "x" A_GuiWidth - 208 - DashTabOX
+	GuiControl, Dash:Move, DeckFDel, % "x" A_GuiWidth - 112 - DashTabOX
+	GuiControl, Dash:Move, DeckFPriT, % "x" A_GuiWidth - 154 - DashTabOX
+	GuiControl, Dash:Move, DeckFPri, % "x" A_GuiWidth - 104 - DashTabOX
+	GuiControl, Dash:Move, DeckFSetN, % "w" Max(80, A_GuiWidth - 544)
+	GuiControl, Dash:Move, DgDeck, % "w" Min(260, Max(100, A_GuiWidth - 594))
 	;(the Network tab: the list across, the log under it on the left, the game's picture on the right)
 	GuiControl, Dash:Move, NetHelp, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, NetStatus, % "w" A_GuiWidth - 24
