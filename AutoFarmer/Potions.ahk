@@ -61,6 +61,8 @@
 ; recalls you back. Record on the same mount you'll farm with: a route is a timing.
 
 global PotionNextCheck := 0, PotionMaxHp := 0, PotionFailUntil := 0, PotionRecording := 0
+;(the key that stops a recording, as it was when it began - the Keys tab's: Hotkeys.ahk)
+global PotionStopKey
 global PotionRec := "", PotionRecStop := 0, PotionRecT0 := 0, PotionRecDown := "", PotionHook := ""
 ;A refill run that stopped half way (a battle on the route): its mark is still the right one, so the next
 ;run doesn't mark again (that would move it to the middle of the route)
@@ -280,7 +282,7 @@ PotionRunMark()
 	marksOff := PotionOff()
 	if (marksOff.HasKey(who))
 		{
-		DebugLog("Potions: out of potions - not recalling: this wizard's Mark was in " marksOff[who] ", not at the potion seller (Mark next to her again, then restart the bot - Windows+1)")
+		DebugLog("Potions: out of potions - not recalling: this wizard's Mark was in " marksOff[who] ", not at the potion seller (Mark next to her again, then restart the bot - " HkText("restart") ")")
 		return false
 		}
 	rec := PotionMarkInfo(route)
@@ -310,8 +312,8 @@ PotionRunMark()
 	if (!there)
 		{
 		marksOff[who] := shop
-		DebugLog("Potions: this wizard's Mark is in " shop (shop = rec.zone ? " but not by " rec.prompt " (no prompt with that name)" : ", but the buying was recorded in " rec.zone) " - the Mark isn't at the potion seller. Nothing clicked; no more recalls till you Mark (Page Down) next to her again and restart the bot (Windows+1), or record the buying again")
-		TrayTip, Wizard101 bot, % "This wizard's Mark isn't at the potion seller (it's in " shop ").`nMark (Page Down) right next to Hilda Brewer again, then restart the bot (Windows+1).", 10, 2
+		DebugLog("Potions: this wizard's Mark is in " shop (shop = rec.zone ? " but not by " rec.prompt " (no prompt with that name)" : ", but the buying was recorded in " rec.zone) " - the Mark isn't at the potion seller. Nothing clicked; no more recalls till you Mark (Page Down) next to her again and restart the bot (" HkText("restart") "), or record the buying again")
+		TrayTip, Wizard101 bot, % "This wizard's Mark isn't at the potion seller (it's in " shop ").`nMark (Page Down) right next to Hilda Brewer again, then restart the bot (" HkText("restart") ").", 10, 2
 		AlertSend("potions", "out of potions", "This wizard's Mark isn't at the potion seller (it's in " shop ") - Mark next to Hilda Brewer again and restart the bot.")
 		PotionCarryOn(false)
 		return false
@@ -450,9 +452,9 @@ PotionCarryOn(bought)
 			}
 		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - the shop's window is still open" (wasWalking ? ": walking stopped" : ""))
 		if (IsFunc("SetStatus"))
-			Func("SetStatus").Call("stopped - the potion shop's window is still open: close it" (wasWalking ? " and press F8" : ""))
+			Func("SetStatus").Call("stopped - the potion shop's window is still open: close it" (wasWalking ? " and press " HkText("walk") : ""))
 		if (IsFunc("WalkNotify"))
-			Func("WalkNotify").Call("shop", "Potion shop still open", "The potion shop's window couldn't be closed. Close it (its red X, bottom right)" (wasWalking ? " and press F8 to walk on." : "."))
+			Func("WalkNotify").Call("shop", "Potion shop still open", "The potion shop's window couldn't be closed. Close it (its red X, bottom right)" (wasWalking ? " and press " HkText("walk") " to walk on." : "."))
 		else
 			TrayTip, Wizard101 bot, The potion shop's window couldn't be closed. Close it (its red X)., 10, 2
 		return
@@ -463,9 +465,9 @@ PotionCarryOn(bought)
 		return
 		}
 	why := afk ? "afk farming" : loopmode ? "mob-loop farming" : loremode ? "lore farming" : ""
-	DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - staying at your Mark (" (why = "" ? "walking is off - F8" : why " has no way back to its spot yet") ")")
+	DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - staying at your Mark (" (why = "" ? "walking is off - " HkText("walk") : why " has no way back to its spot yet") ")")
 	if (bought)
-		TrayTip, Wizard101 bot, % "Bought potions - you're at the potion seller. " (why = "" ? "Walking is off (F8), so the bot stays there." : "The bot can't get back to your " why " spot yet, so take it back yourself."), 10, 1
+		TrayTip, Wizard101 bot, % "Bought potions - you're at the potion seller. " (why = "" ? "Walking is off (" HkText("walk") "), so the bot stays there." : "The bot can't get back to your " why " spot yet, so take it back yourself."), 10, 1
 	}
 
 ;The walker starts afresh, and presses no X at a prompt for a while (DialogQuiet): it's standing by the
@@ -1453,19 +1455,25 @@ PotionRecordStart()
 		return
 	if (DgRecording)
 		{
-		MsgBox, 262192, Record potion buying, A dungeon run is being recorded - finish that first (F9).
+		MsgBox, 262192, Record potion buying, % "A dungeon run is being recorded - finish that first (" HkName(DgRecKey) ")."
 		return
 		}
 	if (!VisionOn)
 		{
-		MsgBox, 48, Record potion buying, % "The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (Windows+1) and try again."
+		MsgBox, 48, Record potion buying, % "The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (" HkText("restart") ") and try again."
+		return
+		}
+	;(its only way to stop: the Stop recording key)
+	if (HkKeyOf("record") = "")
+		{
+		MsgBox, 48, Record potion buying, Stop recording has no key - give it one on the dashboard's Keys tab first.
 		return
 		}
 	atMark := PotionByMark()
 	if (atMark)
-		MsgBox, 65, Record potion buying, % "First leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons) - the bot recalls you there every time you're out of potions. Each wizard has its own Mark: do this once for each.`n`nThe bot now recalls you to your Mark (Page Up). Once its ""Recording"" message shows, press X to talk, click Fill All with GOLD (and close the window), and press F9. (Not right by her? Walk there and press Page Down - the recording starts over from there.)`n`nYou stay at the seller afterwards."
+		MsgBox, 65, Record potion buying, % "First leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons) - the bot recalls you there every time you're out of potions. Each wizard has its own Mark: do this once for each.`n`nThe bot now recalls you to your Mark (Page Up). Once its ""Recording"" message shows, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ". (Not right by her? Walk there and press Page Down - the recording starts over from there.)`n`nYou stay at the seller afterwards."
 	else
-		MsgBox, 65, Record potion buying, % "The bot will mark your spot (Page Down) and take you to " PotionStartName() ".`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press F9.`n`nUse the mount you'll farm with. The bot recalls you back afterwards."
+		MsgBox, 65, Record potion buying, % "The bot will mark your spot (Page Down) and take you to " PotionStartName() ".`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ".`n`nUse the mount you'll farm with. The bot recalls you back afterwards."
 	IfMsgBox, Cancel
 		return
 	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
@@ -1511,10 +1519,15 @@ PotionRecordStart()
 	PotionHook.OnKeyDown := Func("PotionRecKey").Bind(1)
 	PotionHook.OnKeyUp := Func("PotionRecKey").Bind(0)
 	Hotkey, ~*LButton, PotionRecClick, On
-	Hotkey, F9, PotionRecF9, On
+	;(the key that stops it - the Keys tab's, F9 out of the box - as it was when the recording began)
+	PotionStopKey := HkKeyOf("record")
+	if (PotionStopKey != "")
+		Hotkey, $%PotionStopKey%, PotionRecF9, On UseErrorLevel
+	if (PotionStopKey = "" || ErrorLevel)
+		DebugLog("Potions: the Stop recording key " HkName(PotionStopKey) " couldn't be made (" ErrorLevel ") - the recording stops by itself after 15 minutes")
 	PotionRecT0 := A_TickCount
 	PotionHook.Start()
-	TrayTip, Wizard101 bot, % "Recording " (atMark ? "at your Mark in " commons ": X to talk" : "from " commons ": walk to the potion seller") ", buy Fill All, then press F9.", 10, 1
+	TrayTip, Wizard101 bot, % "Recording " (atMark ? "at your Mark in " commons ": X to talk" : "from " commons ": walk to the potion seller") ", buy Fill All, then press " HkName(PotionStopKey) ".", 10, 1
 	DebugLog("Potions: recording " (atMark ? "the buying at your Mark in " : "a route from ") commons)
 	;(the seller's prompt, read while the recording already runs - an X meanwhile is kept)
 	if (atMark)
@@ -1533,13 +1546,14 @@ PotionRecordStart()
 			{
 			PotionRecRestart := 0, commons := lastZone
 			DebugLog("Potions: Page Down - your Mark is here now (" commons "): recording again from here")
-			TrayTip, Wizard101 bot, Your Mark is here now - the recording starts again from here. X to talk`, Fill All`, then F9., 10, 1
+			TrayTip, Wizard101 bot, % "Your Mark is here now - the recording starts again from here. X to talk, Fill All, then " HkName(PotionStopKey) ".", 10, 1
 			prompt := PotionPromptSteady()
 			}
 		}
 	PotionHook.Stop()
 	Hotkey, ~*LButton, Off
-	Hotkey, F9, Off
+	if (PotionStopKey != "")
+		Hotkey, $%PotionStopKey%, Off, UseErrorLevel
 	PotionRecording := 0, PotionRecAtMark := 0
 	if (atMark)
 		{
@@ -1587,7 +1601,10 @@ PotionRecordStart()
 PotionRecKey(isDown, hook, vk, sc)
 	{
 	name := GetKeyName(Format("vk{:x}sc{:x}", vk, sc))
-	if (name = "F9" || InStr(name, "Control") || InStr(name, "Alt") || InStr(name, "Win") || InStr(name, "Shift"))
+	;(the stop key's own key left out only when it's a plain one - Ctrl/Alt/Win stop keys never come here as such, and a
+	;plain X of the route must be kept even when the stop key is Ctrl+X)
+	stopBase := RegExMatch(PotionStopKey, "[#^!]") ? "" : RegExReplace(PotionStopKey, "^[#^!+]*")
+	if ((stopBase != "" && name = stopBase) || InStr(name, "Control") || InStr(name, "Alt") || InStr(name, "Win") || InStr(name, "Shift"))
 		return
 	;(teleport keys aren't part of a route; Page Down at the Mark way moves the Mark here: start over)
 	if (RegExMatch(name, "i)^(Numpad)?(PgDn|PgUp|Home|End)$"))

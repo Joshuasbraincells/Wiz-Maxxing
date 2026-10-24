@@ -69,7 +69,7 @@ CfgList()
 	list.Push({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."})
 	list.Push({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
-		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, F6, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."})
+		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, {key:bot}, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."})
 	list.Push({key: "speedfactor", label: "...the speed its walking key sets (2 = twice as fast)", kind: "num", lo: 1, hi: 50, def: 2
 		, help: "The speed you gave Cheat Engine's walking key: the bot's turn and wait times are divided by it. 2-5 work best; above 5 turns are made at normal speed."})
 	list.Push({key: "speedkeyfast", label: "...Cheat Engine's walking key", kind: "pick", def: 2, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
@@ -95,7 +95,7 @@ CfgList()
 	list.Push({key: "|"})
 	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
 	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]
-		, help: "Boost first: traps on the boss, blades, the bubble and aura, then the biggest hit it can cast. Hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick on weak mobs). Boss/mobs: boost first once you've picked a boss (Alt+1), else hit first."})
+		, help: "Boost first: traps on the boss, blades, the bubble and aura, then the biggest hit it can cast. Hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick on weak mobs). Boss/mobs: boost first once you've picked a boss ({key:boss}), else hit first."})
 	list.Push({key: "boostmax", label: "Boosts before each hit (0 = all it has)", kind: "num", lo: 0, hi: 20, def: 0
 		, help: "Boosting first: at most this many boost cards (blades, traps, bubble, aura) go before a hit it can cast. 0 = every one it has."})
 	list.Push({key: "healthocr", label: "Kill check: hit at once if that kills", kind: "check", def: 1
@@ -105,7 +105,7 @@ CfgList()
 	list.Push({key: "useblades", label: "Use blades (and Sharpen)", kind: "check", def: 1
 		, help: "Off: blades and Sharpen aren't played (with Discard cards it never plays on, they're discarded)."})
 	list.Push({key: "usetraps", label: "Use traps and Feint on the boss (and Potent)", kind: "check", def: 1
-		, help: "Off: traps, Feint and Potent aren't played (with Discard cards it never plays on, they're discarded). Traps only ever go on a boss you picked (Alt+1)."})
+		, help: "Off: traps, Feint and Potent aren't played (with Discard cards it never plays on, they're discarded). Traps only ever go on a boss you picked ({key:boss})."})
 	list.Push({key: "usebubble", label: "Use the bubble (global)", kind: "check", def: 1
 		, help: "Off: your school's bubble isn't played (with Discard cards it never plays on, it's discarded)."})
 	list.Push({key: "useaura", label: "Use the aura", kind: "check", def: 1
@@ -141,7 +141,7 @@ CfgList()
 		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on needs pimpmeout typed at that PC."})
 	list.Push({key: "-", label: "UPDATES"})
 	list.Push({key: "autoupdate", label: "Update by itself: look every (minutes, 0 = never)", kind: "num", lo: 0, hi: 1440, def: 10
-		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking (F8), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."})
+		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking ({key:walk}), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."})
 	list.Push({key: "-", label: "ALERTS"})
 	list.Push({key: "logmirror", label: "Copy the log to OneDrive (help from another PC)", kind: "check", def: 0
 		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."})
@@ -159,7 +159,7 @@ CfgList()
 	list.Push({key: "partywaitmax", label: "...but for at most (s, 0 = no waiting)", kind: "num", lo: 0, hi: 900, def: 60
 		, help: "How long the leader waits for one follower; after that it walks on without it till it's been near again."})
 	list.Push({key: "partybattle", label: "...in a party battle this wizard is the", kind: "pick", def: 1, picks: ["Hitter - plays as now", "Blader - boosts the party's hitter", "Healer - heals the party, else boosts"]
-		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. Alt+2 on a plate: the boosts go there (a friend without the bot)."})
+		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. {key:boost} on a plate: the boosts go there (a friend without the bot)."})
 	return list
 	}
 
@@ -196,6 +196,15 @@ CfgViewList()
 			}
 		}
 	return out
+	}
+
+;A help text's keys ({key:<id>}: {key:boss} -> Alt+1...) as they're set now - the Keys tab's, Hotkeys.ahk (CfgList is
+;made once, the window afresh each time it opens)
+CfgKeyWords(text)
+	{
+	while (RegExMatch(text, "\{key:(\w+)\}", m))
+		text := StrReplace(text, m, HkText(m1))
+	return text
 	}
 
 ;Opens the window - made afresh, with the values in use now - or brings it to the front if it's open
@@ -263,7 +272,7 @@ CfgShow()
 		cfgV := Stats.HasKey(cfgS.key) ? Stats[cfgS.key] : cfgS.def
 		;(a wizard's own value - storm.killmargin... - is used when it fights as that school; the window doesn't
 		;change it, so the help says where it is)
-		cfgHelp := cfgS.help
+		cfgHelp := CfgKeyWords(cfgS.help)
 		for each, cfgSch in ["storm", "fire", "ice", "life", "death", "myth", "balance"]
 			if (Stats.HasKey(cfgSch "." cfgS.key))
 				cfgHelp .= "  Your " cfgSch " wizard has its own: " cfgSch "." cfgS.key ":" Stats[cfgSch "." cfgS.key] " in PlayerStats.txt (change it there)."

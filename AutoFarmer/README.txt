@@ -11,6 +11,8 @@ walks your wizard towards the quest goal by following the yellow quest arrow
 	F8           walking on / off
 	Windows+1    restart (Alt+Esc too)
 	Windows+Esc  quit
+These are the keys out of the box - change any of them on the dashboard's Keys
+tab (below); the messages then name your keys.
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
@@ -684,9 +686,15 @@ Pick one to see its picture. Pick one or more and:
 	  Or in the list itself, as in a spreadsheet: double-click a Name, Pips
 	  or Value cell and type over it - Tab keeps it and goes right (Shift+Tab
 	  left), Enter down (Shift+Enter up); clicking away keeps it too, Esc
-	  doesn't. Double-click a Kind cell: the Change kind menu opens there.
-	  Other cells open the card's picture. A changed cell shows a * till the
-	  bot has made the change.
+	  doesn't. Kind, School and TC are dropdowns: double-click (or Tab
+	  onto) one and pick - a click keeps it, or arrows then Enter / Tab.
+	  School: the card's own school - Fire, Ice, Storm, Myth, Life, Death,
+	  Balance, or Sun (enchants), Star (auras), Moon (polymorphs), Shadow;
+	  the card stays in the deck of the wizard it was learned for. TC: no
+	  stops the bot taking it for a treasure card again. Kind has Polymorph
+	  / shift (Moon), not played. Tab goes Name, Kind, School, Pips, Value,
+	  TC. Other cells open the card's picture. A changed cell shows a * till
+	  the bot has made the change.
 	- Forget: out of the list, its pictures to backups\learned forgotten\. A
 	  real card is learned again the next time it's in hand.
 	- Never discard: it stays in hand even when the bot doesn't play it.
@@ -731,6 +739,23 @@ rounds, and says how many it learned; then finish or flee that battle
 yourself. debug.log: "learn every card: ...". The hand is read with the
 mouse off it (a card under the mouse is drawn zoomed up); if you move the
 mouse onto the hand meanwhile, no new card is learned that round.
+
+Keys (the dashboard's Keys tab): every action that has a key - the bot on /
+off (F6), walking (F8), the dashboard (Windows+2), restart (Windows+1, Alt+Esc),
+quit (Windows+Esc), stop recording (F9), the battle picks (Alt+1 the boss,
+Alt+2 who your boosts go to, Windows+3 your own plate) and the modes (Alt+E
+loop, Alt+L lore, Alt+D dual, Alt+C command, Alt+S statistic, Alt+R response,
+Windows+Alt+D developer) - with its key, its default and when it works. Pick
+one and click Change (or double-click it), then press the new key, with Ctrl,
+Alt, Shift or Windows if you like (8 s; Esc leaves it as it was). Its default
+and No key (switched off - not for the bot on / off, quit or stop recording),
+All to defaults.
+Kept in dashboard.ini [hotkeys]. Not taken: keys the bot presses in the game
+(W A S D, X, Space, Ctrl+O potions, Ctrl+1-9 Equipment Sets), Cheat Engine's
+F13-F24, plain letters, digits and numpad keys (typed in chat), Alt+F4,
+Windows' own (Windows+L, D, E, R, G, Tab), the developer's Alt+0 and
+Windows+`, a key another action has, and the key a recording going on now
+stops with.
 
 Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %

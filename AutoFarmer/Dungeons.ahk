@@ -26,6 +26,8 @@ global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt, DgRecPrev, 
 ;The Dungeons tab's controls (Dashboard.ahk makes them)
 global DashTabs, DgList, DgHelp, DgRecBtn, DgRecStopBtn, DgRunBtn, DgStopBtn, DgDelBtn, DgFolderBtn, DgTimes, DgTimesUD
 global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote, DgDeck, DgDeckT
+;(the key that stops a recording - the Keys tab's, F9 out of the box - as it was when the recording began)
+global DgRecKey
 ;(the Deck box's decks by their place in it - 2 on; 1 is "(none)")
 global DgDeckIds
 
@@ -107,9 +109,9 @@ DgShow(text := "")
 	if (text = "")
 		{
 		if (DgRecording)
-			text := "Recording: " DgRecSteps.Length() " steps so far, in " DgRecZone ". Press F9 (or Stop recording) once you're back where you started."
+			text := "Recording: " DgRecSteps.Length() " steps so far, in " DgRecZone ". Press " HkName(DgRecKey) " (or Stop recording) once you're back where you started."
 		else if (IsObject(DgRun))
-			text := "Running '" DgRun.name "': run " DgRun.runs + 1 (DgRun.want ? " of " DgRun.want : "") ", step " DgRun.i " of " DgRun.steps.Length() (Walking ? "" : " - paused (walking off: F8)")
+			text := "Running '" DgRun.name "': run " DgRun.runs + 1 (DgRun.want ? " of " DgRun.want : "") ", step " DgRun.i " of " DgRun.steps.Length() (Walking ? "" : " - paused (walking off: " HkText("walk") ")")
 		else
 			text := "Not running. Record a run, or pick one and click Run."
 		}
@@ -128,7 +130,7 @@ DgRecordStart()
 		return
 	if (PotionRecording)
 		{
-		MsgBox, 262192, Record a dungeon run, The potion buying is being recorded - finish that first (F9).
+		MsgBox, 262192, Record a dungeon run, % "The potion buying is being recorded - finish that first (" HkName(PotionStopKey) ")."
 		return
 		}
 	nav := VisionOn ? NavRead(2000) : ""
@@ -137,7 +139,7 @@ DgRecordStart()
 		MsgBox, 262192, Record a dungeon run, % "The bot can't read where your wizard is from the game's memory (" (VisionOn ? NavWhy : "the vision helper isn't running") "). Be in the game, in the world (not loading), and try again."
 		return
 		}
-	MsgBox, 262177, Record a dungeon run, % "Recording from here (" nav.zone ").`n`nPlay one run the way the bot should: X at the dungeon's sigil, walk to the boss (fight on the way), and walk back out to here. Then press F9 (or Stop recording on the Dungeons tab).`n`nWalk with the keyboard or the mouse, as you like. Quest walking (F8) is off while you record."
+	MsgBox, 262177, Record a dungeon run, % "Recording from here (" nav.zone ").`n`nPlay one run the way the bot should: X at the dungeon's sigil, walk to the boss (fight on the way), and walk back out to here. Then press " HkText("record") " (or Stop recording on the Dungeons tab).`n`nWalk with the keyboard or the mouse, as you like. Quest walking (" HkText("walk") ") is off while you record."
 	IfMsgBox, Cancel
 		return
 	if (Walking)
@@ -146,10 +148,12 @@ DgRecordStart()
 	DgRecAdd("walk", nav)
 	DgRecording := 1
 	Hotkey, ~*x, DgRecXKey, On
-	Hotkey, F9, DgRecF9, On
+	DgRecKey := HkKeyOf("record")
+	if (DgRecKey != "")
+		Hotkey, $%DgRecKey%, DgRecF9, On UseErrorLevel
 	SetTimer, DgRecTick, 250
-	DebugLog("Dungeons: recording a run from " nav.zone " at " Round(nav.x) ", " Round(nav.y) " - F9 to finish")
-	TrayTip, Wizard101 bot, % "Recording a dungeon run from " nav.zone ". Play it, come back here, then press F9.", 8, 1
+	DebugLog("Dungeons: recording a run from " nav.zone " at " Round(nav.x) ", " Round(nav.y) " - " HkName(DgRecKey) " to finish")
+	TrayTip, Wizard101 bot, % "Recording a dungeon run from " nav.zone ". Play it, come back here, then press " HkName(DgRecKey) ".", 8, 1
 	DgShow()
 	}
 
@@ -233,7 +237,11 @@ DgRecordStop(save := true)
 	DgRecording := 0
 	SetTimer, DgRecTick, Off
 	Hotkey, ~*x, Off
-	Hotkey, F9, Off
+	if (DgRecKey != "")
+		Hotkey, $%DgRecKey%, Off, UseErrorLevel
+	;(Stop recording's caption: the key set now again, if it was changed meanwhile)
+	if (DgRecKey != HkKeyOf("record") && IsFunc("DashKeysChanged"))
+		Func("DashKeysChanged").Call()
 	steps := DgRecSteps
 	if (!save || steps.Length() < 3)
 		{
@@ -282,7 +290,7 @@ DgRunStart(file, times, avoid)
 		}
 	if (!WkNavChecked && !WkNavTrusted)
 		{
-		MsgBox, 262192, Dungeons, The game's memory hasn't been checked against the quest arrow yet - walk a quest for a minute first (F8), then run the dungeon.
+		MsgBox, 262192, Dungeons, % "The game's memory hasn't been checked against the quest arrow yet - walk a quest for a minute first (" HkText("walk") "), then run the dungeon."
 		return
 		}
 	nav := NavRead(2000)

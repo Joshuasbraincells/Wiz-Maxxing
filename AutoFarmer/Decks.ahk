@@ -227,7 +227,7 @@ DeckPick(inBattle)
 		if (IsObject(d) && DeckFits(d, sch))
 			return {deck: d, why: "pinned on the Cards tab"}
 		}
-	for i, use in [["boss", inBattle && BossChoosen, "a boss (your Alt+1 pick)"]
+	for i, use in [["boss", inBattle && BossChoosen, inBattle && BossChoosen ? "a boss (your " HkText("boss") " pick)" : ""]
 		, ["collect", IsObject(WkCollect) && !WkCollect.gaveUp, "a collect goal"]
 		, ["farm", loopmode || loremode, "farming"]
 		, ["dungeon", IsObject(DgRun), "a dungeon run"]

@@ -32,6 +32,8 @@ global SpAskAnswer
 ;A cell edited in the list itself (double-click - SpCellEdit): its little window, the spell, the column (name, value,
 ;pips), what's typed
 global SpCellHwnd, SpCellId, SpCellCol, SpCellText, SpCellShown
+;(a picked cell - Kind, School, TC: its dropdown's values by place, and whether its list was down at the last look)
+global SpCellChoices, SpCellDropped
 ;(tests only: the cell's box made but not shown)
 global SpCellHidden
 
@@ -65,7 +67,7 @@ SpKindList()
 	if (!list.Length())
 		for i, t in [["damage", "Hits one enemy"], ["aoe", "Hits all enemies"], ["heal", "Heals you"], ["ward", "Shield (cast on you)"], ["blade", "Blade"]
 			, ["trap", "Trap"], ["aura", "Aura"], ["dot", "Damage over time"], ["stun", "Stun"], ["dispel", "Dispel"], ["prism", "Prism (converts the school)"]
-			, ["clear", "Removes shields or charms (N times Clear)"], ["keep", "Not used (stays in the list)"]]
+			, ["clear", "Removes shields or charms (N times Clear)"], ["polymorph", "Polymorph / shift (Moon)"], ["keep", "Not used (stays in the list)"]]
 			list.Push({kind: t[1], label: t[2], played: InStr(",damage,aoe,heal,ward,blade,trap,aura,", "," t[1] ",") ? 1 : 0})
 	return list
 	}
@@ -77,6 +79,13 @@ SpKindItem(k)
 	}
 
 ;A kind's label for the list (CardLearn.ahk's LearnKindLabel: "unknown" for "")
+;The schools for the School column's dropdown (CardLearn.ahk LearnSchools - the seven, Sun, Star, Moon, Shadow)
+SpSchools()
+	{
+	got := SpL("LearnSchools")
+	return IsObject(got) ? got : ["fire", "ice", "storm", "myth", "life", "death", "balance", "sun", "star", "moon", "shadow"]
+	}
+
 SpKindLabel(kind)
 	{
 	if (IsFunc("LearnKindLabel"))
@@ -120,7 +129,7 @@ SpListFill()
 	if (IsObject(LearnedCards))
 		for i, c in LearnedCards
 			{
-			row := LV_Add("", SpName(c), SpKindText(c), c.sch, SpPipsText(c), SpValueText(c), SpSureText(c), SpInUse(c), c.text
+			row := LV_Add("", SpName(c), SpKindText(c), SpSchoolText(c), SpPipsText(c), SpValueText(c), SpSureText(c), SpInUse(c), c.text
 				, SpFlag(c, "tc") ? "yes" : "", SpWhen(c.when), c.dir = "" ? "main" : c.dir, c.id)
 			if (keep.HasKey(c.id))
 				LV_Modify(row, "Select")
@@ -222,6 +231,13 @@ SpName(c)
 SpKindText(c)
 	{
 	return SpKindLabel(c.type) (SpFlag(c, "xpip") && c.type != "xpip" ? ", X pips" : "")
+	}
+
+;The School column: the card's own school (set here: flag school), else the wizard's it was learned for
+SpSchoolText(c)
+	{
+	s := SpFlag(c, "school")
+	return (s != "" && s != 1) ? s : c.sch
 	}
 
 ;The Pips column: ? not known, 3? guessed (not read off the card)
@@ -401,6 +417,10 @@ SpJobText(op, arg, ids)
 	who := n = 1 ? SpName(SpL("LearnCardOf", ids[1])) : n " spells"
 	if (op = "kind")
 		return who " -> " SpKindLabel(arg)
+	if (op = "school")
+		return who " -> school " arg
+	if (op = "tc")
+		return who (arg ? " a treasure card" : " not a treasure card")
 	if (op = "edit")
 		return who " edited"
 	if (op = "forget")
@@ -459,6 +479,10 @@ SpApplyPending()
 				said.Push(who ": " SpCallLearn("LearnForgetById", id))
 			else if (job.op = "hold")
 				said.Push(who ": " SpDoHold(c, job.arg))
+			else if (job.op = "school")
+				said.Push(who ": " SpCallLearn("LearnSetSchool", id, job.arg))
+			else if (job.op = "tc")
+				said.Push(who ": " SpCallLearn("LearnSetTc", id, job.arg))
 			}
 		}
 	text := ""
@@ -609,14 +633,14 @@ SpCellEdit(row, scMx := "", scMy := "")
 	;(the mouse moved off the double-clicked row before this ran - the bot busy: not another row's cell)
 	if (scItem < 0 || scItem + 1 != row)
 		return
-	;(0 Name, 1 Kind, 3 Pips, 4 Value - the list's columns)
-	if (scSub != 0 && scSub != 1 && scSub != 3 && scSub != 4)
+	;(0 Name, 1 Kind, 2 School, 3 Pips, 4 Value, 8 TC - the list's columns)
+	if (scSub != 0 && scSub != 1 && scSub != 2 && scSub != 3 && scSub != 4 && scSub != 8)
 		return SpOpenPic(false)
 	SpCellOpen(scItem + 1, scSub)
 	}
 
-;The box over row's cell in column sub (0 Name, 1 Kind - its menu, 3 Pips, 4 Value), the row scrolled into view and
-;picked; false if there's no such spell
+;The box over row's cell in column sub - typed in: 0 Name, 3 Pips, 4 Value; picked from a dropdown: 1 Kind, 2 School,
+;8 TC - the row scrolled into view and picked; false if there's no such spell
 SpCellOpen(row, scSub)
 	{
 	GuiControlGet, scLv, Dash:Hwnd, SpList
@@ -636,7 +660,7 @@ SpCellOpen(row, scSub)
 	c := SpL("LearnCardOf", scId)
 	if (!IsObject(c))
 		return false
-	scCol := scSub = 0 ? "name" : scSub = 4 ? "value" : scSub = 3 ? "pips" : scSub = 1 ? "kind" : ""
+	scCol := scSub = 0 ? "name" : scSub = 4 ? "value" : scSub = 3 ? "pips" : scSub = 1 ? "kind" : scSub = 2 ? "school" : scSub = 8 ? "tc" : ""
 	if (scCol = "")
 		return false
 	;(the cell's place on screen - for column 0 its label's, not the whole row's)
@@ -646,14 +670,11 @@ SpCellOpen(row, scSub)
 	DllCall("ClientToScreen", "Ptr", scLv, "Ptr", &scP)
 	scX := NumGet(scP, 0, "Int"), scY := NumGet(scP, 4, "Int")
 	scW := NumGet(scRc, 8, "Int") - NumGet(scRc, 0, "Int"), scH := NumGet(scRc, 12, "Int") - NumGet(scRc, 4, "Int")
-	if (scCol = "kind")
-		{
-		CoordMode, Menu, Screen
-		Menu, SpKindMenu, Show, %scX%, % scY + scH
-		return true
-		}
 	SpCellClose()
 	SpCellId := c.id, SpCellCol := scCol
+	;(Kind, School, TC: a dropdown of what it can be - its list down at once; picked with the mouse it's kept)
+	if (scCol = "kind" || scCol = "school" || scCol = "tc")
+		return SpCellPick(c, scCol, scX, scY, scW, scH)
 	;(an edit of it still waiting in the queue: what it will be)
 	scB := SpPendingEdit(c.id), scB := IsObject(scB) ? scB : c
 	scNow := scCol = "name" ? scB.name : scCol = "value" ? scB.value : SpPipsEditText(c, scB)
@@ -673,18 +694,111 @@ SpCellOpen(row, scSub)
 	return true
 	}
 
-;Moving on from the cell, as in a spreadsheet: what's typed kept, then the cell beside it - Tab right (the next row's
-;Name after Value), Shift+Tab left, Enter down, Shift+Enter up; past the first or last row: just kept. The cells typed
-;in are Name, Pips and Value (Kind is its menu: passed over). A guessed pips is made read only if you typed in its
-;cell - passing through doesn't
+;The dropdown over a Kind, School or TC cell (SpCellOpen): what it is now picked, the list down; SpCellChoices: the
+;values by place in it
+SpCellPick(c, col, scX, scY, scW, scH)
+	{
+	items := "", SpCellChoices := [], now := 0
+	if (col = "kind")
+		{
+		for i, k in IsObject(SpKinds) ? SpKinds : SpKindList()
+			{
+			items .= (items = "" ? "" : "|") StrReplace(k.label, "|", "/"), SpCellChoices.Push(k.kind)
+			if (k.kind = c.type)
+				now := i
+			}
+		}
+	else if (col = "school")
+		{
+		cur := SpSchoolText(c)
+		for i, s in SpSchools()
+			{
+			items .= (items = "" ? "" : "|") Format("{:T}", s), SpCellChoices.Push(s)
+			if (s = cur)
+				now := i
+			}
+		}
+	else
+		{
+		items := "yes|no", SpCellChoices := [1, 0], now := SpFlag(c, "tc") ? 1 : 2
+		}
+	SpCellShown := now
+	scDpi := A_ScreenDPI / 96
+	Gui, SpCell:New, -Caption +ToolWindow +OwnerDash +Border +HwndSpCellHwnd
+	Gui, SpCell:Margin, 0, 0
+	Gui, SpCell:Color, 111317, 111317
+	Gui, SpCell:Font, s9 w400 c000000, Segoe UI
+	Gui, SpCell:Add, DropDownList, % "x0 y0 w" Max(90, Round(scW / scDpi)) " R" Min(16, SpCellChoices.Length()) " AltSubmit vSpCellText", %items%
+	if (now)
+		GuiControl, SpCell:Choose, SpCellText, %now%
+	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")
+	GuiControlGet, scCb, SpCell:Hwnd, SpCellText
+	;(the list as wide as its longest - a Kind's label is longer than the column)
+	SendMessage, 0x160, % Round(260 * scDpi), 0, , ahk_id %scCb%      ; CB_SETDROPPEDWIDTH
+	SpCellDropped := 0
+	if (!SpCellHidden)
+		{
+		SendMessage, 0x14F, 1, 0, , ahk_id %scCb%                      ; CB_SHOWDROPDOWN
+		SpCellDropped := 1
+		}
+	SetTimer, SpCellWatch, 150
+	return true
+	}
+
+;A dropdown cell's value picked now ("" none picked)
+SpCellPicked()
+	{
+	GuiControlGet, pos, SpCell:, SpCellText
+	return (pos >= 1 && IsObject(SpCellChoices) && pos <= SpCellChoices.Length()) ? SpCellChoices[pos] : ""
+	}
+
+;A dropdown cell kept: queued as the Change kind button's, or as a school or treasure card set (applied out of battle),
+;and shown in the list at once. Left as it was: nothing
+SpCellPickCommit()
+	{
+	GuiControlGet, pos, SpCell:, SpCellText
+	v := SpCellPicked(), col := SpCellCol, id := SpCellId, was := SpCellShown
+	SpCellClose()
+	if (v = "" || pos = was)
+		return
+	c := SpL("LearnCardOf", id)
+	if (!IsObject(c))
+		return SpNote("That spell isn't in the list any more")
+	if (col = "kind")
+		SpQueue("kind", v, [id]), show := SpKindLabel(v), n := 2
+	else if (col = "school")
+		SpQueue("school", v, [id]), show := v, n := 3
+	else
+		SpQueue("tc", v, [id]), show := v ? "yes" : "", n := 9
+	prevLV := SpListSelect()
+	Loop, % LV_GetCount()
+		{
+		LV_GetText(rowId, A_Index, 12)
+		if (rowId = id)
+			{
+			LV_Modify(A_Index, "Col" n, show " *")
+			break
+			}
+		}
+	SpListBack(prevLV)
+	}
+
+;Moving on from the cell, as in a spreadsheet: what's typed or picked kept, then the cell beside it - Tab right (Name,
+;Kind, School, Pips, Value, TC; after TC the next row's Name), Shift+Tab left, Enter down, Shift+Enter up; past the first or
+;last row: just kept. A guessed pips is made read only if you typed in its cell - passing through doesn't
 SpCellMove(dRow, dCol)
 	{
 	if (!SpCellHwnd)
 		return
 	id := SpCellId, col := SpCellCol
-	SendMessage, 0xB8, 0, 0, Edit1, ahk_id %SpCellHwnd%      ; EM_GETMODIFY: typed in
-	typedIn := ErrorLevel != "FAIL" && ErrorLevel
-	SpCellCommit(typedIn)
+	if (col = "kind" || col = "school" || col = "tc")
+		SpCellPickCommit()
+	else
+		{
+		SendMessage, 0xB8, 0, 0, Edit1, ahk_id %SpCellHwnd%      ; EM_GETMODIFY: typed in
+		typedIn := ErrorLevel != "FAIL" && ErrorLevel
+		SpCellCommit(typedIn)
+		}
 	prevLV := SpListSelect()
 	row := 0
 	Loop, % LV_GetCount()
@@ -700,7 +814,7 @@ SpCellMove(dRow, dCol)
 	SpListBack(prevLV)
 	if (!row)
 		return
-	cols := [0, 3, 4], at := col = "name" ? 1 : col = "pips" ? 2 : 3
+	cols := [0, 1, 2, 3, 4, 8], at := col = "name" ? 1 : col = "kind" ? 2 : col = "school" ? 3 : col = "pips" ? 4 : col = "value" ? 5 : 6
 	at += dCol, row += dRow
 	if (at > cols.Length())
 		at := 1, row += 1
@@ -717,6 +831,8 @@ SpCellCommit(byEnter := false)
 	{
 	if (!SpCellHwnd)
 		return
+	if (SpCellCol = "kind" || SpCellCol = "school" || SpCellCol = "tc")
+		return SpCellPickCommit()
 	Gui, SpCell:Submit, NoHide
 	typed := Trim(SpCellText), col := SpCellCol
 	SpCellClose()
@@ -906,6 +1022,20 @@ SpCellGuiClose:
 	return
 
 SpCellWatch:
+	;(a dropdown cell: its list was down and is up now with another value picked - a click on it: kept, as Enter would)
+	if (SpCellHwnd && (SpCellCol = "kind" || SpCellCol = "school" || SpCellCol = "tc"))
+		{
+		GuiControlGet, scWCb, SpCell:Hwnd, SpCellText
+		SendMessage, 0x157, 0, 0, , ahk_id %scWCb%      ; CB_GETDROPPEDSTATE
+		scWDown := ErrorLevel != "FAIL" && ErrorLevel
+		GuiControlGet, scWPos, SpCell:, SpCellText
+		if (SpCellDropped && !scWDown && scWPos != SpCellShown)
+			{
+			SpCellPickCommit()
+			return
+			}
+		SpCellDropped := scWDown
+		}
 	;(clicked away in the bot's own windows - the dashboard: kept. Another program in front - the bot bringing Wizard101
 	;up for a round, or you in another window: the box waits, nothing half-typed kept)
 	if (SpCellHwnd && !WinActive("ahk_id " SpCellHwnd))

@@ -392,8 +392,8 @@ WalkStep()
 		Walking := 0
 		ReleaseKeys()
 		WalkLog("stuck at a teleport: the quest's way on is a teleport that doesn't take the wizard (locked, or one way only), and the zone's paths have no other - walking off")
-		SetStatus("stuck - the way on is a teleport that doesn't work here. Press F8 to walk again")
-		WalkNotify("stuck", "Stuck at a teleport", "The quest's way on goes through a teleport here that doesn't take the wizard (locked till a quest's done, or it only goes the other way), and the zone's paths have no other way, so walking is off. Do what opens it (or move on to another quest) and press F8 to walk again.")
+		SetStatus("stuck - the way on is a teleport that doesn't work here. Press " WalkKeyText() " to walk again")
+		WalkNotify("stuck", "Stuck at a teleport", "The quest's way on goes through a teleport here that doesn't take the wizard (locked till a quest's done, or it only goes the other way), and the zone's paths have no other way, so walking is off. Do what opens it (or move on to another quest) and press " WalkKeyText() " to walk again.")
 		return false
 		}
 	WkNavByArrow := 0
@@ -1306,8 +1306,8 @@ WalkStep()
 				return true
 			Walking := 0
 			ReleaseKeys()
-			SetStatus("stuck - couldn't get around the obstacle. Move the wizard a bit and press F8")
-			WalkNotify("stuck", "Stuck", "The wizard couldn't get round an obstacle (" (stuckAt = "" ? "?" : stuckAt) " from the goal) and the teleport to the Commons didn't help (used in the last " Round(ResetEvery / 60000) " minutes, or not possible here), so walking is off. Move it a bit and press F8 to walk again.")
+			SetStatus("stuck - couldn't get around the obstacle. Move the wizard a bit and press " WalkKeyText())
+			WalkNotify("stuck", "Stuck", "The wizard couldn't get round an obstacle (" (stuckAt = "" ? "?" : stuckAt) " from the goal) and the teleport to the Commons didn't help (used in the last " Round(ResetEvery / 60000) " minutes, or not possible here), so walking is off. Move it a bit and press " WalkKeyText() " to walk again.")
 			return false
 			}
 		SetStatus("stuck - backing up and going around (try " WkTries + 1 " of " UnstickTries ")")
@@ -1859,7 +1859,7 @@ GateStep()
 			WalkLog("gate: clicked Go To World 3 times and the Spiral Map is still open - stopped")
 			Walking := 0
 			ReleaseKeys()
-			SetStatus("stopped - World Gate: pick the world and click Go To World, then press F8")
+			SetStatus("stopped - World Gate: pick the world and click Go To World, then press " WalkKeyText())
 			return false
 			}
 		WkGateClicks += 1
@@ -2232,8 +2232,8 @@ WalkToggle()
 			ReleaseKeys()
 			}
 		;(a keep-speed stop just before left it fast)
-		SpeedSet(0, "walking off (F8)")
-		SetStatus("walking off - press F8 to walk again")
+		SpeedSet(0, "walking off (" WalkKeyText() ")")
+		SetStatus("walking off - press " WalkKeyText() " to walk again")
 		;Keys let go while another window had focus: give Wizard101 one clean release when it's back
 		if (Refocus)
 			SetTimer, WalkerRefocusWatch, 250
@@ -2626,6 +2626,13 @@ UserIdle()
 	return PlayForMe ? 2147483647 : A_TimeIdlePhysical
 	}
 
+;The walking on/off key in words, for the messages that say which key to press: AutoFarmer's (Hotkeys.ahk - yours from
+;the dashboard's Keys tab), else F8 (AutoQuester's own - it has no Hotkeys.ahk)
+WalkKeyText()
+	{
+	return IsFunc("HkText") ? Func("HkText").Call("walk") : "F8"
+	}
+
 ;Shows what the walker is doing in the tray tip. In AutoFarmer each new kind of status (walking,
 ;turning, arrived, stuck...) also goes to debug.log
 SetStatus(text)
@@ -2704,7 +2711,7 @@ CollectGiveUp(dist, why)
 	ReleaseKeys()
 	WkArrived := 1, WkArrDist := dist, WkFar := 0
 	mins := Round(CollectStall / 60000)
-	WalkNotify("collect", "Collect quest needs you", "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: collect again (" mins " minutes without progress). Stop walking: walking off (F8 turns it back on).", true)
+	WalkNotify("collect", "Collect quest needs you", "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: collect again (" mins " minutes without progress). Stop walking: walking off (" WalkKeyText() " turns it back on).", true)
 	}
 
 ;No arrow, nothing standing in for it (a goal the game shows no way to - collect things lying about the zone): its line
@@ -3062,8 +3069,8 @@ WalkCommonsReset(why, at := "")
 			Walking := 0
 			ReleaseKeys()
 			WalkLog("badly stuck (" why ") where it was at " s.time " too (" zone ", " at " from the goal) - the Commons only brings it back here: walking off")
-			SetStatus("stuck at the same place again - walking is off. Walk it past, then press F8")
-			WalkNotify("stuck", "Stuck at the same place again", "The wizard got badly stuck where it was at " s.time " too (" zone ", " at " from the goal). Teleporting to the Commons only brings it back here, so walking is off - the way on may be a door or something the bot can't open. Walk it past, then press F8.")
+			SetStatus("stuck at the same place again - walking is off. Walk it past, then press " WalkKeyText())
+			WalkNotify("stuck", "Stuck at the same place again", "The wizard got badly stuck where it was at " s.time " too (" zone ", " at " from the goal). Teleporting to the Commons only brings it back here, so walking is off - the way on may be a door or something the bot can't open. Walk it past, then press " WalkKeyText() ".")
 			return false
 			}
 	spots.Push({zone: zone, dist: at, goal: goal, tick: A_TickCount, time: A_Hour ":" A_Min})

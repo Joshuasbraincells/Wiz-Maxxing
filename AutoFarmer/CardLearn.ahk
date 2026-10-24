@@ -911,7 +911,7 @@ LearnSeenAgain(card)
 			}
 		if (card.type != "" && LearnFlag(c, "icon") = "")
 			LearnSetFlag(c, "icon", card.type), changed := 1
-		if (card.tc && !LearnHasFlag(c, "tc"))
+		if (card.tc && !LearnHasFlag(c, "tc") && !LearnHasFlag(c, "notc"))
 			LearnSetFlag(c, "tc"), changed := 1
 		;(its pip digit read this time where the pips were only guessed: the card's own - a hit's never 0, that's X-pip)
 		if (c.guess && RegExMatch(card.pips, "^\d+$") && card.pips != c.pips && !(card.pips = 0 && (InStr(c.slot, "\hit") || ((c.type = "damage" || c.type = "aoe") && !LearnHasFlag(c, "tc")))))
@@ -1487,7 +1487,7 @@ LearnCheckCatalog()
 		LearnSetFlag(c, "ok"), changed := 1
 		if (v[7] != "")
 			LearnSetFlag(c, "icon", v[7])
-		if (v[2] = 1)
+		if (v[2] = 1 && !LearnHasFlag(c, "notc"))
 			LearnSetFlag(c, "tc")
 		;(not pips you typed on the Spells tab - guessed ones are, even on a spell whose name or number you set)
 		pd := v[8]
@@ -2316,6 +2316,7 @@ LearnTypes()
 			, {kind: "dispel", label: "Dispel", played: 0, menu: 1}
 			, {kind: "prism", label: "Prism (converts the school)", played: 0, menu: 1}
 			, {kind: "clear", label: "Removes shields or charms (N times Clear)", played: 0, menu: 1}
+			, {kind: "polymorph", label: "Polymorph / shift (Moon)", played: 0, menu: 1}
 			, {kind: "weakness", label: "Weakness", played: 0, menu: 0}
 			, {kind: "xpip", label: "X-pip spell", played: 0, menu: 0}
 			, {kind: "keep", label: "Not used (stays in the list)", played: 0, menu: 1}]
@@ -2431,6 +2432,62 @@ LearnForgetById(id)
 	}
 
 ;Learned card id never discarded (flag hold) - or again as before. Returns 1 now held, 0 not, "" no such card
+;The schools a spell can be of: the seven, and the astral ones (Sun: enchants, Star: auras, Moon: polymorphs) and Shadow
+LearnSchools()
+	{
+	return ["fire", "ice", "storm", "myth", "life", "death", "balance", "sun", "star", "moon", "shadow"]
+	}
+
+;Learned card id's own school set (the Spells tab): flag school=<it> - the school the card is of, which can be another than
+;the wizard's it was learned for (sch: whose deck and slots it's in - not changed); "" or the wizard's: the flag dropped
+LearnSetSchool(id, s)
+	{
+	if (!IsObject(LearnedCards))
+		LearnLoad()
+	c := LearnCardOf(id)
+	if (!IsObject(c))
+		return "no learned card " id
+	StringLower, s, s
+	ok := false
+	for i, k in LearnSchools()
+		if (k = s)
+			ok := true
+	if (s != "" && !ok)
+		return "not a school: " s
+	if (s = "" || s = c.sch)
+		LearnDropFlag(c, "school")
+	else
+		LearnSetFlag(c, "school", s)
+	LearnSave()
+	return "its school " (s = "" ? c.sch : s) (s != "" && s != c.sch ? " (learned for your " c.sch " wizard - still in that deck)" : "")
+	}
+
+;Learned card id a treasure card or not (the Spells tab): flag tc - never discarded, the wand's slot - and notc when you
+;said it isn't (the learner then doesn't make it one again from the hand's look). Out of its slot and into the one it
+;fits now
+LearnSetTc(id, on)
+	{
+	if (!IsObject(LearnedCards))
+		LearnLoad()
+	c := LearnCardOf(id)
+	if (!IsObject(c))
+		return "no learned card " id
+	if ((LearnHasFlag(c, "tc") ? 1 : 0) = (on ? 1 : 0))
+		return on ? "a treasure card already" : "not a treasure card already"
+	if (c.slot != "" && !LearnUnplace(c, "set " (on ? "" : "not ") "a treasure card on the Spells tab"))
+		return "not now: it's taken out of " c.slot " after this battle"
+	if (on)
+		LearnSetFlag(c, "tc"), LearnDropFlag(c, "notc")
+	else
+		LearnDropFlag(c, "tc"), LearnSetFlag(c, "notc")
+	got := VisionOn ? LearnPlace(c) : 0
+	LearnSave()
+	PicMade := {}, LearnFreeCache := {}
+	if (VisionOn)
+		VisionGet("/forget", 3000, true), VisionForget()
+	return (on ? "a treasure card" : "not a treasure card") " - " (c.slot != "" ? "in use as " c.slot : "kept (" LearnWhyNot(c) ")")
+	}
+
 LearnToggleHold(id)
 	{
 	if (!IsObject(LearnedCards))

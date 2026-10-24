@@ -64,7 +64,7 @@ DashInit()
 	;Four tabs: Bot (statistics, what it sees, the log), Dungeons (Dungeons.ahk), Spells (the cards the bot learned by
 	;itself: Spells.ahk) and Cards (your hand, the enemies' spells)
 	Gui, Dash:Font, s9 w600 cF2F2F2, Segoe UI
-	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells|Cards|Network
+	Gui, Dash:Add, Tab3, x6 y36 w772 h764 +Buttons -Theme vDashTabs, Bot|Dungeons|Spells|Cards|Network|Keys
 	Gui, Dash:Tab, 1
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y68 w86 h16, STATISTICS
@@ -93,8 +93,8 @@ DashInit()
 	Gui, Dash:Add, Button, x12 y768 w110 h26 gDashPauseLog vDashPauseBtn, Pause log
 	Gui, Dash:Add, Button, x130 y768 w80 h26 gDashClearLog vDashClearBtn, Clear
 	Gui, Dash:Add, Button, x218 y768 w120 h26 gDashOpenLog vDashLogBtn, Open debug.log
-	Gui, Dash:Add, Button, x346 y768 w120 h26 gDashBotToggle vDashBotBtn, Bot: on (F6)
-	Gui, Dash:Add, Button, x346 y768 w150 h26 gDashWalkToggle vDashWalkBtn, Walking on/off (F8)
+	Gui, Dash:Add, Button, x346 y768 w120 h26 gDashBotToggle vDashBotBtn, % "Bot: on (" HkText("bot") ")"
+	Gui, Dash:Add, Button, x346 y768 w150 h26 gDashWalkToggle vDashWalkBtn, % "Walking on/off (" HkText("walk") ")"
 	Gui, Dash:Add, Button, x504 y768 w140 h26 gDashFolder vDashFolderBtn, Open bot folder
 	Gui, Dash:Add, Button, x652 y768 w124 h26 gDashHandsToggle vDashHandsBtn, Wait for me: on
 	Gui, Dash:Add, Button, x652 y768 w124 h26 gDashFrontToggle vDashFrontBtn, Game to front: off
@@ -104,10 +104,10 @@ DashInit()
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y68 w400 h16, DUNGEON FARMING
 	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, Dash:Add, Text, x12 y88 w760 h48 vDgHelp, Record a run once: stand outside the dungeon by its sigil, click Record a run and play it - X at the sigil, to the boss (fighting on the way), back out to where you started - then press F9. Pick it and click Run: the bot walks the same way, presses X where you did, fights every battle (the bot on, F6) and starts over. F8 pauses it.
+	Gui, Dash:Add, Text, x12 y88 w760 h48 vDgHelp, % DashDgHelpText()
 	Gui, Dash:Font, s9 w400 c000000, Segoe UI
 	Gui, Dash:Add, Button, x12 y142 w120 h26 gDgRecordClick vDgRecBtn, Record a run
-	Gui, Dash:Add, Button, x138 y142 w150 h26 gDgRecStopClick vDgRecStopBtn Disabled, Stop recording (F9)
+	Gui, Dash:Add, Button, x138 y142 w150 h26 gDgRecStopClick vDgRecStopBtn Disabled, % "Stop recording (" HkText("record") ")"
 	Gui, Dash:Add, Button, x300 y142 w90 h26 gDgRunClick vDgRunBtn, Run
 	Gui, Dash:Add, Button, x396 y142 w90 h26 gDgStopClick vDgStopBtn Disabled, Stop run
 	Gui, Dash:Add, Button, x498 y142 w90 h26 gDgDeleteClick vDgDelBtn, Delete
@@ -204,7 +204,7 @@ DashInit()
 	Gui, Dash:Add, Text, x12 y131 w64 h18 Hidden vDeckFWhenT, Used for
 	Gui, Dash:Add, Checkbox, x78 y130 w104 h20 Hidden vDeckFWDefault, anything else
 	Gui, Dash:Add, Checkbox, x186 y130 w104 h20 Hidden vDeckFWCollect, collect goals
-	Gui, Dash:Add, Checkbox, x294 y130 w112 h20 Hidden vDeckFWBoss, bosses (Alt+1)
+	Gui, Dash:Add, Checkbox, x294 y130 w112 h20 Hidden vDeckFWBoss, % "bosses (" HkText("boss") ")"
 	Gui, Dash:Add, Checkbox, x410 y130 w104 h20 Hidden vDeckFWDungeon, dungeon runs
 	Gui, Dash:Add, Checkbox, x518 y130 w104 h20 Hidden vDeckFWFarm, farming (loop)
 	Gui, Dash:Add, Text, x630 y131 w48 h18 Hidden vDeckFPriT, Priority
@@ -253,6 +253,22 @@ DashInit()
 	Gui, Dash:Add, Picture, x400 y348 w372 h210 vNetPic
 	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
 	Gui, Dash:Add, Text, x400 y564 w372 h60 vNetPicNote, Pick a bot to see its log and its game.
+	;The Keys tab: every action's key - yours to change (Hotkeys.ahk)
+	Gui, Dash:Tab, 6
+	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
+	Gui, Dash:Add, Text, x12 y68 w400 h16, KEYS
+	Gui, Dash:Font, s9 w400 c9AA0A6, Segoe UI
+	Gui, Dash:Add, Text, x12 y88 w760 h32 vKeyHelp, Pick an action and click Change (or double-click it), then press the new key - with Ctrl, Alt, Shift or Windows if you like. Keys the bot presses in the game (W A S D, X, Space, Ctrl+O, Ctrl+1-9, F13-F24) and plain letters can't be taken.
+	Gui, Dash:Font, s9 w400 c000000, Segoe UI
+	Gui, Dash:Add, Button, x12 y124 w90 h26 gKeyChangeClick vKeyChangeBtn, Change...
+	Gui, Dash:Add, Button, x108 y124 w90 h26 gKeyDefaultClick vKeyDefaultBtn, Its default
+	Gui, Dash:Add, Button, x204 y124 w90 h26 gKeyNoneClick vKeyNoneBtn, No key
+	Gui, Dash:Add, Button, x300 y124 w110 h26 gKeyAllClick vKeyAllBtn, All to defaults
+	Gui, Dash:Font, s9 w400 cB9E2B9, Consolas
+	Gui, Dash:Add, Text, x12 y156 w760 h30 vKeyStatus
+	Gui, Dash:Font, s9 w400 cDADADA, Segoe UI
+	Gui, Dash:Add, ListView, x12 y190 w760 h598 vKeyList gKeyListEvent AltSubmit -Multi Background111317 cDADADA, Action|Key|Default|Works|Id
+	LV_ModifyCol(1, 330), LV_ModifyCol(2, 130), LV_ModifyCol(3, 150), LV_ModifyCol(4, 140), LV_ModifyCol(5, 0)
 	Gui, Dash:Tab
 	;The red Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
 	;room: every check for you off till you click it again; off at every start. A red bar - a Progress control takes a
@@ -271,6 +287,9 @@ DashInit()
 	DgListFill()
 	DgShow()
 	SpInit()
+	;(the Keys tab's list)
+	if (IsFunc("KeyListFill"))
+		Func("KeyListFill").Call()
 	if (shown)
 		DashShow()
 	SetTimer, DashRefresh, 1000
@@ -292,7 +311,27 @@ DashLearnShow(learnOn)
 DashBotShow(isOn)
 	{
 	if (DashHwnd)
-		GuiControl, Dash:, DashBotBtn, % "Bot: " (isOn ? "on" : "off") " (F6)"
+		GuiControl, Dash:, DashBotBtn, % "Bot: " (isOn ? "on" : "off") " (" HkText("bot") ")"
+	}
+
+;The Dungeons tab's help line - with the keys set now (Hotkeys.ahk)
+DashDgHelpText()
+	{
+	return "Record a run once: stand outside the dungeon by its sigil, click Record a run and play it - X at the sigil, to the boss (fighting on the way), back out to where you started - then press " HkText("record") ". Pick it and click Run: the bot walks the same way, presses X where you did, fights every battle (the bot on, " HkText("bot") ") and starts over. " HkText("walk") " pauses it."
+	}
+
+;A key changed on the Keys tab (KeySet, KeyAllClick - Hotkeys.ahk): the dashboard's texts that name a key made again
+;with the keys set now (the others - the status lines - are made afresh every second)
+DashKeysChanged()
+	{
+	if (!DashHwnd)
+		return
+	GuiControl, Dash:, DashBotBtn, % "Bot: " (BotOn ? "on" : "off") " (" HkText("bot") ")"
+	GuiControl, Dash:, DashWalkBtn, % "Walking on/off (" HkText("walk") ")"
+	GuiControl, Dash:, DgHelp, % DashDgHelpText()
+	;(while a run's being recorded: the key it was begun with - the one that stops it)
+	GuiControl, Dash:, DgRecStopBtn, % "Stop recording (" (DgRecording ? HkName(DgRecKey) : HkText("record")) ")"
+	GuiControl, Dash:Text, DeckFWBoss, % "bosses (" HkText("boss") ")"
 	}
 
 ;The "Game to front" button's label
@@ -1051,7 +1090,7 @@ DashRefresh()
 	upText := Format("{:02}:{:02}:{:02}", up // 3600, Mod(up // 60, 60), Mod(up, 60))
 	;What it's doing
 	if (!BotOn)
-		doing := BotEverOn ? "Off - F6 turns the bot on" : "Standby - press F6 to start the bot"
+		doing := BotEverOn ? "Off - " HkText("bot") " turns the bot on" : "Standby - press " HkText("bot") " to start the bot"
 	else if (PotionRecording)
 		doing := "Recording potion buying"
 	else if (LearnAll)
@@ -1063,7 +1102,7 @@ DashRefresh()
 	else if (DashSees.mode = "battle" && A_TickCount - DashSees.roundAt < 120000)
 		doing := "In battle (round " DashN.rounds ")"
 	else if (!Walking)
-		doing := "Walking off (F8)"
+		doing := "Walking off (" HkText("walk") ")"
 	else if (StatusText != "")
 		doing := StatusText
 	else
@@ -1759,6 +1798,10 @@ DashGuiSize:
 	GuiControl, Dash:Move, DgHelp, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DgStatus, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, DgList, % "w" A_GuiWidth - 24 " h" A_GuiHeight - 274
+	;(the Keys tab: its list takes what's left)
+	GuiControl, Dash:Move, KeyHelp, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, KeyStatus, % "w" A_GuiWidth - 24
+	GuiControl, Dash:Move, KeyList, % "w" A_GuiWidth - 24 " h" Max(60, A_GuiHeight - 202)
 	;(the Spells tab: its list takes what's left of the picture on its right)
 	GuiControl, Dash:Move, SpHelp, % "w" A_GuiWidth - 24
 	GuiControl, Dash:Move, SpStatus, % "w" A_GuiWidth - 24

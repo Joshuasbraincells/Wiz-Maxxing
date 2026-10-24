@@ -21,6 +21,7 @@ CoordMode, ToolTip, Screen
 ;  F8           walking on / off
 ;  Windows+1    restart (also Alt+Esc)
 ;  Windows+Esc  quit
+;(the keys out of the box - yours to change on the dashboard's Keys tab: Hotkeys.ahk makes them, these labels run)
 ;Disconnected: it clicks the game's RECONNECT, and if the game closes it can start it and log back in
 ;(Reconnect.ahk). Tray menu: "Auto-reconnect on/off" and "Set Wizard101 login..." (the login it uses then)
 OnExit("WalkerQuit")
@@ -30,8 +31,8 @@ Menu, Tray, NoStandard
 Menu, Tray, Add, % "Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion()), MenuNothing
 Menu, Tray, Disable, % "Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion())
 Menu, Tray, Add
-Menu, Tray, Add, Bot on/off (F6), MenuBotToggle
-Menu, Tray, Add, Walking on/off (F8), MenuWalk
+Menu, Tray, Add, % HkMenu("bot"), MenuBotToggle
+Menu, Tray, Add, % HkMenu("walk"), MenuWalk
 Menu, Tray, Add, Wait while I play, MenuHandsOff
 Menu, Tray, Add, Play for me (leave it alone for days), MenuPlayForMe
 Menu, Tray, Add, Bring Wizard101 to the front, MenuGameFront
@@ -39,7 +40,7 @@ Menu, Tray, Add, Auto-reconnect on/off, MenuReconnect
 Menu, Tray, Add, Set Wizard101 login..., MenuLogin
 Menu, Tray, Add, Discord alerts..., MenuAlerts
 Menu, Tray, Add, Party..., MenuParty
-Menu, Tray, Add, Dashboard (Windows+2), MenuDash
+Menu, Tray, Add, % HkMenu("dash"), MenuDash
 Menu, Tray, Add, Learned spells, MenuSpells
 Menu, Tray, Add, Settings..., MenuSettings
 Menu, Tray, Add, Map of the zone, MenuMap
@@ -47,36 +48,33 @@ Menu, Tray, Add, Speedhack: press its walking key in 3 s (for Cheat Engine), Men
 Menu, Tray, Add, Speedhack: press its 1x key in 3 s (for Cheat Engine), MenuSpeedKeyNormal
 Menu, Tray, Add, Check for updates, MenuUpdates
 Menu, Tray, Add, Report a bug..., MenuBug
-Menu, Tray, Add, Open with Wizard101 (in standby - F6 starts it), MenuWatch
+Menu, Tray, Add, % HkMenu("standby"), MenuWatch
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now, MenuPotionRun
 Menu, Tray, Add, Learn every card (a deck of one of each), MenuLearnAll
-Menu, Tray, Add, Restart (Windows+1), MenuRestart
-Menu, Tray, Add, Exit (Windows+Esc), MenuExit
-Menu, Tray, Default, Walking on/off (F8)
+Menu, Tray, Add, % HkMenu("restart"), MenuRestart
+Menu, Tray, Add, % HkMenu("quit"), MenuExit
+Menu, Tray, Default, % HkMenu("walk")
 SetTimer, StartBot, -300
 return
 
-;(F6 / F8 while the bot is off - standby, paused: only in Wizard101, not taken from other programs)
-#If BotOn || WinActive("ahk_exe WizardGraphicalClient.exe")
-F6::
+;(F6 / F8 - the bot on / off, walking on / off; while the bot is off - standby, paused: only in Wizard101, not taken
+;from other programs. Their keys: Hotkeys.ahk)
 MenuBotToggle:
 BotToggle()
 return
 
-F8::
 MenuWalk:
 WalkToggle()
 return
-#If
 
 ;"Open with Wizard101": a watcher started with Windows opens the bot when the game starts (..\Watch.ahk)
 MenuWatch:
 SplitPath, A_ScriptDir, , watchRoot
 watchOn := !WatchIsOn()
 if (WatchSet(watchRoot, watchOn))
-	TrayTip, Wizard101 bot, % watchOn ? "The bot now opens by itself when Wizard101 starts - in standby: F6 starts it." : "The bot won't open by itself with Wizard101 any more.", 6, 1
+	TrayTip, Wizard101 bot, % watchOn ? "The bot now opens by itself when Wizard101 starts - in standby: " HkText("bot") " starts it." : "The bot won't open by itself with Wizard101 any more.", 6, 1
 else
 	TrayTip, Wizard101 bot, Couldn't change "Open with Wizard101" (the Startup folder's shortcut)., 6, 2
 WatchShow()
@@ -202,7 +200,6 @@ MenuAlerts:
 AlertSetup()
 return
 
-#1::
 MenuRestart:
 BotRestart()
 return
@@ -212,6 +209,8 @@ ExitApp
 
 StartBot:
 global on := 1
+;(the keys - yours from the Keys tab, else F6, F8, Alt+1...: Hotkeys.ahk)
+HkApply()
 ;The bot on (F6): off, it does nothing - no battles, walking, potions or reconnecting. Opened by the game in
 ;standby (/standby: "Open with Wizard101") it starts off; never turned on, the game closing closes it too
 global BotOn := 1, BotStandby := 0, BotEverOn := 1, BotGameSeenAt := A_TickCount
@@ -223,9 +222,9 @@ for each, botArg in A_Args
 	else if (botArg = "/off")
 		BotOn := 0
 if (BotOn)
-	TrayTip, Wizard101 bot, Running: battles and quest walking. F6 pauses it`, F8 turns walking on/off - Windows+Esc quits., 4
+	TrayTip, Wizard101 bot, % "Running: battles and quest walking. " HkText("bot") " pauses it, " HkText("walk") " turns walking on/off - " HkText("quit") " quits.", 4
 else
-	TrayTip, Wizard101 bot, Ready - Wizard101 started. Press F6 to start the bot (battles`, quest walking`, potions)., 8
+	TrayTip, Wizard101 bot, % "Ready - Wizard101 started. Press " HkText("bot") " to start the bot (battles, quest walking, potions).", 8
 
 ;Kill calculator (KillCalc.ahk): settings from PlayerStats.txt, enemy health read off the screen,
 ;and the blades/traps/aura/bubble we've put up this battle
@@ -378,7 +377,7 @@ SeenOut := 0
 if (WalkerInit("Wizard101 bot " BotVersion()))
 	{
 	Walking := 1
-	DebugLog("Walking on (F8 switches it off)")
+	DebugLog("Walking on (" HkText("walk") " switches it off)")
 	}
 else
 	DebugLog("Walking off: couldn't load the quest arrow shapes (AutoQuester\resources\arrow_refs.txt)")
@@ -392,7 +391,7 @@ for each, botArg in A_Args
 	if (botArg = "/nowalk" && Walking)
 		{
 		Walking := 0
-		DebugLog("Walking off: it was off before the update (F8 switches it on)")
+		DebugLog("Walking off: it was off before the update (" HkText("walk") " switches it on)")
 		}
 	else if (botArg = "/noreconnect" && RcOn)
 		{
@@ -471,7 +470,7 @@ loop,
 				BotGameSeenAt := A_TickCount
 			else if (A_TickCount - BotGameSeenAt > 15000)
 				{
-				DebugLog("Wizard101 closed while the bot was waiting for F6 - closing the bot (it opens again with the game)")
+				DebugLog("Wizard101 closed while the bot was waiting for " HkText("bot") " - closing the bot (it opens again with the game)")
 				ExitApp
 				}
 			}
@@ -1057,7 +1056,7 @@ if (AuraRounds > 0 && !RoundAgain)
 ;Turned off (F6) during the round: it's left - nothing more cast, the mouse given back
 if (!BotOn)
 	{
-	DebugLog("  bot off (F6) - leaving this round")
+	DebugLog("  bot off (" HkText("bot") ") - leaving this round")
 	RoundLeft := 1
 	MouseLetGo()
 	BlockInput, MouseMoveOff
@@ -1167,7 +1166,7 @@ if (BattleRole = "healer") && PartyShield()
 ;Turned off (F6) during the round: it's left - nothing more cast, the mouse given back
 if (!BotOn)
 	{
-	DebugLog("  bot off (F6) - leaving this round")
+	DebugLog("  bot off (" HkText("bot") ") - leaving this round")
 	RoundLeft := 1
 	MouseLetGo()
 	BlockInput, MouseMoveOff
@@ -1294,7 +1293,7 @@ PlayerActing()
 	if (acting && A_ThisHotkey != "")
 		{
 		lastInput := A_TickCount - A_TimeIdlePhysical, keyAt := A_TickCount - A_TimeSinceThisHotkey
-		if (lastInput >= keyAt - 50 && lastInput <= keyAt + (RegExMatch(A_ThisHotkey, "^(!1|!2|#3)$") ? 11000 : 600))
+		if (lastInput >= keyAt - 50 && lastInput <= keyAt + (HkIsAny(A_ThisHotkey, "boss,boost,player") ? 11000 : 600))
 			acting := false
 		}
 	if (acting && !logged)
@@ -1327,21 +1326,21 @@ BotToggle()
 		;(turned on in a battle: what was played meanwhile isn't known - no kill check till it ends, and the boss
 		;picked again with Alt+1)
 		if (inbattle == 1)
-			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - Alt+1 the boss again for traps)")
+			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - " HkText("boss") " the boss again for traps)")
 		;(the walker starts afresh: the wizard may have moved meanwhile)
 		if (IsFunc("WalkReset"))
 			Func("WalkReset").Call()
-		DebugLog("Bot on (F6) - battles, quest walking and potions")
-		TrayTip, Wizard101 bot, On - battles`, quest walking and potions. F6 pauses it., 4, 1
+		DebugLog("Bot on (" HkText("bot") ") - battles, quest walking and potions")
+		TrayTip, Wizard101 bot, % "On - battles, quest walking and potions. " HkText("bot") " pauses it.", 4, 1
 		}
 	else
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		BlockInput, MouseMoveOff
-		DebugLog("Bot off (F6) - it does nothing till F6 again")
+		DebugLog("Bot off (" HkText("bot") ") - it does nothing till " HkText("bot") " again")
 		SpeedSet(0, "bot off", true)
-		TrayTip, Wizard101 bot, Off - the bot does nothing till you press F6 again., 4, 1
+		TrayTip, Wizard101 bot, % "Off - the bot does nothing till you press " HkText("bot") " again.", 4, 1
 		}
 	BotOnShow()
 	}
@@ -1372,9 +1371,9 @@ WalkHostOn(from := 0)
 BotOnShow()
 	{
 	if (BotOn)
-		Menu, Tray, Check, Bot on/off (F6)
+		Menu, Tray, Check, % HkMenu("bot")
 	else
-		Menu, Tray, Uncheck, Bot on/off (F6)
+		Menu, Tray, Uncheck, % HkMenu("bot")
 	if (IsFunc("DashBotShow"))
 		Func("DashBotShow").Call(BotOn)
 	}
@@ -1383,9 +1382,9 @@ BotOnShow()
 WatchShow()
 	{
 	if (WatchIsOn())
-		Menu, Tray, Check, Open with Wizard101 (in standby - F6 starts it)
+		Menu, Tray, Check, % HkMenu("standby")
 	else
-		Menu, Tray, Uncheck, Open with Wizard101 (in standby - F6 starts it)
+		Menu, Tray, Uncheck, % HkMenu("standby")
 	}
 
 ;For Reconnect.ahk's hung-loading check: the game seen in the world since (tick) - the spellbook (out of battle) or a
@@ -1494,7 +1493,7 @@ PlayForMeToggle()
 	{
 	if (!PlayForMe)
 		{
-		InputBox, pfmTyped, Play for me, Type 'pimpmeout' To Turn This Feature On`n`n(The bot then stops waiting for you: it takes the mouse and Wizard101's window whenever it needs them. F6 stops it.), , 420, 190
+		InputBox, pfmTyped, Play for me, % "Type 'pimpmeout' To Turn This Feature On`n`n(The bot then stops waiting for you: it takes the mouse and Wizard101's window whenever it needs them. " HkText("bot") " stops it.)", , 420, 190
 		if (ErrorLevel || Trim(pfmTyped) != "pimpmeout")
 			{
 			DebugLog("Play for me: not turned on (" (ErrorLevel ? "cancelled" : "the word typed wasn't pimpmeout") ")")
@@ -1503,8 +1502,8 @@ PlayForMeToggle()
 		}
 	PlayForMe := !PlayForMe
 	PlayForMeShow()
-	DebugLog("Play for me: " (PlayForMe ? "ON - every check for you is off: the bot takes the mouse and the game's window whenever it needs them (F6 stops it)" : "off - the bot waits for you and keeps its hands off while you play, as set"))
-	TrayTip, Wizard101 bot, % PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. F6 stops it." : "Play for me is off: the bot waits for you again.", 5, PlayForMe ? 2 : 1
+	DebugLog("Play for me: " (PlayForMe ? "ON - every check for you is off: the bot takes the mouse and the game's window whenever it needs them (" HkText("bot") " stops it)" : "off - the bot waits for you and keeps its hands off while you play, as set"))
+	TrayTip, Wizard101 bot, % PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. " HkText("bot") " stops it." : "Play for me is off: the bot waits for you again.", 5, PlayForMe ? 2 : 1
 	}
 
 ;The tray menu's tick and the dashboard's red button
@@ -2790,16 +2789,15 @@ ModeBox(ByRef mode, ByRef name, ByRef x, ByRef y, ByRef w, ByRef h)
 	}
 	
 ;(the modes and picks below - Alt+D, Alt+S, Alt+1... - only while the bot is on: off, their keys go to whatever
-;program has them)
-#If BotOn
-$#!d::
+;program has them; their keys: Hotkeys.ahk)
+HkDev:
 if (on == 1)
 	{
 	ModeBox(devmode, "Developer", 10, 10, 144, 30)
 	}
 return
 
-!l::
+HkLore:
 if (on == 1)
 	{
 	MsgBox, 1, AutoFarmer: Lore Mode, Please make sure you're standing next to the lore sigil when activating this mode.`n`nPress Ok to continue.
@@ -2818,7 +2816,7 @@ if (on == 1)
 	}
 return
 
-$!d::
+HkDual:
 if (on == 1)
 	{
 	MsgBox, 1, AutoFarmer: Dual Mode, Please make sure that, when activating this mode two Wizard101 instances are open and that, when "Alt+Tab" is pressed it'll switch bewteen them.`n`nPress Ok to continue.
@@ -2833,28 +2831,28 @@ if (on == 1)
 	}
 return
 		
-!c::
+HkCommand:
 if (on == 1)
 	{
 	ModeBox(commandmode, "Command", 10, 10, 144, 30)
 	}
 return
 
-$!s::
+HkStats:
 if (on == 1)
 	{
 	ModeBox(statsmode, "Statistic", 10, 10, 140, 30)
 	}
 return
 
-!r::
+HkResponse:
 if (on == 1)
 	{
 	ModeBox(responcemode, "Responce", 10, 10, 140, 30)
 	}
 return
 	
-!1::
+HkBoss:
 if ((on == 1) && (inbattle == 1))
 	{
 	BlockInput, MouseMoveOff
@@ -2876,14 +2874,14 @@ if ((on == 1) && (inbattle == 1))
 	}
 return
 
-!e::
+HkLoop:
 if (on == 1)
 	{
 	ModeBox(loopmode, "Loop", 10, 10, 140, 30)
 	}
 return
 
-!2::
+HkBoost:
 if ((on == 1) && (inbattle == 1))
 	{
 	BlockInput, MouseMoveOff
@@ -2895,7 +2893,7 @@ if ((on == 1) && (inbattle == 1))
 			MouseGetPos, ManualX, ManualY
 			;(its school - the blade and trap kind for it; your own school - the cards looked for - stays yours)
 			ManualSchool := BestBadge(ManualX - Px(75), ManualY - Px(75), ManualX + Px(75), ManualY + Px(75), manualBX, manualBY, ManualX, ManualY)
-			DebugLog("Alt+2: the boosts go to the plate at " ManualX - GameLeft "," ManualY - GameTop " (" (ManualSchool = "" ? "its school not read" : ManualSchool) ") this battle")
+			DebugLog(HkText("boost") ": the boosts go to the plate at " ManualX - GameLeft "," ManualY - GameTop " (" (ManualSchool = "" ? "its school not read" : ManualSchool) ") this battle")
 			Gui, 1:Destroy
 			BlockInput, MouseMove
 			CenterMouse()
@@ -2904,7 +2902,7 @@ if ((on == 1) && (inbattle == 1))
 }
 return
 
-#3::
+HkPlayer:
 if ((on == 1) && (inbattle == 1))
 	{
 	BlockInput, MouseMoveOff
@@ -2920,12 +2918,12 @@ if ((on == 1) && (inbattle == 1))
 	CenterMouse()
 	}
 return
-#If
 
 GuiClose:
 Gui, Destroy
-	
-#2::
+return
+
+HkDash:
 ;Windows+2: the dashboard (Dashboard.ahk) - in dev mode, the info box below
 if (devmode != 1)
 	{
@@ -3334,11 +3332,11 @@ return
 
 #If
 
-#Esc::
+HkQuit:
 ExitApp
 return
 
-!Esc::
+HkRestart2:
 BotRestart()
 return
 
@@ -3874,6 +3872,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Collect.ahk
 #Include %A_ScriptDir%\Network.ahk
 #Include %A_ScriptDir%\Decks.ahk
+#Include %A_ScriptDir%\Hotkeys.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
 #Include %A_ScriptDir%\..\AutoQuester\ArrowReader.ahk

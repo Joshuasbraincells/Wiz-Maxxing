@@ -77,7 +77,7 @@ Gui, Su:Add, Checkbox, xm y+8 w260 vSuSh, Desktop shortcut "Wiz-Maxxing"
 Gui, Su:Add, Text, x+8 w350 vSuShS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuPa, Run box and PATH (Win+R: Wiz-Maxxing)
 Gui, Su:Add, Text, x+8 w350 vSuPaS, ...
-Gui, Su:Add, Checkbox, xm y+8 w260 vSuWa, Open with Wizard101 (F6 starts it)
+Gui, Su:Add, Checkbox, xm y+8 w260 vSuWa, % "Open with Wizard101 (" WatchBotKey(A_ScriptDir "\AutoFarmer") " starts it)"
 Gui, Su:Add, Text, x+8 w350 vSuWaS, ...
 Gui, Su:Add, Checkbox, xm y+8 w260 vSuAh, AutoHotkey v1.1 (to rebuild the exes)
 Gui, Su:Add, Text, x+8 w350 vSuAhS, ...
@@ -211,7 +211,7 @@ SuInstall:
 	if (SuWa)
 		{
 		SuLogLine("== Open with Wizard101")
-		SuLogLine(WatchSet(A_ScriptDir, true) ? "on: a watcher starts with Windows (" WatchLink() ") and opens the bot in standby when Wizard101 starts - press F6 in the game to start it" : "couldn't make the Startup folder's shortcut")
+		SuLogLine(WatchSet(A_ScriptDir, true) ? "on: a watcher starts with Windows (" WatchLink() ") and opens the bot in standby when Wizard101 starts - press " WatchBotKey(A_ScriptDir "\AutoFarmer") " in the game to start it" : "couldn't make the Startup folder's shortcut")
 		}
 	if (SuAh)
 		SuInstallAhk()

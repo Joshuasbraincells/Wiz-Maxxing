@@ -148,7 +148,7 @@ PartyBattleRole()
 		return
 	if (Manual = 1)
 		{
-		BattleRole := want, HammerName := "the plate picked with Alt+2"
+		BattleRole := want, HammerName := "the plate picked with " HkText("boost")
 		return
 		}
 	if (PartyRoleSet() = "off")

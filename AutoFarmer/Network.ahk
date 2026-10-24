@@ -50,7 +50,7 @@ NetTick()
 		schoolAt := A_TickCount, school := StatsSchoolOf(StatsCharID())
 	bot := (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
 	doing := !BotOn ? "off" : inbattle = 1 ? "in a battle" : WkLoading ? "loading" : PlayerActive ? "you're playing"
-		: !Walking ? "walking off (F8)" : WkArrived = 7 ? "collecting" : "walking"
+		: !Walking ? "walking off (" HkText("walk") ")" : WkArrived = 7 ? "collecting" : "walking"
 	see := IsObject(DashSees) ? DashSees : {}
 	hp := RegExReplace(see.hp, "\s*\(.*")
 	;(the bot picked - fetched by the helper's own thread only while the Network tab's up)

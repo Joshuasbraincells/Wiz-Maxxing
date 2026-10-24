@@ -49,7 +49,7 @@ WatchSet(root, wantOn)
 	if (wantOn)
 		{
 		p := BotProgram(root "\Wiz-Maxxing", "/watch")
-		FileCreateShortcut, % p.target, %link%, %root%, % p.args, Opens the Wizard101 bot when Wizard101 starts (in standby - F6 starts it)
+		FileCreateShortcut, % p.target, %link%, %root%, % p.args, % "Opens the Wizard101 bot when Wizard101 starts (in standby - " WatchBotKey(root "\AutoFarmer") " starts it)"
 		if (ErrorLevel)
 			return false
 		if (!WatchPids().Length())
@@ -94,6 +94,26 @@ WatchRestart()
 	ExitApp
 	}
 
+;The bot's on/off key in words, for the texts here - F6 out of the box, yours from the dashboard's Keys tab (dir: the
+;AutoFarmer folder, its dashboard.ini [hotkeys] bot). In the bot: Hotkeys.ahk's HkText; the watcher and Setup.ahk
+;don't have it, so it's read here
+WatchBotKey(dir)
+	{
+	if (IsFunc("HkText"))
+		return Func("HkText").Call("bot")
+	IniRead, k, %dir%\dashboard.ini, hotkeys, bot, %A_Space%
+	k := Trim(k)
+	if (k = "none")
+		return "(none)"
+	if (!RegExMatch(k, "^([#^!+]*)(.+)$", m) || !(GetKeyVK(m2) || GetKeySC(m2)))
+		return "F6"
+	t := ""
+	Loop, Parse, m1
+		t .= A_LoopField = "#" ? "Windows+" : A_LoopField = "^" ? "Ctrl+" : A_LoopField = "!" ? "Alt+" : "Shift+"
+	key := m2 = "Escape" ? "Esc" : m2
+	return t (StrLen(key) = 1 ? Format("{:U}", key) : Format("{:T}", SubStr(key, 1, 1)) SubStr(key, 2))
+	}
+
 ;Starts the bot from dir (the AutoFarmer folder) in standby
 WatchStartBot(dir)
 	{
@@ -120,8 +140,9 @@ WatchGame(dir)
 	;(shown: the launcher's #NoTrayIcon hides it)
 	Menu, Tray, Icon
 	Menu, Tray, NoStandard
-	Menu, Tray, Add, Opens the bot when Wizard101 starts (F6 starts it), WatchMenuNothing
-	Menu, Tray, Disable, Opens the bot when Wizard101 starts (F6 starts it)
+	watchItem := "Opens the bot when Wizard101 starts (" WatchBotKey(dir) " starts it)"
+	Menu, Tray, Add, %watchItem%, WatchMenuNothing
+	Menu, Tray, Disable, %watchItem%
 	Menu, Tray, Add, Stop watching (till Windows starts again), WatchMenuStop
 	Menu, Tray, Add, Don't open with Wizard101 any more, WatchMenuOff
 	Menu, Tray, Tip, Wiz-Maxxing - watching for Wizard101
@@ -150,6 +171,15 @@ WatchGame(dir)
 					WatchRestart()
 					}
 				}
+			}
+		;(the bot's key changed on the Keys tab: the item says the new one)
+		now := "Opens the bot when Wizard101 starts (" WatchBotKey(dir) " starts it)"
+		if (now != watchItem)
+			{
+			Menu, Tray, UseErrorLevel
+			Menu, Tray, Rename, %watchItem%, %now%
+			Menu, Tray, UseErrorLevel, Off
+			watchItem := now
 			}
 		Sleep, 3000
 		}
