@@ -915,14 +915,21 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
         # (is it a card at all? Something else where a card goes - the deck's back, the floor, the timer
         # when the rectangle is off - is never named by a learned picture: those were cut from cards)
         f = card_feats(img, scale, int(round(left)), top, kd)
+        grey = is_grey(img, scale, left, top)
         real = is_real(f)
+        # (a greyed-out card - not enough pips: its washed-out art reads as "white" (0.29, 2026-10-25: three Power Novas
+        # "not a card"), so the white-popup test is left out for it; still the text box border right across and a type
+        # icon where it goes. It's a card in hand for the counts - the flee check's, the game's hand's - never learned
+        # or compared while grey)
+        if not real and grey and f['eTxt'] >= REAL_ETXT and f['iconD'] < REAL_ICON:
+            real = True
         if best and not real and best[0].startswith('learned/'):
             best = None
         dx1, dy1, dx2, dy2 = box(DIGIT_BOX, scale, left, top)
         pips, ps = read_digit(img[max(0, dy1):dy2, max(0, dx1):dx2], masks)
         cards.append(dict(left=int(round(left)) + x1, top=top + y1, w=int(round(cw)), h=int(round(ch)),
                           known=best[0] if best else '', kdist=best[3] if best else 0.0,
-                          grey=is_grey(img, scale, left, top), kind=kind, kinddist=kd, pips=pips, pipscore=ps,
+                          grey=grey, kind=kind, kinddist=kd, pips=pips, pipscore=ps,
                           real=int(real), tc=f['tc'], feats=f,
                           art=img[max(0, box(ART_BOX, scale, left, top)[1]):box(ART_BOX, scale, left, top)[3],
                                   max(0, box(ART_BOX, scale, left, top)[0]):box(ART_BOX, scale, left, top)[2]]))

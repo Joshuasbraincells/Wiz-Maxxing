@@ -23,7 +23,8 @@ global FleeHitsRound
 FleeCheck()
 	{
 	global
-	local cards, g, mana, cheapest, why, w, fx, fy, fled
+	local cards, g, mana, cheapest, why, w, fx, fy, fled, mh, memHit, mc
+	static FleeSaidRound := ""
 	if (!Stat("fleeon") || LearnAll || Manual == 1)
 		return false
 	;(blank till now: made numbers - in an expression "" + 1 is "" in AHK v1, and so is a blank "+= 0" chained with a
@@ -31,6 +32,17 @@ FleeCheck()
 	;mana or cards)
 	FleeNoCards := FleeNoCards ? FleeNoCards : 0, FleeNoMana := FleeNoMana ? FleeNoMana : 0, FleeNoHits := FleeNoHits ? FleeNoHits : 0
 	cards := FleeHandCount()
+	;(the game's own hand when it was read this pass - its count, and a hit in it, greyed out or not: a greyed card the
+	;pictures can't place, or one waiting for pips, is still a card and still a hit - 2026-10-25: fled twice holding
+	;greyed Power Novas / Supernovas with 7 cards in hand)
+	mh := IsFunc("VisionCards") ? Func("VisionCards").Call(0, 5000) : "", memHit := ""
+	if (IsObject(mh) && IsObject(mh.cards))
+		{
+		cards := mh.cards.Length(), memHit := 0
+		for mc in mh.cards
+			if (mh.cards[mc].kind = "damage" || mh.cards[mc].kind = "aoe" || mh.cards[mc].xpip)
+				memHit := 1
+		}
 	if (cards >= 0)
 		FleeNoCards := (cards = 0) ? FleeNoCards + 1 : 0
 	;(no hit in a hand of fewer than 7 cards - a full hand's 7, so the deck's used up: what's left can't end the
@@ -38,7 +50,7 @@ FleeCheck()
 	;first look - a round left to you and looked at again holds what's left after its discards - and not in dual
 	;mode, where two wizards' rounds take turns and the other one still hits)
 	if (cards > 0 && !RoundAgain && dualmode != 1 && FleeHitsRound != roundnumber)
-		FleeHitsRound := roundnumber, FleeNoHits := (cards < 7 && FleeHandHasHit() = 0) ? FleeNoHits + 1 : 0
+		FleeHitsRound := roundnumber, FleeNoHits := (cards < 7 && (memHit != "" ? !memHit : FleeHandHasHit() = 0)) ? FleeNoHits + 1 : 0
 	;(a wand in hand costs no mana: it can still hit - unless it's switched off, usewand)
 	cheapest := FleeCheapestHit()
 	if ((wand == 1 && Stat("usewand")) || cheapest = "")
@@ -50,7 +62,11 @@ FleeCheck()
 			FleeNoMana := (mana + 0 < cheapest) ? FleeNoMana + 1 : 0
 		}
 	;(no hits left: not a party battle's blader or healer - it's there for its boosts, the hitter hits)
-	why := FleeNoCards >= 2 ? "no cards left (the deck's used up)" : (FleeNoHits >= 2 && !PartySupport()) ? "no hits left (the deck's used up: " cards " card(s) in hand, none a hit)" : FleeNoMana >= 2 ? "out of mana (" mana ", the cheapest hit costs " cheapest ")" : ""
+	;(only completely out of cards - no card in hand, two rounds running: you asked, 2026-10-25 - never for no hit in hand
+	;or out of mana: it fled holding greyed hits and boosts. The other counts still go in the log)
+	why := FleeNoCards >= 2 ? "no cards left (the deck's used up)" : ""
+	if (why = "" && FleeSaidRound != roundnumber && ((FleeNoHits >= 2 && !PartySupport()) || FleeNoMana >= 2))
+		FleeSaidRound := roundnumber, DebugLog("  " (FleeNoMana >= 2 ? "out of mana (" mana ", the cheapest hit costs " cheapest ")" : "no hit in a hand of " cards " card(s)") " - not fleeing: only out of cards")
 	if (why = "")
 		return false
 	w := FleeWord()

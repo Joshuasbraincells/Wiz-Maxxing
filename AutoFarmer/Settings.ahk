@@ -63,8 +63,8 @@ CfgList()
 		, help: "Out of battle: a potion (Ctrl+O) when your health is under this % - out of potions, the bot buys more with gold. 0 = never."})
 	list.Push({key: "potionwalk", label: "Walk to the potion seller by the map", kind: "check", def: 1
 		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
-	list.Push({key: "fleeon", label: "Flee when out of mana or cards", kind: "check", def: 1
-		, help: "Out of mana (less than the cheapest hit costs, no wand) or out of cards (none left, or the deck used up and no hit in hand), two rounds running: flee, drink a potion (or buy some), and try again."})
+	list.Push({key: "fleeon", label: "Flee when out of cards", kind: "check", def: 1
+		, help: "Completely out of cards (none in hand, two rounds running): flee and try again with a full deck. Never for no hit in hand or out of mana."})
 	list.Push({key: "-", label: "WALKING"})
 	list.Push({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."})

@@ -360,7 +360,7 @@ restart. Defaults fills in the defaults (Save to use them).
 	  wait before each click (plus a random bit, so clicks aren't evenly
 	  timed), the wait after clicks, before playing a round, after a discard
 	  and before looking at the hand again.
-	- Health: heal under %, drink a potion under %, flee out of mana/cards.
+	- Health: heal under %, drink a potion under %, flee when out of cards.
 	- Card logic: boost first (traps - on the boss, else on the enemy with
 	  the most health -, blades, bubble, aura, then
 	  the biggest hit it can cast - as always), hit first (the biggest hit it
@@ -844,12 +844,12 @@ Pick one to see its picture. Pick one or more and:
 	The bot makes these changes from its own loop as soon as it's out of
 	battle (the status line says when some are waiting); what you set is
 	never changed by the learner itself. debug.log: "Spells: ...".
-Fleeing: out of mana (less than its cheapest hit costs - every spell costs a
-mana a pip - and no wand in hand) or out of cards (the deck used up - a hand
-read where none of the boxes looked like a card doesn't count - or no hit in
-a hand of fewer than 7 cards: the deck's used up and heals and blades can't
-end the battle) for two rounds running, the bot can only pass for the rest of the battle, so it clicks
-Flee instead, drinks a potion (none left: goes and buys some) and tries again.
+Fleeing: only when completely out of cards - no card in hand (the deck used
+up; a hand read where none of the boxes looked like a card doesn't count, and
+the game's own hand is used when it can be read) for two rounds running. It
+never flees for no hit in hand or for being out of mana (debug.log says so:
+"... - not fleeing: only out of cards"). After fleeing it drinks a potion if
+it's low on mana (none left: goes and buys some) and tries again.
 PlayerStats.txt: fleeon:0 switches it off. debug.log: "fleeing: ...", "after
 fleeing: ..."; the dashboard counts them next to Passed.
 Learned hits in no slot: the bot casts by slot (hit1-4), and a treasure card
