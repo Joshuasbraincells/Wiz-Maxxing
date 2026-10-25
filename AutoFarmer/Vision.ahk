@@ -390,6 +390,8 @@ global NavWhy, NavWaitUntil, NavWait
 global NavUnblock
 ;Why the last NavGoal got nothing; when it may ask again
 global NavGoalWhy, NavGoalWaitUntil
+;Why the last NavMobs / NavBattle got nothing; when each may ask again
+global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 
 ;The wizard and the quest goal from the game's memory, as an object:
 ;  ok        1
@@ -590,6 +592,146 @@ NavGoal(timeoutMs := 800)
 		}
 	NavGoalWhy := ""
 	return goal
+	}
+
+;The zone's mobs from the game's memory (the helper's /mobs - READ-ONLY, vision\navmem.py and vision\bossmem.py: nothing
+;in the game is written, injected or hooked; no key, click or window), nearest first, as an array of {name, x, y, z, dist
+;(from the wizard), quest (1: the quest's - the helper's verdict by the game's memory's goal: its name, its kind, one by
+;a fight goal's goal; goalLine, the line read off the screen, only when the memory's can't be read), off (degrees from
+;where it faces to the wizard, "" not known), title (as the game names it: Boss, Elite, Normal, Easy, Minion), rank (the
+;one the game shows: "Rank 9 Boss"), health (its starting - max - health), school (Ice...), boss (1: the game's own boss
+;flag, 0 not), gid, named (1: the quest's by its name or its goal only - quest without a same-family match elsewhere in
+;the zone, 0 not)} - title...named "" while not known (the helper's reader being made, a build it can't read, an older
+;helper). [] when there are none (the helper's plain "none"); "" when they can't be read - navmem:0, the helper not
+;running, dual mode (one client's memory), "none (<why>)" (not attached, a new zone being looked at...), an ERR or no
+;answer: NavMobsWhy says why, and after an ERR or no answer it isn't asked again for 5 s
+NavMobs(goalLine := "", timeoutMs := 400)
+	{
+	NavMobsWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavMobsWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavMobsWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavMobsWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavMobsWaitUntil && A_TickCount < NavMobsWaitUntil)
+		{
+		NavMobsWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	nmAns := VisionGet("/mobs" (goalLine != "" ? "?goal=" NavUri(SubStr(goalLine, 1, 160)) : ""), timeoutMs, true)
+	if (nmAns = "")
+		{
+		NavMobsWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavMobsWaitUntil := A_TickCount + 5000
+		return ""
+		}
+	NavMobsWaitUntil := 0
+	nmOut := []
+	Loop, Parse, nmAns, `n, `r
+		{
+		nmF := StrSplit(A_LoopField, "|")
+		;(none: no mobs in the zone - "none (<why>)": they can't be read now)
+		if (Trim(A_LoopField) = "none")
+			{
+			NavMobsWhy := "no mobs in the zone"
+			return []
+			}
+		if (SubStr(A_LoopField, 1, 5) = "none ")
+			{
+			NavMobsWhy := Trim(RegExReplace(Trim(A_LoopField), "^none\s*\(?|\)$"))
+			return ""
+			}
+		if (nmF[1] != "mob" || nmF.Length() < 8)
+			continue
+		nmM := {name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
+			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: ""}
+		;(9-14: what it is - an older helper's lines have none)
+		if (nmF.Length() >= 14)
+			nmM.title := Trim(nmF[9]), nmM.rank := NavNum(nmF[10]), nmM.health := NavNum(nmF[11]), nmM.school := Trim(nmF[12])
+				, nmM.boss := (nmF[13] = "1" ? 1 : nmF[13] = "0" ? 0 : ""), nmM.gid := Trim(nmF[14])
+		;(15: the quest's by its name or its goal - an older helper's lines stop at 14)
+		if (nmF.Length() >= 15)
+			nmM.named := (Trim(nmF[15]) = "1" ? 1 : Trim(nmF[15]) = "0" ? 0 : "")
+		nmOut.Push(nmM)
+		}
+	return nmOut
+	}
+
+;The battle's participants from the game's memory (the helper's /battle - READ-ONLY, vision\bossmem.py), in a battle's
+;planning phase: {me: the wizard's own (or ""), foes: the other side's, parts: all} - each {me (1 the wizard's own), team,
+;name (the mob's - "" a wizard), health, max, boss (1: the game's own boss flag), title, rank, school (its mob's - "" not
+;known), player (1 a wizard), gid}. "" when it can't be read - navmem:0, the helper not running or older (no /battle), dual
+;mode, not in a battle's planning phase, the readers being made: NavBattleWhy says why (after an ERR or no answer not
+;asked again for 5 s; an older helper's "unknown request": 60 s)
+NavBattle(timeoutMs := 700)
+	{
+	NavBattleWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavBattleWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavBattleWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavBattleWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavBattleWaitUntil && A_TickCount < NavBattleWaitUntil)
+		{
+		NavBattleWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	nbAns := VisionGet("/battle", timeoutMs, true)
+	if (nbAns = "")
+		{
+		NavBattleWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavBattleWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavBattleWaitUntil := 0
+	nbOut := {me: "", foes: [], parts: []}
+	Loop, Parse, nbAns, `n, `r
+		{
+		nbF := StrSplit(A_LoopField, "|")
+		if (nbF[1] = "none")
+			{
+			NavBattleWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (nbF[1] != "part" || nbF.Length() < 12)
+			continue
+		nbP := {me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
+			, boss: (nbF[7] = "1" ? 1 : nbF[7] = "0" ? 0 : ""), title: Trim(nbF[8]), rank: NavNum(nbF[9]), school: Trim(nbF[10])
+			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12])}
+		nbOut.parts.Push(nbP)
+		if (nbP.me && !IsObject(nbOut.me))
+			nbOut.me := nbP
+		}
+	if (!IsObject(nbOut.me))
+		{
+		NavBattleWhy := "an odd answer (no line for the wizard): " SubStr(RegExReplace(nbAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	;(the other side: another team than the wizard's - a team not read: not a wizard of the game's)
+	for nbI, nbP in nbOut.parts
+		if (!nbP.me && (nbOut.me.team = "" || nbP.team = "" ? !nbP.player : nbP.team != nbOut.me.team))
+			nbOut.foes.Push(nbP)
+	return nbOut
 	}
 
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob

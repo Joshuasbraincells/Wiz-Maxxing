@@ -133,13 +133,35 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              took it as the quest's - not avoided); or "none (<why>)"
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
-                                             faces to the wizard (0: straight ahead of it), or "none (<why>)"
+                                             faces to the wizard (0: straight ahead of it)|title|rank|health|school|
+                                             boss|gid|named, or "none (<why>)"
+                                             (9-14, what the mob is - vision\bossmem.py: title as the game names it,
+                                             Boss, Elite, Normal, Easy, Minion; rank the one the game shows ("Rank 9
+                                             Boss"); health its starting - max - health; school its school of focus
+                                             (Ice); boss 1 the game's own boss flag, 0 not; gid its global id. Each ""
+                                             while not known - the reader being made once per game, about half a second,
+                                             a build it can't read. 15, named: 1 the quest's by its name or its goal
+                                             only - quest without the same-family match ("Gobbler King" for "Defeat
+                                             Gobblers" is quest 1, named 0). An older helper's lines stop at 8 or 14)
   /items[?goal=<the quest's goal line>]   -> the things lying about the zone a quest has you collect (the game's
                                              memory, read-only - Piece Of Coral), nearest first:
                                              item|name|x|y|z|distance|quest (1: the goal names it)|gid,
                                              or "none (<why>)"
                                              (the quest's goal for both: the game's memory's, as /goal's; goal= only
                                              when that can't be read)
+  /battle                                 -> the battle's participants, read from the game's memory (read-only, see
+                                             vision\bossmem.py) - in a battle's planning phase - one line each, the
+                                             wizard's own first:
+                                               part|me|team|name|health|max|boss|title|rank|school|player|gid
+                                                                     (me 1: the wizard's own; team the game's number -
+                                                                     the wizard's side vs the enemies'; name the mob's
+                                                                     ("" a wizard); health and max its health now and
+                                                                     its most; boss 1 the game's own boss flag; title,
+                                                                     rank, school its mob's template's (as /mobs');
+                                                                     player 1 a wizard; gid its owner's global id -
+                                                                     "" a field not read)
+                                             or one line "none|<why>" (not in a battle's planning phase, the readers
+                                             being made - once per game -, the game not running...)
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -1892,19 +1914,92 @@ def quest_mob(m, r, goal_line, goal=None):
     return by_goal(m, r)
 
 
+def quest_named(m, r, goal_line, goal=None):
+    """quest_mob without the family match: the quest's goal names this mob (its name, as quest_mob reads it), or - a
+    fight goal (or no goal line read) - it stands by the goal. /mobs' field 15, for the boss deck's "the walker goes to
+    it" (AutoFarmer's Decks.ahk): a "Gobbler King" anywhere in the zone is quest_mob's for "Defeat Gobblers", not this"""
+    if goal and goal.get('text'):
+        if goal.get('exact'):
+            if any(name_matches(m['name'], n) for n in (goal.get('mob'), goal.get('item'), goal.get('npc')) if n):
+                return True
+            return bool(goal.get('type') in GOAL_FIGHTS and by_goal(m, r))
+        line = goal['text']
+        return bool(name_matches(m['name'], line) or (FIGHT_GOAL.search(line) and by_goal(m, r)))
+    if goal_line:
+        if name_in_line(m['name'], goal_line):
+            return True
+        if not FIGHT_GOAL.search(goal_line):
+            return False
+    return bool(by_goal(m, r))
+
+
+TITLES_SAID = set()         # the bosses and elites logged (their gids)
+
+
 def mobs_now(r, goal_line='', trail=False, goal=None):
-    """(the zone's mobs [{name, pos, yaw, gid, template, quest}], why) - none ([], why) when they can't be read.
-    trail: the reading goes on MOB_TRAIL too (the walker's route asks); goal: the memory's goal (goal_now) - goal_line
-    (the OCR's) only without it"""
+    """(the zone's mobs [{name, pos, yaw, gid, template, quest, named, title, title_id, rank, health, school, boss,
+    kind}], why) - none ([], why) when they can't be read. trail: the reading goes on MOB_TRAIL too (the walker's route
+    asks); goal: the memory's goal (goal_now) - goal_line (the OCR's) only without it. named: the quest's by its name or
+    its goal only (quest_named - no family match). title...kind: navmem's (bossmem.py - None while not known)"""
     mobs, why = nav_reader().mobs()
     if mobs is None:
         return [], why
     for m in mobs:
         m['quest'] = quest_mob(m, r, goal_line, goal)
+        m['named'] = quest_named(m, r, goal_line, goal) if m['quest'] else False
+        # (a boss or an elite in the zone: in the log once each - its title, rank and health from the game's memory)
+        if m.get('kind') in ('boss', 'elite') and m['gid'] not in TITLES_SAID:
+            if len(TITLES_SAID) > 2000:
+                TITLES_SAID.clear()
+            TITLES_SAID.add(m['gid'])
+            whose = " - the quest's" if m['quest'] else ''
+            log(f"mobs: {m['kind']} {m['name']!r} in the zone - {m.get('title')} rank {m.get('rank')}, {m.get('health')} "
+                f"health, {m.get('school')} (boss flag {m.get('boss')}){whose}")
     if trail and r is not None and r.get('pos') is not None:
         MOB_TRAIL.append((time.time(), tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
                                                        for m in mobs}))
     return mobs, ''
+
+
+def mob_cell(v):
+    """a field of a /mobs or /battle line: no | or line breaks in it; None as empty; a flag as 1/0"""
+    if v is None:
+        return ''
+    if isinstance(v, bool):
+        return '1' if v else '0'
+    return re.sub(r'[|\r\n]+', ' ', str(v)).strip()
+
+
+def mob_line(m, me):
+    """/mobs' line for a mob m (mobs_now's) seen from me (the wizard's x, y, z): mob|name|x|y|z|distance|quest|degrees
+    off its facing|title|rank|health|school|boss|gid|named - 9-14 what it is (navmem / bossmem: each "" while not known),
+    15 the quest's by its name or its goal only (quest_named: 1/0, "" not known)"""
+    off = ''
+    if m.get('yaw') is not None:
+        dx, dy = me[0] - m['pos'][0], me[1] - m['pos'][1]
+        d = math.hypot(dx, dy) or 1.0
+        c = (dx * -math.sin(m['yaw']) + dy * -math.cos(m['yaw'])) / d
+        off = f"{math.degrees(math.acos(max(-1.0, min(1.0, c)))):.0f}"
+    return (f"mob|{mob_cell(m['name'])}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
+            f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m.get('quest') else 0}|{off}|"
+            + '|'.join(mob_cell(m.get(k)) for k in ('title', 'rank', 'health', 'school', 'boss', 'gid'))
+            + '|' + mob_cell(m.get('named')))
+
+
+def battle_lines(parts, why=''):
+    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid a
+    participant (the wizard's own first), or none|<why>"""
+    if not parts:
+        return ['none|' + mob_cell(why or 'not in a battle')]
+    out = []
+    for p in sorted(parts, key=lambda p: not p.get('me')):
+        mob = p.get('mob') or {}
+        out.append('|'.join(['part', mob_cell(bool(p.get('me'))), mob_cell(p.get('team')), mob_cell(p.get('name')),
+                             mob_cell(p.get('health')), mob_cell(p.get('max_health')), mob_cell(p.get('boss')),
+                             mob_cell(mob.get('title')), mob_cell(mob.get('rank')),
+                             mob_cell(mob.get('school') or (p.get('school') or '').capitalize() or None),
+                             mob_cell(p.get('player')), mob_cell(p.get('owner'))]))
+    return out
 
 
 def quest_item(name, goal_line, goal=None):
@@ -2816,18 +2911,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not mobs:
                     return self.reply('none' + (' (' + why + ')' if why else ''))
                 me = r['pos'] or (0.0, 0.0, 0.0)
-                def off_facing(m):
-                    """how far round from where m faces the wizard is (degrees; 0 straight ahead of it)"""
-                    if m.get('yaw') is None:
-                        return ''
-                    dx, dy = me[0] - m['pos'][0], me[1] - m['pos'][1]
-                    d = math.hypot(dx, dy) or 1.0
-                    c = (dx * -math.sin(m['yaw']) + dy * -math.cos(m['yaw'])) / d
-                    return f"{math.degrees(math.acos(max(-1.0, min(1.0, c)))):.0f}"
+                # (what each is at the end - title, rank, health, school, boss flag, gid, named: an older bot reads the
+                # first 8)
                 return self.reply('\n'.join(
-                    f"mob|{m['name'].replace('|', ' ')}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
-                    f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m['quest'] else 0}|{off_facing(m)}"
-                    for m in sorted(mobs, key=lambda m: math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]))))
+                    mob_line(m, me) for m in sorted(mobs, key=lambda m: math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]))))
+            if u.path == '/battle':
+                parts, why = nav_reader().battle(wait=0.3)
+                return self.reply('\n'.join(battle_lines(parts, why)))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

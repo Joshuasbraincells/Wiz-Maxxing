@@ -23,6 +23,9 @@ global MsMiss
 global MsTriedAt
 ;Turns from standing by the mouse that didn't turn the wizard, in a row, and till when they aren't tried (two: 10 minutes)
 global MsStandMiss, MsStandOff
+;How far the last turn from standing that missed did turn him (degrees, + right; "" none, not read, or it didn't miss) - the
+;callers turn the rest, not the whole turn again on top (2026-10-25 11:42:26: 158 wanted, -168 by the mouse, then 158 by A/D)
+global MsStandGot
 
 ;The setting (mousesteer, on unless 0) and the game's memory there to read the facing by
 MouseSteerOn()
@@ -339,6 +342,7 @@ MouseTurn(h, byMem := true)
 ;is measured. Two misses in a row: not tried for 10 minutes (said in the log)
 MouseStandTurn(h)
 	{
+	MsStandGot := ""
 	;(the memory's heading turned round since the count was measured: so is the count - as MouseTurn)
 	if (MsK != "" && MsKSign != WkNavSign)
 		MsK := -MsK, MsKSign := WkNavSign
@@ -418,7 +422,9 @@ MouseStandTurn(h)
 		}
 	MsTriedAt := A_TickCount
 	MsStandMiss := (MsStandMiss ? MsStandMiss : 0) + 1
-	MouseSteerNote("a turn from standing by the mouse didn't turn the wizard (" Round(h) " wanted, " (turned = "" ? "not read" : Round(turned)) ") - A/D" (MsStandMiss >= 2 ? ", and not tried from standing for 10 minutes" : ""))
+	;(what it did turn him - the caller's A/D turns the rest: MsStandGot)
+	MsStandGot := turned
+	MouseSteerNote("a turn from standing by the mouse didn't turn the wizard (" Round(h) " wanted, " (turned = "" ? "not read" : Round(turned)) ") - A/D" (turned != "" && Abs(turned) >= 3 ? " for the rest" : "") (MsStandMiss >= 2 ? ", and not tried from standing for 10 minutes" : ""))
 	if (MsStandMiss >= 2)
 		MsStandMiss := 0, MsStandOff := A_TickCount + 600000
 	return ""

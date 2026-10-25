@@ -34,8 +34,8 @@ global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, Ga
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
 ;Cheat Engine's speedhack (AutoFarmer's speedhack setting): the game's speed now (1 = normal - the walker's timings are
 ;divided by it), when the bot last pressed one of its keys, normal speed held till (getting round an obstacle), and
-;how near the goal it goes back to normal (the arrow's number / game units)
-global SpeedNow, SpeedSentAt, WkSpeedHold, SpeedSlowDist, SpeedSlowUnits
+;how near the goal it goes back to normal (the arrow's number / game units; the way out of this zone's, game units)
+global SpeedNow, SpeedSentAt, WkSpeedHold, SpeedSlowDist, SpeedSlowUnits, SpeedExitUnits
 ;Why the speedhack's off for this run ("" on - the game was seen not sped up: Cheat Engine not attached, the key not
 ;taking), and how many turns in a row looked wrong (NavTurn)
 global SpeedOff, SpeedMiss
@@ -89,6 +89,9 @@ global inbattle
 ;in, and the sign saved there; why the last NavRead got nothing (Vision.ahk)
 global NavTurnTol, NavTurnCap, NavAgreeNeed
 global WkNavOk, WkNavUse, WkNavH, WkNavD, WkNavHops, WkNavObj, WkNavSign, WkNavTrusted, WkNavAgree, WkNavMirror, WkNavOdd
+;(the goal zones away: the rest of the way past this zone's leg as the arrow's number last had it - arrow units - and the
+;zone, goal and zone changes it's for: on top of the memory's leg when it stands in for the number)
+global WkNavRest, WkNavRestKey
 ;Where the route's aim lies from the quest's target (degrees, + = right; "" no route): both from the memory's positions,
 ;its facing cancelling out - added to the arrow on screen while the memory's facing isn't steered by (WkNavByArrow: this
 ;step did)
@@ -132,6 +135,14 @@ global WkRealSeenAt, WkArrowAtX
 global WkNavMirrorSaid
 ;(pushing into the way out of the zone without an X first: if it doesn't load, X after all - a World Gate)
 global WkNavDoor
+;Near the goal by the game's memory, in game units (WalkGoalNear - the goal in this zone): the last bit walked closed loop
+;(WalkApproach) from this close; a talk goal's NPC stopped this far off, its prompt taken as the quest's this close; the
+;approach's tries at this goal, and the route followed instead till (tick)
+global ApproachUnits, TalkUnits, TalkReach, WkApTries, WkApOffUntil
+;The quest's goal from the game's memory (NavGoal, kept by WalkGoalText): its kind (PERSONA - talk to...), the NPC it names
+;and its id; X at a talk goal's NPC ([{at, id}] - 3 in 2 minutes per goal); the goal id at the last X of a talk, at an
+;arrival wait, last seen (a new one ends the no-X time after a dialogue), and the one the "talking didn't work" notice was for
+global WkGoalType, WkGoalNpc, WkGoalId, WkTalkXs, WkTalkGoal, WkArrGoal, WkGoalIdWas, WkTalkNoted
 
 ;Settings and starting state. Returns false if the arrow shapes (resources\arrow_refs.txt) are missing
 WalkerInit(prefix := "AutoQuester")
@@ -141,6 +152,11 @@ WalkerInit(prefix := "AutoQuester")
 	ArriveUnits := 150   ;...by the game's memory (when it can be used): this many game units from the goal - the
 	                     ;arrow's number means more or less in each zone (15 on it is 120-1500 units), this doesn't
 	PushUnits := 250     ;...and the PushStraightDist below, by the game's memory
+	ApproachUnits := 1500 ;by the game's memory, the goal in this zone and straight ahead (no wall, no mob): the last this
+	                     ;many units walked closed loop - 1x, turned to face it on the spot, W held while its place is read
+	                     ;every ~40 ms, let go at it (WalkApproach). A step a second apart walked 900-1800 units over it
+	TalkUnits := 300     ;...a talk goal's NPC: stopped this far off, then X (the NPC's in the way closer in)
+	TalkReach := 700     ;...a prompt this close to the goal is the goal's (a talk goal's: its NPC's name too)
 	TurnRate := 0.15     ;degrees the wizard turns per ms of holding A/D (measured: 22.5 degrees per 150 ms)
 	TurnSettle := 500    ;ms the camera takes to catch up after a turn: don't steer on the arrow before then
 	AheadAngle := 12     ;arrow within this many degrees of straight ahead: just walk
@@ -205,7 +221,11 @@ WalkerInit(prefix := "AutoQuester")
 	                      ;floor and obstacles); 0 = straight at where the quest arrow points, as before
 
 	Walking := 0, HeldW := 0, KeysDown := 0, Refocus := 0, WkFarAt := 0, WkTurnAt := 0, WkWalkFrom := 0
-	SpeedNow := 1, SpeedSentAt := 0, WkSpeedHold := 0, SpeedSlowDist := 40, SpeedSlowUnits := 600, SpeedOff := "", SpeedMiss := 0
+	;(1x within SpeedSlowUnits of the goal - 1.4 s at 2x; 600 was a third of a second, less than a step: 2026-10-25 2x at 23 by Edith)
+	SpeedNow := 1, SpeedSentAt := 0, WkSpeedHold := 0, SpeedSlowDist := 40, SpeedSlowUnits := 2500, SpeedOff := "", SpeedMiss := 0
+	;(...the goal zones away - the way out of this one: nothing to overshoot pushing into it, as before)
+	SpeedExitUnits := 600
+	WkTalkXs := [], WkTalkGoal := "", WkArrGoal := "", WkGoalIdWas := "", WkTalkNoted := "", WkGoalType := "", WkGoalNpc := "", WkGoalId := ""
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
@@ -224,7 +244,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkResetAt := 0
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
-	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0
+	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0, WkNavRest := 0, WkNavRestKey := ""
 	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := "", WkNavMirrorSaid := 0
 	WalkNavLoad()
 	WalkMemLoad()
@@ -250,6 +270,7 @@ WalkReset()
 	WkOnTop := 0, WkOnTopAt := 0, WkOnTopBacked := 0, WkOnTopDone := 0, WkStuckNearDone := 0, WkStuckTalk := 0, WkTalkAt := 0
 	WkProgBest := "", WkProgAt := A_TickCount, WkProgStep := A_TickCount
 	WkNavDoor := 0, WkStandIn := 0, WkRouteBest := "", WkRouteProg := "", WkPassMin := ""
+	WkApTries := 0, WkApOffUntil := 0, WkArrGoal := ""
 	;(a new goal: its line is read again)
 	WkGoalLineAt := 0
 	}
@@ -386,6 +407,17 @@ WalkStep()
 	;it: the arrow, as before
 	fair := seen && !moved && score >= 0.8
 	WalkNav(fair && A_TickCount - WkTurnAt > WalkSettle() + 150 ? h : "", fair ? dist : "")
+	;(a new quest goal by the game's memory - its id: the no-X time after a dialogue is over, the new goal's prompt is X'd -
+	;2026-10-25 11:28:44, Edith Benchley's kept from X by the Star Portal's dialogue just before)
+	if (WkNavOk && WkNavObj.goalid != "")
+		{
+		if (WkGoalIdWas != "" && WkNavObj.goalid "|" != WkGoalIdWas "|" && A_TickCount < WkQuietUntil)
+			WkQuietUntil := 0, WalkLog("a new quest goal (the game's memory) - prompts may be X'd again")
+		WkGoalIdWas := WkNavObj.goalid
+		}
+	;(the goal in this zone by the game's memory - near it, the prompt's looked for whatever the arrow does: the NPC hides it)
+	apNear := WalkGoalNear()
+	apNear := IsObject(apNear) && apNear.r <= ApproachUnits && (apNear.dz = "" || Abs(apNear.dz) <= 150)
 	;The way on is only teleports that don't take the wizard (locked till a quest's done, or only the other way)
 	;and the zone's paths have no other: walking off, and a notice - the arrow would lead back to one
 	if (WkJumpStuck = 1)
@@ -408,8 +440,14 @@ WalkStep()
 	;route is kept to, not the game's straight path through mobs)
 	else if (seen && h != "" && WkNavChecked && WkNavRel != "")
 		h := ArrowWrap(h + WkNavRel), WkNavByArrow := 1
-	if (WkNavD != "")
-		dist := WkNavD
+	;(zones away - hops > 0 - the memory's distance is this zone's leg only, the arrow's number counts every leg: the arrow's
+	;then, when it's read off an arrow that's seen; the memory's only stands in - no number, no arrow, a poor match's number -
+	;with the rest of the way as the arrow last had it for this goal on top, so the two don't jump against each other: an
+	;arrow in and out of a door frame is no "next goal")
+	if (WkNavD != "" && WkNavHops != 0 && dist != "" && seen)
+		WkNavRest := Max(0, dist - WkNavD), WkNavRestKey := WkNavObj.zone "|" WkNavObj.goalid "|" WkNavHops
+	else if (WkNavD != "")
+		dist := WkNavD + ((WkNavHops != 0 && WkNavRestKey = WkNavObj.zone "|" WkNavObj.goalid "|" WkNavHops) ? WkNavRest : 0)
 	;No arrow on screen while the game's memory can be used: it stands in for the arrow - its heading and
 	;distance, as if the arrow were seen (WalkNavStandIn: not in a battle or at a loading screen). A see-through
 	;arrow on a floor its own colour (the gold carpet in Pigswick Academy) can't be picked out, and scenery hides
@@ -467,8 +505,10 @@ WalkStep()
 		if (!standIn && WkArrived != 7 && WkArrived != 6 && WkArrived != 2 && gone > 2000 && CollectNoPlace())
 			return Walking ? true : false
 		;(not while collecting a goal the game shows no arrow for: no arrow is how it is, not a window an X opened)
+		;(nor by the goal with the game's memory standing in: the NPC and its prompt hide the arrow there - a window X opened is
+		;closed right after it, WalkCloseAfterX. 2026-10-25 11:42:13: that Escape opened the game's menu)
 		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !(IsObject(WkCollect) && WkCollect.noPlace && !WkCollect.gaveUp)
-			&& !WalkDialogOpen())
+			&& !(standIn && apNear) && !WalkDialogOpen())
 			{
 			;(a quest offer: accepted, not closed)
 			if (WalkAcceptQuest("no arrow since an X"))
@@ -525,19 +565,27 @@ WalkStep()
 	hiddenHere := !seen && A_TickCount - WkFarAt > 10000
 	if (!hiddenHere)
 		WkSigilSeen := 0
-	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved || standIn) && A_TickCount > WkGateLook)
+	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved || standIn || apNear) && A_TickCount > WkGateLook)
 		{
-		WkGateLook := A_TickCount + ((seen && !near && !standIn) ? 1500 : 700)
+		WkGateLook := A_TickCount + ((seen && !near && !standIn && !apNear) ? 1500 : 700)
 		prompt := InteractPrompt()
 		if (prompt = "gate" && near)
 			{
 			StartGate("World Gate prompt showing, the arrow led here (distance " (WkBestDist = "" ? dist : WkBestDist) ")")
 			return true
 			}
+		;(the quest's own NPC by the game's memory - its name on the prompt, within TalkReach: X, even just out of a dialogue -
+		;3 s after the last X, 3 tries in 2 minutes. 2026-10-25 11:30:07-22: a dialogue left Thornton Lewis' goal as it was,
+		;and his prompt was kept from X for 15 s while the wizard went round him)
+		if (prompt = "press" && WalkTalkPromptOk(WkPromptDest))
+			{
+			StartPressX(WkPromptDest)
+			return true
+			}
 		;Just out of a dialogue X opened: no X at any prompt for a while (walk away from it), so the same
 		;NPC or object can't be talked to over and over
 		;(a quest marker over it - a "?" with its name under it - is something new there: talked to all the same)
-		if (prompt = "press" && A_TickCount < WkQuietUntil && WalkPromptFree(WkPromptDest, 60000) && WalkQuestMarkerTalk(WkPromptDest))
+		if (prompt = "press" && A_TickCount < WkQuietUntil && WalkPromptFree(WkPromptDest, 60000) && !WalkTalkSpent(WkPromptDest) && WalkQuestMarkerTalk(WkPromptDest))
 			return true
 		if ((prompt = "sigil" || prompt = "press") && A_TickCount < WkQuietUntil)
 			{
@@ -565,7 +613,8 @@ WalkStep()
 		;Any other "Press X ..." prompt (talk, collect, open...) the quest wants (WalkPromptWanted: its name in the
 		;goal line, close to the goal, or collecting): press X - once a minute for the same one - then Space
 		;through whatever it opens and walk on. Others - an NPC or a vendor walked past - are left alone
-		if (prompt = "press" && WalkPromptFree(WkPromptDest, 60000))
+		;(the talk goal's own NPC X'd 3 times in 2 minutes for nothing: left till its tries come free - WalkTalkSpent)
+		if (prompt = "press" && WalkPromptFree(WkPromptDest, 60000) && !WalkTalkSpent(WkPromptDest))
 			{
 			if (WalkPromptWanted(WkPromptDest, dist))
 				{
@@ -604,7 +653,9 @@ WalkStep()
 		;(a dialogue covers the arrow on screen - not the game's memory standing in for it, which goes on
 		;regardless: then it counts when the arrow itself was on screen right before X and has gone; with no
 		;arrow to go by - Pigswick's carpet - only a dialogue box that's read)
-		if (((standIn ? WkArrowAtX : !seen) || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
+		;(by the goal by the game's memory - apNear - only the dialogue box read: the NPC and its prompt hide the arrow there
+		;anyway. 2026-10-25 11:42:01-16: 28 Space presses with nothing open, then an Escape into the game's menu)
+		if (((apNear ? false : standIn ? WkArrowAtX : !seen) || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
 			{
 			if (!WkDialog)
 				WalkLog("pressed X: something opened (arrow covered) - pressing Space")
@@ -639,10 +690,17 @@ WalkStep()
 	;talking, so a distance that's changed from the one at X means a new goal, even a close one
 	if (WkArrived = 2)
 		{
-		WkFar := (seen && dist != "" && (dist > ArriveDist + 20 || DistChanged(dist, WkTalkDist))) ? WkFar + 1 : 0
+		;(by the game's memory the goal's id says: a new one is the next goal at once, the same one isn't - whatever the arrow's
+		;number does: it's along the game's path, and jumps by its nodes right by the goal. 2026-10-25 11:29:00 "next goal
+		;(distance 23)" with the goal as it was, a shop holding the wizard; 11:33:34 6 from 1, standing still)
+		memSame := (WkNavOk && WkTalkGoal != "" && WkNavObj.goalid != "") ? (WkNavObj.goalid "|" = WkTalkGoal "|") : ""
+		if (memSame != "")
+			WkFar := memSame ? 0 : 2
+		else
+			WkFar := (seen && dist != "" && (dist > ArriveDist + 20 || DistChanged(dist, WkTalkDist))) ? WkFar + 1 : 0
 		if (WkFar >= 2)
 			{
-			WalkLog("talk: next goal (distance " dist ") after " WkTalk " Space presses")
+			WalkLog("talk: next goal (distance " dist (memSame = 0 ? ", a new goal by the game's memory" : "") ") after " WkTalk " Space presses")
 			if (WkDialog)
 				WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
 			WalkReset()
@@ -655,7 +713,19 @@ WalkStep()
 			Sleep, 100
 			return true
 			}
-		if (!seen)
+		;(what X opened, if not a dialogue: an OK box or a window - a shop - closed first, as after X at a prompt on the way -
+		;WalkCloseAfterX; looked at once, a moment after X. 2026-10-25 11:28:49: a vendor's shop by Edith Benchley left open)
+		if (!WkDialog && !WkAfterXLooked && A_TickCount - WkTalkAt > 700 && !WalkDialogOpen())
+			{
+			WkAfterXLooked := 1
+			if (WalkCloseAfterX())
+				{
+				WkArrived := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+				return true
+				}
+			}
+		;(by the goal by the game's memory - apNear - the arrow hidden is the NPC, not a dialogue: only a dialogue box read is one)
+		if (!seen && !(apNear && !WalkDialogOpen()))
 			{
 			;On top of the goal and X opened no dialogue (one would have been Spaced through above, setting
 			;WkDialog): no Space (it jumps) - after 2.5 s step back once so the arrow shows again
@@ -692,7 +762,7 @@ WalkStep()
 			if (WkTalk < TalkMax)
 				{
 				PressKey("Space")
-				WkTalk += 1
+				WkTalk += 1, WkSpaceAt := A_TickCount
 				SetStatus("talking - Space to skip the dialogue (" WkTalk " of " TalkMax ")")
 				Sleep, %TalkGap%
 				}
@@ -715,13 +785,36 @@ WalkStep()
 			}
 		;Arrow visible: give a slow dialogue two Space presses to show up first (not after X on top of the
 		;goal opened nothing: it's been waited for)
+		;(the game's memory standing in for the arrow, or a talk goal by it: no Space - with nothing open it jumps - a moment
+		;for a dialogue to show instead; one that does is Spaced through by the dialogue look above)
 		if (!WkDialog && WkTalk < 2 && !WkOnTop && !WkStuckTalk)
 			{
-			PressKey("Space")
 			WkTalk += 1
+			if (standIn || apNear || IsObject(WalkTalkGoal()))
+				{
+				SetStatus("talking - waiting for a dialogue (" WkTalk ")")
+				Sleep, 400
+				return true
+				}
+			PressKey("Space")
 			SetStatus("talking - Space (" WkTalk ")")
 			Sleep, %TalkGap%
 			return true
+			}
+		;(a talk goal by the game's memory - its NPC in this zone: X at it again from close by, facing it - never walked on
+		;through it (2026-10-25 11:33: pushed straight through Thornton Lewis twice, 3 s each, into a Piscean Guard's reach);
+		;its 3 tries in 2 minutes used: waiting by it. A dialogue just over: a moment for the goal to move on first)
+		talkNext := WalkNoDialogNext()
+		if (talkNext != "push")
+			{
+			if (WkDialog && A_TickCount - Max(WkDlgEndAt ? WkDlgEndAt : 0, WkSpaceAt ? WkSpaceAt : 0) < 1500)
+				{
+				Sleep, 100
+				return true
+				}
+			if (WkDialog)
+				WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
+			return WalkTalkAgain(talkNext, dist)
 			}
 		;X by the obstacle near the goal opened nothing: it wasn't the thing (a fence, a wall) - go round it
 		;after all, as before (the next stuck tries Unstick; WkStuckNearDone keeps the X to once)
@@ -772,6 +865,9 @@ WalkStep()
 			}
 		if (KeysDown)
 			ReleaseKeys(true)
+		;(on top of the goal by the game's memory - within TalkUnits, the goal in this zone: 1 / 0; "" not known - the arrow's
+		;last number then: OnTopDist, 2000 game units at Celestia's 100 to the arrow's 1)
+		onTopMem := WalkGoalOnTop()
 		;Walking into a doorway and the arrow stayed gone: a loading screen, carry on normally afterwards
 		if (WkArrived = 3)
 			{
@@ -782,11 +878,11 @@ WalkStep()
 		;Right at the goal and the arrow went: on top of it (it isn't drawn there). Backing up and turning would
 		;only walk away from the thing: it's arrived - X (talk / use / collect), once per goal
 		;(not a loading screen, and in AutoFarmer not a battle starting - the arrow goes then too)
-		else if (WkArrived = 0 && !inbattle && !WkOnTopDone && WkLastDist != "" && WkLastDist <= OnTopDist && A_TickCount - WkLastDistAt < 4000 && A_TickCount - WkSeenAt > 700
-			&& !WkLoadAt && !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle(WkSeenAt)))
+		else if (WkArrived = 0 && !inbattle && !WkOnTopDone && (onTopMem != "" ? onTopMem : (WkLastDist != "" && WkLastDist <= OnTopDist && A_TickCount - WkLastDistAt < 4000))
+			&& A_TickCount - WkSeenAt > 700 && !WkLoadAt && !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle(WkSeenAt)))
 			{
 			WkOnTopDone := 1
-			WalkLog("arrow gone right at the goal (last distance " WkLastDist ") - on top of it: arrived")
+			WalkLog("arrow gone right at the goal (last distance " WkLastDist WalkGoalSay() ") - on top of it: arrived")
 			StartTalk("?")
 			if (WkArrived = 2)
 				WkOnTop := 1, WkOnTopAt := A_TickCount, WkOnTopBacked := 0
@@ -799,7 +895,10 @@ WalkStep()
 		;after a loading screen: then it's a dialogue, see below)
 		;(not while a battle may be starting: the arrow goes as the wizard's pulled in, before the Pass button shows -
 		;the logs: every back-up came 1-3 s before a battle)
-		else if (WkArrived = 0 && !inbattle && !WkSigilSeen && WkHidden < 6 && A_TickCount - WkHiddenAt > 1500
+		;(nor while the game's memory steers - it stands in for the arrow, here only a moment it can't: a battle starting, a
+		;loading screen - nor on top of the goal by it. 2026-10-25 11:28:15-19: two back-ups by the Star Portal, the memory's
+		;distance dropped over a distrusted scale)
+		else if (WkArrived = 0 && !inbattle && !WkSigilSeen && WkHidden < 6 && A_TickCount - WkHiddenAt > 1500 && WalkHiddenBackUpOk(onTopMem)
 			&& (WkSeenAt ? A_TickCount - WkSeenAt > 1000 && A_TickCount - WkSeenAt < 30000 : !WkLoadAt)
 			&& !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle(WkSeenAt)))
 			{
@@ -976,6 +1075,11 @@ WalkStep()
 		Sleep, 300
 		return true
 		}
+	;Near the goal by the game's memory - in this zone, straight ahead, no mob on the way: the last bit walked closed loop
+	;and X there (WalkApproachStep). Steps a second apart walked 900-1800 units over it and turned round: 2026-10-25
+	;11:28-11:42, Celestia, a 160-175 degree turn by every NPC
+	if (WalkApproachWanted(apGn))
+		return WalkApproachStep(apGn, dist)
 	if (dist != "")
 		{
 		WkLastRead := A_TickCount
@@ -991,6 +1095,19 @@ WalkStep()
 			;(waiting on a collect goal it gave up on - it stopped wherever it was: only a new goal moves it on)
 			gaveUpWait := IsObject(WkCollect) && WkCollect.gaveUp
 			WkFar := (!gaveUpWait && (changed || dist > ArriveDist + (WkPushes >= 2 ? 60 : 5))) ? WkFar + 1 : 0
+			;(the goal zones away by the game's memory - waiting by this zone's way out, which didn't take the wizard: the arrow's
+			;number counts the zones beyond too and stays big there - walked on only once well off the way out, or a new goal)
+			if (!gaveUpWait && WkNavOk && WkNavHops > 0 && IsObject(WkNavObj) && WkNavObj.dist != "")
+				WkFar := WkNavObj.dist > ArriveUnits * 4 ? WkFar + 1 : 0
+			;(by the game's memory a new goal id is the next goal at once, even one right here; a talk goal's NPC X'd for nothing:
+			;X again once its tries come free - WalkTalkRetry)
+			if (WkArrGoal = "" && WkNavOk)
+				WkArrGoal := WkNavObj.goalid
+			arrNew := !gaveUpWait && WkNavOk && WkArrGoal != "" && WkNavObj.goalid != "" && WkNavObj.goalid "|" != WkArrGoal "|"
+			if (arrNew)
+				WkFar := 2, changed := true
+			else if (WkFar < 2 && WalkTalkRetry(dist))
+				return true
 			if (WkFar < 2)
 				{
 				SetStatus("arrived (distance " dist ") - waiting for the next goal")
@@ -1000,8 +1117,8 @@ WalkStep()
 			;A new goal: it may be pushed into twice again
 			if (changed || dist > ArriveDist + 60)
 				WkPushes := 0
-			WalkLog("arrived: distance now " dist " (was " WkArrDist ") - walking on")
-			WkArrived := 0, WkFar := 0, WkArrDist := "", WkBestDist := "", WkBestTime := A_TickCount, WkTries := 0
+			WalkLog("arrived: distance now " dist " (was " WkArrDist (arrNew ? "; a new goal by the game's memory" : "") ") - walking on")
+			WkArrived := 0, WkFar := 0, WkArrDist := "", WkArrGoal := "", WkBestDist := "", WkBestTime := A_TickCount, WkTries := 0
 			}
 		;Two readings in a row, so one misread number can't stop us early
 		;(by the game's memory, in game units, when it can be used: the arrow's number means more or less in
@@ -1009,6 +1126,11 @@ WalkStep()
 		WkNear := WalkNear(dist, ArriveDist, ArriveUnits) ? WkNear + 1 : 0
 		;(or walked right over it - ahead, then behind, close by - or past its nearest and on away)
 		passedGoal := WalkPassedGoal()
+		;(a talk goal's NPC by the game's memory with the route round walls much longer than straight to it - a fence, a wall
+		;between: not there by the straight distance, the route goes round; X at its own prompt when that shows)
+		arTalk := WalkTalkGoal()
+		if (IsObject(arTalk) && WalkRouteRound(arTalk.r))
+			WkNear := 0, passedGoal := ""
 		if (passedGoal != "")
 			WalkLog("walked right past the goal (" passedGoal ") - there")
 		;(the game's memory's distance isn't misread like the arrow's number: one reading is enough)
@@ -1070,7 +1192,9 @@ WalkStep()
 		Sleep, 400
 		return true
 		}
-	else if (WkBestDist != "" && WkBestDist <= NearDist && A_TickCount - WkLastRead > 1000)
+	;(those two guesses only with no game's memory this step - it knows the distance; 2026-10-25 11:28:20 "at the goal
+	;(distance ?)" about 2400 units off the Star Portal, its distance dropped over a distrusted scale)
+	else if (!WkNavOk && WkBestDist != "" && WkBestDist <= NearDist && A_TickCount - WkLastRead > 1000)
 		{
 		;Was close and now the number won't read (Windows OCR misses lone digits): we're at the goal
 		StartTalk("?")
@@ -1080,7 +1204,7 @@ WalkStep()
 		{
 		;No number has read since the arrow came back (after a battle, a hidden arrow or a restart):
 		;a lone digit, which Windows OCR misses - so the goal is under 10 away. Treat it as arrived
-		if (WkBestDist = "")
+		if (WkBestDist = "" && !WkNavOk)
 			{
 			WkBestDist := 9
 			StartTalk("?")
@@ -1289,15 +1413,36 @@ WalkStep()
 				WalkMemLearn(WkEsc.zone, WkEsc.dist, WkEsc.side, WkEsc.walkMs, false), memFailed := true
 			WkEsc := ""
 			}
+		;(the distance now - the closest ever can be elsewhere: 2026-10-25 11:28:58 "stuck 6 from the goal" at 23, a shop
+		;holding the wizard)
+		nowAt := dist != "" ? dist : stuckAt
+		;(a window over the game - a shop X opened that Escape didn't close - holds him: its close button, not stuck. 2026-10-25
+		;11:29:18 Unstick straight after it was closed, walking off from Edith Benchley)
+		if (WalkCloseWindow("not moving - a window open over the game?"))
+			{
+			WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0, WkSnapPrev := ""
+			return Walking ? true : false
+			}
 		;Stuck right by the goal: the thing itself is in the way (an item on a table, someone behind a
-		;counter) - going round it only walks away. It's arrived: X, once per goal
-		if (stuckAt != "" && stuckAt <= OnTopDist && !WkStuckNearDone)
+		;counter) - going round it only walks away. It's arrived: X, once per goal (WalkStuckNear: by the game's
+		;memory within TalkUnits; X done already - waiting there)
+		stuckNear := WalkStuckNear(nowAt)
+		if (stuckNear = "talk")
 			{
 			WkStuckNearDone := 1
-			WalkLog("stuck " stuckAt " from the goal - the goal itself in the way? Arrived: X")
-			StartTalk(stuckAt, false)
+			WalkLog("stuck " nowAt " from the goal" WalkGoalSay() " - the goal itself in the way? Arrived: X")
+			StartTalk(nowAt, false)
 			if (WkArrived = 2)
 				WkStuckTalk := 1
+			return true
+			}
+		if (stuckNear = "wait")
+			{
+			if (KeysDown || HeldW)
+				ReleaseKeys()
+			WkArrived := 1, WkFar := 0, WkArrDist := nowAt, WkArrGoal := ""
+			WalkLog("stuck " nowAt " from the goal" WalkGoalSay() " after X there - not going round it (it walks away): waiting for the next goal")
+			SetStatus("arrived (by the goal) - waiting for the next goal")
 			return true
 			}
 		if (WkTries >= UnstickTries)
@@ -1322,7 +1467,11 @@ WalkStep()
 		spot := (WkTries = 0 && !memFailed && zone != "" && stuckAt != "") ? WalkMemFind(zone, stuckAt) : ""
 		if (IsObject(spot))
 			side := spot.side, walkMs := spot.walkMs, fromMem := true
-		WalkLog("stuck at distance " (stuckAt = "" ? "?" : stuckAt) " (" (slowStuck ? "no closer in " Round(StuckTime / 1000) " s" : "picture not moving: " WkMotion " changed") "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : ""))
+		;(close to the goal by the game's memory: a short walk along the obstacle, not off away from the goal)
+		gnStuck := WalkGoalNear()
+		if (IsObject(gnStuck) && gnStuck.r <= ApproachUnits && walkMs > 900)
+			walkMs := 900
+		WalkLog("stuck at distance " (nowAt = "" ? "?" : nowAt) " (" (slowStuck ? "no closer in " Round(StuckTime / 1000) " s" : "picture not moving: " WkMotion " changed") "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : ""))
 		Unstick(side, walkMs)
 		WkEsc := {zone: zone, dist: stuckAt, side: side, walkMs: walkMs, mem: fromMem, at: A_TickCount}
 		WkBias := UnstickBias * side, WkBiasUntil := A_TickCount + BiasTime
@@ -1373,11 +1522,38 @@ StartTalk(d, door := true)
 			ReleaseKeys()
 		return
 		}
+	;(a talk goal by the game's memory and another NPC's prompt up - a vendor beside it: no X at it. Closer to the goal's NPC
+	;and facing it first; still another's: no X, a try used all the same - 3 and it waits by it (WalkTalkWait), not a loop.
+	;2026-10-25 11:28:49: X at Bartholomew's prompt by Edith Benchley opened his shop)
+	stGoal := WalkTalkGoal()
+	if (prompt = "press" && StrLen(WkPromptDest) >= 4 && IsObject(stGoal) && stGoal.r <= TalkReach && (stGoal.dz = "" || Abs(stGoal.dz) <= 150)
+		&& !WalkIsGoalNpc(WkPromptDest, stGoal))
+		{
+		if (stGoal.r > 150)
+			WalkApproach(120)
+		if (!Walking)
+			return
+		stGoal := WalkTalkGoal()
+		if (IsObject(stGoal) && Abs(stGoal.h) > 20 && GameActive())
+			NavTurn(stGoal.h)
+		if (Walking && IsObject(stGoal) && InteractPrompt() = "press" && StrLen(WkPromptDest) >= 4 && !WalkIsGoalNpc(WkPromptDest, stGoal))
+			{
+			WalkTalkCount()
+			WalkLog("talk: the prompt up is '" SubStr(WkPromptDest, 1, 30) "', not " (stGoal.npc != "" ? stGoal.npc : "the goal's NPC") "'s - no X")
+			WkArrived := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+			return
+			}
+		}
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkArrived := 2, WkTalk := 0, WkFar := 0, WkNear := 0, WkDialog := 0, WkTalkDist := d, WkTalkAt := A_TickCount
+	;(the goal's id now - a new one after is the talk done: WalkStep; a talk goal's tries counted - WalkTalkTriesLeft)
+	WkTalkGoal := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
+	WalkTalkCount()
+	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX, in the talk step)
+	WkPreXText := WalkAfterXText(stPre), WkAfterXLooked := 0
 	PressKey("x"), WkLastX := A_TickCount
-	WalkLog("talk: at the goal (distance " d "), pressed X")
+	WalkLog("talk: at the goal (distance " d WalkGoalSay() "), pressed X")
 	SetStatus("talking - pressed X at the goal (distance " d ")")
 	Sleep, 600
 	}
@@ -1423,8 +1599,12 @@ StartPressX(key)
 	WkArrowAtX := (WkRealSeenAt && A_TickCount - WkRealSeenAt < 1500)
 	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX)
 	WkPreXText := WalkAfterXText(preLines)
+	;(the talk goal's own NPC: a try at it - WalkTalkTriesLeft)
+	tgX := WalkTalkGoal()
+	if (IsObject(tgX) && WalkIsGoalNpc(key, tgX))
+		WalkTalkCount()
 	PressKey("x"), WkLastX := A_TickCount
-	WalkLog("prompt '" SubStr(key, 1, 40) "' - pressed X")
+	WalkLog("prompt '" SubStr(key, 1, 40) "' - pressed X" WalkGoalSay())
 	SetStatus("pressed X at a prompt")
 	Sleep, 400
 	}
@@ -1691,11 +1871,18 @@ WalkPassedGoal()
 		}
 	;(the heading to the game's own target - WkNavH is the route's aim's once there's a route)
 	nowH := WalkNavHeading(WkNavObj.x, WkNavObj.y, WkNavObj.yaw, WkNavObj.tx, WkNavObj.ty), nowD := WkNavObj.dist
+	;(the goal in this zone: straight at the goal itself - the path's distance jumps by its nodes right by it; on the same floor
+	;only - walked over or under it on a bridge or a balcony isn't past it: the path's distance then, which stays long)
+	pgNear := WalkGoalNear()
+	pgFlat := IsObject(pgNear) && (pgNear.dz = "" || Abs(pgNear.dz) <= 150)
+	if (pgFlat)
+		nowH := pgNear.h, nowD := pgNear.r
 	if (nowH = "")
 		return ""
-	pgKey := WkNavObj.zone "|" WkNavObj.goalid "|" WkNavObj.hops "|" Round(WkNavObj.tx / 50) "|" Round(WkNavObj.ty / 50)
+	;(straight or the path's: a change between the two starts over - never compared with each other)
+	pgKey := WkNavObj.zone "|" WkNavObj.goalid "|" WkNavObj.hops "|" Round(WkNavObj.tx / 50) "|" Round(WkNavObj.ty / 50) "|" pgFlat
 	if (pgKey != WkPassKey)
-		WkPassKey := pgKey, WkPassMin := ""
+		WkPassKey := pgKey, WkPassMin := "", prevH := ""
 	passed := prevH != "" && A_TickCount - prevAt < 4000 && Abs(prevH) <= 45 && Abs(nowH) >= 135 && nowD <= ArriveUnits * 2 && prevD <= ArriveUnits * 2
 	why := passed ? Round(nowD) " game units off, from ahead to behind - its point a step off the ground?" : ""
 	if (why = "" && WkPassMin != "" && WkPassMin <= ArriveUnits * 1.5 && nowD >= WkPassMin + 40 && nowD <= ArriveUnits * 2
@@ -1944,8 +2131,267 @@ InteractPrompt()
 WalkNear(d, arrowMax, units)
 	{
 	if (WkNavOk && IsObject(WkNavObj) && WkNavObj.dist != "")
+		{
+		;(the goal in this zone: straight at it, on the same floor - the path's distance jumps by its nodes right by it,
+		;2026-10-25 11:33:31-34 1 to 6 on the arrow standing still)
+		wnGoal := WalkGoalNear()
+		if (IsObject(wnGoal))
+			return wnGoal.r <= units && (wnGoal.dz = "" || Abs(wnGoal.dz) <= 150)
 		return WkNavObj.dist <= units
+		}
 	return d != "" && d <= arrowMax
+	}
+
+;The quest's goal by the game's memory, when it's in this zone (hops 0) and has a place: {r: how far, straight and flat (game
+;units), dz: how far up from the wizard ("" not known), h: the heading to it (degrees, + right; 0 right on it)}; "" when it
+;can't be told - no reading this step, the goal zones away, no goal point (a goal the game shows no way to)
+WalkGoalNear()
+	{
+	if (!WkNavOk || !IsObject(WkNavObj) || WkNavObj.hops = "" || WkNavObj.hops != 0 || WkNavObj.gx = "" || WkNavObj.gy = ""
+		|| WkNavObj.x = "" || WkNavObj.y = "" || WkNavObj.yaw = "")
+		return ""
+	gdx := WkNavObj.gx - WkNavObj.x, gdy := WkNavObj.gy - WkNavObj.y
+	gh := WalkNavHeading(WkNavObj.x, WkNavObj.y, WkNavObj.yaw, WkNavObj.gx, WkNavObj.gy)
+	return {r: Sqrt(gdx * gdx + gdy * gdy), dz: (WkNavObj.gz != "" && WkNavObj.z != "") ? WkNavObj.gz - WkNavObj.z : "", h: gh = "" ? 0 : gh}
+	}
+
+;By the goal by the game's memory - within TalkUnits, on the same floor: 1 / 0; "" not known (no memory, the goal zones away)
+WalkGoalOnTop()
+	{
+	gotGn := WalkGoalNear()
+	if (!IsObject(gotGn))
+		return ""
+	return (gotGn.r <= TalkUnits && (gotGn.dz = "" || Abs(gotGn.dz) <= 150)) ? 1 : 0
+	}
+
+;Where the goal is by the game's memory, for debug.log (" - the game's memory: the goal N units off, N up"), "" not known
+WalkGoalSay()
+	{
+	gsGn := WalkGoalNear()
+	return IsObject(gsGn) ? " - the game's memory: the goal " Round(gsGn.r) " units off" (gsGn.dz = "" ? "" : ", " Round(gsGn.dz) " up") ", " Round(gsGn.h) " degrees" : ""
+	}
+
+;The arrow hidden: may it back up and turn to find it? Not while the game's memory steers (its heading trusted, its distance
+;known - it stands in for the arrow, and can't only a moment: a battle starting, a loading screen), nor on top of the goal by
+;it (onTop: WalkGoalOnTop)
+WalkHiddenBackUpOk(onTop)
+	{
+	return !(WkNavUse && WkNavD != "") && onTop != 1
+	}
+
+;Stuck - not getting any closer (d: the distance now) - right by the goal: the thing itself in the way (an item on a table,
+;someone behind a counter), going round it only walks away. "talk": X (once per goal - WkStuckNearDone); "wait": X done already
+;and a talk goal's NPC this close by the game's memory - waiting there (X there is all it takes); "": not by it - going round
+;(a go-to goal behind a fence may need it). By the game's memory within TalkUnits (the goal in this zone, the same floor); else
+;the arrow's number within OnTopDist
+WalkStuckNear(d)
+	{
+	snTop := WalkGoalOnTop()
+	if (snTop = "")
+		return (d != "" && d <= OnTopDist && !WkStuckNearDone) ? "talk" : ""
+	if (!snTop)
+		return ""
+	;(the route round walls much longer than straight to it: a fence or a wall between - going round, not waiting by it)
+	snGn := WalkGoalNear()
+	if (IsObject(snGn) && WalkRouteRound(snGn.r))
+		return ""
+	return !WkStuckNearDone ? "talk" : IsObject(WalkTalkGoal()) ? "wait" : ""
+	}
+
+;Near the goal by the game's memory (WalkGoalNear in gn): the last bit to be walked closed loop (WalkApproachStep)? Walking on
+;(not at a goal), its heading steered by, out of battle, not a dungeon run; within ApproachUnits on the same floor; no mob's
+;reach or sight on the way, none waited for, no teleport ahead (the route's way then, as before); a straight way there - the
+;route (or the game's path) not much longer than straight - or right by it anyway; not given up on for now (WkApOffUntil)
+WalkApproachWanted(ByRef gn)
+	{
+	gn := ""
+	if (WkArrived != 0 || !WkNavUse || inbattle || IsObject(DgRun) || (WkApOffUntil && A_TickCount < WkApOffUntil) || !IsFunc("NavRead"))
+		return false
+	gn := WalkGoalNear()
+	if (!IsObject(gn) || gn.r > ApproachUnits || (gn.dz != "" && Abs(gn.dz) > 150))
+		return false
+	if (WkNavObj.escape != "" || WkNavObj.blindahead != "" || WkNavMob != "" || WkNavJump != "")
+		return false
+	;(a collect / defeat goal: its arrow only leads to the area - collecting's, CollectCheck)
+	if (WkGoalLine != "" && CollectGoal(WkGoalLine))
+		return false
+	awLen := (WkNavRouted && WkNavObj.left != "") ? WkNavObj.left : WkNavObj.dist
+	if (gn.r > 600 && (awLen = "" || awLen > gn.r * 1.15 + 150))
+		return false
+	;(right by it too: not straight at it through a fence, a wall or water - the route round it as before)
+	if (WalkRouteRound(gn.r))
+		return false
+	return true
+	}
+
+;The route round walls (the helper's, this step) much longer than straight to the goal r game units off: a fence, a wall or
+;water between - walking straight at it only gets stopped there
+WalkRouteRound(r)
+	{
+	return WkNavRouted && IsObject(WkNavObj) && WkNavObj.left != "" && WkNavObj.left > r * 1.3 + 300
+	}
+
+;Near the goal by the game's memory (WalkApproachWanted - gn its WalkGoalNear): the last bit walked closed loop (WalkApproach),
+;then X - a talk goal's NPC from TalkUnits off, anything else ArriveUnits. Past it, off to the side, the time up: turned and
+;walked again the next step (3 tries, then the route as before for 8 s); stopped by something (a wall, the NPC itself) within
+;TalkReach: X from there. A talk goal whose 3 tries in 2 minutes are used: waiting by it (WalkTalkWait). Just out of a
+;dialogue: a moment for the goal to move on first. dist: the step's distance (arrow units) for the log
+WalkApproachStep(gn, dist)
+	{
+	if (WkDlgEndAt && A_TickCount - WkDlgEndAt < 1500)
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys(true)
+		Sleep, 150
+		return true
+		}
+	asTalk := WalkTalkGoal()
+	asStop := IsObject(asTalk) ? TalkUnits : ArriveUnits
+	asWhy := gn.r <= asStop ? "there" : WalkApproach(asStop)
+	if (!Walking)
+		return false
+	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
+	asNow := WalkGoalNear()
+	if (asWhy = "" || asWhy = "new goal" || asWhy = "you" || !IsObject(asNow))
+		return true
+	;("there": let go a look's walking early - it may read a few dozen units over stopR; "blocked" with the route going round -
+	;a fence, a wall: a try that didn't get there, the route's way after 3)
+	if (asWhy = "there" || asNow.r <= asStop || (asWhy = "blocked" && asNow.r <= TalkReach && !WalkRouteRound(asNow.r)))
+		{
+		WkApTries := 0
+		if (IsObject(asTalk) && !WalkTalkTriesLeft())
+			return WalkTalkWait(dist, "at the goal again")
+		StartTalk(dist = "" ? "?" : dist)
+		return true
+		}
+	WkApTries += 1
+	if (WkApTries >= 3)
+		{
+		WkApTries := 0, WkApOffUntil := A_TickCount + 8000
+		WalkLog("approach: 3 tries didn't get within " asStop " of the goal (" Round(asNow.r) " off, the last: " asWhy ") - the route as before for 8 s")
+		}
+	return true
+	}
+
+;Walks the last bit to the goal closed loop by the game's memory (WalkGoalNear): W up and 1x first (no speed key with W down),
+;turned to face it on the spot (NavTurn, over 8 degrees off), then W held - no speed key - while the wizard's place is read
+;look after look (~40 ms each: 30-50 units at 1x), and let go once within stopR (a look's walking early), past its nearest
+;(further two looks running), the goal well off to the side close by or drifting off further out, not getting closer (a wall,
+;the NPC itself), the time it should take up (3 s at most), a new goal, you touching the keyboard or mouse, or the memory lost.
+;Each reading's place kept in WkNavObj. Why it stopped: "there", "passed", "off", "blocked", "time", "new goal", "you", "lost",
+;"" (walking off, the game not in front)
+WalkApproach(stopR)
+	{
+	gn := WalkGoalNear()
+	if (!IsObject(gn))
+		return "lost"
+	if (gn.r <= stopR)
+		return "there"
+	if (HeldW)
+		HoldW(0)
+	SpeedSet(0, "near the goal")
+	if (Abs(gn.h) > 8)
+		{
+		NavTurn(gn.h)
+		if (!Walking || !GameActive())
+			return ""
+		gn := WalkApproachLook()
+		if (!IsObject(gn))
+			return gn = "new" ? "new goal" : "lost"
+		if (gn.r <= stopR)
+			return "there"
+		}
+	apSpeed := (WkWalkSpeed > 0.1 ? WkWalkSpeed : 0.9) * (SpeedNow ? SpeedNow : 1)
+	apCap := Min(3000, Round((gn.r - stopR) / apSpeed * 1.4) + 300)
+	apFrom := gn.r, apPrev := gn.r, apRises := 0, apMisses := 0, apLooks := 0, apWhy := "time"
+	HoldW(1, true)
+	apDown := A_TickCount, apLookAt := A_TickCount, apProgAt := A_TickCount, apProgX := WkNavObj.x, apProgY := WkNavObj.y
+	loop
+		{
+		Sleep, 10
+		if (!Walking || !GameActive())
+			{
+			apWhy := ""
+			break
+			}
+		if (UserIdle() < A_TickCount - apDown)
+			{
+			apWhy := "you"
+			break
+			}
+		apLookMs := A_TickCount - apLookAt, apLookAt := A_TickCount
+		g := WalkApproachLook()
+		if (g = "new")
+			{
+			apWhy := "new goal"
+			break
+			}
+		if (!IsObject(g))
+			{
+			if (++apMisses >= 3)
+				{
+				apWhy := "lost"
+				break
+				}
+			continue
+			}
+		apMisses := 0, apLooks += 1, gn := g
+		;(it walks on a look's worth after this reading was taken, and a little after W comes up)
+		if (g.r - apSpeed * (apLookMs / 2 + 30) <= stopR)
+			{
+			apWhy := "there"
+			break
+			}
+		apRises := g.r > apPrev + 5 ? apRises + 1 : 0
+		if (apRises >= 2)
+			{
+			apWhy := "passed"
+			break
+			}
+		if ((Abs(g.h) > 100 && g.r <= stopR * 2) || (Abs(g.h) > 30 && g.r > stopR * 2 && A_TickCount - apDown > 300))
+			{
+			apWhy := "off"
+			break
+			}
+		;(the wizard himself hardly moving - not the distance: walking past beside the goal it hardly changes - a wall, the NPC)
+		if (A_TickCount - apProgAt >= 400)
+			{
+			if ((WkNavObj.x - apProgX) ** 2 + (WkNavObj.y - apProgY) ** 2 < 3600)
+				{
+				apWhy := "blocked"
+				break
+				}
+			apProgAt := A_TickCount, apProgX := WkNavObj.x, apProgY := WkNavObj.y
+			}
+		apPrev := g.r
+		if (A_TickCount - apDown > apCap)
+			break
+		}
+	HoldW(0)
+	WalkLog("approach: " (apWhy = "" ? "stopped" : apWhy) " - " Round(apFrom) " to " Round(gn.r) " units off the goal (stopping at " stopR "), " A_TickCount - apDown " ms, " apLooks " looks at the game's memory")
+	return apWhy
+	}
+
+;One look at the game's memory for WalkApproach: the wizard's place and facing (and the goal's) put into WkNavObj - its
+;WalkGoalNear; "new" a new goal meanwhile; "" not read (or another zone). A miss doesn't put the walker's own reads off
+;(NavRead's wait after one is put back, as MouseSteerYaw)
+WalkApproachLook()
+	{
+	alWait := NavWait, alUntil := NavWaitUntil, alWhy := NavWhy
+	nav := Func("NavRead").Call(120)
+	NavWait := alWait, NavWaitUntil := alUntil, NavWhy := alWhy
+	if (!IsObject(nav) || nav.x = "" || nav.y = "" || nav.yaw = "" || !IsObject(WkNavObj) || (nav.zone != "" && nav.zone != WkNavObj.zone))
+		return ""
+	if (nav.goalid != "" && WkNavObj.goalid != "" && nav.goalid "|" != WkNavObj.goalid "|")
+		return "new"
+	WkNavObj.x := nav.x, WkNavObj.y := nav.y, WkNavObj.yaw := nav.yaw
+	if (nav.z != "")
+		WkNavObj.z := nav.z
+	if (nav.dist != "")
+		WkNavObj.dist := nav.dist
+	if (nav.hops = 0 && nav.gx != "" && nav.gy != "")
+		WkNavObj.gx := nav.gx, WkNavObj.gy := nav.gy, WkNavObj.gz := nav.gz
+	return WalkGoalNear()
 	}
 
 ;Is this "Press X" prompt (key: its name's letters, WkPromptDest) one the quest wants? Its name in the quest's
@@ -1957,13 +2403,192 @@ WalkNear(d, arrowMax, units)
 WalkPromptWanted(key, d)
 	{
 	;(and right at a teleport on the game's path: its prompt is the way on)
-	if (WkArrived = 7 || WkNavJump != "" || (d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
+	if (WkArrived = 7 || WkNavJump != "")
+		return true
+	;(close to the goal: by the game's memory - the goal in this zone - within TalkReach on the same floor, a talk goal's only
+	;with its NPC's name on it (2026-10-25 11:28:49: X at a vendor's prompt by Edith Benchley, 3000 units "near" on the arrow's
+	;number, opened his shop); no memory: the arrow's number within NearDist, as before)
+	pwGn := WalkGoalNear()
+	if (IsObject(pwGn))
+		{
+		pwTalk := WalkTalkGoal()
+		if (pwGn.r <= TalkReach && (pwGn.dz = "" || Abs(pwGn.dz) <= 150) && (!IsObject(pwTalk) || WalkIsGoalNpc(key, pwTalk)))
+			return true
+		}
+	;(the goal zones away by the game's memory: only the way out's own prompt - a door wanting X - within TalkReach of it; not
+	;every NPC or vendor by every way out)
+	else if (WkNavOk && WkNavHops > 0)
+		{
+		if (IsObject(WkNavObj) && WkNavObj.dist != "" && WkNavObj.dist <= TalkReach)
+			return true
+		}
+	else if ((d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
 		return true
 	goal := WalkGoalLine()
 	if (goal != "" && CollectGoal(goal) && !RegExMatch(WkPromptVerb, "i)^(talk|speak|chat|shop|trade|buy|sell|browse|craft|learn|train)"))
 		return true
 	g := WalkLetters(goal)
 	return (StrLen(key) >= 4 && g != "" && InStr(g, key))
+	}
+
+;The quest's goal by the game's memory when it's a talk goal (PERSONA - "Talk To ...") in this zone: WalkGoalNear's {r, dz, h}
+;and npc (the NPC it names - NavGoal, "" not read for this goal), id (its goal id); "" otherwise
+WalkTalkGoal()
+	{
+	tgGn := WalkGoalNear()
+	if (!IsObject(tgGn))
+		return ""
+	tgSame := WkGoalId = "" || WkNavObj.goalid = "" || WkGoalId "|" = WkNavObj.goalid "|"
+	tgType := WkNavObj.goaltype != "" ? WkNavObj.goaltype : tgSame ? WkGoalType : ""
+	if (tgType != "PERSONA")
+		return ""
+	tgGn.npc := tgSame ? WkGoalNpc : "", tgGn.id := WkNavObj.goalid
+	return tgGn
+	}
+
+;Is the prompt key (its name's letters - WkPromptDest) the talk goal's NPC (tg: WalkTalkGoal)? Its name like the one the goal
+;names (OCR slips allowed - "EDITHBERHLEY"); not read: in the goal line
+WalkIsGoalNpc(key, tg)
+	{
+	if (StrLen(key) < 4 || !IsObject(tg))
+		return false
+	if (tg.npc != "")
+		return WalkNameLike(key, WalkLetters(tg.npc))
+	ignLine := WalkLetters(WkGoalLine)
+	return ignLine != "" && InStr(ignLine, key)
+	}
+
+;A try at the talk goal's NPC - X there (StartTalk, StartPressX at its prompt), by the game's memory within TalkReach on the
+;same floor
+WalkTalkCount()
+	{
+	tcGoal := WalkTalkGoal()
+	if (!IsObject(tcGoal) || tcGoal.r > TalkReach || (tcGoal.dz != "" && Abs(tcGoal.dz) > 150))
+		return
+	if (!IsObject(WkTalkXs))
+		WkTalkXs := []
+	WkTalkXs.Push({at: A_TickCount, id: tcGoal.id})
+	}
+
+;Tries left at the talk goal's NPC: fewer than 3 X in the last 2 minutes for this goal (the older ones dropped)
+WalkTalkTriesLeft()
+	{
+	ttId := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
+	ttN := 0, ttKeep := []
+	for each, ttX in (IsObject(WkTalkXs) ? WkTalkXs : [])
+		if (A_TickCount - ttX.at < 120000)
+			ttKeep.Push(ttX), ttN += (ttX.id "|" = ttId "|")
+	WkTalkXs := ttKeep
+	return ttN < 3
+	}
+
+;X at this prompt (key: its name's letters) - the talk goal's own NPC by the game's memory, within TalkReach on the same floor -
+;even right after a dialogue or an X there (no DialogQuiet, no once a minute): 3 s after the last X, while its tries last
+WalkTalkPromptOk(key)
+	{
+	tpGoal := WalkTalkGoal()
+	if (!IsObject(tpGoal) || tpGoal.r > TalkReach || (tpGoal.dz != "" && Abs(tpGoal.dz) > 150) || !WalkIsGoalNpc(key, tpGoal))
+		return false
+	return (!WkLastX || A_TickCount - WkLastX >= 3000) && WalkTalkTriesLeft()
+	}
+
+;Is this prompt (key: its name's letters) the talk goal's own NPC with its 3 tries in 2 minutes used? Then no X at it by any
+;way (the prompt, a quest marker) till they come free - WalkTalkRetry X's it again then
+WalkTalkSpent(key)
+	{
+	tsGoal := WalkTalkGoal()
+	return IsObject(tsGoal) && WalkIsGoalNpc(key, tsGoal) && !WalkTalkTriesLeft()
+	}
+
+;After X at the goal opened nothing, or its dialogue left the goal as it was: "push" - walk on into it (a doorway, a loading
+;point: as before - anything but a talk goal by the game's memory, or a door's or teleporter's prompt); for a talk goal's NPC
+;in this zone: "again" - X at it again from close by (WalkTalkAgain), "wait" - its 3 tries in 2 minutes used, waiting by it
+;(WalkTalkWait), "walk" - too far for X (over TalkReach, another floor): walking on to it
+WalkNoDialogNext()
+	{
+	ndGoal := WalkTalkGoal()
+	if (!IsObject(ndGoal) || RegExMatch(WkPromptVerb, "i)^(enter|open|use)$"))
+		return "push"
+	if (ndGoal.r > TalkReach || (ndGoal.dz != "" && Abs(ndGoal.dz) > 150))
+		return "walk"
+	if (!WalkTalkTriesLeft())
+		return "wait"
+	;(or the route round walls much longer than straight to it: behind a fence or a wall, X doesn't reach it - walking round;
+	;only while its tries last - the arrival by the straight distance X's it again at once)
+	return WalkRouteRound(ndGoal.r) ? "walk" : "again"
+	}
+
+;What WalkNoDialogNext said for a talk goal: "again" - walked up within 150 if it's over 200 off (WalkApproach), turned to face
+;the NPC if it's over 45 degrees off, X again (2026-10-25 11:36:55: X from right over him worked, so close by is enough); "wait"
+;- WalkTalkWait; "walk" - walking on (the approach takes it there). dist: the step's distance, for the log
+WalkTalkAgain(what, dist)
+	{
+	why := WkDialog ? "the goal as it was after the dialogue" : "X opened nothing"
+	if (what = "wait")
+		return WalkTalkWait(dist, why)
+	taGoal := WalkTalkGoal()
+	if (what = "walk")
+		{
+		WalkLog("talk: " why " - the goal's NPC" (IsObject(taGoal) ? " " Round(taGoal.r) " off by the game's memory" (taGoal.dz = "" ? "" : ", " Round(taGoal.dz) " up") : "") " - walking on to it")
+		WkArrived := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+		return true
+		}
+	if (IsObject(taGoal) && taGoal.r > 200)
+		{
+		taFrom := taGoal.r
+		taWhy := WalkApproach(150)
+		if (!Walking)
+			return false
+		taGoal := WalkTalkGoal()
+		;(stopped on the way further off than TalkUnits and no closer - a fence or a wall, not the NPC: X doesn't reach from there;
+		;round it by the route for 8 s, as after the approach's 3 tries - a fence's end near the straight way leaves the route not
+		;much longer, WalkRouteRound doesn't tell)
+		if (taWhy = "blocked" && IsObject(taGoal) && taGoal.r > TalkUnits && taGoal.r > taFrom - 50)
+			{
+			WalkLog("talk: " why " - the way to " (taGoal.npc != "" ? taGoal.npc : "the goal's NPC") " blocked " Round(taGoal.r) " off (a fence, a wall?) - round it by the route, no X")
+			WkArrived := 0, WkApOffUntil := A_TickCount + 8000, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+			return true
+			}
+		}
+	if (IsObject(taGoal) && Abs(taGoal.h) > 45 && GameActive())
+		NavTurn(taGoal.h)
+	if (!Walking)
+		return false
+	WalkLog("talk: " why " - X at " (IsObject(taGoal) && taGoal.npc != "" ? taGoal.npc : "the goal's NPC") " again" (IsObject(taGoal) ? ", " Round(taGoal.r) " off" : "") " - not walking on through it")
+	StartTalk(dist = "" ? "?" : dist, false)
+	return true
+	}
+
+;A talk goal's NPC X'd 3 times in 2 minutes with nothing coming of it: waiting by it for the next goal - X again once its tries
+;come free (WalkTalkRetry) - and a notice, once for this goal. why: for the log
+WalkTalkWait(dist, why)
+	{
+	twGoal := WalkTalkGoal()
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	WkArrived := 1, WkFar := 0, WkArrDist := (dist = "?" ? "" : dist), WkArrGoal := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
+	twNpc := (IsObject(twGoal) && twGoal.npc != "") ? twGoal.npc : "the quest's NPC"
+	WalkLog("talk: " why " - X at " twNpc " 3 times in 2 minutes and nothing came of it: waiting by it for the next goal (X again in a while)")
+	SetStatus("arrived - X at " twNpc " did nothing, waiting for the next goal")
+	if (WkTalkNoted != WkArrGoal "|")
+		{
+		WkTalkNoted := WkArrGoal "|"
+		WalkNotify("wait", "Talking to " twNpc " didn't work", "X at " twNpc " opened nothing 3 times (or its dialogue left the quest as it was), so the bot waits by it and tries again every 2 minutes. Talk to it yourself if it needs something the bot can't do - it walks on by itself once there's a new goal.")
+		}
+	return true
+	}
+
+;Waiting at a talk goal's NPC (WkArrived = 1) by the game's memory, within TalkReach: X again once its tries have come free
+;and a minute's gone since the last X. True if it did
+WalkTalkRetry(dist)
+	{
+	trGoal := WalkTalkGoal()
+	if (!IsObject(trGoal) || trGoal.r > TalkReach || (trGoal.dz != "" && Abs(trGoal.dz) > 150) || inbattle
+		|| (WkLastX && A_TickCount - WkLastX < 60000) || !WalkTalkTriesLeft())
+		return false
+	WalkLog("talk: still by " (trGoal.npc != "" ? trGoal.npc : "the goal's NPC") " with the goal as it was - X again")
+	StartTalk(dist = "" ? "?" : dist, false)
+	return true
 	}
 
 ;An NPC whose "Press X" prompt shows, wearing a quest marker - a gold "?" in a red swirl over its head, its name in
@@ -2160,6 +2785,9 @@ WalkCloseWindow(why, now := false)
 	ImageSearch, cwX2, cwY2, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
 	cwGone := ErrorLevel != 0
 	WalkLog(why " - clicked a window's close button at " cwX + cwHalf - GameLeft "," cwY + cwHalf - GameTop ": " (cwGone ? "closed" : "still there"))
+	;(the time it held him isn't walking without getting closer: the stuck watch starts afresh)
+	if (cwGone)
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount
 	return cwGone
 	}
 
@@ -2279,8 +2907,20 @@ Turn(h)
 	if (Abs(h) >= 3 && Abs(h) <= 180 && MsK != "" && IsFunc("MouseTurnAny") && !(MsTriedAt && A_TickCount - MsTriedAt < 500)
 		&& WkNavChecked && WkNavTrusted && MouseSteerWhyNot(HeldW ? true : false, false) = "")
 		{
+		MsStandGot := ""
 		if (MouseTurnAny(h) != "")
 			return
+		;(a turn from standing by the mouse that missed may have turned him part of the way, or past: the rest - not h again
+		;on top. 2026-10-25 11:42:26: 158 wanted, the mouse -168 (192 right), then A/D 158 more)
+		if (MsStandGot != "" && Abs(MsStandGot) >= 3)
+			{
+			h := ArrowWrap(h - MsStandGot)
+			if (Abs(h) < 3)
+				{
+				WkTurnAt := A_TickCount
+				return
+				}
+			}
 		}
 	if (WkNavUse && NavTurn(h))
 		return
@@ -2359,6 +2999,7 @@ BackUp(ms)
 	if (MsK != "" && IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500)
 		&& MouseSteerWhyNot(HeldW ? true : false, false) = "")
 		{
+		MsStandGot := ""
 		round1 := MouseTurnAny(180)
 		if (round1 != "" && Abs(round1) >= 120)
 			{
@@ -2376,6 +3017,10 @@ BackUp(ms)
 		;(turned part of the way and stopped: turned back first)
 		if (round1 != "" && Abs(round1) >= 3)
 			MouseTurn(-round1, false)
+		;(a turn from standing by the mouse that missed but turned him: turned back before S - else S backs him off the wrong
+		;way. 2026-10-25 11:29:50: the mouse turned -133 of 180, S, then a 133 turn back the next step)
+		else if (round1 = "" && MsStandGot != "" && Abs(MsStandGot) >= 3)
+			NavTurnOrKeys(-MsStandGot)
 		}
 	HoldW(0)
 	Critical
@@ -2396,8 +3041,16 @@ BackUp(ms)
 ;A turn standing still (BackUp's way back when the mouse's missed): by the game's memory if it can, else A/D held
 NavTurnOrKeys(h)
 	{
+	MsStandGot := ""
 	if (MouseStandTurn(h) != "")
 		return
+	;(the mouse missed but turned him: the rest, not h again on top)
+	if (MsStandGot != "" && Abs(MsStandGot) >= 3)
+		{
+		h := ArrowWrap(h - MsStandGot)
+		if (Abs(h) < 3)
+			return
+		}
 	if ((WkNavUse || WkNavTrusted || WkNavChecked) && NavTurn(h))
 		return
 	key := h < 0 ? "a" : "d"
@@ -2609,7 +3262,13 @@ SpeedWalking()
 		return SpeedSet(0, "the distance to the goal unknown")
 	;(slowed within SpeedSlowDist / Units, fast again only half as far again past it - not on and off at the line)
 	k := (SpeedNow > 1) ? 1 : 1.5
-	if (WkLastDist != "" && WalkNear(WkLastDist, SpeedSlowDist * k, SpeedSlowUnits * k))
+	;(the goal zones away by the game's memory: the way out of this zone - SpeedExitUnits, not a whole stretch of every leg at 1x)
+	spUnits := (WkNavOk && WkNavHops > 0) ? SpeedExitUnits : SpeedSlowUnits
+	if (WkLastDist != "" && WalkNear(WkLastDist, SpeedSlowDist * k, spUnits * k))
+		return SpeedSet(0, "near the goal")
+	;(the goal in this zone by the game's memory: straight at it too - another floor's, or one round a wall, is near as well)
+	spGoal := WalkGoalNear()
+	if (IsObject(spGoal) && spGoal.r <= SpeedSlowUnits * k)
 		return SpeedSet(0, "near the goal")
 	;(no flip to fast and back: fast once W's been held 0.8 s, and not within 3 s of the last press)
 	if (SpeedNow <= 1 && (A_TickCount - WkWalkFrom < 800 || (SpeedSentAt && A_TickCount - SpeedSentAt < 3000)))
@@ -2677,7 +3336,8 @@ CollectCheck(dist)
 		return true
 		}
 	;(collecting before a battle or a prompt: check the goal line at once, wherever the arrow is)
-	there := going || (dist <= ArriveDist) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000)
+	;(not by the distance with the goal zones away by the game's memory: that's by the way out of this zone, not the goal)
+	there := going || (dist <= ArriveDist && !(WkNavOk && WkNavHops > 0)) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000)
 	if (!there || A_TickCount - WkGoalReadAt < 3000)
 		return false
 	WkGoalReadAt := A_TickCount
@@ -2921,6 +3581,9 @@ WalkGoalText()
 	if (IsFunc("NavGoal"))
 		{
 		g := Func("NavGoal").Call()
+		;(its kind, the NPC it names and its id kept - a talk goal's NPC: WalkTalkGoal)
+		if (IsObject(g) && g.text != "")
+			WkGoalType := g.type, WkGoalNpc := g.npc, WkGoalId := g.goalid
 		if (IsObject(g) && g.text != "" && g.shown != 0)
 			{
 			WkGoalFrom := "the game"
@@ -3844,6 +4507,10 @@ WalkNav(hScr, dScr)
 	;turned avoiding off for every mob - the map's rings went and the wizard walked into crabs it didn't need)
 	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"]) && WkArrived != 7
 	nav := Func("NavRead").Call(150, false, NavRoute, avoidMobs, Func("WalkGoalLine"))
+	;(where the arrow points not read, but the goal in this zone known: steered at the goal itself - not the whole reading
+	;dropped. 2026-10-25 11:42:01: "can't say where the arrow points", then a guessed arrival and a push)
+	if (IsObject(nav) && (nav.tx = "" || nav.ty = "") && nav.hops = 0 && nav.gx != "" && nav.gy != "")
+		nav.tx := nav.gx, nav.ty := nav.gy, nav.tz := nav.gz
 	why := WalkNavProblem(nav)
 	if (why = "")
 		{
@@ -3918,12 +4585,17 @@ WalkNav(hScr, dScr)
 		;in Pigswick Academy: each zone's own once worked out there)
 		if (nav.zone != WkNavScaleZone)
 			WalkNavZoneScale(nav.zone)
-		if (dScr != "" && dScr >= 20 && nav.dist > 0 && navSpeed != "" && navSpeed * 150 <= nav.dist * 0.04)
+		;(only with the goal in this zone: zones away the arrow's number counts the legs in the other zones too - its readings
+		;fell 29.67 to 14.44 walking one zone, 2026-10-25 11:25, and put the scale off: the memory's distance dropped)
+		if (dScr != "" && dScr >= 20 && nav.dist > 0 && navSpeed != "" && navSpeed * 150 <= nav.dist * 0.04 && nav.hops = 0)
 			WalkNavLearnScale(nav.dist / dScr, nav.hops)
-		if (nav.dist != "" && WkNavScale > 0 && WkNavScaleBad < 2)
-			WkNavD := Round(nav.dist / WkNavScale)
-		if (WkNavRouted && nav.left != "" && WkNavScale > 0 && WkNavScaleBad < 2)
-			WkNavLeft := nav.left / WkNavScale
+		;(its distance always, the memory read: a scale distrusted, or none - 100, every zone worked out with the goal in it
+		;has been 100-103; the OCR'd number misses lone digits, and with no distance the memory can't stand in for the arrow)
+		navScale := (WkNavScale > 0 && WkNavScaleBad < 2) ? WkNavScale : 100
+		if (nav.dist != "")
+			WkNavD := Round(nav.dist / navScale)
+		if (WkNavRouted && nav.left != "")
+			WkNavLeft := nav.left / navScale
 		if (hScr != "" && hTarget != "")
 			WalkNavVote(hScr, hTarget)
 		WkNavUse := WkNavTrusted && WkNavH != ""
@@ -4088,13 +4760,13 @@ WalkNavLearnScale(ratio, hops)
 		if (Abs(ratio / WkNavScale - 1) <= 0.25)
 			WkNavScaleBad := 0
 		;(only a guess borrowed from other zones: this zone's own readings so far, till it's worked out)
-		else if (++WkNavScaleBad >= 2 && !WkNavZScales.HasKey(WkNavScaleZone))
+		else if (++WkNavScaleBad >= 2 && WalkNavOwnScale(WkNavScaleZone) = "")
 			{
 			WkNavScale := WalkMedian(WkNavScales), WkNavScaleBad := 0
 			WalkLog("the game's memory: other zones' distance scale doesn't fit " WkNavScaleZone " - " Round(WkNavScale, 2) " from its readings so far, till it's worked out")
 			}
 		else if (WkNavScaleBad = 2)
-			WalkLog("the game's memory: its distance doesn't match the arrow's any more (" Round(ratio, 2) " game units per arrow unit, not " Round(WkNavScale, 2) ") - the OCR'd number till it's worked out again")
+			WalkLog("the game's memory: its distance doesn't match the arrow's any more (" Round(ratio, 2) " game units per arrow unit, not " Round(WkNavScale, 2) ") - its distance by 100 to the arrow's 1 till it's worked out again")
 		}
 	if (WkNavScales.Length() < 5)
 		return
@@ -4102,7 +4774,7 @@ WalkNavLearnScale(ratio, hops)
 	for i, r in WkNavScales
 		if (Abs(r / mid - 1) <= 0.12)
 			close += 1
-	own := WkNavZScales.HasKey(WkNavScaleZone)
+	own := WalkNavOwnScale(WkNavScaleZone) != ""
 	if (close < 5 || (own && Abs(mid / WkNavScale - 1) <= 0.03))
 		return
 	was := WkNavScale
@@ -4296,6 +4968,10 @@ NavTurn(h)
 	if (ending != "wrong way" && ending != "not turning" && turned * h > 0 && Abs(turned) >= 15 && (!WkNavChecked || !WkNavTrusted))
 		WalkNavConfirm("holding " key " turned the wizard " Round(Abs(turned)) " degrees the way its heading said")
 	WkNavTurns += 1
+	;(a long one - a window closed, the game's menu looked at: its time isn't walking without getting closer. 2026-10-25
+	;11:29:18: Unstick the moment the shop held him 11 s here was closed)
+	if (A_TickCount - downAt > 1500)
+		WkBestTime := A_TickCount, WkLastRead := A_TickCount
 	return true
 	}
 
@@ -4360,11 +5036,12 @@ WalkNavStandIn()
 WalkNavZoneScale(zone)
 	{
 	WkNavScaleZone := zone, WkNavScales := [], WkNavScaleBad := 0
-	WkNavScale := WkNavZScales.HasKey(zone) ? WkNavZScales[zone] : WalkNavMiddleScale(StrSplit(zone, "/")[1])
-	;(nothing worked out anywhere yet - a new install: a first guess, Wizard City's; two fair readings that
-	;disagree put this zone's own in its place, WalkNavLearnScale)
+	zsOwn := WalkNavOwnScale(zone)
+	WkNavScale := zsOwn != "" ? zsOwn : WalkNavMiddleScale(StrSplit(zone, "/")[1])
+	;(nothing worked out anywhere yet - a new install: a first guess, 100 (every zone worked out with the goal in it); two
+	;fair readings that disagree put this zone's own in its place, WalkNavLearnScale)
 	if (WkNavScale = "")
-		WkNavScale := 41
+		WkNavScale := 100
 	;(a heading that's checked but was distrusted in the last zone - not matching the arrow, the keys not taken:
 	;another go here, as a fresh run would)
 	if (WkNavChecked && !WkNavTrusted)
@@ -4378,11 +5055,23 @@ WalkNavMiddleScale(world := "")
 	vals := [], inWorld := []
 	for zoneName, sc in WkNavZScales
 		{
+		;(only fair ones - WalkNavOwnScale)
+		if (WalkNavOwnScale(zoneName) = "")
+			continue
 		vals.Push(sc)
 		if (world != "" && StrSplit(zoneName, "/")[1] = world)
 			inWorld.Push(sc)
 		}
-	return inWorld.Length() ? WalkMedian(inWorld) : vals.Length() ? WalkMedian(vals) : WkNavScaleAll
+	return inWorld.Length() ? WalkMedian(inWorld) : vals.Length() ? WalkMedian(vals) : (WkNavScaleAll >= 50 && WkNavScaleAll <= 200) ? WkNavScaleAll : ""
+	}
+
+;A zone's own scale (the arrow's distance per game unit) as kept - "" none, or one off 50-200: learned before v0.51.3 with the
+;goal zones away, the arrow's number counting the other zones' legs too (3-87 in the file then: KT_Library 3.15, WC_Ravenwood
+;4.59, WC_Hub 11.7); every zone worked out with the goal in it has been 100-103. Learned again there, with the goal in it
+WalkNavOwnScale(zone)
+	{
+	osSc := (IsObject(WkNavZScales) && WkNavZScales.HasKey(zone)) ? WkNavZScales[zone] : ""
+	return (osSc != "" && osSc >= 50 && osSc <= 200) ? osSc : ""
 	}
 
 ;What was learned about the game's memory, from resources\nav_calibration.txt: WkNavSign (which way round its

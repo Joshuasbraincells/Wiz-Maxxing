@@ -1348,6 +1348,8 @@ BotToggle()
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		BlockInput, MouseMoveOff
+		if (IsObject(DeckBoss))
+			DebugLog("Deck: no boss ahead now - " DeckBoss.name " (the bot's off)"), DeckBoss := ""
 		DebugLog("Bot off (" HkText("bot") ") - it does nothing till " HkText("bot") " again")
 		SpeedSet(0, "bot off", true)
 		TrayTip, Wizard101 bot, % "Off - the bot does nothing till you press " HkText("bot") " again.", 4, 1

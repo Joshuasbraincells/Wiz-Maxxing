@@ -4,6 +4,13 @@
 ; (anything else, collect goals, bosses, dungeon runs, farming), the school it's for, and the game's Equipment Set
 ; (Ctrl+1..9) that puts its in-game deck on. The bot picks one before each fight from what's ahead (DeckPick) and presses
 ; that set's key out of battle (DeckEquip). No decks - or decks that set nothing - and it plays exactly as without.
+; A boss is known before the fight from the game's memory (2026-10-25, "it doesn't change decks for the bosses" - Alt+1 only
+; names it inside the battle, too late for the in-game deck): the zone's mobs' titles, ranks and health (the helper's
+; /mobs, READ-ONLY - vision\bossmem.py) - a boss the quest's goal names, the walker goes to or the dungeon run's way leads
+; to is "a boss ahead" (DeckBossLook), and the boss deck goes on before the fight (an Elite only when it takes 3 or more
+; of your best hits); in the battle its enemies from the memory (/battle) - the boss deck's settings without Alt+1 (a
+; boss ahead held: while its in-game deck is the one on). One only passed by isn't: the walker routes round it, and one
+; walked into is found in the battle.
 ; One file per deck: decks\<id>.txt - yours (updates keep them). The dashboard's Cards tab shows and edits them
 ; (Dashboard.ahk). AutoHotkey v1.1, #Included by Autofarmer.ahk.
 
@@ -11,6 +18,15 @@
 ;the one in use ("" none - your Settings as they are) and why, read again soon (an edit on the tab), when an Equipment Set
 ;was last pressed, the battle it was picked for, the Cards tab's view (0 the hand, else a deck's number in DeckList)
 global DeckList, DeckNow, DeckWhy, DeckDirty, DeckEqAt, DeckDuel, DeckView
+;A boss ahead, out of battle, from the game's memory (DeckBossLook): {key (its gid, else its name), name, gid, title,
+;rank, health, school, kind (boss, elite), text ("Governor Nereus, rank 9 boss"), why (the quest's goal names it, ...),
+;order, dist, since, seenAt (last found ahead - or the end of a battle it wasn't in), battlesAt (the battle count then),
+;battled (a battle seen while it was on), inBattle (1 the boss was in that battle by the game's memory, 0 not, "" not
+;known), over (that battle over: let go at the next look unless it's still ahead), misses (the zone's mobs not read, in
+;a row)} - "" none. A battle's boss ({name, kind, text, max, gid, from: memory - the
+;battle's enemies read, walk - the boss ahead}, "" none), the rounds it's been looked for, 1 once the memory answered.
+;Declared only (a top-level := never runs in an #Included file)
+global DeckBoss, DeckFoe, DeckFoeTries, DeckFoeKnown
 ;The deck being edited on the Cards tab (a copy - saved to its file by Save), the hand's pictures wanted (Dashboard.ahk
 ;DashCardShow), and the tab's controls (a control's variable has to be global)
 global DeckEdit, DashCardWant
@@ -205,11 +221,15 @@ DeckById(id)
 	return ""
 	}
 
-;The deck to use now and why ({deck: d or "", why}): only decks for this wizard's school (or any) - the one fought as in
-;a battle, else the one this character fought as before. First match wins: the dungeon run's deck, the one pinned on the
-;Cards tab, in a battle the boss's (your Alt+1 pick), a collect goal's, farming's (loop or lore mode), a dungeon run's,
-;anything else's - none: your Settings as they are. Of several for the same, the highest priority
-DeckPick(inBattle)
+;The deck to use now and why ({deck: d or "", why, boss: 1 when it's for a boss - DeckEquip puts it on sooner}): only
+;decks for this wizard's school (or any) - the one fought as in a battle, else the one this character fought as before.
+;First match wins: the dungeon run's deck, the one pinned on the Cards tab, the boss's (in a battle: your Alt+1 pick, or
+;a boss among its enemies by the game's memory - or, that not read, the boss ahead it was walked into - or a boss ahead
+;still held, its deck's Equipment Set the one on in the game: a fight on the way to it plays the cards that are in hand;
+;out of battle, the bot on: a boss ahead - DeckBossLook), a collect goal's, farming's (loop or lore mode), a dungeon
+;run's, anything else's - none: your Settings as they are. Of several for the same, the highest priority. noBoss: as if
+;there were no boss (the deck an Elite is measured against - DeckBestHit)
+DeckPick(inBattle, noBoss := false)
 	{
 	if (!IsObject(DeckList) || !DeckList.Length())
 		return {deck: "", why: "no decks"}
@@ -227,7 +247,18 @@ DeckPick(inBattle)
 		if (IsObject(d) && DeckFits(d, sch))
 			return {deck: d, why: "pinned on the Cards tab"}
 		}
-	for i, use in [["boss", inBattle && BossChoosen, inBattle && BossChoosen ? "a boss (your " HkText("boss") " pick)" : ""]
+	;(the boss's: your Alt+1 pick; in a battle a boss among its enemies - DeckFoe, DeckRound - or the boss ahead held,
+	;while its deck is the one on in the game; out of battle a boss ahead)
+	bossWhy := "", bossHeld := 0
+	if (!noBoss && inBattle && BossChoosen)
+		bossWhy := "a boss (your " HkText("boss") " pick)"
+	else if (!noBoss && inBattle && IsObject(DeckFoe))
+		bossWhy := (DeckFoe.from = "memory" ? "a boss in this battle: " : "a boss ahead: ") DeckFoe.text
+	else if (!noBoss && inBattle && BotOn && IsObject(DeckBoss))
+		bossWhy := "a boss ahead: " DeckBoss.text " (its deck is on)", bossHeld := 1
+	else if (!noBoss && !inBattle && BotOn && IsObject(DeckBoss))
+		bossWhy := "a boss ahead: " DeckBoss.text
+	for i, use in [["boss", bossWhy != "", bossWhy]
 		, ["collect", IsObject(WkCollect) && !WkCollect.gaveUp, "a collect goal"]
 		, ["farm", loopmode || loremode, "farming"]
 		, ["dungeon", IsObject(DgRun), "a dungeon run"]
@@ -239,8 +270,19 @@ DeckPick(inBattle)
 		for j, d in DeckList
 			if (d.when[use[1]] && DeckFits(d, sch) && (!IsObject(best) || d.priority > best.priority))
 				best := d
+		;(a boss ahead held in a battle it isn't in: its deck's settings only while its in-game deck is on - the set put
+		;on last, DeckEquip's; another set on: the deck for what this battle is)
+		if (use[1] = "boss" && bossHeld && IsObject(best))
+			{
+			;(no Equipment Set: it puts no cards on - the deck for what this battle is)
+			if (!best.eqset)
+				continue
+			IniRead, onSet, %A_ScriptDir%\dashboard.ini, decks, % "eqset" (IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""), %A_Space%
+			if (onSet != "" && onSet != best.eqset)
+				continue
+			}
 		if (IsObject(best))
-			return {deck: best, why: use[3]}
+			return {deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0}
 		}
 	return {deck: "", why: "no deck for this"}
 	}
@@ -256,6 +298,9 @@ DeckSet(d, why)
 	{
 	if ((IsObject(d) ? d.id : "") = (IsObject(DeckNow) ? DeckNow.id : ""))
 		{
+		;(the same deck for another reason - a boss ahead now in the battle: the dashboard's line says so, not the log)
+		if (why != DeckWhy && IsObject(DashSees))
+			DashSees.deck := IsObject(d) ? d.name " (" why ")" : "-"
 		DeckNow := d, DeckWhy := why
 		return false
 		}
@@ -270,8 +315,8 @@ DeckSet(d, why)
 	return true
 	}
 
-;Out of battle, every 2 s (the main loop): the decks read again after an edit, the deck for what's ahead picked, and its
-;Equipment Set put on
+;Out of battle, every 2 s (the main loop): the decks read again after an edit, a boss ahead looked for (the game's
+;memory - DeckBossLook), the deck for what's ahead picked, and its Equipment Set put on (a boss's sooner)
 DeckTick()
 	{
 	static lookAt := 0
@@ -280,21 +325,46 @@ DeckTick()
 	lookAt := A_TickCount
 	if (!IsObject(DeckList) || DeckDirty)
 		DeckDirty := 0, DeckLoadAll()
+	DeckBossLook()
 	p := DeckPick(false)
 	DeckSet(p.deck, p.why)
 	if (IsObject(p.deck))
-		DeckEquip(p.deck)
+		DeckEquip(p.deck, p.boss)
 	}
 
 ;A battle round (once the school's known): a new battle - its deck picked; your Alt+1 boss pick - the boss's, if there's
-;one (the in-game deck can't change in a battle: its settings only)
+;one; the battle's enemies from the game's memory (the helper's /battle - DeckFoeLook: a boss among them, the boss deck's
+;settings without Alt+1; looked for in its first 3 rounds till the memory answers - not read: the boss ahead it was
+;walked into). The in-game deck can't change in a battle: its settings only. A battle is told by its duel in the game's
+;log (BlDuel), else by the battle count (constant within a battle) - not every round a new one
 DeckRound()
 	{
 	if (!IsObject(DeckList))
 		DeckLoadAll()
-	if (BlDuel != "" && BlDuel = DeckDuel && !(BossChoosen && !(IsObject(DeckNow) && DeckNow.when.boss)))
+	drKey := BlDuel != "" ? BlDuel : "#" battles
+	drNew := drKey != DeckDuel
+	if (drNew)
+		DeckFoe := "", DeckFoeTries := 0, DeckFoeKnown := 0
+	;(an Equipment Set pressed just before this battle - maybe in its start, which the game doesn't take: not kept as
+	;the one on, so it's pressed again after the fight rather than skipped for 15 minutes. The spellbook - it only shows
+	;out of battle - not seen half a second or more after the set was pressed (the main loop looks for it right after
+	;DeckTick): pressed at the battle's start or under a dialog, maybe not taken)
+	if (drNew && DeckEqAt && BookSeenAt < DeckEqAt + 500)
+		{
+		drWho := IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""
+		IniDelete, %A_ScriptDir%\dashboard.ini, decks, eqset%drWho%
+		}
+	drFoe := 0
+	if (!DeckFoeKnown && DeckFoeTries < 3 && DeckBossWanted())
+		{
+		DeckFoeTries += 1
+		drWas := IsObject(DeckFoe) ? DeckFoe.from "|" DeckFoe.name : ""
+		DeckFoeLook()
+		drFoe := drWas != (IsObject(DeckFoe) ? DeckFoe.from "|" DeckFoe.name : "")
+		}
+	if (!drNew && !drFoe && !(BossChoosen && !(IsObject(DeckNow) && DeckNow.when.boss)))
 		return
-	DeckDuel := BlDuel
+	DeckDuel := drKey
 	p := DeckPick(true)
 	DeckSet(p.deck, p.why)
 	}
@@ -302,14 +372,15 @@ DeckRound()
 ;The deck's in-game deck put on - its Equipment Set's key (Ctrl+1..9 - the game's own; also its gear, pet and mount, as
 ;you set the set up), out of battle only, with nothing loading, Wizard101 in front and you away from the keys and mouse
 ;(as long as "Wait while I play" waits - handsoff, 3 s at least; Play for me: never waited for), once a minute at most (the
-;game says "Slow down!" past 10 changes in 2 minutes); the set put on last kept by character (dashboard.ini [decks]
-;eqset<CharID>) and pressed again after 15 minutes (a press the game didn't take - a dialog up, a battle starting)
-DeckEquip(d)
+;game says "Slow down!" past 10 changes in 2 minutes) - soon (a boss ahead: its fight is coming) 10 s after the last; the
+;set put on last kept by character (dashboard.ini [decks] eqset<CharID>) and pressed again after 15 minutes (a press the
+;game didn't take - a dialog up, a battle starting)
+DeckEquip(d, soon := false)
 	{
 	static at := {}
 	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 3
 	if (!d.eqset || !BotOn || inbattle = 1 || WkLoading || (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call())
-		|| !GameActive() || UserIdle() < Max(3, secs) * 1000 || (DeckEqAt && A_TickCount - DeckEqAt < 60000))
+		|| !GameActive() || UserIdle() < Max(3, secs) * 1000 || (DeckEqAt && A_TickCount - DeckEqAt < (soon ? 10000 : 60000)))
 		return false
 	who := IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""
 	IniRead, was, %A_ScriptDir%\dashboard.ini, decks, eqset%who%, %A_Space%
@@ -506,6 +577,266 @@ DeckDamageText(d)
 	return "Damage a hit (" r.school ", your damage " r.damage "%, critical " r.crit "): " r.lo " (" r.loName ", nothing on it, no critical) to " r.hi
 		. (r.guess ? "+" : "") " (" r.hiName " at its best" (r.boosts != "" ? ", with " r.boosts : "") (r.crit > 0 ? ", a critical x2 - " r.hiNoCrit " without" : "") ")"
 		. (r.guess ? " - its range's top isn't known: its least used" : "")
+	}
+
+;---- A boss ahead: the boss deck before the fight (the game's memory - read-only) ----
+;
+;Alt+1 names the boss inside the battle - too late for the in-game deck. The helper's /mobs (NavMobs in Vision.ahk, READ-
+;ONLY: nothing in the game is written, injected or hooked) gives each of the zone's mobs its title as the game has it
+;(Boss, Elite, Normal...), rank, max health and the game's own boss flag (vision\bossmem.py). A boss (or an Elite that
+;takes 3 or more of your best hits) is "ahead" when the quest's goal names it, the walker goes to it (the helper's quest
+;mob by its name or its goal - not one of the same family elsewhere in the zone) or the dungeon run's way leads to it -
+;then the deck for bosses is picked and its Equipment Set pressed before the fight. One only passed by isn't (the walker
+;routes round it; one walked into is found in the battle - DeckFoeLook). Kept till that battle's over, or 30 s after
+;it's gone or far off - counted from the end of a battle it wasn't in (no switching back and forth); a missed reading
+;changes nothing, but 60 in a row (2 minutes), the bot off or another zone let it go. Needs the bot on, out of battle,
+;nothing loading, a deck for bosses, navmem on and the vision helper (no memory: your Alt+1 pick in the battle, as before)
+
+;There's a deck for bosses (else there's nothing to look for)
+DeckBossWanted()
+	{
+	for dbwI, dbwD in IsObject(DeckList) ? DeckList : []
+		if (dbwD.when.boss)
+			return true
+	return false
+	}
+
+;Out of battle (DeckTick, every 2 s): the zone's mobs read (NavMobs) and a boss ahead looked for - DeckBoss set, kept or
+;let go (see above)
+DeckBossLook()
+	{
+	;(the zone from the game's log now: WkZoneAt and WkLoading up to date before the mobs are read)
+	if (IsFunc("WalkZone"))
+		Func("WalkZone").Call(true)
+	;(the bot off, or another zone since it was last found ahead: let go - not kept for a fight it won't be in)
+	if (IsObject(DeckBoss) && (!BotOn || (WkZoneAt && WkZoneAt > DeckBoss.seenAt)))
+		{
+		DebugLog("Deck: no boss ahead now - " DeckBoss.name (!BotOn ? " (the bot's off)" : " (another zone)"))
+		DeckBoss := ""
+		}
+	if (!DeckBossWanted() || !BotOn || inbattle = 1 || WkLoading || !IsFunc("NavMobs"))
+		return
+	if (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call())
+		return
+	dblNow := A_TickCount
+	;(a battle over while it was on - the boss's, or one the game's memory couldn't name: let go now unless it's still
+	;ahead; one the memory says it wasn't in: kept, its 30 s from now - nothing was looked at in the battle)
+	if (IsObject(DeckBoss) && (DeckBoss.battled || battles != DeckBoss.battlesAt))
+		{
+		if (DeckBoss.inBattle != 0)
+			DeckBoss.over := 1
+		DeckBoss.battled := 0, DeckBoss.battlesAt := battles, DeckBoss.inBattle := "", DeckBoss.seenAt := dblNow
+		}
+	dblGoal := (WkGoalLineAt && dblNow - WkGoalLineAt < 30000) ? WkGoalLine : ""
+	dblMobs := Func("NavMobs").Call(dblGoal)
+	;(not read - the helper busy, an ERR, navmem off: as it is - no switching on a missed reading; 60 in a row, about 2
+	;minutes - the helper stopped for good: let go)
+	if (!IsObject(dblMobs))
+		{
+		if (IsObject(DeckBoss))
+			{
+			DeckBoss.misses := (DeckBoss.misses ? DeckBoss.misses : 0) + 1
+			if (DeckBoss.misses >= 60)
+				{
+				DebugLog("Deck: no boss ahead now - " DeckBoss.name " (the zone's mobs not read for 2 minutes: " NavMobsWhy ")")
+				DeckBoss := ""
+				}
+			}
+		return
+		}
+	if (IsObject(DeckBoss))
+		DeckBoss.misses := 0
+	dblHit := DeckBossFind(dblMobs, IsObject(DeckBoss) ? DeckBoss.key : "")
+	if (IsObject(dblHit))
+		{
+		if (IsObject(DeckBoss) && DeckBoss.key = dblHit.key)
+			{
+			DeckBoss.seenAt := dblNow, DeckBoss.over := 0, DeckBoss.dist := dblHit.dist, DeckBoss.misses := 0
+			if (DeckBoss.why != dblHit.why)
+				DeckBoss.why := dblHit.why, DeckBoss.order := dblHit.order
+			return
+			}
+		dblHit.since := dblNow, dblHit.seenAt := dblNow, dblHit.battlesAt := battles, dblHit.battled := 0, dblHit.inBattle := "", dblHit.over := 0, dblHit.misses := 0
+		if (IsObject(DeckBoss))
+			DebugLog("Deck: no boss ahead now - " DeckBoss.name " (another one is: " dblHit.name ")")
+		DeckBoss := dblHit
+		DebugLog("Deck: a boss ahead - " dblHit.text " (" (dblHit.health != "" ? dblHit.health " health" : "health not known") (dblHit.school != "" ? ", " dblHit.school : "")
+			. (dblHit.dist != "" ? ", " Round(dblHit.dist) " away" : "") "): " dblHit.why " (the game's memory)")
+		return
+		}
+	if (!IsObject(DeckBoss))
+		return
+	;(not ahead now: let go once that battle's over, else 30 s on - gone, or behind and far off)
+	dblIn := DeckBossIn(dblMobs, DeckBoss)
+	if (DeckBoss.over || dblNow - DeckBoss.seenAt >= 30000)
+		{
+		DebugLog("Deck: no boss ahead now - " DeckBoss.name (DeckBoss.over ? (dblIn ? " (its battle's over)" : " is gone (its battle's over)")
+			: dblIn ? " is behind or far off (30 s)" : " is gone (30 s)"))
+		DeckBoss := ""
+		}
+	}
+
+;The boss ahead among the zone's mobs (NavMobs'), or "": a boss or a counted Elite (DeckMobKind) the quest's goal names
+;(the walker's goal line - the game's memory's, else the screen's - read in the last 30 s), the helper's quest mob by
+;its name or its goal (the walker goes to it - named: not 0; an older helper's, no named field: its quest flag alone),
+;or one a dungeon run's way leads to (DeckDgAhead). Of several, the first of those reasons, a boss before an Elite, the
+;one held already (holdKey: no swapping between two), then the nearest
+DeckBossFind(dbfMobs, holdKey := "")
+	{
+	dbfGoal := (WkGoalLine != "" && WkGoalLineAt && A_TickCount - WkGoalLineAt < 30000) ? DeckLetters(WkGoalLine) : ""
+	dbfBest := ""
+	for dbfI, dbfM in dbfMobs
+		{
+		dbfNote := ""
+		dbfKind := DeckMobKind(dbfM.boss, dbfM.title, dbfM.health, dbfNote)
+		if (dbfKind = "")
+			continue
+		dbfKey := DeckLetters(dbfM.name)
+		dbfWhy := "", dbfOrder := 0
+		if (dbfGoal != "" && StrLen(dbfKey) >= 4 && InStr(dbfGoal, dbfKey))
+			dbfWhy := "the quest's goal names it", dbfOrder := 4
+		;(the helper's quest flag takes a same-family mob anywhere in the zone too - "Gobbler King" for "Defeat Gobblers":
+		;named 0 is that, not the walker's)
+		else if (dbfM.quest && dbfM.named != 0)
+			dbfWhy := "the quest's mob (the walker goes to it)", dbfOrder := 3
+		else if (IsObject(DgRun) && DeckDgAhead(dbfM))
+			dbfWhy := "the dungeon run's way leads to it", dbfOrder := 2
+		if (!dbfOrder)
+			continue
+		dbfId := dbfM.gid != "" ? dbfM.gid : dbfM.name
+		dbfScore := dbfOrder * 10 + (dbfKind = "boss" ? 2 : 0) + (holdKey != "" && dbfId = holdKey ? 1 : 0)
+		if (IsObject(dbfBest) && (dbfScore < dbfBest.score || (dbfScore = dbfBest.score && (dbfM.dist = "" || (dbfBest.dist != "" && dbfM.dist >= dbfBest.dist)))))
+			continue
+		dbfBest := {key: dbfId, name: dbfM.name, gid: dbfM.gid, title: dbfM.title, rank: dbfM.rank, health: dbfM.health, school: dbfM.school
+			, kind: dbfKind, why: dbfWhy, order: dbfOrder, score: dbfScore, dist: dbfM.dist, x: dbfM.x, y: dbfM.y, text: DeckBossText(dbfM.name, dbfM.rank, dbfKind, dbfNote)}
+		}
+	return dbfBest
+	}
+
+;The boss b still among the zone's mobs (by its gid, else its name)
+DeckBossIn(dbiMobs, dbiB)
+	{
+	for dbiI, dbiM in dbiMobs
+		if ((dbiB.gid != "" && dbiM.gid = dbiB.gid) || (dbiB.gid = "" && dbiM.name = dbiB.name))
+			return true
+	return false
+	}
+
+;What a mob is for the decks: "boss" (the game's own boss flag, or its title Boss), "elite" (its title Elite and its max
+;health takes 3 or more of your best hits - DeckBestHit: note says how many), else "" (an Elite under 3 hits, or your best
+;hit not known: not counted)
+DeckMobKind(dmkBoss, dmkTitle, dmkHealth, ByRef dmkNote := "")
+	{
+	dmkNote := ""
+	if (dmkBoss = 1 || dmkTitle = "Boss")
+		return "boss"
+	if (dmkTitle != "Elite" || dmkHealth = "" || dmkHealth <= 0)
+		return ""
+	dmkBest := DeckBestHit()
+	if (dmkBest = "" || dmkBest <= 0)
+		return ""
+	dmkHits := Ceil(dmkHealth / dmkBest)
+	if (dmkHits < 3)
+		return ""
+	dmkNote := " (" dmkHealth " health - " dmkHits " of your best hits, " dmkBest ")"
+	return "elite"
+	}
+
+;Your best hit, as the deck you'd fight it with deals it - the deck picked as if there were no boss (DeckPick noBoss):
+;its strongest hit at its best with the boosts it plays, no critical (DeckDamage hiNoCrit) - "" not known. Kept 30 s
+DeckBestHit()
+	{
+	static dbhAt := 0, dbhKeep := ""
+	if (dbhAt && A_TickCount - dbhAt < 30000)
+		return dbhKeep
+	dbhAt := A_TickCount
+	dbhP := DeckPick(inbattle = 1, true)
+	dbhR := DeckDamage(dbhP.deck)
+	dbhKeep := (dbhR.none || dbhR.hiNoCrit = "") ? "" : dbhR.hiNoCrit
+	return dbhKeep
+	}
+
+;"Governor Nereus, rank 9 boss" (note: an Elite's hits)
+DeckBossText(dbtName, dbtRank, dbtKind, dbtNote := "")
+	{
+	return (dbtName != "" ? dbtName : "an enemy") (dbtRank != "" ? ", rank " dbtRank : "") " " dbtKind dbtNote
+	}
+
+;Just the letters of a name, in capitals (the walker's WalkLetters when it's there - OCR's digit slips put right)
+DeckLetters(dlText)
+	{
+	if (IsFunc("WalkLetters"))
+		return Func("WalkLetters").Call(dlText)
+	StringUpper, dlText, dlText
+	return RegExReplace(dlText, "[^A-Z]")
+	}
+
+;The dungeon run's way leads to mob m: a step still to walk in the zone of the one walked to (the steps in a row there)
+;within 1000 of it
+DeckDgAhead(ddaM)
+	{
+	if (!IsObject(DgRun) || !IsObject(DgRun.steps) || ddaM.x = "" || ddaM.y = "")
+		return false
+	ddaI := DgRun.i >= 1 ? DgRun.i : 1
+	if (ddaI > DgRun.steps.Length())
+		return false
+	ddaZone := DgRun.steps[ddaI].zone
+	while (ddaI <= DgRun.steps.Length() && DgRun.steps[ddaI].zone = ddaZone)
+		{
+		ddaS := DgRun.steps[ddaI]
+		if ((ddaS.x - ddaM.x) ** 2 + (ddaS.y - ddaM.y) ** 2 <= 1000000)
+			return true
+		ddaI += 1
+		}
+	return false
+	}
+
+;A battle round (DeckRound): the battle's enemies from the game's memory (NavBattle) - DeckFoe the boss among them (a boss
+;first, then the Elite with the most health that counts - DeckMobKind), "" none; the boss ahead's place in it noted
+;(DeckBoss.inBattle). Not read: the boss ahead it was walked into (DeckBoss), if any - DeckFoeKnown stays 0 (looked for
+;again next round)
+DeckFoeLook()
+	{
+	dflB := IsFunc("NavBattle") ? Func("NavBattle").Call() : ""
+	if (!IsObject(dflB))
+		{
+		if (IsObject(DeckBoss))
+			{
+			DeckFoe := {name: DeckBoss.name, kind: DeckBoss.kind, text: DeckBoss.text, max: DeckBoss.health, gid: DeckBoss.gid, from: "walk"}
+			DeckBoss.battled := 1
+			}
+		return false
+		}
+	dflBest := "", dflSaid := "", dflAll := 1
+	for dflI, dflF in dflB.foes
+		{
+		;(a foe whose title isn't known yet - its mob not joined: an Elite can't be told - looked at again next round)
+		if (dflF.title = "" && dflF.boss != 1)
+			dflAll := 0
+		dflSaid .= (dflSaid = "" ? "" : ", ") (dflF.name != "" ? dflF.name : "?") " (" (dflF.title != "" ? dflF.title : dflF.boss = 1 ? "boss" : "?")
+			. (dflF.rank != "" ? " rank " dflF.rank : "") ", " dflF.health "/" dflF.max ")"
+		dflNote := ""
+		dflKind := DeckMobKind(dflF.boss, dflF.title, dflF.max, dflNote)
+		if (dflKind = "")
+			continue
+		if (IsObject(dflBest) && (dflKind != dflBest.kind ? dflKind != "boss" : (dflF.max = "" || (dflBest.max != "" && dflF.max <= dflBest.max))))
+			continue
+		dflBest := {name: dflF.name, kind: dflKind, max: dflF.max, gid: dflF.gid, from: "memory", text: DeckBossText(dflF.name, dflF.rank, dflKind, dflNote)}
+		}
+	DeckFoe := dflBest
+	;(known: a boss among them, or every one's title read - else looked at again next round, its first 3 at most)
+	DeckFoeKnown := (IsObject(dflBest) && dflBest.kind = "boss") || (dflAll && dflB.foes.Length()) ? 1 : 0
+	DebugLog("  Deck: the battle's enemies (the game's memory): " (dflSaid != "" ? dflSaid : "none read") (IsObject(dflBest) ? " - a " dflBest.kind ": " dflBest.name : "")
+		. (DeckFoeKnown ? "" : " (not all known yet - looked at again next round)"))
+	if (IsObject(DeckBoss))
+		{
+		dflIn := 0
+		for dflI, dflF in dflB.foes
+			if ((DeckBoss.gid != "" && dflF.gid = DeckBoss.gid) || (DeckBoss.gid = "" && dflF.name != "" && dflF.name = DeckBoss.name))
+				dflIn := 1
+		DeckBoss.inBattle := dflIn, DeckBoss.battled := 1
+		}
+	return true
 	}
 
 ;---- The Cards tab's deck views (Dashboard.ahk makes the controls) ----

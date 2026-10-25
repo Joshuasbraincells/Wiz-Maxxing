@@ -79,6 +79,24 @@ own short stops (a mob or the party waited for), dropping to 1x once it has
 stood 1.5 s, and goes fast only once W has been held a moment - no 1x/2x flips.
 Talking, X, dialogues, sigils, gates, battles, you playing, F8 and exit are 1x
 at once, as ever.
+Near the goal by the game's memory (the goal in this zone, 1500 game units or
+less, straight ahead, no mob on the way): the last bit is walked closed loop -
+W up, 1x (from 2500 off; a zone's way out from 600), turned on the spot to
+face the goal, then W held
+while its place is read every ~40 ms and let go at it: a talk goal's NPC 300
+off, anything else 150. Then X. It no longer walks over the goal and turns
+round. A fence, wall or water between (the way round much longer than
+straight): no straight walk - it goes round by the route. A goal on another
+floor is never "walked past". A talk goal ("Talk To ..."): a prompt is the quest's only with its NPC's
+name on it (no X at a vendor next to it); its prompt is X'd even just after a
+dialogue (3 s after the last X, 3 tries in 2 minutes); the talk is done when
+the game's goal changes, not by the arrow's number (it jumps by the goal); X
+that opens nothing is tried again from close by - never walked on through the
+NPC; a shop it opened is closed - and after 3 tries it waits by it (a notice, once) and tries again every
+2 minutes. Its distance is always used (the arrow's 1 = 100 game units when
+the scale isn't sure), learned only with the goal in the zone; no back-up for
+a hidden arrow while it steers. debug.log: "Walk: approach: ...", and every X
+says where the goal is ("the game's memory: the goal N units off").
 Turning with the mouse (mousesteer:1 - Settings, on unless you switch it off):
 walking, the wizard is turned with the mouse - the right button held in the
 middle of the scene and the mouse slid, then let go - at once, so it doesn't
@@ -228,7 +246,7 @@ Decks (the dashboard's Cards tab - its row of buttons: Hand & enemies, your
 decks, + Deck): a "Small deck" (collect goals and anything else) and a "Large
 deck" (bosses) to start with, more with + Deck or Copy (6 at most). Each has:
 its school (or any), what it's used for (anything else, collect goals, bosses -
-your Alt+1 pick for now, dungeon runs, farming - loop/lore mode), a priority (of
+see below, dungeon runs, farming - loop/lore mode), a priority (of
 two for the same, the higher), the game's Equipment Set that puts its in-game
 deck on (Ctrl+1-9: set the sets up in the game - they swap gear, pet and mount
 too; pressed out of battle with you away, once a minute at most), and the
@@ -241,8 +259,31 @@ damage % and critical for that school - the community's crit model, KingsIsle
 doesn't publish one). Save keeps it (decks\<name>.txt - updates keep them);
 "pinned" uses it whatever's ahead. Before each fight the bot picks one - the
 dungeon run's (its Deck box on the Dungeons tab), a pinned one, the boss's,
-collect's, farming's, anything else's - and logs "Deck: <name> (why)". No deck
-set up, or one that sets nothing: it plays exactly as without.
+collect's, farming's, anything else's - and logs "Deck: <name> (why)" (the
+dashboard's Deck line shows it too). No deck set up, or one that sets
+nothing: it plays exactly as without.
+Bosses before the fight, by the game's memory (navmem:1, read-only - vision\
+bossmem.py, the helper's /mobs and /battle): each of the zone's mobs' title as
+the game has it (Boss, Elite, Normal...), rank, max health and the game's own
+boss flag. Out of battle, the bot on and nothing loading, a boss is "ahead"
+when the quest's goal names it, the walker goes to it (the quest's mob by its
+name or by its goal - not one of the same family elsewhere in the zone) or the
+dungeon run's way leads to it - an Elite only when it takes 3 or more of your
+best hits (its max health against the deck's strongest hit at its best, no
+critical). One only passed by isn't (the walker routes round it; one walked
+into is found in the battle). The deck for bosses is picked then and its
+Equipment Set pressed before the fight (10 s after the last press, not the
+minute) - "Deck: Large deck (a boss ahead: Governor Nereus, rank 9 boss)".
+Kept till that battle's over, or 30 s after the boss is gone or far off (from
+the end of a battle it wasn't in); a missed reading changes nothing (no
+switching back and forth), but 2 minutes of them, the bot off or another zone
+let it go. A set pressed just before a battle starts is pressed again after
+it. In the battle its enemies are read from the memory: a boss among them gets
+the boss deck's settings without Alt+1 ("a boss in this battle: ..."; not
+read: the boss ahead it was walked into); a fight on the way to the boss keeps
+the boss deck's settings while its Equipment Set is the one on ("(its deck is
+on)"). Alt+1 works as before. No memory (navmem:0, no helper, dual mode):
+Alt+1 only.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines

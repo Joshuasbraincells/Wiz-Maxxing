@@ -4,9 +4,14 @@
     nm = NavMem(log=print)
     r, why = nm.read(path=True)     # r: a dict (see NavMem.read), or None and why it can't be read
 
-    mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), yaw, gid, template}], or None and why
+    mobs, why = nm.mobs()           # the zone's mobs: [{name, pos (x, y, z), yaw, gid, template, title, title_id, rank,
+                                    # health, school, boss, kind}], or None and why (title...kind: bossmem.py - None each
+                                    # while not known)
 
     hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
+
+    parts, why = nm.battle()        # the battle's participants (bossmem.py: team, health, max, boss flag...), each joined
+                                    # to its mob (name, title, rank) - [] out of a battle's planning phase, or None and why
 
     goal, why = nm.goal()           # the quest's active goal: its line as the game shows it under the arrow, its kind,
                                     # count and the mob / item / NPC it names (questmem.py), or None and why
@@ -72,6 +77,12 @@ by a signature in its code, or checked by a type name / window name it carries):
              can borrow a mob's name). An object is re-checked at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
+           titles:  each mob's title (Boss / Elite / Normal / Easy / Minion), rank, starting (max) health, school and the
+             game's own boss flag: its NPCBehavior's NPCBehaviorTemplate - bossmem.py, its offsets found by name in the
+             game's reflection registration (handmem.py's way), read under this lock once per mob object (kept while it
+             lives: a mob's template doesn't change; one that couldn't be read tried again after BOSS_RETRY s); its
+             reader made once per game in a thread like the hand's. In a battle (battle()): the battle GUI's participants
+             (their health, max health, boss flag, team), each joined to its mob by its owner's global id
            goal:    the goal line (txtGoalName under the QuestHelperHud, its ids at +0x2D8 / +0x2E0) and the quest
              manager's quest data (WizQuestData -> WizGoalData -> its madlibs) - questmem.py, its offsets found by name
              in the game's reflection registration (handmem.py's way), read under this lock, the names looked up outside
@@ -949,6 +960,11 @@ class NavMem:
         # the quest's goal (questmem.py): its reader of the attached game, the thread making it (about a second), why it
         # couldn't be made (the game it was for, when to try again)
         self._quest, self._quest_thread, self._quest_fail = None, None, (None, 0.0, "")
+        # the mobs' title, rank and health (bossmem.py): its reader of the attached game, the thread making it (about half a
+        # second), why it couldn't be made (the game it was for, when to try again); each mob object's reading
+        # {(object, gid): (info or None, why, when to try again)} - kept while the object lives
+        self._boss, self._boss_thread, self._boss_fail, self._boss_seen = None, None, (None, 0.0, ""), {}
+        self._boss_said = 0.0            # (when a failure to read them may be logged again)
 
     def close(self):
         with self.lock:
@@ -960,6 +976,8 @@ class NavMem:
                 self._light = None
             self._hand = None
             self._quest = None
+            self._boss = None
+            self._boss_seen = {}
 
     def _attach(self, pid):
         try:
@@ -1223,11 +1241,186 @@ class NavMem:
         with self.lock:
             self._quest = qm
 
+    # ------------------------------------------------------------ the mobs' titles and the battle (bossmem.py)
+    BOSS_RETRY = 5.0        # s before a mob whose template couldn't be read is tried again
+
+    def _boss_reader(self, st, wait=0.0):
+        """(the titles' reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later)"""
+        with self.lock:
+            bm = self._boss
+            if bm is not None and bm.st is st:
+                return bm, ""
+            fst, again, fwhy = self._boss_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._boss_thread
+            if th is None or not th.is_alive():
+                self._boss, self._boss_seen = None, {}
+                th = self._boss_thread = threading.Thread(target=self._boss_make, args=(st,), name="boss", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            bm = self._boss
+            if bm is not None and bm.st is st:
+                return bm, ""
+            fst, again, fwhy = self._boss_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's mob classes (once, about half a second)"
+
+    def _boss_make(self, st):
+        """the titles' reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import bossmem
+            bm = bossmem.BossMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the mobs' titles can't be read in this build: %s" % e) if sig else \
+                "the mob classes couldn't be read (%r)" % (e,)
+            self.log("bossmem: " + why)
+            with self.lock:
+                self._boss_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+            return
+        with self.lock:
+            self._boss, self._boss_seen = bm, {}
+
+    def _boss_fill(self, st, live):
+        """each live mob's title, title_id, rank, health (its starting - max - health), school, boss (the game's own flag)
+        and kind (boss / elite / normal / easy / minion) - bossmem.BossMem.mob, read once per mob object and kept while it
+        lives (one that couldn't be read tried again after BOSS_RETRY s); None each while it isn't known (the reader being
+        made, this build unreadable, the mob's template not read). live: [(object, gid, its dict)] - checked live just now"""
+        import bossmem
+        bm, _ = self._boss_reader(st)
+        now = time.monotonic()
+        with self.lock:
+            if bm is not None and (self.st is not st or bm.st is not st):
+                bm = None
+            seen = self._boss_seen
+            if len(seen) > 4000:
+                seen.clear()
+            for obj, gid, m in live:
+                hit = seen.get((obj, gid))
+                if bm is not None and (hit is None or (hit[0] is None and now >= hit[2])):
+                    info, why = bm.mob(obj)
+                    hit = seen[(obj, gid)] = (info, why, now + self.BOSS_RETRY)
+                info = hit[0] if hit else None
+                for k in bossmem.FIELDS:
+                    m[k] = info.get(k) if info else None
+
+    def _hand_reader(self, st, wait):
+        """(the hand's reader for game st, "") - made in a thread the first time, as cards() makes it; (None, why)
+        meanwhile, or when it can't be made"""
+        with self.lock:
+            hm = self._hand
+            if hm is not None and hm.st is st:
+                return hm, ""
+            fst, again, fwhy = self._hand_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._hand_thread
+            if th is None or not th.is_alive():
+                self._hand = None
+                th = self._hand_thread = threading.Thread(target=self._hand_make, args=(st,), name="hand", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            hm = self._hand
+            if hm is not None and hm.st is st:
+                return hm, ""
+            fst, again, fwhy = self._hand_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's card classes (once, about a second)"
+
+    def battle(self, wait=0.5):
+        """(parts, why): the battle's participants, read now - bossmem.BossMem.battle (every one the battle's GUI shows,
+        and mine: me, team, health, max_health, boss - the game's flag -, player, minion, mob_level, owner...), each joined
+        to its mob by its owner's global id: name ("" not a mob of this zone's: a wizard) and mob (its title, rank, health,
+        school, kind - None not read). ([], why) out of a battle's planning phase; None and why when the game can't be read
+        (not running, the readers being made - waited for up to wait s). Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            bm, why = self._boss_reader(st, wait)
+            if bm is None:
+                return None, why
+            hm, why = self._hand_reader(st, wait)
+            if hm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or hm.st is not st or bm.st is not st:
+                    return None, "the game changed"
+                # (the zone's objects looked at again while a battle's asked about: the objects thread stops when nobody's
+                # asked for a while, and the mobs' objects it kept may be gone by the battle - seen live 2026-10-25)
+                self._obj_asked = time.monotonic()
+                if self._obj_thread is None or not self._obj_thread.is_alive():
+                    self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
+                    self._obj_thread.start()
+                parts, why = bm.battle(hm)
+                by_gid = {v[0]: (obj, v) for obj, v in self._objs.items()}
+                cz = self._obj_cz
+                for p in parts:
+                    p["name"], p["mob"] = "", None
+                    obj, v = by_gid.get(p["owner"], (0, None))
+                    if not obj:
+                        continue
+                    # (still the same live object of this zone - as _live checks it)
+                    raw = st.p.try_read(obj, OBJ_SPAN)
+                    if (raw is None or struct.unpack_from("<Q", raw, 0)[0] != v[3]
+                            or struct.unpack_from("<Q", raw, DATA["co_gid"])[0] != v[0]
+                            or struct.unpack_from("<Q", raw, DATA["co_zone"])[0] != cz):
+                        continue
+                    p["name"] = v[1]
+                    hit = self._boss_seen.get((obj, v[0]))
+                    p["mob"] = hit[0] if hit and hit[0] else bm.mob(obj)[0]
+                # (one whose mob object isn't found: by its template - the participant's template id -> the game's
+                # template (handmem's template map) -> its name -> a mob of that template read before in the zone)
+                if any(not p["player"] and p["mob"] is None for p in parts):
+                    try:
+                        self._battle_by_template(st, bm, hm, parts)
+                    except Exception:  # noqa: BLE001 - the participants as they are
+                        pass
+            return parts, why
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the battle failed (%r)" % (e,)
+
+    def _battle_by_template(self, st, bm, hm, parts):
+        """(battle(), under the lock) the participants not joined to a mob object: their mob info from a mob of the same
+        template read before in this zone (_boss_seen, by its template's name) and their name from its display key (the
+        *Mobs name tables) - the participant's m_templateID -> handmem's template map -> the GameObjectTemplate (checked
+        by its type name there) -> m_objectName / m_displayName. Left as they are when any of it can't be read"""
+        seen = {}
+        for _key, (info, _why, _again) in list(self._boss_seen.items()):
+            if info and info.get("template"):
+                seen.setdefault(info["template"], info)
+        names = self._mob_names or {}
+        GT = bm.P.get("GameObjectTemplate", {})
+        if not GT.get("m_objectName"):
+            return
+        for p in parts:
+            if p["player"] or p["mob"] is not None or not p.get("template_id"):
+                continue
+            t = hm.template(p["template_id"])
+            if not t:
+                continue
+            tname = st.p.try_string(t + GT["m_objectName"])
+            key = st.p.try_string(t + GT["m_displayName"]) if GT.get("m_displayName") else None
+            if tname and tname in seen:
+                p["mob"] = seen[tname]
+            if not p["name"] and key and names.get(key):
+                p["name"] = names[key]
+
     # ------------------------------------------------------------ the zone's mobs
     def mobs(self):
-        """(mobs, why): mobs = [{name, pos (x, y, z), yaw, gid, template}] - the mobs in the game's zone, their
-        positions and facing (yaw, radians, forward = (-sin yaw, -cos yaw); None if unread) read now - or None and why
-        (not attached, not looked yet, the names unreadable...). Never raises."""
+        """(mobs, why): mobs = [{name, pos (x, y, z), yaw, gid, template, title, title_id, rank, health, school, boss,
+        kind}] - the mobs in the game's zone, their positions and facing (yaw, radians, forward = (-sin yaw, -cos yaw);
+        None if unread) read now, and what each is (_boss_fill: title Boss / Elite / Normal..., rank, max health, school,
+        the game's boss flag - None each while not known) - or None and why (not attached, not looked yet, the names
+        unreadable...). Never raises."""
         return self._live("mobs")
 
     def items(self):
@@ -1248,7 +1441,7 @@ class NavMem:
                 objs = list((self._objs if which == "mobs" else self._items).items())
             if st is None or not cz or why:
                 return None, why or "not attached"
-            out, gids = [], set()
+            out, gids, live = [], set(), []
             for obj, (gid, name, tname, vt) in objs:
                 if gid in gids:
                     continue
@@ -1264,6 +1457,19 @@ class NavMem:
                 if pos is not None:
                     gids.add(gid)
                     out.append({"name": name, "pos": pos[:3], "yaw": pos[3], "gid": gid, "template": tname})
+                    live.append((obj, gid, out[-1]))
+            # (what each mob is - its title, rank, max health: bossmem.py, once per mob object - the walker's route
+            # doesn't wait for it: a reader not made yet leaves them None)
+            if which == "mobs" and live:
+                try:
+                    self._boss_fill(st, live)
+                except Exception as e:  # noqa: BLE001 - the mobs without it (said once a minute)
+                    for _obj, _gid, m in live:
+                        for k in ("title", "title_id", "rank", "health", "school", "boss", "kind"):
+                            m.setdefault(k, None)
+                    if time.monotonic() >= self._boss_said:
+                        self._boss_said = time.monotonic() + 60.0
+                        self.log("bossmem: the mobs' titles couldn't be read (%r)" % (e,))
             return out, ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the %s failed (%r)" % (which, e)
@@ -1419,7 +1625,9 @@ def _main():
                         dx, dy = r["pos"][0] - mb["pos"][0], r["pos"][1] - mb["pos"][1]
                         c = (dx * -math.sin(mb["yaw"]) + dy * -math.cos(mb["yaw"])) / (math.hypot(dx, dy) or 1.0)
                         off = "  yaw %.2f, you %.0f deg off its facing" % (mb["yaw"], math.degrees(math.acos(max(-1.0, min(1.0, c)))))
-                    print("             %-24s %-30s (%.0f, %.0f, %.0f)%s" % ((mb["name"], mb["template"]) + tuple(mb["pos"]) + (off,)))
+                    what = "%s rank %s health %s %s%s" % (mb.get("title"), mb.get("rank"), mb.get("health"), mb.get("school"),
+                                                          " BOSS" if mb.get("boss") else "")
+                    print("             %-24s %-30s (%.0f, %.0f, %.0f)%s  %s" % ((mb["name"], mb["template"]) + tuple(mb["pos"]) + (off, what)))
             if a.goal:
                 g, why = nm.goal(r, wait=30)
                 print("           goal: " + ("%r (from %s) %s %s %s/%s mob %r item %r npc %r - %.2f ms" % (

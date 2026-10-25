@@ -447,8 +447,16 @@ DgNext()
 DgTurn(h)
 	{
 	;(by the mouse first - running or standing (MouseSteer.ahk MouseTurnAny); the keys only when it couldn't: 2026-10-24)
+	MsStandGot := ""
 	if (IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500) && MouseTurnAny(h) != "")
 		return
+	;(a turn from standing by the mouse that missed but turned him: the rest by the keys, not h again on top)
+	if (MsStandGot != "" && Abs(MsStandGot) >= 3)
+		{
+		h := ArrowWrap(h - MsStandGot)
+		if (Abs(h) < 3)
+			return
+		}
 	if ((WkNavTrusted || WkNavChecked) && NavTurn(h))
 		return
 	PotionTurnBy(h)

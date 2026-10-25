@@ -78,7 +78,7 @@ DashInit()
 	Gui, Dash:Add, Button, x700 y64 w76 h22 gDashMapButton vDashMapBtn, Map
 	Gui, Dash:Font, s9 w400 cDADADA, Consolas
 	Gui, Dash:Add, Text, x12 y88 w350 h190 vDashStatText
-	Gui, Dash:Add, Text, x372 y88 w400 h190 vDashSeeText
+	Gui, Dash:Add, Text, x372 y88 w400 h196 vDashSeeText
 	Gui, Dash:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, Dash:Add, Text, x12 y286 w200 h16 vDashLogHead, LOG
 	;(each kind of line in its colour - movement, battle, waits... - set with the small Colours button: a rich edit, as
@@ -1154,6 +1154,7 @@ DashRefresh()
 		. "Enemies      " DashCut(see.enemies != "" ? see.enemies : "-") "`n"
 		. "Threat       " DashCut(see.threat != "" ? see.threat : "-") "`n"
 		. "Plan         " DashCut(see.plan != "" ? see.plan : "-") "`n"
+		. "Deck         " DashCut(see.deck != "" ? see.deck : "-") "`n"
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"
 		. "Walker       " DashCut(StatusText != "" ? StatusText : "-") "`n"
