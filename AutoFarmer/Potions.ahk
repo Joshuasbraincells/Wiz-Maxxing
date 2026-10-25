@@ -669,19 +669,27 @@ PotionOk(watchHands := true, since := 0)
 ;No "Crown" anywhere round a click (it only ever buys with gold). False (and stops) if there is
 PotionNoCrowns(x, y)
 	{
-	r := Round(260 * UiScale)
+	return NoCrownsNear(x, y)
+	}
+
+;No "Crown" read in a box r px round a click (260 at UI 1.144 when r is "") - false if there is one (said: logAs in debug.log,
+;who in the tray, where and how in the "crowns" alert, alertTitle its title), or if the screen there can't be read (it
+;can't be sure there's none). The potion run's and quick sell's (QuickSell.ahk)
+NoCrownsNear(x, y, r := "", logAs := "Potions", who := "The potion run", where := "by the potion seller", how := "it only buys with gold", alertTitle := "potion run stopped")
+	{
+	r := (r = "" || r <= 0) ? Round(260 * UiScale) : Round(r)
 	text := OcrRect(Max(GameLeft, x - r), Max(GameTop, y - r), 2 * r, 2 * r, "en", 1)
 	;(the screen couldn't be read there: no click - it can't be sure there's no Crown)
 	if (ErrorLevel)
 		{
-		DebugLog("Potions: the screen round the next click couldn't be read - not clicking, stopping (gold only)")
+		DebugLog(logAs ": the screen round the next click couldn't be read - not clicking, stopping (gold only)")
 		return false
 		}
 	if (RegExMatch(text, "i)cr[o0]wn"))
 		{
-		DebugLog("Potions: ""Crown"" on screen by the next click - not clicking, stopping (gold only): " RegExReplace(text, "\s+", " "))
-		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
-		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
+		DebugLog(logAs ": ""Crown"" on screen by the next click - not clicking, stopping (gold only): " RegExReplace(text, "\s+", " "))
+		TrayTip, Wizard101 bot, % who " saw ""Crowns"" on screen and stopped (" how ").", 10, 2
+		AlertSend("crowns", alertTitle, """Crowns"" on screen " where " - it stopped without clicking (" how ").")
 		return false
 		}
 	return true

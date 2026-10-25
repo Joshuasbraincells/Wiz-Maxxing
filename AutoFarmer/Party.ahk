@@ -69,7 +69,8 @@ PartyTick()
 		if (PartyMySchool = "" || (psChar != "" && psChar != schoolChar))
 			schoolChar := psChar, PartyMySchool := StatsSchoolOf(psChar)
 		}
-	ready := BotOn && Walking && !PlayerActive && GameActive() && !PotionResting ? 1 : 0
+	;(not while it's quick selling the backpack - QuickSell.ahk: a leader waits for a follower that is)
+	ready := BotOn && Walking && !PlayerActive && GameActive() && !PotionResting && !QsBusy ? 1 : 0
 	;(plan: the hitter's planned hit's schools - a support boosts for them; lasthit: its last hit's - a support's blades that
 	;fit none of those stay on it - KillCalc.ahk BoostPick, ConsumeBoosts)
 	q := "/party?role=" role "&name=" NavUri(PartyIni("name")) "&leader=" NavUri(PartyIni("leader"))

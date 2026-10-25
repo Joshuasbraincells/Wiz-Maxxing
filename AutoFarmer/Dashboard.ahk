@@ -847,6 +847,9 @@ DashParse(line)
 		DashAdd("potions")
 	else if (InStr(msg, "Potions: no potion left - going to buy some") = 1)
 		DashAdd("potionRuns")
+	;(the backpack quick sold - QuickSell.ahk: "Backpack: quick sold 37 items for 12,345 gold (...) - 2,000 gold lost over the pouch")
+	else if (RegExMatch(msg, "^Backpack: quick sold (\d+) items for ([\d,]+) gold(?:.* - ([\d,]+) gold lost over the pouch)?", m))
+		DashAdd("quicksells"), DashAdd("itemsSold", m1 + 0), DashAdd("goldSold", StrReplace(m2, ",") + 0), DashAdd("goldLost", m3 = "" ? 0 : StrReplace(m3, ",") + 0)
 	else if (InStr(msg, "Reconnect: ") = 1)
 		DashSees.reconnect := SubStr(msg, 12), DashSees.reconnectAt := A_TickCount
 	else if (InStr(msg, "Pictures: ") = 1)
@@ -1141,6 +1144,7 @@ DashRefresh()
 		. "Kill-check hits  " DashNum(n.lethal) "`n"
 		. "Rounds saving pips" SubStr(DashNum(n.pipsaves), 2) "`n"
 		. "Potions drunk    " DashNum(n.potions) "   (buying runs: " (n.potionRuns = "" ? 0 : n.potionRuns) ")`n"
+		. (n.quicksells ? "Quick sells      " DashNum(n.quicksells) "   (" n.itemsSold " items, " QsThousands(n.goldSold) " gold" (n.goldLost ? ", " QsThousands(n.goldLost) " lost over the pouch" : "") ")`n" : "")
 		. "Cards learned    " DashNum(n.learned) "`n"
 		. "Cards cast       " DashNum(n.casts) casts
 	DashSet("DashStatText", s)

@@ -50,6 +50,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 - [ ] Olympus, Waterworks, Hades, Darkmoor: routes, bosses, cheats
 - [ ] Gear read and compared to what's worn; better pieces equipped
 - [ ] Repeat each until its gear is all swapped; then the next
+- [x] Quick sell when the backpack's full ("when your backpack is full a circular alert icon with prospector zeke shows up ... quick sell our entire inventory" - "of course this should be a setting ... because dungeons would cause good gear to be sold", 2026-10-25) - done 2026-10-25, not released yet (read-only, vision\bagmem.py, the helper's /bag and /gui; QuickSell.ahk): after the bot's battle the backpack's count, the game's own N/M and Zeke's icon from the game's memory; B, Quick Sell, the 8 gear groups and the Pet group with ALL (never All), No to "include Crowns Items?" (the one Crown box ever clicked - key, caption, label and OCR agree), the confirmation's numbers checked, SELL, the sale checked; every click a window the memory names, on an allow-list, its size the .gui file's; Settings THE BACKPACK (quicksell off, quicksellpets on, quicksellafterdungeon off); never in a dungeon, held after one; Equipment Set groups left out and checked after; rehearsal (quicksell:2, the tray); live runs still owed: the Zeke child's name and texture, the windows' real rects, ALL toggling / selections across groups, the SELL / No OCR on real screens
 
 ## 6. Perfect pets, automatic
 - [ ] Build on AutoPetTrainer: training, snacks (gold only)

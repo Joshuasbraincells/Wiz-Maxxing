@@ -1762,6 +1762,23 @@ def cards_answer():
     return text
 
 
+BAG_LOGGED = {'key': None}
+
+
+def bag_answer():
+    """/bag: the backpack from the game's memory (navmem's reader, read-only - vision\\bagmem.py) as lines, logged when
+    its count, size, N/M or the tips change"""
+    import bagmem
+    r, why = nav_reader().bag(wait=0.3)
+    lines = bagmem.bag_lines(r, why)
+    key = '\n'.join(ln for ln in lines if ln.split('|')[0] in ('none', 'bag', 'space', 'tip'))
+    key = re.sub(r'^(bag\|[^|]*\|[^|]*\|[^|]*\|)[^|]*\|[^|]*', r'\1', key)          # (not every gold change)
+    if key != BAG_LOGGED['key']:
+        BAG_LOGGED['key'] = key
+        log('/bag (memory): ' + ' / '.join(ln for ln in lines if not ln.startswith(('cat|', 'set|', 'setitem|')))[:600])
+    return lines
+
+
 def cards_by_school(c):
     """a card line's heads or boosts (fields 24-25) for the log: " [fire 230 + ice 230 + storm 230]", " [blade
     ice,storm,fire 35%]", " [heads ?]"; "" none (or an older line)"""
@@ -2918,6 +2935,19 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/battle':
                 parts, why = nav_reader().battle(wait=0.3)
                 return self.reply('\n'.join(battle_lines(parts, why)))
+            if u.path == '/bag':
+                # (the backpack, the HUD's tips, the backpack page's N/M - vision\bagmem.py, read-only: AutoFarmer's
+                # QuickSell.ahk)
+                return self.reply('\n'.join(bag_answer()))
+            if u.path == '/gui':
+                # (the game's windows by name - w=Anc/Name,... - and the message box up: where QuickSell.ahk may click)
+                import bagmem
+                paths = bagmem.gui_paths(q.get('w', ''))
+                if paths is None:
+                    return self.reply('ERR w: at most %d window paths (Anc/Name - letters, digits and _)' % bagmem.PATHS_CAP,
+                                      400)
+                g, why = nav_reader().gui(paths, wait=0.3)
+                return self.reply('\n'.join(bagmem.gui_lines(g, why, paths)))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

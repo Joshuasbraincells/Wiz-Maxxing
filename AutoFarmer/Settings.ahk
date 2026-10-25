@@ -65,6 +65,13 @@ CfgList()
 		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
 	list.Push({key: "fleeon", label: "Flee when out of cards", kind: "check", def: 1
 		, help: "Completely out of cards (none in hand, two rounds running): flee and try again with a full deck. Never for no hit in hand or out of mana."})
+	list.Push({key: "-", label: "THE BACKPACK"})
+	list.Push({key: "quicksell", label: "Quick sell the backpack when it's full", kind: "check", def: 0
+		, help: "After a battle, when the game shows the backpack full (Prospector Zeke's alert on the right - the game's memory, never a picture; the game's own N/M has to read full): B, Quick Sell, each gear group (hats, robes, shoes, weapons, athames, amulets, rings, decks) and the pets' with ALL - No to Crowns Items - and SELL, for gold. Never in a dungeon run or a dungeon zone, and not after one unless ticked below. A group an Equipment Set's item is in is left out. Locked items are never sold: lock gear you want to keep. Tray menu: Quick sell the backpack now, and a rehearsal that stops at the confirmation (quicksell:2 in PlayerStats.txt does that every time)."})
+	list.Push({key: "quicksellpets", label: "...pets too", kind: "check", def: 1
+		, help: "On: the Pet group is sold too (each pet in the backpack that isn't locked or in an Equipment Set - Yes to the game's pets box only when its count is the confirmation's). Off: pets are kept."})
+	list.Push({key: "quicksellafterdungeon", label: "...even with a dungeon's drops in it", kind: "check", def: 0
+		, help: "Off: after a dungeon (a dungeon run, or a zone entered through a sigil) the next full backpack is not sold - you're told, so you can look through it first; it's sold again once 10 items have gone from it, or you ask from the tray. On: sold like any other. Inside a dungeon it's never sold."})
 	list.Push({key: "-", label: "WALKING"})
 	list.Push({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."})
@@ -170,7 +177,7 @@ CfgSimpleKeys()
 	if (!IsObject(keys))
 		{
 		keys := {}
-		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
+		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}
