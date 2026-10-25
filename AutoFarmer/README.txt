@@ -1008,8 +1008,10 @@ read-only, never a picture):
 	  with ALL, No to "include Crowns Items?", SELL, the confirmation's numbers
 	  read (no Crown items, furniture, jewels, reagents or treasure cards), SELL,
 	  then the backpack's count checked. Gold over the pouch is lost (logged).
-	- Never in a dungeon run, a dungeon being recorded or a zone entered
-	  through a sigil. After a dungeon the next full backpack is held - you're
+	- Never in a dungeon run, a dungeon being recorded, a zone the bot
+	  entered through a sigil or a zone it leads on to. A dungeon you walked
+	  into yourself isn't known as one: switch quick sell off before you start
+	  the bot in it. After a dungeon the next full backpack is held - you're
 	  told, so you can look through the good gear first - until 10 items have
 	  gone from it, you ask from the tray, or you tick "...even with a dungeon's
 	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
@@ -1023,8 +1025,11 @@ read-only, never a picture):
 	- Tray menu: "Quick sell the backpack now" (whether full or not) and "Quick
 	  sell rehearsal (stops at the confirmation)" - everything up to the
 	  confirmation, read and logged, closed, nothing sold (quicksell:2 in
-	  PlayerStats.txt rehearses every time). quicksellfree:N sells with N slots
-	  or fewer left. debug.log: "Backpack: ..."; the dashboard: Quick sells.
+	  PlayerStats.txt rehearses after battles, at most once an hour).
+	  Crown-shop gear ("Crown-..." items) never counts as gear it may sell: if
+	  the confirmation lists more gear than the rest, nothing is sold.
+	  quicksellfree:N sells with N slots or fewer left. debug.log:
+	  "Backpack: ..."; the dashboard: Quick sells.
 
 Along side simply playing the game this program has certain modes
 all of which include, command mode, response mode, dual mode and lore mode.

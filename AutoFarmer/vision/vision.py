@@ -1775,7 +1775,7 @@ def bag_answer():
     key = re.sub(r'^(bag\|[^|]*\|[^|]*\|[^|]*\|)[^|]*\|[^|]*', r'\1', key)          # (not every gold change)
     if key != BAG_LOGGED['key']:
         BAG_LOGGED['key'] = key
-        log('/bag (memory): ' + ' / '.join(ln for ln in lines if not ln.startswith(('cat|', 'set|', 'setitem|')))[:600])
+        log('/bag (memory): ' + ' / '.join(ln for ln in lines if not ln.startswith(('cat|', 'set|', 'setitem|', 'crownshop|')))[:600])
     return lines
 
 

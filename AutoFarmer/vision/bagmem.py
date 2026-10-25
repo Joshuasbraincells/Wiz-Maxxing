@@ -38,8 +38,9 @@ WHAT IS READ (build 6A9721E9-370E000, 2026-10-25 - every offset found by name ea
                  each item: CoreObject.m_globalID.m_full, m_templateID.m_full -> handmem's template map -> the
                  WizItemTemplate: GameObjectTemplate.m_objectName +0x60 ("Deck-Purchased-50-E01-Balance"),
                  m_adjectiveList +0xF8 (std::list<std::string>: "Deck", "FLAG_NoTrade"... - its kind: Hat, Robe, Shoes,
-                 Weapon, Athame, Amulet, Ring, Deck, Pet, Mount, Jewel, Emote, Elixir...; FLAG_CrownsOnly a Crowns item,
-                 FLAG_NoSell one that can't be sold). The 22 emotes and teleport effects are items too - the game's own N/M
+                 Weapon, Athame, Amulet, Ring, Deck, Pet, Mount, Jewel, Emote, Elixir...; FLAG_CrownsOnly a Crowns item -
+                 so is a Crown-shop template, "Crown-S05-Robe-093", which has no such flag live; FLAG_NoSell one that
+                 can't be sold). The 22 emotes and teleport effects are items too - the game's own N/M
                  on the backpack page may leave them out (m_numCEEmotesAllowed): the bot calibrates by it
   sets         ClientWizEquipmentBehavior.m_equipmentSets +0xE8: std::list {head, size} of EquipmentSet (node +0x10):
                  m_serializedItems +0x60 (a std::string of bytes: u16 n, then n u64 global ids), m_isEquipped +0x80
@@ -310,19 +311,23 @@ class BagMem:
         return size, out
 
     def str_list(self, a, cap=40):
-        """the strings of an MSVC std::list<std::string> at a (node: next, prev, the string at +0x10), [] none, None
-        unreadable"""
+        """the strings of an MSVC std::list<std::string> at a (node: next, prev, the string at +0x10), [] none - None
+        unreadable, longer than cap, or not read whole (a node or a string that can't be read: a list read in part could
+        leave out the adjective that says an item's kind)"""
         b = self.p.try_read(a, 16) if N.ptr_ok(a) else None
         if not b:
             return None
         head, size = struct.unpack("<QQ", b)
-        if not N.ptr_ok(head) or size > 1000:
+        if not N.ptr_ok(head) or size > cap:
             return None
         out, n = [], self.u64(head)
-        while N.ptr_ok(n) and n != head and len(out) < min(size, cap):
-            out.append(self.string(n + 0x10))
+        while N.ptr_ok(n) and n != head and len(out) < size:
+            s = self.string(n + 0x10)
+            if s is None:
+                return None
+            out.append(s)
             n = self.u64(n)
-        return out
+        return out if len(out) == size else None
 
     def vec16(self, a, limit=256):
         """the objects of a std::vector<SharedPointer<T>> at a (begin, end: 16-byte elements)"""
@@ -457,7 +462,8 @@ class BagMem:
         return co, ""
 
     def template_info(self, tid, hm):
-        """(object name, [adjectives]) of template id tid - None each when it can't be read; kept (templates don't change)"""
+        """(object name, [adjectives]) of template id tid - None each when it can't be read; kept (templates don't change)
+        only when both were read whole - a read in part is tried again next time"""
         if tid in self.tpl:
             return self.tpl[tid]
         name, adjs = None, None
@@ -469,7 +475,7 @@ class BagMem:
                 adjs = self.str_list(t + self.P["GameObjectTemplate"]["m_adjectiveList"])
                 if adjs is not None:
                     adjs = [a for a in adjs if a]
-        if name is not None or adjs is not None:
+        if name is not None and adjs is not None:
             if len(self.tpl) > 5000:
                 self.tpl.clear()
             self.tpl[tid] = (name, adjs)
@@ -491,7 +497,7 @@ class BagMem:
             return None, why
         r = {"items": None, "allowed": None, "extra": None, "gold": None, "gold_max": None, "walked": 0, "emotes": 0,
              "player_gid": self.u64(co + CO["m_globalID.m_full"]) or None, "cats": {}, "sets": [], "set_items": [],
-             "sets_ok": False, "tips": [], "space": None, "space_raw": None, "root": None}
+             "sets_ok": False, "tips": [], "space": None, "space_raw": None, "root": None, "crownshop": []}
         gs = self.u64(co + P["WizClientObject"]["m_gameStats"])
         if gs and self.tname(gs) == "WizGameStats":
             r["gold"] = self.i32(gs + P["WizGameStats"]["m_currentGold"])
@@ -522,15 +528,24 @@ class BagMem:
             tid = self.u32(it + CO["m_templateID.m_full"])
             name, adjs = self.template_info(tid, hm)
             kind = item_kind(adjs)
-            crowns = adjs is not None and "FLAG_CrownsOnly" in adjs
+            flagged = adjs is not None and "FLAG_CrownsOnly" in adjs
+            # (a Crown-shop template - "Crown-S05-Robe-093" - is a Crowns item to the bot even without the game's flag:
+            # the live Crown-S05 gear has none - never counted as plain gear that may be sold)
+            shop = (name or "").startswith("Crown-")
+            crowns = flagged or shop
             nosell = adjs is not None and "FLAG_NoSell" in adjs
-            gids[gid] = (tid, name, kind, crowns)
-            r["walked"] += 1
+            if shop and not flagged and len(r["crownshop"]) < 40:
+                r["crownshop"].append((kind if kind is not None else "?", name))
+            # (its global id not read: it isn't walked - an Equipment Set's item could go unnoticed - sets_ok stays off)
+            if gid:
+                gids[gid] = (tid, name, kind, crowns)
+                r["walked"] += 1
             k = kind if kind is not None else "?"
-            c = r["cats"].setdefault(k, [0, 0, 0])
+            c = r["cats"].setdefault(k, [0, 0, 0, 0])
             c[0] += 1
             c[1] += 1 if crowns else 0
             c[2] += 1 if nosell else 0
+            c[3] += 1 if not crowns and not nosell else 0
             r["emotes"] += 1 if kind == "emote" else 0
         # the Equipment Sets and their items in the backpack - sets_ok only when every set and its items were read (and
         # every backpack item was walked): else an item of a set could be missed, and nothing's sold
@@ -624,7 +639,8 @@ class BagMem:
         if boxes:
             bw = boxes[0]["w"]
             inside = [f for f in found if bw in f["chain_w"]]
-            box = {"shown": True, "title_raw": None, "caption_raw": None, "btns": []}
+            # (count: how many are up - the first one read may not be the one on top: QuickSell.ahk clicks none then)
+            box = {"shown": True, "count": len(boxes), "title_raw": None, "caption_raw": None, "btns": []}
             for f in inside:
                 if f["name"] == "TitleText" and box["title_raw"] is None:
                     box["title_raw"] = self.describe(f)["raw"]
@@ -662,7 +678,9 @@ def bag_lines(r, why=""):
     """/bag's answer for bag()'s reading (r None: none|<why>):
     bag|items|allowed|extra|gold|goldmax|player gid hex|walked|emotes|sets read (1: every set and its items read)
     space|N|M|raw text                                       (only while the backpack page is shown)
-    cat|kind|n|crowns|nosell                                 (each kind in the backpack; ? not read)
+    cat|kind|n|crowns|nosell|plain                           (each kind in the backpack; ? not read; crowns: Crowns
+                                                              items and Crown-shop templates; plain: neither nor nosell)
+    crownshop|kind|object name                               (Crown-shop templates without the game's Crowns flag)
     tip|i|shown|l|t|r|b|image texture|button texture|name    (the HUD's right-hand column, its rect in the root)
     set|n|equipped|ids|name                                  (each Equipment Set)
     setitem|set n|set equipped|gid hex|template id|object name|kind|crowns
@@ -675,8 +693,12 @@ def bag_lines(r, why=""):
     if r.get('space'):
         out.append('space|%d|%d|%s' % (r['space'][0], r['space'][1], cell(strip_markup(r.get('space_raw') or ''))))
     for k in sorted(r.get('cats') or {}):
-        n, crowns, nosell = r['cats'][k]
-        out.append('cat|%s|%d|%d|%d' % (cell(k), n, crowns, nosell))
+        c = r['cats'][k]
+        n, crowns, nosell = c[:3]
+        plain = c[3] if len(c) > 3 else max(0, n - crowns - nosell)
+        out.append('cat|%s|%d|%d|%d|%d' % (cell(k), n, crowns, nosell, plain))
+    for kind, name in r.get('crownshop') or []:
+        out.append('crownshop|%s|%s' % (cell(kind), cell(name)))
     for i, t in enumerate(r.get('tips') or [], 1):
         out.append('|'.join(['tip', str(i), cell(bool(t.get('shown')))] + _r(t.get('rect'))
                             + [cell(t.get('image')), cell(t.get('button')), cell(t.get('name'))]))
@@ -696,7 +718,7 @@ def gui_lines(g, why="", paths=()):
     root|w|h
     win|path|type|shown|l|t|r|b|checked|greyed|text|key|dups|pl|pt|pr|pb|matches   (each path asked; one not found:
         its type empty, shown 0, matches 0; l..b in the root, pl..pb its parent's; dups: its shown matches)
-    box|shown|title|caption|title key|caption key            (the message box up - box|0 none)
+    box|shown|title|caption|title key|caption key|count      (the message box up - box|0 none; count: how many are up)
     btn|name|label|l|t|r|b|key|greyed                        (its shown buttons)"""
     if not g:
         return ['none|' + cell(why or "the game's windows can't be read")]
@@ -711,10 +733,10 @@ def gui_lines(g, why="", paths=()):
                                cell(d.get('dups'))] + _r(d.get('prect')) + [cell(d.get('matches'))]))
     box = g.get('box')
     if not box:
-        out.append('box|0||||')
+        out.append('box|0|||||0')
     else:
         out.append('|'.join(['box', '1', cell(box.get('title')), cell(box.get('caption')), cell(box.get('title_key')),
-                             cell(box.get('caption_key'))]))
+                             cell(box.get('caption_key')), cell(box.get('count'))]))
         for b in box.get('btns') or []:
             out.append('|'.join(['btn', cell(b['name']), cell(b.get('label'))] + _r(b.get('rect'))
                                 + [cell(b.get('key')), cell(b.get('greyed'))]))

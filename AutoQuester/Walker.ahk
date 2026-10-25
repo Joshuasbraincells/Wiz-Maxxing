@@ -4354,6 +4354,9 @@ WalkZone(fresh := false)
 			if (IsFunc("QsDungeonMark"))
 				Func("QsDungeonMark").Call(zone)
 			}
+		;(a zone a dungeon's zone leads to - its deeper zones held from quick selling too: QuickSell.ahk)
+		if (IsFunc("QsZoneChange"))
+			Func("QsZoneChange").Call(zoneBefore, zone)
 		}
 	return zone
 	}

@@ -741,7 +741,9 @@ NavBattle(timeoutMs := 700)
 ;(its size: 150), extra, gold, goldMax (the pouch), gid (the character's id, hex), walked (items read), emotes, setsOk (1:
 ;every Equipment Set and its items read, every item walked - QuickSell.ahk sells nothing without it), space
 ;({n, m, text}: the backpack page's own "N/M" - only while that page is shown - else ""), cats ({kind: {n, crowns,
-;nosell}} - deck, hat, robe, shoes, weapon, athame, amulet, ring, pet, mount, emote...; ? not read), tips ([{i, shown, l,
+;nosell, plain}} - deck, hat, robe, shoes, weapon, athame, amulet, ring, pet, mount, emote...; ? not read; crowns: a Crowns
+;item or a Crown-shop template's; plain: neither crowns nor unsellable), crownShop ([{kind, name}]: Crown-shop templates
+;without the game's Crowns flag), tips ([{i, shown, l,
 ;t, r, b, image, button, name}]: the HUD's right-hand icons - Prospector Zeke's portrait: the backpack full, or the gold
 ;bag nearly full), sets ([{n, equipped, ids, name}]), setItems ([{set, equipped, gid, tid, name, kind, crowns}]: the
 ;Equipment Sets' items in the backpack), rootW, rootH (the game's GUI in its own units). "" when it can't be read -
@@ -779,7 +781,7 @@ NavBag(timeoutMs := 600)
 		}
 	NavBagWaitUntil := 0
 	nbgOut := {items: "", allowed: "", extra: "", gold: "", goldMax: "", gid: "", walked: "", emotes: "", setsOk: 0, space: "", cats: {}
-		, tips: [], sets: [], setItems: [], rootW: "", rootH: ""}
+		, tips: [], sets: [], setItems: [], crownShop: [], rootW: "", rootH: ""}
 	Loop, Parse, nbgAns, `n, `r
 		{
 		nbgF := StrSplit(A_LoopField, "|")
@@ -795,7 +797,9 @@ NavBag(timeoutMs := 600)
 		else if (nbgF[1] = "space" && NavNum(nbgF[2]) != "" && NavNum(nbgF[3]) != "")
 			nbgOut.space := {n: NavNum(nbgF[2]), m: NavNum(nbgF[3]), text: Trim(nbgF[4])}
 		else if (nbgF[1] = "cat" && Trim(nbgF[2]) != "")
-			nbgOut.cats[Trim(nbgF[2])] := {n: NavNum(nbgF[3]), crowns: NavNum(nbgF[4]), nosell: NavNum(nbgF[5])}
+			nbgOut.cats[Trim(nbgF[2])] := {n: NavNum(nbgF[3]), crowns: NavNum(nbgF[4]), nosell: NavNum(nbgF[5]), plain: NavNum(nbgF[6])}
+		else if (nbgF[1] = "crownshop" && Trim(nbgF[3]) != "")
+			nbgOut.crownShop.Push({kind: Trim(nbgF[2]), name: Trim(nbgF[3])})
 		else if (nbgF[1] = "tip")
 			nbgOut.tips.Push({i: NavNum(nbgF[2]), shown: nbgF[3] = "1" ? 1 : 0, l: NavNum(nbgF[4]), t: NavNum(nbgF[5]), r: NavNum(nbgF[6])
 				, b: NavNum(nbgF[7]), image: Trim(nbgF[8]), button: Trim(nbgF[9]), name: Trim(nbgF[10])})
@@ -820,8 +824,9 @@ NavBag(timeoutMs := 600)
 ;in its own units - the game's client area), win ({path: {found, type, shown (VISIBLE on it and every ancestor), l, t, r,
 ;b (in the root's units), checked, greyed (1/0, "" not one), text (its words, the markup out), key (the .gui file's
 ;"<string;KEY>" when that's all its text), dups (its shown matches), pl, pt, pr, pb (its parent's), matches}}), box
-;(the message box up: {shown, title, caption, titleKey, captionKey}; shown 0 none), btns ([{name, label, l, t, r, b, key,
-;greyed}]: its shown buttons - centerButton, leftButton, rightButton). "" when it can't be read - as NavBag: NavGuiWhy
+;(the message box up: {shown, title, caption, titleKey, captionKey, count - how many are up}; shown 0 none), btns
+;([{name, label, l, t, r, b, key, greyed}]: its shown buttons - centerButton, leftButton, rightButton). "" when it can't be
+;read - as NavBag: NavGuiWhy
 NavGui(paths, timeoutMs := 600)
 	{
 	NavGuiWhy := ""
@@ -869,7 +874,7 @@ NavGui(paths, timeoutMs := 600)
 				, r: NavNum(nguF[7]), b: NavNum(nguF[8]), checked: NavNum(nguF[9]), greyed: NavNum(nguF[10]), text: Trim(nguF[11]), key: Trim(nguF[12])
 				, dups: NavNum(nguF[13]), pl: NavNum(nguF[14]), pt: NavNum(nguF[15]), pr: NavNum(nguF[16]), pb: NavNum(nguF[17]), matches: NavNum(nguF[18])}
 		else if (nguF[1] = "box")
-			nguOut.box := {shown: nguF[2] = "1" ? 1 : 0, title: Trim(nguF[3]), caption: Trim(nguF[4]), titleKey: Trim(nguF[5]), captionKey: Trim(nguF[6])}
+			nguOut.box := {shown: nguF[2] = "1" ? 1 : 0, title: Trim(nguF[3]), caption: Trim(nguF[4]), titleKey: Trim(nguF[5]), captionKey: Trim(nguF[6]), count: NavNum(nguF[7])}
 		else if (nguF[1] = "btn" && nguF.Length() >= 9)
 			nguOut.btns.Push({name: Trim(nguF[2]), label: Trim(nguF[3]), l: NavNum(nguF[4]), t: NavNum(nguF[5]), r: NavNum(nguF[6]), b: NavNum(nguF[7])
 				, key: Trim(nguF[8]), greyed: NavNum(nguF[9])})

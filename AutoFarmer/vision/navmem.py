@@ -1477,7 +1477,7 @@ class NavMem:
 
     def bag(self, wait=0.3):
         """(r, why): the backpack, read now - bagmem.BagMem.bag (items - the list's size -, allowed, extra, gold, gold_max,
-        player_gid, cats {kind: [n, crowns, nosell]}, sets, set_items, tips - the HUD's right-hand icons -, space - the
+        player_gid, cats {kind: [n, crowns, nosell, plain]}, crownshop, sets, set_items, tips - the HUD's right-hand icons -, space - the
         backpack page's N/M while it's shown -, root) - through the same read-only handle on the game as everything here,
         under the same lock; its reader made in a thread once per game (waited for up to wait s). None and why when the
         game can't be read. Never raises"""

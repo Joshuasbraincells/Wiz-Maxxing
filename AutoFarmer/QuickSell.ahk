@@ -7,14 +7,15 @@
 ;
 ; Settings > THE BACKPACK: quicksell (off by default), quicksellpets (pets too - on), quicksellafterdungeon (off). Hidden
 ; (PlayerStats.txt): quicksellfree:N - sell with N slots or fewer left (0); quicksell:2 - a REHEARSAL: everything up to the
-; confirmation window, read, logged and closed - nothing sold. Tray menu: "Quick sell the backpack now" and "Quick sell
-; rehearsal (stops at the confirmation)".
+; confirmation window, read, logged and closed - nothing sold (after battles at most once an hour). Tray menu: "Quick sell
+; the backpack now" and "Quick sell rehearsal (stops at the confirmation)".
 ;
 ; When: after a battle the bot played (the main loop's spellbook block - QsBattleEnd, QsTick), three looks at the game's
 ; memory (0, 3 and 8 s after it): the backpack's count against its size (calibrated by the game's own "N/M"), and Zeke's
 ; icon in the HUD's right-hand column. Full - or Zeke's icon with the gold bag not near full - is a look: B, the game's
-; own N/M read; full by it: the sale. Never in a dungeon run, a dungeon being recorded or a zone entered through a sigil;
-; after a dungeon the next full backpack is held (you're told) until you've sorted it, unless quicksellafterdungeon.
+; own N/M read; full by it: the sale. Never in a dungeon run, a dungeon being recorded, a zone the walker entered through a
+; sigil or a zone that one leads on to (QsZoneChange); after a dungeon the next full backpack is held (you're told) until
+; you've sorted it, unless quicksellafterdungeon. A dungeon you walked into yourself isn't known as one.
 ;
 ; The sale - every click target from the game's memory (name and ancestors, shown, its rect, its size against the .gui
 ; file's, its label), on an allow-list, turned into pixels: B (the backpack page), Quick Sell, each gear group (Hat,
@@ -25,7 +26,8 @@
 ; pets unless quicksellpets; its total its rows'), SELL, Yes to the pets box only when its count is the confirmation's,
 ; then the backpack's count falling checked. A group an Equipment Set's item in the backpack is in is left out (the boss
 ; deck's deck), and every such item is checked to be there after - one gone turns quick sell off. Before each click:
-; no key or mouse of yours since the run began, the bot on, Wizard101 in front, no battle, no "Crown" read round it.
+; no key or mouse of yours since the run began, the bot on, Wizard101 in front, no battle, no "Crown" read round it - and
+; after the hover, none of yours still and the mouse still on it: the click goes AT the target, never where the mouse is.
 ; Anything else - a box it doesn't know, a timeout (60 s for the whole run) - backs out window by window (each close
 ; checked); a Crown box stops it with nothing clicked. You touching the mouse or keys stops it at once - no more input.
 ; debug.log: "Backpack: ..."; the dashboard counts the sales (Quick sells).
@@ -42,6 +44,9 @@ global QsSaidAt, QsMemSaid, QsLeftover, QsLeftoverTries, QsLeftoverAt, QsSince, 
 ;The game's log read by the run itself (where to, its first line, what it said since the run began: [{kind, key, msg}]);
 ;the backpack before the run ({items, gold, pouch, sets: {gid: set item}}), the last /bag read
 global QsLogPos, QsLogHead, QsLogEvents, QsBefore, QsLastBag
+;Why the last back-out stopped (user, battle, unread, box, click, stuck); a dungeon's deeper zones (entered from one of its
+;zones - {zone: 1}) and the zone it was entered from (its way out)
+global QsBackKind, QsDgZones, QsDgOut
 
 ;---- The settings ----
 
@@ -254,10 +259,11 @@ QsLeftoverTick()
 		QsLeftover := 0, QsLeftoverTries := 0
 	}
 
-;The last after-battle look found the backpack full and it wasn't sold (held, failed, waiting): the mob loop stops
+;The last after-battle look found the backpack full and it wasn't sold (held, failed, waiting): the mob loop stops. Not in
+;a rehearsal (quicksell:2 never sells - farming goes on as with quick sell off)
 QsStillFull()
 	{
-	return QsMode() && QsStill
+	return QsMode() = 1 && QsStill
 	}
 
 ;A look: the backpack from the game's memory, and what to do about it
@@ -364,7 +370,8 @@ QsZekeUp(tips)
 	return 0
 	}
 
-;In a dungeon: a dungeon run, one being recorded, a zone entered through a sigil - why, else ""
+;In a dungeon: a dungeon run, one being recorded, a zone the walker entered through a sigil or one entered from such a zone
+;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one
 QsDungeonNow()
 	{
 	if (DgRecording)
@@ -374,7 +381,45 @@ QsDungeonNow()
 	qZone := WalkZone()
 	if (qZone != "" && IsObject(WkSigilZones) && WkSigilZones.HasKey(qZone))
 		return "a dungeon (" qZone " - entered through its sigil)"
+	if (qZone != "" && IsObject(QsDgZones) && QsDgZones.HasKey(qZone))
+		return "a dungeon (" qZone " - one of its deeper zones)"
 	return ""
+	}
+
+;A zone a dungeon's own zones lead to (the walker's WalkZone, at each zone change): one entered from a dungeon's zone is
+;its next zone - not the way back out (the zone it was entered from, the sigil's) - and is a dungeon too (its drops held).
+;At most 4 deeper zones (a teleport out of a dungeon isn't seen: the chain then ends there)
+QsZoneChange(from, to)
+	{
+	if (!IsObject(QsDgZones))
+		QsDgZones := {}
+	qFromDg := QsDgZone(from), qToDg := QsDgZone(to)
+	if (qToDg)
+		{
+		if (!qFromDg)
+			QsDgOut := from
+		return
+		}
+	if (!qFromDg || to = "")
+		return
+	qDeep := 0
+	for qz in QsDgZones
+		qDeep += 1
+	if (to = QsDgOut || to = WkSigilFromZone || qDeep >= 4)
+		{
+		if (qDeep)
+			QsLog("out of the dungeon (" from " -> " to ")" (to = QsDgOut || to = WkSigilFromZone ? "" : " - taken as out after 4 deeper zones"))
+		QsDgZones := {}, QsDgOut := ""
+		return
+		}
+	QsDgZones[to] := 1
+	QsLog("a dungeon's deeper zone: " to " (from " from ") - never quick sold in")
+	QsDungeonMark(to)
+	}
+
+QsDgZone(zone)
+	{
+	return zone != "" && ((IsObject(WkSigilZones) && WkSigilZones.HasKey(zone)) || (IsObject(QsDgZones) && QsDgZones.HasKey(zone)))
 	}
 
 ;May a run start now: why not ("" it may). manual: asked for from the tray (the bot may be off, you've just used the mouse)
@@ -550,10 +595,16 @@ QsAfter(r, manual)
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
 		}
+	;(not full by the game's own N/M: no look for 10 minutes - the count may still say full, if its calibration didn't stick)
 	else if (r.res = "notfull")
-		QsLookAt := now, QsStill := 0
+		QsLookAt := now, QsStill := 0, QsTryAt := now + 600000
+	;(a rehearsal - quicksell:2 - at most once an hour after battles; the mob loop not stopped for it)
 	else if (r.res = "rehearsed")
-		QsTryAt := now + 600000, QsStill := 1
+		{
+		QsStill := 0
+		if (!manual)
+			QsTryAt := now + 3600000
+		}
 	else if (r.res = "nothing")
 		{
 		QsTryAt := now + 3600000, QsStill := 1
@@ -579,15 +630,31 @@ QsAfter(r, manual)
 
 ;---- The steps ----
 
-;The backpack open on its page: the book open on another page - its backpack tab; closed - B (it toggles: read first)
+;The backpack open on its page: the book open on another page - its backpack tab; closed - B (it toggles: read first).
+;Quick Sell's windows left open from before (a run cut short) closed first
 QsOpenBook()
 	{
-	g := QsGui("DeckConfiguration,InventorySpellbookPage,DeckConfiguration/Inventory")
+	qPaths := "DeckConfiguration,InventorySpellbookPage,DeckConfiguration/Inventory,shopGUI,buyWindow,QuickSellConfirmationWindow,QuickSellWaitingWindow"
+	g := QsGui(qPaths)
 	if (!IsObject(g))
 		return QsFail("the game's windows can't be read (" NavGuiWhy ")")
 	if (g.box.shown)
 		return QsFail("a game message is up before the run (""" g.box.caption """)")
-	if (g.win["DeckConfiguration"].shown && g.win["InventorySpellbookPage"].shown)
+	qLeft := ""
+	for qi, qp in ["shopGUI", "buyWindow", "QuickSellConfirmationWindow", "QuickSellWaitingWindow"]
+		if (g.win[qp].shown)
+			qLeft .= (qLeft = "" ? "" : ", ") qp
+	if (qLeft != "")
+		{
+		QsLog("windows left open from before (" qLeft ") - closing them first")
+		if (!QsBackOut("windows left open from before"))
+			return {res: "failed", why: "windows left open from before (" qLeft ") couldn't be closed", backed: 1}
+		g := QsGui(qPaths)
+		if (!IsObject(g))
+			return QsFail("the game's windows can't be read (" NavGuiWhy ")")
+		}
+	;(the backpack's page shown: the book's open on it - whatever the book's own window is called)
+	if (g.win["InventorySpellbookPage"].shown)
 		return ""
 	if (g.win["DeckConfiguration"].shown)
 		return QsClickWait("DeckConfiguration/Inventory", "", "InventorySpellbookPage", 3000, "the backpack page")
@@ -597,16 +664,37 @@ QsOpenBook()
 	return QsWaitFor("InventorySpellbookPage", "shown", 1, 3000, "the backpack page")
 	}
 
-;The book closed again after a look (B - it was opened with B), checked
+;The book closed again after a look (B - it was opened with B), checked. Its windows not read: left for the next look to
+;close (QsLeftover)
 QsCloseBook()
 	{
-	g := QsGui("DeckConfiguration")
-	if (!IsObject(g) || !g.win["DeckConfiguration"].shown)
+	g := QsGui("DeckConfiguration,InventorySpellbookPage")
+	if (!IsObject(g))
+		{
+		QsLog("the book can't be read (" NavGuiWhy ") - closed at the next look if it's still open")
+		QsLeftoverSet()
+		return ""
+		}
+	if (!QsBookOpen(g))
 		return ""
 	qr := QsKeyB("to close the backpack", 1)
 	if (IsObject(qr))
 		return qr
-	return QsWaitFor("DeckConfiguration", "shown", 0, 1500, "the book to close")
+	qr := QsWaitFor("DeckConfiguration", "shown", 0, 1500, "the book to close")
+	return IsObject(qr) ? qr : QsWaitFor("InventorySpellbookPage", "shown", 0, 1500, "the book to close")
+	}
+
+;The book open (g: a QsGui read with DeckConfiguration and InventorySpellbookPage): its window or its backpack page shown
+QsBookOpen(g)
+	{
+	return IsObject(g) && (g.win["DeckConfiguration"].shown || g.win["InventorySpellbookPage"].shown)
+	}
+
+;Windows left open: closed at the next look (QsLeftoverTick) - tries counted afresh unless they're already being closed
+QsLeftoverSet()
+	{
+	if (!QsLeftover)
+		QsLeftover := 1, QsLeftoverTries := 0, QsLeftoverAt := A_TickCount
 	}
 
 ;Quick Sell opened from the backpack page, on its BACKPACK tab (never the bank's)
@@ -626,10 +714,14 @@ QsOpenQuickSell()
 	}
 
 ;The groups sold - the gear's eight and the pets' (quicksellpets), never the All group - less any group an Equipment
-;Set's item in the backpack is in: {list: [{name, kind, path}], skipped, gearMax, petMax (the most each can hold - the
-;backpack's items of those kinds, by the game's memory)}; "" and why when a set item's kind isn't known
+;Set's item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax, petMax (the most each
+;can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or unsellable, by the game's
+;memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items)}; "" and why when a set
+;item's kind isn't one the game's memory names
 QsCategories(bag, ByRef why)
 	{
+	static qKnown := {hat: 1, robe: 1, shoes: 1, weapon: 1, athame: 1, amulet: 1, ring: 1, deck: 1, pet: 1, mount: 1, jewel: 1
+		, emote: 1, elixir: 1, housing: 1, treasurecard: 1, reagent: 1}
 	why := ""
 	;(the sets not all read: an item of one could be sold - nothing is)
 	if (!bag.setsOk)
@@ -644,7 +736,8 @@ QsCategories(bag, ByRef why)
 	for qi, qs in bag.setItems
 		{
 		qName := qs.name != "" ? qs.name : "id " qs.tid
-		if (qs.kind = "" || qs.kind = "?")
+		;(a kind the game's memory doesn't name - another adjective, a list read in part: it could be in any group)
+		if (!qKnown.HasKey(qs.kind))
 			{
 			why := "an Equipment Set's item in the backpack (" qName ", set " qs.set ") is of a kind the bot can't tell - lock or equip it, or Quick Sell could sell it"
 			if (IsFunc("WalkNotify"))
@@ -653,7 +746,7 @@ QsCategories(bag, ByRef why)
 			}
 		qGuard[qs.kind] := (qGuard.HasKey(qs.kind) ? qGuard[qs.kind] ", " : "") qName " (set " qs.set ")"
 		}
-	qOut := {list: [], skipped: "", gearMax: 0, petMax: 0}
+	qOut := {list: [], skipped: "", gearMax: 0, petMax: 0, crownShop: ""}
 	for qi, qc in qAll
 		{
 		if (qGuard.HasKey(qc[2]))
@@ -661,21 +754,27 @@ QsCategories(bag, ByRef why)
 			qOut.skipped .= (qOut.skipped = "" ? "" : "; ") qc[1] " (" qGuard[qc[2]] ")"
 			continue
 			}
-		qn := bag.cats.HasKey(qc[2]) ? Max(0, bag.cats[qc[2]].n - bag.cats[qc[2]].nosell) : 0
-		;(memPlain: its items that are neither Crowns items nor unsellable, by the game's memory)
-		qOut.list.Push({name: qc[1], kind: qc[2], path: "BackpackStuff/ShopCategory_" qc[1]
-			, memPlain: bag.cats.HasKey(qc[2]) ? Max(0, bag.cats[qc[2]].n - bag.cats[qc[2]].crowns - bag.cats[qc[2]].nosell) : 0
-			, memCrowns: bag.cats.HasKey(qc[2]) ? bag.cats[qc[2]].crowns : 0})
+		qc2 := bag.cats.HasKey(qc[2]) ? bag.cats[qc[2]] : ""
+		;(memPlain: its items that are neither Crowns items (nor Crown-shop ones) nor unsellable, by the game's memory - each
+		;item counted once; an older helper's line without it: worked out)
+		qn := !IsObject(qc2) ? 0 : qc2.plain != "" ? qc2.plain : Max(0, qc2.n - qc2.crowns - qc2.nosell)
+		qOut.list.Push({name: qc[1], kind: qc[2], path: "BackpackStuff/ShopCategory_" qc[1], memPlain: qn, memCrowns: IsObject(qc2) ? qc2.crowns : 0})
 		if (qc[2] = "pet")
 			qOut.petMax += qn
 		else
 			qOut.gearMax += qn
+		if (IsObject(bag.crownShop))
+			for qj, qx in bag.crownShop
+				if (qx.kind = qc[2] && StrLen(qOut.crownShop) < 400)
+					qOut.crownShop .= (qOut.crownShop = "" ? "" : ", ") qx.name
 		}
 	;(items whose kind wasn't read may be in any group)
 	if (bag.cats.HasKey("?"))
 		qOut.gearMax += bag.cats["?"].n, qOut.petMax += bag.cats["?"].n
 	if (qOut.skipped != "")
 		QsLog("left out - an Equipment Set's item is in the group: " qOut.skipped)
+	if (qOut.crownShop != "")
+		QsLog("Crown-shop gear in the groups without the game's Crowns flag (not counted as plain gear - kept out if the game takes them for Crowns items or they're locked; if the confirmation's equipment goes over the plain gear, nothing's sold): " qOut.crownShop)
 	return qOut
 	}
 
@@ -882,7 +981,7 @@ QsConfirmOk(nums, pets, gold, pouch, gearMax, petMax, ByRef why, ByRef lost)
 		}
 	if (gearMax != "" && nums.Equipment.n > gearMax)
 		{
-		why := nums.Equipment.n " gear in it - more than the groups chosen hold (" gearMax ")"
+		why := nums.Equipment.n " gear in it - more than the plain gear the groups chosen hold (" gearMax ") - a Crowns or Crown-shop item may be in it"
 		return false
 		}
 	if (petMax != "" && nums.Pet.n > petMax)
@@ -951,18 +1050,33 @@ QsVerify(nums)
 		return QsFail("the sale didn't go through - the backpack's count and gold didn't change in 15 s")
 	QsNoteBag(qb)
 	qr := QsCloseAfterSale()
+	;(the set items only checked with every Equipment Set read - a read without them isn't "they're gone": read again)
+	qSets := qb
+	Loop, 5
+		{
+		if (IsObject(qSets) && qSets.setsOk)
+			break
+		Sleep, 300
+		qSets := NavBag()
+		}
 	qHave := {}, qGone := ""
-	for qi, qs in qb.setItems
-		qHave[qs.gid] := 1
-	for qg, qs in QsBefore.sets
-		if (!qHave.HasKey(qg))
-			qGone .= (qGone = "" ? "" : ", ") (qs.name != "" ? qs.name : "id " qs.tid) " (set " qs.set ")"
+	if (!IsObject(qSets) || !qSets.setsOk)
+		QsLog("the Equipment Sets couldn't be read after the sale - their items in the backpack not checked")
+	else
+		{
+		for qi, qs in qSets.setItems
+			qHave[qs.gid] := 1
+		for qg, qs in QsBefore.sets
+			if (!qHave.HasKey(qg))
+				qGone .= (qGone = "" ? "" : ", ") (qs.name != "" ? qs.name : "id " qs.tid) " (set " qs.set ")"
+		}
 	QsLog("quick sold " nums.Total.n " items for " QsThousands(nums.Total.gold) " gold (bag " QsBefore.items " -> " qb.items " of " qb.allowed
 		. ", gold " QsThousands(QsBefore.gold) " -> " QsThousands(qb.gold) ")" (nums.lost > 0 ? " - " QsThousands(nums.lost) " gold lost over the pouch" : ""))
 	QsTray("Quick sold " nums.Total.n " items for " QsThousands(nums.Total.gold) " gold - the backpack was full.")
 	if (qGone != "")
 		{
-		StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": an Equipment Set's item was sold (" qGone ")")
+		if (!StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": an Equipment Set's item was sold (" qGone ")"))
+			Stats["quicksell"] := 0
 		QsLog("an Equipment Set's item is gone after the sale: " qGone " - quick sell turned OFF")
 		WalkNotify("quicksell", "an Equipment Set lost an item", "Quick sell sold " qGone " - it has turned itself off (Settings: THE BACKPACK). Lock the items your Equipment Sets use, then switch it on again.")
 		AlertSend("inventory", "Equipment Set item sold", "Quick sell sold " qGone " from an Equipment Set - it has turned itself off.")
@@ -976,8 +1090,8 @@ QsCloseAfterSale()
 	qt := A_TickCount
 	while (A_TickCount - qt < 1500)
 		{
-		g := QsGui("DeckConfiguration,QuickSellWaitingWindow")
-		if (IsObject(g) && !g.win["DeckConfiguration"].shown && !g.win["QuickSellWaitingWindow"].shown && !g.box.shown)
+		g := QsGui("DeckConfiguration,InventorySpellbookPage,QuickSellWaitingWindow")
+		if (IsObject(g) && !QsBookOpen(g) && !g.win["QuickSellWaitingWindow"].shown && !g.box.shown)
 			return ""
 		Sleep, 300
 		}
@@ -988,21 +1102,32 @@ QsCloseAfterSale()
 
 ;Closes the run's windows, the topmost first - a box (No; OK only on the safe list; any other left to you), the
 ;confirmation, Quick Sell, the book - each close checked within 1.5 s; 3 rounds. True when they're all closed. Your mouse or
-;keys, a battle, the bot off stop it at once (the windows are yours / closed after the battle)
+;keys, a battle, the bot off stop it at once (the windows are yours / closed after the battle). Not all closed for any
+;other reason (the windows not read, a close that failed): tried again at the next look (QsLeftover). QsBackKind: why not
 QsBackOut(why)
 	{
-	qPaths := "QuickSellConfirmationWindow,QuickSellConfirmationWindow/QuickSellConfirmationCloseButton,QuickSellWaitingWindow,shopGUI,buyWindow,buyWindow/exit,DeckConfiguration,DeckConfiguration/Close_Button"
-	qClosed := ""
+	qPaths := "QuickSellConfirmationWindow,QuickSellConfirmationWindow/QuickSellConfirmationCloseButton,QuickSellWaitingWindow,shopGUI,buyWindow,buyWindow/exit,DeckConfiguration,InventorySpellbookPage,DeckConfiguration/Close_Button"
+	qClosed := "", QsBackKind := ""
 	Loop, 8
 		{
 		g := QsGui(qPaths)
 		if (!IsObject(g))
 			{
-			QsLog("backing out (" why "): the game's windows can't be read (" NavGuiWhy ") - left as they are")
+			;(not read - the helper's back-off after a read that failed, most likely: once more straight away, the windows
+			;mustn't be left open)
+			NavGuiWaitUntil := 0
+			Sleep, 300
+			g := QsGui(qPaths)
+			}
+		if (!IsObject(g))
+			{
+			QsLog("backing out (" why "): the game's windows can't be read (" NavGuiWhy ") - tried again at the next look")
+			QsBackKind := "unread"
+			QsLeftoverSet()
 			return false
 			}
 		qWhat := g.box.shown ? "box" : g.win["QuickSellConfirmationWindow"].shown ? "confirmation" : g.win["QuickSellWaitingWindow"].shown ? "waiting"
-			: g.win["buyWindow"].shown || g.win["shopGUI"].shown ? "quicksell" : g.win["DeckConfiguration"].shown ? "book" : ""
+			: g.win["buyWindow"].shown || g.win["shopGUI"].shown ? "quicksell" : QsBookOpen(g) ? "book" : ""
 		if (qWhat = "")
 			{
 			if (qClosed != "")
@@ -1019,8 +1144,11 @@ QsBackOut(why)
 		if (!QsOk(qWhy, qKind, true))
 			{
 			QsLog("backing out (" why ") stopped: " qWhy)
+			QsBackKind := qKind
 			if (qKind = "battle")
 				QsLeftover := 1
+			else if (qKind != "user")
+				QsLeftoverSet()
 			return false
 			}
 		if (qWhat = "box")
@@ -1033,6 +1161,8 @@ QsBackOut(why)
 				if (qAns.crown)
 					AlertSend("crowns", "quick sell stopped", "A Crowns box came up in the Quick Sell window - nothing clicked (gold only): """ g.box.caption """")
 				WalkNotify("window", "a game message is up", g.box.caption " - quick sell left it to you.")
+				QsBackKind := "box"
+				QsLeftoverSet()
 				return false
 				}
 			qr := QsClickBox(g, qAns.say, qAns.crownSel)
@@ -1042,15 +1172,18 @@ QsBackOut(why)
 			qr := QsClickTarget("QuickSellConfirmationWindow/QuickSellConfirmationCloseButton", ""), qGone := "QuickSellConfirmationWindow"
 		else if (qWhat = "quicksell")
 			qr := QsClickTarget("buyWindow/exit", ""), qGone := "buyWindow"
-		else if (g.win["DeckConfiguration/Close_Button"].found)
-			qr := QsClickTarget("DeckConfiguration/Close_Button", ""), qGone := "DeckConfiguration"
+		else if (g.win["DeckConfiguration/Close_Button"].shown)
+			qr := QsClickTarget("DeckConfiguration/Close_Button", ""), qGone := "DeckConfiguration,InventorySpellbookPage"
 		else
-			qr := QsKeyB("to close the book (its close button not read)", 1), qGone := "DeckConfiguration"
+			qr := QsKeyB("to close the book (its close button not read)", 1), qGone := "DeckConfiguration,InventorySpellbookPage"
 		if (IsObject(qr))
 			{
 			QsLog("backing out (" why "): " qr.why)
+			QsBackKind := qr.res = "stopped" ? qr.kind : "click"
 			if (qr.res = "stopped" && qr.kind = "battle")
 				QsLeftover := 1
+			else if (QsBackKind != "user")
+				QsLeftoverSet()
 			if (qr.res != "stopped")
 				WalkNotify("window", "the Quick Sell window won't close", "Quick sell stopped (" why ") and couldn't close its windows: " qr.why)
 			return false
@@ -1062,13 +1195,24 @@ QsBackOut(why)
 			{
 			Sleep, 150
 			g2 := QsGui(qGone = "box" ? "buyWindow" : qGone)
-			if (IsObject(g2) && (qGone = "box" ? !g2.box.shown : !g2.win[qGone].shown))
+			if (IsObject(g2) && (qGone = "box" ? !g2.box.shown : QsAllHidden(g2, qGone)))
 				break
 			}
 		}
 	QsLog("backing out (" why "): still open after 3 rounds - left to you")
 	WalkNotify("window", "the Quick Sell window won't close", "Quick sell stopped (" why ") and its windows are still open.")
+	QsBackKind := "stuck"
+	QsLeftoverSet()
 	return false
+	}
+
+;None of the windows at paths ("A,B") shown in the read g
+QsAllHidden(g, paths)
+	{
+	for qi, qp in StrSplit(paths, ",")
+		if (g.win[qp].shown)
+			return false
+	return true
 	}
 
 ;---- Message boxes ----
@@ -1079,29 +1223,30 @@ QsBackOut(why)
 ;ALL), sell (after the confirmation's SELL), backout; pets: quicksellpets; petCount: the confirmation's pets
 QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 	{
-	qCap := Trim(box.caption), qTitle := Trim(box.title)
+	qCap := Trim(box.caption), qTitle := Trim(box.title), qCk := Trim(box.captionKey)
 	;(the one Crown box it may click: "include Crowns Items in the selected items?" - only No, only when the game's log's key,
 	;the caption and the button's label agree; never Yes)
-	if (logKey = "GUI2_00001001" && (box.captionKey = "" || box.captionKey = "GUI2_00001001")
+	if (logKey = "GUI2_00001001" && (qCk = "" || qCk = "GUI2_00001001")
 		&& RegExMatch(qCap, "i)^Would you like to include Crowns Items in the selected items\?$"))
 		{
 		if (QsHasLabel(btns, "No") = 1)
 			return {say: "No", crownSel: 1, why: "the ""include Crowns Items?"" box - No: they stay out"}
 		return {say: "", crown: 1, why: "the ""include Crowns Items?"" box without one No button"}
 		}
-	if (RegExMatch(qCap " " qTitle " " logMsg, "i)cr[o0]wn"))
-		return {say: "", crown: 1, why: "a Crowns box (" (logKey != "" ? logKey : "no key in the log") ")"}
-	;(the pets box after the confirmation's SELL: Yes only with quicksellpets and the confirmation's own count)
+	;(any other Crown box - by its words, or by a Crowns box's key in the game's memory or its log: nothing clicked)
+	if (RegExMatch(qCap " " qTitle " " logMsg, "i)cr[o0]wn") || RegExMatch(qCk " " Trim(box.titleKey) " " logKey, "GUI2_0000098[67]|GUI2_0000100[01]"))
+		return {say: "", crown: 1, why: "a Crowns box (" (logKey != "" ? logKey : "no key in the log") (qCk != "" ? ", " qCk : "") ")"}
+	;(the pets box after the confirmation's SELL: Yes only with quicksellpets and the confirmation's own count - read off the
+	;shown box's own caption (the game's memory: its key, if any, a pets box's); the log's message, when it's there, the same)
 	if (logKey = "GUI2_00000988" || logKey = "GUI2_00000989")
 		{
-		qN := ""
-		for qi, qt in [qCap, logMsg]
-			if (qN = "" && RegExMatch(qt, "i)^You are selling (a|\d+) Pets?\. Are you sure you want to sell (a|these) Pets?\?$", qm))
-				qN := (qm1 = "a") ? 1 : qm1 + 0
-		if (stage = "sell" && pets && qN != "" && petCount != "" && qN = petCount && QsHasLabel(btns, "Yes") = 1)
+		qN := QsPetsCount(qCap), qLogN := QsPetsCount(logMsg)
+		if (stage = "sell" && pets && qN != "" && petCount != "" && qN = petCount && (logMsg = "" || qLogN = qN)
+			&& (qCk = "" || qCk = "GUI2_00000988" || qCk = "GUI2_00000989") && QsHasLabel(btns, "Yes") = 1)
 			return {say: "Yes", why: "the pets box (" qN ", as the confirmation counted) - Yes: quicksellpets is on"}
 		if (QsHasLabel(btns, "No") = 1)
-			return {say: "No", why: "the pets box (" (qN = "" ? "?" : qN) (petCount != "" ? ", the confirmation " petCount : "") (pets ? "" : ", quicksellpets off") ") - No"}
+			return {say: "No", why: "the pets box (" (qN = "" ? "its caption not read as one" : qN) (logMsg != "" && qLogN != qN ? ", the game's log " (qLogN = "" ? "?" : qLogN) : "")
+				. (petCount != "" ? ", the confirmation " petCount : "") (pets ? "" : ", quicksellpets off") ") - No"}
 		return {say: "", why: "the pets box without one No button"}
 		}
 	;(an OK-only box that's safe to OK)
@@ -1109,6 +1254,14 @@ QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 	if (RegExMatch(qKey, "^(GUI_NoQuickSell|GUI_NoQuickSellWhileShopping|GUI_00001109|GUI2_00001002|Housing_18)$") && btns.Length() = 1 && QsHasLabel(btns, "OK") = 1)
 		return {say: "OK", why: "a message to OK (" qKey ")"}
 	return {say: "", why: "a game message it doesn't know (" (qKey != "" ? qKey : "no key") ")"}
+	}
+
+;The pets box's count in its words ("You are selling 3 Pets. Are you sure you want to sell these Pets?" - a Pet: 1), else ""
+QsPetsCount(text)
+	{
+	if (RegExMatch(Trim(text), "i)^You are selling (a|\d+) Pets?\. Are you sure you want to sell (a|these) Pets?\?$", qm))
+		return (qm1 = "a") ? 1 : qm1 + 0
+	return ""
 	}
 
 ;How many of the buttons have the label (exactly, case aside)
@@ -1126,7 +1279,17 @@ QsAnswerBox(g, stage, mark, petCount, ByRef said)
 	{
 	said := ""
 	QsLogNew()
-	qKey := QsLogBoxKey(mark), qMsg := QsLogBoxMsg(mark)
+	qKey := QsLogBoxKey(mark)
+	;(the box can be in the game's memory a moment before its line is in the game's log: up to 1.5 s for it - else the
+	;"include Crowns Items?" box would be taken for another Crown box)
+	qt := A_TickCount
+	while (qKey = "" && QsLogPos != "" && A_TickCount - qt < 1500)
+		{
+		Sleep, 150
+		QsLogNew()
+		qKey := QsLogBoxKey(mark)
+		}
+	qMsg := QsLogBoxMsg(mark)
 	qAns := QsBoxAnswer(g.box, qKey, g.btns, stage, QsPets(), petCount, qMsg)
 	QsLog("box: """ g.box.caption """ (" (qKey != "" ? qKey : "no key in the game's log") ") - " qAns.why)
 	if (qAns.crown)
@@ -1148,10 +1311,14 @@ QsAnswerBox(g, stage, mark, petCount, ByRef said)
 	return QsFail("the box didn't go after " said)
 	}
 
-;A box's button clicked by its label (never by its place): one button with it, its size, its word read off the screen,
-;no "Crown" round it (but for the "include Crowns Items?" box's No - its own words say Crowns), then the click
+;A box's button clicked by its label (never by its place): one box up, one button with it, its size, its word read off the
+;screen, no "Crown" round it (but for the "include Crowns Items?" box's No - its own words say Crowns), then the click (a
+;Yes inside the run's 60 s)
 QsClickBox(g, say, crownSel)
 	{
+	;(two boxes up: the one read may not be the one on top - none clicked)
+	if (g.box.count != 1)
+		return {res: "failed", why: (g.box.count = "" ? "how many message boxes are up couldn't be read" : g.box.count " message boxes are up") " - none clicked"}
 	qb := "", qn := 0
 	for qi, qx in g.btns
 		if (Trim(qx.label) = say)
@@ -1173,12 +1340,16 @@ QsClickBox(g, say, crownSel)
 	if (!crownSel && !NoCrownsNear(qx, qy, qRad, "Backpack", "Quick sell", "by the Quick Sell window", "it only sells for gold", "quick sell stopped"))
 		return {res: "failed", why: """Crown"" read by the box's button (or the screen couldn't be read) - not clicked"}
 	Critical
-	if (!QsOk(qWhy, qKind, true))
+	if (!QsOk(qWhy, qKind, say != "Yes"))
 		{
 		Critical, Off
 		return QsStop(qKind, qWhy)
 		}
-	QsInputClick(qx, qy)
+	if (!QsClickAt(qx, qy, qWhy))
+		{
+		Critical, Off
+		return QsStop("user", qWhy)
+		}
 	Critical, Off
 	QsStep += 1
 	QsLog("step " QsStep ": the box's """ say """ at " qx - GameLeft "," qy - GameTop)
@@ -1189,7 +1360,8 @@ QsClickBox(g, say, crownSel)
 QsCrownBox(box, why)
 	{
 	QsLog("a Crowns box: """ box.caption """ - nothing clicked (gold only), quick sell turned OFF; the windows are left to you")
-	StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": a Crowns box came up (" SubStr(box.caption, 1, 60) ")")
+	if (!StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": a Crowns box came up (" SubStr(box.caption, 1, 60) ")"))
+		Stats["quicksell"] := 0
 	AlertSend("crowns", "quick sell stopped", "A Crowns box came up in the Quick Sell window - nothing clicked (gold only), quick sell turned off: """ box.caption """")
 	WalkNotify("window", "a Crowns box is up in Wizard101", """" box.caption """ - quick sell clicked nothing and turned itself off. Answer it yourself (No).")
 	QsTray("Quick sell saw a Crowns box and stopped without clicking - it's turned itself off.", 2)
@@ -1275,11 +1447,13 @@ QsClickWait(path, label, waitPath, ms, what, prop := "shown")
 	}
 
 ;A click on a window of the allow-list, by the game's memory: read now - shown once, inside its parent and the game, its
-;size the .gui file's, not greyed, its label - turned into pixels (not the Crown shop's corner, the right-hand column or off
-;the game), no "Crown" read round it (r: how far - 260 at UI 1.144 by default), the run still fine (QsOk) right before
+;size the .gui file's, not greyed, its label, no window shown over it (SELL's hidden BUY MORE...) - turned into pixels (not
+;the Crown shop's corner, the right-hand column or off the game), no "Crown" read round it (r: how far - 260 at UI 1.144 by
+;default; a close button's: the button and 40 px), the run still fine (QsOk) right before
 QsClickTarget(path, label, r := "")
 	{
-	g := QsGui(path)
+	qOver := QsTargetOver(path)
+	g := QsGui(path (qOver != "" ? "," qOver : ""))
 	if (!IsObject(g))
 		return QsFail("the game's windows can't be read (" NavGuiWhy ")")
 	if (g.box.shown)
@@ -1287,10 +1461,17 @@ QsClickTarget(path, label, r := "")
 	w := g.win[path]
 	if (!QsTargetOk(path, w, g.rootW, g.rootH, label, qWhy))
 		return QsFail(path " not clicked: " qWhy)
+	for qi, qp in StrSplit(qOver, ",")
+		if (qp != "" && g.win[qp].shown)
+			return QsFail(path " not clicked: " qp " is shown over it (never clicked)")
 	QsPx(w.l, w.t, w.r, w.b, g.rootW, g.rootH, qx, qy)
 	QsJitter(w.l, w.t, w.r, w.b, g.rootW, g.rootH, qx, qy)
 	if (!QsPxOk(qx, qy, qWhy))
 		return QsFail(path " not clicked: " qWhy)
+	;(a close button: the Crown check round it kept tight - closing never spends anything, and an item named "...Crown..."
+	;in the list beside it mustn't keep the windows open)
+	if (r = "" && path ~= "exit|Close")
+		r := Round(Max(w.r - w.l, w.b - w.t) * GameW / g.rootW / 2) + 40
 	if (!NoCrownsNear(qx, qy, r, "Backpack", "Quick sell", "by the Quick Sell window", "it only sells for gold", "quick sell stopped"))
 		return QsFail(path " not clicked: ""Crown"" read round it (or the screen there couldn't be read)")
 	Critical
@@ -1299,11 +1480,37 @@ QsClickTarget(path, label, r := "")
 		Critical, Off
 		return QsStop(qKind, qWhy)
 		}
-	QsInputClick(qx, qy)
+	if (!QsClickAt(qx, qy, qWhy))
+		{
+		Critical, Off
+		return QsStop("user", qWhy)
+		}
 	Critical, Off
 	QsStep += 1
 	QsLog("step " QsStep ": " path " at " qx - GameLeft "," qy - GameTop)
 	return ""
+	}
+
+;Windows that, shown, lie over a target (never clicked): SELL's "BUY MORE..." (hidden by the game's file, on top of it)
+QsTargetOver(path)
+	{
+	return path = "buyWindow/sellAction" ? "buyWindow/buyMoreAction" : ""
+	}
+
+;The click: the mouse onto x, y and a moment on it (the potion run's hover rule), then - no key or mouse of yours since the
+;run began, the mouse still on it (you may have taken it during the hover) - clicked AT x, y. why: what stopped it
+QsClickAt(x, y, ByRef why)
+	{
+	why := ""
+	QsInputMove(x, y)
+	if (QsSince && A_TickCount - UserIdle() > QsSince)
+		why := "you touched the mouse or keyboard - the windows are yours"
+	else if (!QsInputMouseAt(x, y))
+		why := "the mouse moved off the button before the click - the windows are yours"
+	if (why != "")
+		return false
+	QsInputClickAt(x, y)
+	return true
 	}
 
 ;B (the game's backpack key - it toggles the book: open read first, by the caller): the run still fine right before
@@ -1590,12 +1797,24 @@ QsMenuNow(rehearse := false)
 
 ;---- The only places this file gives the game input or looks at the screen (tests put recorders here) ----
 ;QS-INPUT-BEGIN
-QsInputClick(x, y)
+;The mouse onto x, y and a moment on it - the game takes a hovered click better (the potion run's rule)
+QsInputMove(x, y)
 	{
 	MouseMove, x, y, MouseSpeedNow()
-	;(a moment on it first - the game takes a hovered click better: the potion run's rule)
 	Sleep, % Max(150, Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
-	Click
+	}
+
+;The mouse still at x, y (2 px either way)
+QsInputMouseAt(x, y)
+	{
+	MouseGetPos, qmX, qmY
+	return Abs(qmX - x) <= 2 && Abs(qmY - y) <= 2
+	}
+
+;The click itself - at x, y, never wherever the mouse happens to be
+QsInputClickAt(x, y)
+	{
+	Click, %x%, %y%
 	}
 
 QsInputKeyB()
