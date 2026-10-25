@@ -96,6 +96,16 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      away, and x|y|z is the teleporter to take here)
                                                dist|d               (the arrow's distance, along the path)
                                                quest|enabled|questid|goalid
+                                               noplace|<1/0/>|<held s>   (1: the game shows no way to the goal - no
+                                                                     arrow: its goal reads exactly 0, 0, 0 and the HUD's
+                                                                     distance -1, a USAGE "Use Inactive Protector ..." -
+                                                                     the goal| target| dist| above empty then and the
+                                                                     on-screen arrow a phantom; held: seconds the 1 has
+                                                                     held for this quest and goal, only with 1 - act on
+                                                                     it once it has held. 0: the goal has a place. "":
+                                                                     not known - another zone, the quest helper off, a
+                                                                     goal change caught midway. An older helper sends no
+                                                                     such line)
                                                path|x,y,z;x,y,z;... (only with path=1: the game's own path over the
                                                                      zone's nav graph, from the wizard to the goal)
                                                route|x|y|left       (only with route=1: where to steer - a point ahead on
@@ -143,10 +153,28 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              a build it can't read. 15, named: 1 the quest's by its name or its goal
                                              only - quest without the same-family match ("Gobbler King" for "Defeat
                                              Gobblers" is quest 1, named 0). An older helper's lines stop at 8 or 14)
-  /items[?goal=<the quest's goal line>]   -> the things lying about the zone a quest has you collect (the game's
-                                             memory, read-only - Piece Of Coral), nearest first:
-                                             item|name|x|y|z|distance|quest (1: the goal names it)|gid,
-                                             or "none (<why>)"
+  /items[?goal=<the quest's goal line>][&far=1]
+                                          -> the zone's things with a name that aren't mobs (the game's memory,
+                                             read-only - an item lying about a quest has you collect, Piece Of Coral; an
+                                             object to use, open, read, Inactive Protector; an NPC...), nearest first:
+                                             item|name|x|y|z|distance|quest (1: the goal is about it)|gid|key|template|
+                                             src|kind, or "none (<why>)" (none at all: plain "none")
+                                             (9-12: key its display key - WizQst371C7_00000008 -, template its
+                                             template's name, src mem (in the game's memory now) / file (where the
+                                             zone's file places it - far=1 only), kind item / object / npc / ambient.
+                                             An older helper's lines stop at 8. quest: the goal's own key (TALLYTEXT -
+                                             /goal's itemkey) when any thing listed has it - then only those -, else (an
+                                             exact goal) the goal's item - or a talk goal's NPC - as the thing's whole
+                                             name ("Protector" isn't "Inactive Protector"), else the goal's line names
+                                             it; an ambient one only by its key; one from the file never by the OCR's
+                                             slips)
+                                             far=1: also the things the zone's file places (vision\placements.py) that
+                                             the memory doesn't hold now - it holds only those within ~6.7k (a live one
+                                             of the same template within 400 stands for its placement; gid
+                                             "f:<template>:<n>" or "f:<template>@<where>" - a far one becomes the live
+                                             gid once in reach). The file is read in a thread at each zone change: until
+                                             it's built only the live things (never read while asked). A used or
+                                             picked-up one stays in the file - the bot remembers those itself
                                              (the quest's goal for both: the game's memory's, as /goal's; goal= only
                                              when that can't be read)
   /battle                                 -> the battle's participants, read from the game's memory (read-only, see
@@ -186,6 +214,20 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                quest|<title>|<quest id>|<goal id>|<ids: hud / thread>
                                                exact|<1/0>           (1: the line and the fields above are the goal's
                                                                      own data, every name found)
+                                               itemkey|<key>         (the name-table key of what the goal names - its
+                                                                     TALLYTEXT: WizQst371C7_00000008 = Inactive
+                                                                     Protector, the display key of the zone's objects it
+                                                                     means: /items' field 9; "" none, or words)
+                                               mobkey|<key>          (the mob's - TALLYTEXT2: WizardMobs_00000883)
+                                               npckeys|<first>|<last>  (a talk goal's NPC's - FIRSTNAME, LASTNAME:
+                                                                     WC-NPCs_00000014|WC-NPCs_00000015)
+                                               namekey|<key>         (the goal's own name: WizardQuestGoals_UseItem,
+                                                                     _TalkNPC, _Kill...)
+                                               kindnum|<n>           (the game's own number for the kind - USAGE 8: it
+                                                                     may change between builds, for logs only)
+                                                                     (the keys exact - no name looked up -, "" when the
+                                                                     quest has moved on; an older helper has none of
+                                                                     these five lines)
                                              or one line "none|<why>" (not in the game world, no quest, the game's quest
                                              classes being read - once, about a second -, the game not running...)
                                              A field that can't be read for sure is left empty (target|||): goal, target,
@@ -2002,25 +2044,153 @@ def battle_lines(parts, why=''):
     return out
 
 
-def quest_item(name, goal_line, goal=None):
-    """the quest's goal names this item: the memory's goal (goal_now) - the item it names ("Collect Piece Of Coral in The
-    Grotto (0 of 4)": Piece Of Coral), exactly - else goal_line (the OCR's, slips allowed for)"""
+@functools.lru_cache(maxsize=1024)
+def whole_name(name, item):
+    """the name is the whole of item - a goal's item as the game's memory gives it ("Inactive Protector"), any of its
+    words plural ("Flame Gem" / "Flame Gems", "Piece of Coral" / "Pieces of Coral"), a "The" / "A" / "An" before either
+    ("History of Magic" / "The History of Magic") - never a part of it: name_matches took 'Teleporter' for 'To Teleporter
+    Hub', 'Urn' for 'Urn Piece', 'Portal Piece' for 'Third Portal Piece' (68 such pairs in the zones' files)"""
+    rx = mob_name_re(name or '')
+    clean = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', (item or '').lower())).strip()
+    clean = re.sub(r'^(the|a|an) ', '', clean)
+    return bool(rx is not None and clean and (rx.fullmatch(clean) or rx.fullmatch('the ' + clean)))
+
+
+def thing_keys(t):
+    """a thing's name keys: a placement's display and title keys, a live one's display key"""
+    return [k for k in (t.get('keys') or [t.get('key')]) if k]
+
+
+def quest_item(thing, goal_line, goal=None, key_hit=None):
+    """the quest's goal is about this thing - thing: {name, key, keys, kind, src} (a live one or a placement), or its name.
+    The memory's goal (goal_now):
+      - its own key (item_key, the TALLYTEXT) is the thing's: when any thing listed has it (key_hit - the caller's, over
+        its whole list; None: this thing's alone), only those are (the 4 Inactive Protectors: exact, whatever names say)
+      - else an exact goal: its item - a talk goal's NPC, for an NPC - is the thing's whole name (whole_name); an ambient
+        one (a mob's name on something that doesn't fight) never by its name
+      - else the goal's line (the HUD's) names it
+    Without it goal_line (the OCR's): slips allowed for (name_in_line) - not for one from the zone's file (src "file":
+    the whole zone's things, far ones too - exact words only)"""
+    t = thing if isinstance(thing, dict) else {'name': thing}
+    name, kind = t.get('name') or '', t.get('kind') or ''
     if goal and goal.get('text'):
+        ik = goal.get('item_key') or ''
+        has = bool(ik) and ik in thing_keys(t)
+        if key_hit is None:
+            key_hit = has
+        if key_hit or kind == 'ambient':
+            return bool(has)
+        if not name:
+            return False
         if goal.get('exact'):
-            return bool(goal.get('item')) and name_matches(name, goal['item'])
+            want = [goal.get('item')] + ([goal.get('npc')] if kind == 'npc' else [])
+            return any(whole_name(name, w) for w in want if w)
         return name_matches(name, goal['text'])
-    return bool(goal_line) and name_in_line(name, goal_line)
+    if not goal_line or not name or kind == 'ambient':
+        return False
+    return name_matches(name, goal_line) if t.get('src') == 'file' else name_in_line(name, goal_line)
 
 
-def items_now(goal_line='', goal=None):
-    """(the zone's quest items [{name, pos, yaw, gid, template, quest}], why) - quest: the goal names it (quest_item);
-    none ([], why) when they can't be read"""
+ITEM_NEAR = 400.0           # a live thing this near a placement of its template stands for it (the file's left out)
+
+
+def merge_things(live, placed):
+    """/items?far=1's things: every live one (src mem) and every placement of the zone's file with a name key (src file -
+    placements.built_things) that no live thing of the same template stands within ITEM_NEAR of (the game moves few: a
+    live one is where it is now; a used or picked-up one is gone from memory but still in the file). A placement's gid:
+    "f:<template>:<n>" by its "instance (n)", else - or taken - "f:<template>@<where its record is in the file>": the
+    same every time the file is"""
+    out = [dict(t, src=t.get('src') or 'mem') for t in live]
+    gids = set()
+    for p in placed or ():
+        if not p.get('key'):
+            continue
+        if any(t.get('template') == p['template'] and math.hypot(t['pos'][0] - p['pos'][0], t['pos'][1] - p['pos'][1])
+               <= ITEM_NEAR for t in live):
+            continue
+        gid = f"f:{p['template']}:{p['n']}" if p.get('n') is not None else ''
+        if not gid or gid in gids:
+            gid = f"f:{p['template']}@{p.get('at')}"
+        gids.add(gid)
+        out.append({'name': p.get('text') or '', 'pos': tuple(p['pos']), 'yaw': p.get('yaw'), 'gid': gid,
+                    'template': p['template'], 'key': p['key'], 'keys': list(p.get('keys') or [p['key']]),
+                    'kind': p.get('kind') or '', 'src': 'file'})
+    return out
+
+
+PLACES_SAID = {'at': 0.0}   # (when a failure to read the zone's file may be logged again)
+
+
+# The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
+# for them (placements.busy)
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items'}
+
+
+def places_busy(on):
+    try:
+        import placements
+        placements.busy(on)
+    except Exception:  # noqa: BLE001 - the request all the same
+        pass
+
+
+def places_want(r, game_dir=''):
+    """the zone of reading r: its file's things built in placements' worker thread (once per zone: nothing when it's
+    the zone last asked for) - /nav's, so /items?far=1 has them by the time the walker asks"""
+    if not r or not r.get('zone'):
+        return
+    try:
+        import placements
+        placements.want_zone(r['zone'], game_dir)
+    except Exception as e:  # noqa: BLE001 - never into /nav (said once a minute)
+        if time.monotonic() >= PLACES_SAID['at']:
+            PLACES_SAID['at'] = time.monotonic() + 60.0
+            log(f"placements: the zone's file couldn't be asked for ({e!r})")
+
+
+def items_now(goal_line='', goal=None, r=None, far=False):
+    """(the zone's things [{name, pos, yaw, gid, template, key, keys, kind, src, quest}], why) - the game's memory's
+    (navmem: items(), every thing with a name key that isn't a mob), and with far the zone's file's too (merge_things -
+    placements.built_things for r's zone: as built so far, never read here). quest: the goal is about it (quest_item,
+    its key over the whole list). None ([], why) when neither can be read"""
     items, why = nav_reader().items()
-    if items is None:
+    things = items or []
+    if far and r and r.get('zone'):
+        placed = None
+        try:
+            import placements
+            placed = placements.built_things(r['zone'], nav_reader().game_dir)
+        except Exception as e:  # noqa: BLE001 - the live things alone (said once a minute)
+            if time.monotonic() >= PLACES_SAID['at']:
+                PLACES_SAID['at'] = time.monotonic() + 60.0
+                log(f"/items: the zone's file couldn't be read ({e!r})")
+        if placed is not None:
+            # (the memory's not read - a new zone being looked at -: the file's things all the same)
+            things = merge_things(things, placed)
+        elif items is None:
+            return [], why
+        elif not things:
+            why = "the zone's file is being read"
+    elif items is None:
         return [], why
-    for it in items:
-        it['quest'] = quest_item(it['name'], goal_line, goal)
-    return items, ''
+    ik = goal.get('item_key') if goal and goal.get('text') else ''
+    key_hit = bool(ik) and any(ik in thing_keys(t) for t in things)
+    for it in things:
+        it['quest'] = quest_item(it, goal_line, goal, key_hit)
+    return things, '' if things else why
+
+
+def item_cell(v):
+    """a field of an /items line: no | or line breaks in it; None as empty"""
+    return '' if v is None else re.sub(r'[|\r\n]+', ' ', str(v)).strip()
+
+
+def item_line(it, me):
+    """/items' line for a thing seen from me (the wizard's x, y, z): item|name|x|y|z|distance|quest|gid|key|template|src|
+    kind - the first 8 as an older helper's"""
+    return (f"item|{item_cell(it['name'])}|{it['pos'][0]:.1f}|{it['pos'][1]:.1f}|{it['pos'][2]:.1f}|"
+            f"{math.hypot(it['pos'][0] - me[0], it['pos'][1] - me[1]):.0f}|{1 if it.get('quest') else 0}|"
+            + '|'.join(item_cell(it.get(k)) for k in ('gid', 'key', 'template', 'src', 'kind')))
 
 
 # ---------------------------------------------------------------- the quest's goal (vision\questmem.py)
@@ -2052,6 +2222,7 @@ def goal_now(r=None, max_age=GOAL_FRESH, wait=0.0):
                 log(f"goal (memory, {g['ms']:.1f} ms): {g['text']!r} - {g['type'] or '?'} {g['status'] or ''}"
                     + (f" {g['count']}/{g['total']}" if g['total'] is not None else '')
                     + ''.join(f', {k} {g[k]!r}' for k in ('mob', 'item', 'npc') if g[k])
+                    + ''.join(f', {k} {g[k]}' for k in ('item_key', 'mob_key') if g.get(k))
                     + f" (from {g['from']}{'' if g['exact'] else ', not exact'}; {g['ids_from']} ids)"
                     + ('' if g['shown'] in (None, g['text']) else f" - the HUD shows {g['shown']!r}")
                     + (f" - {g['why']}" if g['why'] else ''))
@@ -2066,10 +2237,12 @@ def goal_cell(v):
 
 
 def goal_lines(g, why):
-    """/goal's answer (see the top) for a goal_now reading"""
+    """/goal's answer (see the top) for a goal_now reading - the first ten lines byte for byte an older helper's, then
+    itemkey|, mobkey|, npckeys|, namekey|, kindnum| (an older bot's NavGoal skips lines it doesn't know)"""
     if not g:
         return ['none|' + goal_cell(why or 'no goal line')]
     vis = '' if g['visible'] is None else ('1' if g['visible'] else '0')
+    nk = tuple(g.get('npc_keys') or ('', '')) + ('', '')
     return [f"text|{goal_cell(g['text'])}|{g['from']}",
             f"shown|{vis}|{goal_cell(g['shown'])}|{goal_cell(g['distance'])}",
             f"kind|{goal_cell(g['type'])}|{goal_cell(g['status'])}",
@@ -2077,7 +2250,12 @@ def goal_lines(g, why):
             f"mob|{goal_cell(g['mob'])}", f"item|{goal_cell(g['item'])}", f"npc|{goal_cell(g['npc'])}",
             f"place|{goal_cell(g['place'])}",
             f"quest|{goal_cell(g['quest'])}|{goal_cell(g['quest_id'])}|{goal_cell(g['goal_id'])}|{g['ids_from']}",
-            f"exact|{1 if g['exact'] else 0}"]
+            f"exact|{1 if g['exact'] else 0}",
+            f"itemkey|{goal_cell(g.get('item_key'))}",
+            f"mobkey|{goal_cell(g.get('mob_key'))}",
+            f"npckeys|{goal_cell(nk[0])}|{goal_cell(nk[1])}",
+            f"namekey|{goal_cell(g.get('name_key'))}",
+            f"kindnum|{goal_cell(g.get('type_raw'))}"]
 
 
 def goal_nav_line(g):
@@ -2172,10 +2350,9 @@ def router_to(game_dir=''):
 
 # The potion sellers: the NPC templates with a PotionShopBehavior (the potion shop's window) - found by looking
 # through every ObjectData template in Root.wad: Hilda Brewer in Wizard City's Commons and one in the Arcanum.
-# Where each stands is read from the zone's own gamedata.bin (its placements: "<template> instance", the location
-# property - hash 1b dc 7e 85, then x, y, z - just before the name), so a seller the game moves is still found
+# Where each stands is read from the zone's own gamedata.bin (its placements - vision\placements.py: each one's
+# template by the template id it carries), so a seller the game moves is still found
 POTION_SELLERS = ('WC_PotionShopkeeper', 'AR-ARC-NPC13')
-SELLER_LOC = b'\x1b\xdc\x7e\x85'
 SELLERS_SEEN = {}
 
 
@@ -2184,20 +2361,17 @@ def potion_sellers(zone, game_dir=''):
     when the zone's file can't be read"""
     if zone in SELLERS_SEEN:
         return SELLERS_SEEN[zone]
-    import navgeo
-    out = []
+    import placements
     try:
-        b = navgeo.read_wad_files(navgeo.wad_path(zone, game_dir or navgeo.GAME_DIR), ['gamedata.bin']).get('gamedata.bin')
-    except (OSError, ValueError) as e:
+        rows = placements.zone_placements(zone, game_dir)
+    except Exception as e:  # noqa: BLE001 - not kept: asked again next time
         log(f'/seller {zone}: {e!r}')
+        return None
+    if rows is None:
+        log(f"/seller {zone}: the zone's file can't be read")
         return None                                    # (not kept: asked again next time)
-    for name in POTION_SELLERS if b else ():
-        for m in re.finditer(re.escape(name.encode()) + rb' instance( \(\d+\))?', b):
-            k = b.rfind(SELLER_LOC, max(0, m.start() - 160), m.start())
-            if k >= 0:
-                x, y, z = struct.unpack_from('<3f', b, k + 4)
-                if all(math.isfinite(v) and abs(v) < 1e6 for v in (x, y, z)):
-                    out.append((name, (x, y, z)))
+    out = [(r['template'], tuple(r['pos'])) for r in rows if r['template'] in POTION_SELLERS
+           and all(math.isfinite(v) and abs(v) < 1e6 for v in r['pos'])]
     SELLERS_SEEN[zone] = out
     return out
 
@@ -2353,6 +2527,13 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
 
 
+def noplace_line(r):
+    """/nav's noplace|<1 no place / 0 a place / "" not known>|<s the 1 has held for this quest and goal - with 1 only>"""
+    np_, held = r.get('noplace'), r.get('noplace_s')
+    return (f"noplace|{'' if np_ is None else int(np_)}|"
+            + (f'{held:.1f}' if np_ == 1 and isinstance(held, (int, float)) else ''))
+
+
 def nav_lines(r, with_path):
     """/nav's answer from a navmem reading (fields that can't be read for sure left empty)"""
     def xyz(v):
@@ -2365,7 +2546,8 @@ def nav_lines(r, with_path):
              'target|' + xyz(r['target']),
              'goal|' + (xyz(r['goal']) + f"|{r['hops']}" if have_goal else '|||'),
              'dist|' + ('' if r['dist'] is None else f"{r['dist']:.1f}"),
-             'quest|' + '|'.join('' if r[k] is None else str(r[k]) for k in ('enabled', 'quest', 'goalid'))]
+             'quest|' + '|'.join('' if r[k] is None else str(r[k]) for k in ('enabled', 'quest', 'goalid')),
+             noplace_line(r)]
     if with_path:
         lines.append('path|' + ';'.join(f'{x:.1f},{y:.1f},{z:.1f}' for x, y, z in (r['path'] or ())))
     return lines
@@ -2778,6 +2960,11 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        # (a read of the game's memory the walker waits on: placements' builds in their thread wait at their next step
+        # meanwhile - the GIL: a cold zone file read in another thread took a /nav past its 150 ms)
+        gated = u.path in GATED or (u.path == '/cards' and 'x1' not in q)
+        if gated:
+            places_busy(True)
         try:
             if u.path == '/ping':
                 return self.reply('OK ' + VERSION)
@@ -2923,15 +3110,16 @@ class Handler(BaseHTTPRequestHandler):
                 r, why = nm.read(path=False)
                 if r is None:
                     return self.reply('ERR ' + why)
-                items, why = items_now(q.get('goal', ''), goal_now(r)[0])
+                far = q.get('far', '0') not in ('', '0')
+                items, why = items_now(q.get('goal', ''), goal_now(r)[0], r, far)
                 ITEMS_SHOWN.update(quest={it['gid'] for it in items if it['quest']}, at=time.time())
                 if not items:
                     return self.reply('none' + (' (' + why + ')' if why else ''))
                 me = r['pos'] or (0.0, 0.0, 0.0)
+                # (fields 9-12 - key, template, src, kind - at the end: an older bot reads the first 8)
                 return self.reply('\n'.join(
-                    f"item|{it['name'].replace('|', ' ')}|{it['pos'][0]:.1f}|{it['pos'][1]:.1f}|{it['pos'][2]:.1f}|"
-                    f"{math.hypot(it['pos'][0] - me[0], it['pos'][1] - me[1]):.0f}|{1 if it['quest'] else 0}|{it['gid']}"
-                    for it in sorted(items, key=lambda it: math.hypot(it['pos'][0] - me[0], it['pos'][1] - me[1]))))
+                    item_line(it, me) for it in sorted(items, key=lambda it: math.hypot(it['pos'][0] - me[0],
+                                                                                         it['pos'][1] - me[1]))))
             if u.path == '/nav':
                 with_path = q.get('path', '0') not in ('', '0')
                 with_route = q.get('route', '0') not in ('', '0')
@@ -2945,6 +3133,8 @@ class Handler(BaseHTTPRequestHandler):
                 if r is None:
                     return self.reply('ERR ' + why)
                 lines = nav_lines(r, with_path)
+                # (a zone the walker's in: its file's things built in a thread - for /items?far=1 - once per zone)
+                places_want(r, nm.game_dir)
                 # (the quest's goal from the game's memory - the line the mobs are matched against, and /nav's last line;
                 # its reader made in a thread the first time: not waited for here)
                 goal, _ = goal_now(r)
@@ -3001,11 +3191,13 @@ class Handler(BaseHTTPRequestHandler):
                                                       cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE)
                 except Exception:  # noqa: BLE001 - the map without it
                     route = None
-                # (the quest items as the walker's last /items split them)
+                # (the quest items as the walker's last /items split them - the items lying about, and any other
+                # thing it took as the quest's: not every object and NPC of the zone)
                 items, _ = items_now()
                 ifresh = time.time() - (ITEMS_SHOWN.get('at') or 0) < 10
                 for it in items:
                     it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
+                items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
                 with MAP_LOCK:
                     img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items)
                 save_png(img, os.path.abspath(out))
@@ -3053,6 +3245,9 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as e:  # noqa: BLE001 - any problem goes back to AutoFarmer, which falls back
             log(f'ERR {self.path}: {e!r}')
             return self.reply('ERR ' + repr(e), 500)
+        finally:
+            if gated:
+                places_busy(False)
 
 
 def parent_alive(pid):
@@ -3083,6 +3278,14 @@ def main():
         log(f'port {args.port} taken ({e}) - another copy is running')
         return
     log(f'started (version {VERSION}, port {args.port}, parent {args.parent}, sets: ' + ', '.join(f'{os.path.basename(d) or "main"}={sc}' for d, sc in LIB.sets) + ')')
+    # (the game's template files - Root.wad's table, the template manifest - read once now, in placements' thread, before
+    # the walker's first zone wants them for /items?far=1)
+    try:
+        import placements
+        placements.set_log(log)
+        placements.warm()
+    except Exception as e:  # noqa: BLE001 - /items without the zone files
+        log(f"placements: couldn't start ({e!r})")
     if args.parent:
         def watch():
             while parent_alive(args.parent):

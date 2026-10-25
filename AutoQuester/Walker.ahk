@@ -143,6 +143,18 @@ global ApproachUnits, TalkUnits, TalkReach, WkApTries, WkApOffUntil
 ;and its id; X at a talk goal's NPC ([{at, id}] - 3 in 2 minutes per goal); the goal id at the last X of a talk, at an
 ;arrival wait, last seen (a new one ends the no-X time after a dialogue), and the one the "talking didn't work" notice was for
 global WkGoalType, WkGoalNpc, WkGoalId, WkTalkXs, WkTalkGoal, WkArrGoal, WkGoalIdWas, WkTalkNoted
+;(...and the thing it names, its count and total, and the game's own keys for the thing, the mob and the NPC's first and last
+;name - a newer helper's; "" an older one's. All cleared when the goal isn't read: a kind of before is stale - WalkGoalKind)
+global WkGoalItem, WkGoalCount, WkGoalTotal, WkGoalItemKey, WkGoalMobKey, WkGoalNpcFirst, WkGoalNpcLast
+;A goal the game shows no way to (the game's memory, a newer helper: noplace 1 held 2 s, two readings running with the same
+;goal id - 2026-10-25 "Use Inactive Protector"): the arrow on screen is a phantom then (shadow matches 0.62-0.78, its heading
+;flipping 180 standing still) - not followed, not arrived at: the goal's kind's own way instead. The readings in a row and
+;their goal id, when the last was; the last reading taken, usable or not; a talk goal's NPC found by name standing in for
+;the place the game has none for ({goalid, x, y, z, name} - Collect.ahk TalkStep: the talk logic works on it)
+global WkNavNoPlace, WkNpN, WkNpGoal, WkNpAt, WkNavLast, WkNpTarget
+;Waiting at a goal (WkArrived = 1): its id and count by the game's memory when the wait began ("" not yet looked), the last
+;look; the prompt panel's text as InteractPrompt last read it (Crowns on it: never an X)
+global WkArr1Key, WkArr1Look, WkPromptText
 
 ;Settings and starting state. Returns false if the arrow shapes (resources\arrow_refs.txt) are missing
 WalkerInit(prefix := "AutoQuester")
@@ -226,6 +238,8 @@ WalkerInit(prefix := "AutoQuester")
 	;(...the goal zones away - the way out of this one: nothing to overshoot pushing into it, as before)
 	SpeedExitUnits := 600
 	WkTalkXs := [], WkTalkGoal := "", WkArrGoal := "", WkGoalIdWas := "", WkTalkNoted := "", WkGoalType := "", WkGoalNpc := "", WkGoalId := ""
+	WkGoalItem := "", WkGoalCount := "", WkGoalTotal := "", WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
+	WkNavNoPlace := 0, WkNpN := 0, WkNpGoal := "", WkNpAt := 0, WkNavLast := "", WkNpTarget := "", WkArr1Key := "", WkArr1Look := 0, WkPromptText := ""
 	WkGoalZones := [], WkTransUsed := {}, WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := {}, WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := {}, WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := {}
@@ -385,6 +399,11 @@ WalkStep()
 	if (!Walking)
 		return false
 	seen := (h != "" && score >= MinMatch)
+	;(a goal the game shows no way to by the game's memory - WkNavNoPlace: what's read as the arrow is a phantom - not followed,
+	;no distance off it, not arrived at; the goal's kind's own way instead. 2026-10-25 "Use Inactive Protector": heading 153 /
+	;-25 in turn standing still, shadow matches 0.62-0.78, a lone "0" - X at nothing, a push, then waiting there for good)
+	if (seen && WkNavNoPlace)
+		seen := false, h := "", dist := ""
 	;Where the arrow was found: pushed up (by a talk prompt) or in its usual spot, bright or in shadow
 	info := ArrowInfo()
 	boxOff := (seen && info.boxY != "" && info.homeY != "") ? info.homeY - info.boxY : 0
@@ -407,6 +426,9 @@ WalkStep()
 	;it: the arrow, as before
 	fair := seen && !moved && score >= 0.8
 	WalkNav(fair && A_TickCount - WkTurnAt > WalkSettle() + 150 ? h : "", fair ? dist : "")
+	;(...the verdict just come with this reading: this step's arrow left out too)
+	if (seen && WkNavNoPlace)
+		seen := false, moved := false, h := "", dist := ""
 	;(a new quest goal by the game's memory - its id: the no-X time after a dialogue is over, the new goal's prompt is X'd -
 	;2026-10-25 11:28:44, Edith Benchley's kept from X by the Star Portal's dialogue just before)
 	if (WkNavOk && WkNavObj.goalid != "")
@@ -534,6 +556,9 @@ WalkStep()
 		WkWaitFrom := 0
 		WalkNotifyClose("wait")
 		}
+	;(the goal's id and count by the game's memory are taken again at the next wait - WalkArrivedMoved)
+	if (WkArrived != 1)
+		WkArr1Key := "", WkArr1Look := 0
 
 	;A dialogue box (its NEXT / DONE / MORE / BACK button showing - it covers or pushes up the arrow):
 	;Space through it as fast as the game takes it, whatever the walker was doing
@@ -565,7 +590,10 @@ WalkStep()
 	hiddenHere := !seen && A_TickCount - WkFarAt > 10000
 	if (!hiddenHere)
 		WkSigilSeen := 0
-	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved || standIn || apNear) && A_TickCount > WkGateLook)
+	;(using, going to or talking to by the game's memory's kind - AutoFarmer's own steps for it read the prompts themselves: X only
+	;at the thing's own, never a sigil's, a boat's or a teleporter's walked past - WalkOwnPrompts)
+	if ((WkArrived <= 1 || WkArrived = 3 || WkArrived = 7) && !inbattle && (!seen || moved || standIn || apNear) && A_TickCount > WkGateLook
+		&& !WalkOwnPrompts())
 		{
 		WkGateLook := A_TickCount + ((seen && !near && !standIn && !apNear) ? 1500 : 700)
 		prompt := InteractPrompt()
@@ -655,7 +683,8 @@ WalkStep()
 		;arrow to go by - Pigswick's carpet - only a dialogue box that's read)
 		;(by the goal by the game's memory - apNear - only the dialogue box read: the NPC and its prompt hide the arrow there
 		;anyway. 2026-10-25 11:42:01-16: 28 Space presses with nothing open, then an Escape into the game's menu)
-		if (((apNear ? false : standIn ? WkArrowAtX : !seen) || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
+		;(nor a goal the game shows no way to - WkNavNoPlace: there's no arrow to go by at all)
+		if ((((apNear || WkNavNoPlace) ? false : standIn ? WkArrowAtX : !seen) || WalkDialogOpen()) && A_TickCount - WkPressAt < 60000)
 			{
 			if (!WkDialog)
 				WalkLog("pressed X: something opened (arrow covered) - pressing Space")
@@ -677,8 +706,14 @@ WalkStep()
 		return true
 		}
 
+	;Waiting at a goal for the next one: the goal's id and count by the game's memory every 3 s - moved on, walking on at once
+	;(the arrow's number needn't change - a goal with no place has none: it waited there till the game logged it out, 2026-10-25);
+	;the same, with no place: its kind's own way (WalkArrivedMoved)
+	if (WkArrived = 1 && !inbattle && WalkArrivedMoved())
+		return Walking ? true : false
 	;A "collect / defeat N things" goal: the arrow only leads to the area, and standing there does
-	;nothing. Walk into the monsters there, or roam about the spot (CollectStep)
+	;nothing. Walk into the monsters there, or roam about the spot (CollectStep) - or a goal to use things, go to a place or
+	;talk to an NPC the game shows no way to (the game's memory's kind): their own steps
 	if (WkArrived = 7)
 		return CollectStep(seen, h, dist)
 	if ((WkArrived = 0 || WkArrived = 1) && !inbattle && seen && dist != "" && (dist <= RoamRadius || (IsObject(WkCollect) && (WkCollect.gaveUp || A_TickCount - WkCollect.stepAt < 300000))) && CollectCheck(dist))
@@ -878,7 +913,8 @@ WalkStep()
 		;Right at the goal and the arrow went: on top of it (it isn't drawn there). Backing up and turning would
 		;only walk away from the thing: it's arrived - X (talk / use / collect), once per goal
 		;(not a loading screen, and in AutoFarmer not a battle starting - the arrow goes then too)
-		else if (WkArrived = 0 && !inbattle && !WkOnTopDone && (onTopMem != "" ? onTopMem : (WkLastDist != "" && WkLastDist <= OnTopDist && A_TickCount - WkLastDistAt < 4000))
+		;(nor a goal the game shows no way to: there's no "at it" - WkNavNoPlace)
+		else if (WkArrived = 0 && !inbattle && !WkOnTopDone && !WkNavNoPlace && (onTopMem != "" ? onTopMem : (WkLastDist != "" && WkLastDist <= OnTopDist && A_TickCount - WkLastDistAt < 4000))
 			&& A_TickCount - WkSeenAt > 700 && !WkLoadAt && !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle(WkSeenAt)))
 			{
 			WkOnTopDone := 1
@@ -898,7 +934,8 @@ WalkStep()
 		;(nor while the game's memory steers - it stands in for the arrow, here only a moment it can't: a battle starting, a
 		;loading screen - nor on top of the goal by it. 2026-10-25 11:28:15-19: two back-ups by the Star Portal, the memory's
 		;distance dropped over a distrusted scale)
-		else if (WkArrived = 0 && !inbattle && !WkSigilSeen && WkHidden < 6 && A_TickCount - WkHiddenAt > 1500 && WalkHiddenBackUpOk(onTopMem)
+		;(nor a goal the game shows no way to - WkNavNoPlace: there's no arrow to find)
+		else if (WkArrived = 0 && !inbattle && !WkSigilSeen && !WkNavNoPlace && WkHidden < 6 && A_TickCount - WkHiddenAt > 1500 && WalkHiddenBackUpOk(onTopMem)
 			&& (WkSeenAt ? A_TickCount - WkSeenAt > 1000 && A_TickCount - WkSeenAt < 30000 : !WkLoadAt)
 			&& !WalkLoadingScreen() && (inbattle = "" || WalkSureNoBattle(WkSeenAt)))
 			{
@@ -1497,6 +1534,17 @@ DistChanged(dist, was)
 ;way out of this zone (the game's memory says so) walk on into it instead (not when stuck by the goal)
 StartTalk(d, door := true)
 	{
+	;(a goal the game shows no way to - WkNavNoPlace - has no "at it": no X at nothing (2026-10-25 "Use Inactive Protector": X, then a
+	;push, then waiting there for good) - its kind's own way instead (CollectNoPlace); a talk goal's NPC found by name standing in
+	;for its place - TalkStep - is X'd as any talk goal's)
+	if (WkNavNoPlace && !(IsObject(WkNpTarget) && WkNpGoal != "" && WkNpTarget.goalid "|" = WkNpGoal "|"))
+		{
+		WalkLog("talk: the game shows no way to this goal - no X at " (d = "" ? "?" : d) " (its kind's own way instead)")
+		if (KeysDown || HeldW)
+			ReleaseKeys(true)
+		WkArrived := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+		return
+		}
 	;A World Gate's prompt: Go To World instead. A sigil's: enter it and wait (read walking on - each of those stops
 	;itself; a way out of the zone is walked straight on into)
 	prompt := InteractPrompt()
@@ -1562,6 +1610,15 @@ StartTalk(d, door := true)
 StartPush(why, d)
 	{
 	WkNavDoor := 0
+	;(a goal the game shows no way to - WkNavNoPlace: no doorway to push into, no waiting there - its kind's own way instead)
+	if (WkNavNoPlace && !(IsObject(WkNpTarget) && WkNpGoal != "" && WkNpTarget.goalid "|" = WkNpGoal "|"))
+		{
+		WalkLog("push: " why " - the game shows no way to this goal: no pushing on (its kind's own way instead)")
+		if (KeysDown || HeldW)
+			ReleaseKeys(true)
+		WkArrived := 0, WkFar := 0, WkBestTime := A_TickCount, WkLastRead := A_TickCount
+		return
+		}
 	if (WkPushes >= 2)
 		{
 		WalkLog("push: " why " - already pushed twice here, waiting for the next goal")
@@ -2096,11 +2153,13 @@ GateStep()
 ;prompt from another. Read by OCR; the panel grows with the UI like the arrow does
 InteractPrompt()
 	{
-	WkPromptDest := "", WkPromptVerb := ""
+	WkPromptDest := "", WkPromptVerb := "", WkPromptText := ""
 	s := ArrowScale().scale
 	t := OcrRect(Round(GameLeft + GameW / 2 - 330 * s), Round(GameTop + GameH - 300 * s), Round(660 * s), Round(240 * s))
 	if (ErrorLevel)
 		return ""
+	;(all of it, for a look for Crowns before an X - Collect.ahk UseStep)
+	WkPromptText := t
 	if (RegExMatch(t, "i)w[o0]rld\s*gate") && RegExMatch(t, "i)interact"))
 		return "gate"
 	if (RegExMatch(t, "i)to\s*enter"))
@@ -2400,11 +2459,23 @@ WalkApproachLook()
 ;isn't). Prompts at others - an NPC or a vendor walked past - aren't: X there opens their chatter, an OK box or their
 ;shop (2026-10-23 07:07: X at an NPC on the way to "Defeat Optio Agenor and collect ...", its Escape then opening the
 ;game's menu, the arrow lost for 2 minutes)
+;(by the goal's kind - WalkGoalKind: collecting a fight goal's things, every prompt but an NPC's chatter and a teleporter's;
+;a goal to use things, only the prompts naming its thing - 2026-10-25 11:49:38: X at a TELEPORTER on "Use Inactive Protector";
+;going to a place, none; talking, its NPC's)
 WalkPromptWanted(key, d)
 	{
-	;(and right at a teleport on the game's path: its prompt is the way on)
-	if (WkArrived = 7 || WkNavJump != "")
+	;(right at a teleport on the game's path: its prompt is the way on)
+	if (WkNavJump != "")
 		return true
+	if (WkArrived = 7)
+		{
+		pwMode := IsObject(WkCollect) ? WkCollect.kind : ""
+		if (pwMode = "use" || pwMode = "talk")
+			return WalkUseNames(key)
+		if (pwMode = "go")
+			return false
+		return !InStr(key, "TELEPORT")
+		}
 	;(close to the goal: by the game's memory - the goal in this zone - within TalkReach on the same floor, a talk goal's only
 	;with its NPC's name on it (2026-10-25 11:28:49: X at a vendor's prompt by Edith Benchley, 3000 units "near" on the arrow's
 	;number, opened his shop); no memory: the arrow's number within NearDist, as before)
@@ -2422,13 +2493,136 @@ WalkPromptWanted(key, d)
 		if (IsObject(WkNavObj) && WkNavObj.dist != "" && WkNavObj.dist <= TalkReach)
 			return true
 		}
-	else if ((d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist))
+	;(a goal the game shows no way to has no "close": no distance to it - WkNavNoPlace)
+	else if (!WkNavNoPlace && ((d != "" && d <= NearDist) || (WkBestDist != "" && WkBestDist <= NearDist)))
 		return true
 	goal := WalkGoalLine()
-	if (goal != "" && CollectGoal(goal) && !RegExMatch(WkPromptVerb, "i)^(talk|speak|chat|shop|trade|buy|sell|browse|craft|learn|train)"))
-		return true
+	if (goal != "" && CollectGoal(goal))
+		{
+		pwKind := WalkGoalKind(goal)
+		if (pwKind = "use")
+			return WalkUseNames(key, goal)
+		if (pwKind = "fight" && !InStr(key, "TELEPORT") && !RegExMatch(WkPromptVerb, "i)^(talk|speak|chat|shop|trade|buy|sell|browse|craft|learn|train)"))
+			return true
+		}
 	g := WalkLetters(goal)
 	return (StrLen(key) >= 4 && g != "" && InStr(g, key))
+	}
+
+;Does the prompt (key: its name's letters - WkPromptDest) name the thing the goal has the wizard use - or the NPC a talk goal
+;names (WalkGoalItemName: the game's memory's, else the goal line's)? OCR slips allowed (WalkNameLike). Never a teleporter's
+;unless that's the thing. goal: the goal line ("" the last read)
+WalkUseNames(key, goal := "")
+	{
+	unItem := WalkLetters(WalkGoalItemName(goal))
+	;(no capitals title line read: InteractPrompt's key is all the panel's letters then, the quest line pushed up over it among them -
+	;"...INACTIVEPROTECTORINDISTRICTOFTHESTARSHILDABREWERPRESSXTOTALK": the name is the letters right before its "Press X"; cut off
+	;at 60 with none - no name read)
+	unAt := InStr(key, "PRESS")
+	;(a title whose name has PRESS in it - EMPRESSANTUSKETTE, PRESSUREPLATE: the name read whole, no "Press X" to cut at)
+	if (unAt && StrLen(key) < 60 && Abs(StrLen(key) - StrLen(unItem)) <= StrLen(unItem) // 4 && WalkNameLike(key, unItem))
+		unAt := 0
+	if (unAt)
+		key := SubStr(key, Max(1, unAt - StrLen(unItem)), Min(unAt - 1, StrLen(unItem)))
+	else if (StrLen(key) >= 60)
+		return false
+	if (StrLen(key) < 4 || StrLen(unItem) < 4)
+		return false
+	if (InStr(key, "TELEPORT") && !InStr(unItem, "TELEPORT"))
+		return false
+	;(a shorter name inside the thing's - a prompt titled PROTECTOR for INACTIVEPROTECTOR - only with two thirds of its letters)
+	if (InStr(unItem, key) && !InStr(key, unItem) && StrLen(key) * 3 < StrLen(unItem) * 2)
+		return false
+	return WalkNameLike(key, unItem)
+	}
+
+;The thing (or NPC, or place) the quest's goal names: the game's memory's (WalkGoalText keeps it - the item, else the NPC), else
+;the goal line's words after its verb, up to " in <place>" and the count ("Use Inactive Protector in District of the Stars (0 of
+;3)": Inactive Protector). goal: the goal line ("" the last read); "" when there's none
+WalkGoalItemName(goal := "")
+	{
+	if (WkGoalItem != "")
+		return WkGoalItem
+	if (WkGoalNpc != "")
+		return WkGoalNpc
+	giLine := goal != "" ? goal : WkGoalLine
+	if (RegExMatch(giLine, "i)^\W*(?:Use|Open|Activate|Cl[i]ck|Inspect|Interact\s+With|Interact|Read|Examine|Search|Touch|Collect|Go\s+To|Travel\s+To|Talk\s+To|Find|Defeat)\s+(.+?)(?:\s+in\s+[^()]+?)?\s*(?:\(\s*\d+\s*(?:of|/)\s*\d+\s*\))?\s*$", giM))
+		return Trim(giM1)
+	return ""
+	}
+
+;What the quest's goal has the wizard do: "fight" (defeat things - collecting what they drop: walked into, the area roamed),
+;"use" (X at things: Use, Read, a "Collect X" object), "go" (walk to a place - no X), "talk" (X at an NPC), "" (anything else -
+;"Practice Photomancy": the arrow's own way, nothing roamed for). By the game's memory's kind for this goal when it's read
+;(WalkGoalText - NavGoal: BOUNTY, BOUNTYCOLLECT, COLLECTAFTERBOUNTY fight; SCAVENGE only with a mob or more than one to get;
+;USAGE use; WAYPOINT, ENCOUNTER_WAYPOINT_FOREACH go; PERSONA talk); else by the line's words (any case, OCR junk before them
+;allowed: Use / Open / Read... use, Talk To talk, Go / Travel To go, else a collect / defeat line fight - CollectGoal). text:
+;the goal line ("" the last read)
+WalkGoalKind(text := "")
+	{
+	gkText := text != "" ? text : WkGoalLine
+	gkType := WkGoalType, gkTotal := WkGoalTotal
+	;(nothing kept from NavGoal: the kind on /nav's goal line, read this step for the same goal)
+	if (gkType = "" && WkNavOk && IsObject(WkNavObj) && WkNavObj.goaltype != "" && (WkGoalId = "" || WkNavObj.goalid = "" || WkGoalId "|" = WkNavObj.goalid "|"))
+		gkType := WkNavObj.goaltype, gkTotal := WkNavObj.goaltotal
+	if (gkType != "")
+		{
+		if (RegExMatch(gkType, "i)^(BOUNTY|BOUNTYCOLLECT|COLLECTAFTERBOUNTY)$"))
+			return "fight"
+		if (RegExMatch(gkType, "i)^SCAVENGE"))
+			return (WkGoalMobKey != "" || (gkTotal != "" && gkTotal + 0 > 1)) ? "fight" : ""
+		if (gkType = "USAGE")
+			return "use"
+		if (gkType = "WAYPOINT" || gkType = "ENCOUNTER_WAYPOINT_FOREACH")
+			return "go"
+		if (gkType = "PERSONA")
+			return "talk"
+		return ""
+		}
+	;("Cl[i]ck": the same word - the test harnesses look for no bare one in the walker's copied code)
+	if (RegExMatch(gkText, "i)^\W*(Use|Open|Activate|Cl[i]ck|Inspect|Interact|Read|Examine|Search|Touch)\b"))
+		return "use"
+	if (RegExMatch(gkText, "i)^\W*Talk\s+To\b"))
+		return "talk"
+	if (RegExMatch(gkText, "i)^\W*(Go|Travel)\s+To\b"))
+		return "go"
+	return CollectGoal(gkText) ? "fight" : ""
+	}
+
+;Use / go / talk mode (WkArrived = 7, the game's memory's kind) with AutoFarmer's own steps for it (Collect.ahk UseStep, GoStep,
+;TalkStep): they read the prompts themselves - X only at the thing's (or the NPC's) own
+WalkOwnPrompts()
+	{
+	return WkArrived = 7 && IsObject(WkCollect) && WkCollect.kind != "" && WkCollect.kind != "fight" && IsFunc("UseStep")
+	}
+
+;Waiting at a goal (WkArrived = 1, not a collect goal given up on): the goal's id and count by the game's memory (NavGoal, every
+;3 s) against the ones when the wait began - changed: the next goal, walking on at once (true); the same and the game shows no way
+;to it (WkNavNoPlace): its kind's own way (CollectNoPlace - true if it began). False: still waiting
+WalkArrivedMoved()
+	{
+	if (!IsFunc("NavGoal") || (IsObject(WkCollect) && WkCollect.gaveUp) || (WkArr1Look && A_TickCount - WkArr1Look < 3000))
+		return false
+	WkArr1Look := A_TickCount
+	amGoal := Func("NavGoal").Call()
+	if (!IsObject(amGoal) || amGoal.text = "" || amGoal.goalid = "")
+		return false
+	amKey := amGoal.goalid "|" amGoal.count
+	if (WkArr1Key = "")
+		{
+		WkArr1Key := amKey
+		return false
+		}
+	if (amKey != WkArr1Key)
+		{
+		WalkLog("arrived: the goal moved on by the game's memory (goal|count " amKey ", was " WkArr1Key ") - walking on")
+		WalkReset()
+		WkArr1Key := "", WkArr1Look := 0
+		return true
+		}
+	if (WkNavNoPlace)
+		return CollectNoPlace()
+	return false
 	}
 
 ;The quest's goal by the game's memory when it's a talk goal (PERSONA - "Talk To ...") in this zone: WalkGoalNear's {r, dz, h}
@@ -2853,9 +3047,14 @@ WalkToggle()
 	Walking := !Walking
 	if (Walking)
 		{
-		;(a collect goal given up on gets another go)
+		;(a collect goal given up on gets another go - a goal to use things: the ones left for a while tried again, as Keep trying
+		;does - Collect.ahk)
 		if (IsObject(WkCollect) && WkCollect.gaveUp)
+			{
 			WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
+			if (IsFunc("UseForget"))
+				Func("UseForget").Call()
+			}
 		;(teleports the helper gave up get another go - you may have done what opens one: NavRead, AutoFarmer)
 		WkJumpStuck := 0, WkJumpKey := "", NavUnblock := 1
 		WalkReset()
@@ -3329,7 +3528,11 @@ CollectCheck(dist)
 	{
 	if (WkArrived = 1 && !WkArr1At)
 		WkArr1At := A_TickCount
-	going := IsObject(WkCollect) && !WkCollect.gaveUp
+	;(collecting a fight goal's things, or using a use goal's - carried on; going to a place or talking to an NPC the game shows no
+	;way to aren't taken up here: the arrow's own arrival with a place, CollectNoPlace without)
+	ccMode := IsObject(WkCollect) ? WkCollect.kind : ""
+	ccOn := ccMode = "" || ccMode = "fight" || ccMode = "use"
+	going := IsObject(WkCollect) && !WkCollect.gaveUp && ccOn
 	if (going && A_TickCount - WkCollect.sureAt < 20000)
 		{
 		StartCollect(WkCollect.text, "same goal as before")
@@ -3358,7 +3561,7 @@ CollectCheck(dist)
 	;(a goal it gave up on - no progress for CollectStall, or CollectMax in all - without it changing: leave it be)
 	if (IsObject(WkCollect) && WkCollect.gaveUp)
 		return false
-	if (IsObject(WkCollect) && !changed)
+	if (IsObject(WkCollect) && !changed && ccOn)
 		{
 		WkCollect.sureAt := A_TickCount
 		StartCollect(WkCollect.text, "same goal as before")
@@ -3366,33 +3569,46 @@ CollectCheck(dist)
 		}
 	if (!CollectGoal(text))
 		return false
+	;(by the goal's kind - WalkGoalKind: a fight goal's things collected, a use goal's used; going to a place or talking: the arrow's
+	;own arrival; anything else - Practice Photomancy - nothing roamed for)
+	ccKind := WalkGoalKind(text)
+	if (ccKind != "fight" && ccKind != "use")
+		return false
 	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0
-		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: ""}
+		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: "", kind: ccKind}
 	WalkNotifyClose("collect")
-	StartCollect(text, "a goal to collect / defeat things")
+	StartCollect(text, ccKind = "use" ? "a goal to use things (the game's memory's kind)" : "a goal to collect / defeat things")
 	return true
 	}
 
 ;Stops collecting a goal (no progress / too long): waits where it is (battles still get fought) and
-;shows the collect notice. Only the goal line changing (CollectCheck), Keep trying or F8 off and on end it
-CollectGiveUp(dist, why)
+;shows the collect notice. Only the goal line changing (CollectCheck), Keep trying or F8 off and on end it. title: the notice's
+CollectGiveUp(dist, why, title := "Collect quest needs you")
 	{
 	WkCollect.gaveUp := 1
 	ReleaseKeys()
 	WkArrived := 1, WkArrDist := dist, WkFar := 0
 	mins := Round(CollectStall / 60000)
-	WalkNotify("collect", "Collect quest needs you", "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: collect again (" mins " minutes without progress). Stop walking: walking off (" WalkKeyText() " turns it back on).", true)
+	WalkNotify("collect", title, "'" WkCollect.text "' - " why ". The bot waits here (battles still get fought) and walks on once the quest moves on.`n`nKeep trying: " (WkCollect.kind = "use" || WkCollect.kind = "go" || WkCollect.kind = "talk" ? "look again" : "collect again (" mins " minutes without progress)") ". Stop walking: walking off (" WalkKeyText() " turns it back on).", true)
 	}
 
 ;No arrow, nothing standing in for it (a goal the game shows no way to - collect things lying about the zone): its line
-;read where it sits (every 3 s); a collect goal - collecting starts (or goes on: the same goal as before). True if it did
+;read where it sits (every 3 s); by its kind (WalkGoalKind): a fight goal's collect line - collecting starts (or goes on: the
+;same goal as before); a goal to use things, go to a place or talk to an NPC - their own ways (WkCollect.kind - Collect.ahk
+;UseStep, GoStep, TalkStep: the things, the place, the NPC by name); anything else - "Practice Photomancy" - left alone,
+;nothing roamed for. True if it did
 CollectNoPlace()
 	{
 	if (A_TickCount - WkGoalReadAt < 3000 && WkGoalReadAt)
 		return false
 	WkGoalReadAt := A_TickCount
 	text := WalkGoalText()
-	if (text = "" || !CollectGoal(text))
+	if (text = "")
+		return false
+	cnpKind := WalkGoalKind(text)
+	;(using, going to or talking to only on the game's memory's verdict - WkNavNoPlace: an arrow hidden 2 s with nothing standing in
+	;for it - a zone change, the memory not trusted, an older helper, no helper - isn't "no way to it"; the arrow's own way then)
+	if (cnpKind = "" || (cnpKind = "fight" && !CollectGoal(text)) || (cnpKind != "fight" && !WkNavNoPlace))
 		return false
 	;(the memory keeps the line whatever is drawn over it - a dialogue or window X opened, a screen Remote Desktop doesn't
 	;draw: taken only while the line shows there too - its OCR a collect goal, or sharing a word with it; the memory's exact
@@ -3405,24 +3621,35 @@ CollectNoPlace()
 		}
 	if (IsObject(WkCollect) && !WkCollect.gaveUp && !CollectGoalChanged(text))
 		{
-		WkCollect.sureAt := A_TickCount, WkCollect.noPlace := 1
+		WkCollect.sureAt := A_TickCount, WkCollect.noPlace := 1, WkCollect.kind := cnpKind
 		StartCollect(WkCollect.text, "same goal as before, no arrow")
 		return true
 		}
 	if (IsObject(WkCollect) && WkCollect.gaveUp && !CollectGoalChanged(text))
 		return false
 	WkCollect := {text: text, from: A_TickCount, sureAt: A_TickCount, last: text, gaveUp: 0, battles: 0, noPlace: 1
-		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: ""}
+		, count: CollectCount(text), progressAt: A_TickCount, stepAt: A_TickCount, goalid: CollectGoalId(), newText: "", kind: cnpKind}
 	WalkNotifyClose("collect")
 	WalkNotifyClose("arrow")
-	StartCollect(text, "a goal to collect things with no arrow (the game shows no way to it)")
+	StartCollect(text, cnpKind = "fight" ? "a goal to collect things with no arrow (the game shows no way to it)"
+		: "a goal to " (cnpKind = "use" ? "use things" : cnpKind = "go" ? "go to a place" : "talk to an NPC") " with no arrow (the game shows no way to it)")
 	return true
 	}
 
+;Collecting (WkArrived = 7) starts - or using, going to or talking to (WkCollect.kind: the game's memory's kind) a goal's thing,
+;place or NPC the game shows no way to: Collect.ahk's UseStep, GoStep, TalkStep (1x for each: SpeedWalking)
 StartCollect(text, why)
 	{
 	;(walking on into it - collecting roams; 1x for it: SpeedWalking)
 	WkArrived := 7, WkChaseFrom := 0, WkRoamLeg := 0, WkRoamLegAt := 0, WkFoesAt := 0
+	scKind := IsObject(WkCollect) ? WkCollect.kind : ""
+	if (scKind = "use" || scKind = "go" || scKind = "talk")
+		{
+		WalkLog(scKind ": '" text "' - " why " - " (scKind = "use" ? "the things to use by the game's memory and the zone's file, X at each"
+			: scKind = "go" ? "the place by its name, walked to (no X)" : "the NPC by its name, walked to") " - no monsters walked into")
+		SetStatus((scKind = "use" ? "using - " : scKind = "go" ? "going - " : "finding - ") SubStr(text, 1, 60))
+		return
+		}
 	WalkLog("collect: '" text "' - " why " - looking for monsters, roaming the area")
 	SetStatus("collecting - " SubStr(text, 1, 60))
 	}
@@ -3439,11 +3666,14 @@ CollectStep(seen, h, dist)
 		WkCollect.progressAt += A_TickCount - WkCollect.stepAt, WkCollect.from += A_TickCount - WkCollect.stepAt
 	WkCollect.stepAt := A_TickCount
 	;Is it still the same goal? (every 4 s, when the arrow and so its line are showing - or with none at all: a goal the
-	;game shows no way to, its line where it sits)
-	if ((seen || WkCollect.noPlace) && A_TickCount - WkGoalReadAt > 4000)
+	;game shows no way to, its line where it sits - or using a goal's things, arrow or not: a pickup on contact, the goal moving on)
+	if ((seen || WkCollect.noPlace || WkCollect.kind = "use") && A_TickCount - WkGoalReadAt > 4000)
 		{
 		WkGoalReadAt := A_TickCount
 		text := WalkGoalText()
+		;(no arrow on screen for a goal that has a place: only the game's own line - an OCR read where no arrow is is no line)
+		if (!seen && !WkCollect.noPlace && WkGoalFrom != "the game")
+			text := ""
 		if (CollectGoalChanged(text))
 			{
 			WalkLog("collect: the goal is now '" text "' (was '" WkCollect.text "') - following the arrow again")
@@ -3474,10 +3704,24 @@ CollectStep(seen, h, dist)
 		CollectGiveUp(dist, Round(CollectMax / 60000) " minutes of collecting and it's still not done")
 		return true
 		}
+	;(using, going to or talking to by the game's memory's kind, with AutoFarmer's own steps for it: their own tries and notices)
+	csKind := WkCollect.kind
+	csOwn := (csKind = "use" || csKind = "go" || csKind = "talk") && IsFunc("UseStep")
+	;(a goal the game showed no way to has one now - a newer helper's noplace 0 and its place read: the arrow's own way from here;
+	;a use goal's things are taken up again at its arrival - CollectCheck)
+	if (WkCollect.noPlace && (csKind = "use" || csKind = "go" || csKind = "talk") && !WkNavNoPlace && WkNavOk && IsObject(WkNavObj)
+		&& WkNavObj.noplace = 0 && WkNavObj.tx != "")
+		{
+		WalkLog(csKind ": the game shows a way to '" WkCollect.text "' now - following it")
+		WkCollect := ""
+		ReleaseKeys()
+		WalkReset()
+		return true
+		}
 	;No progress for CollectStall: an odd one (items it can't find, monsters elsewhere...) - stop, wait here
 	;(battles still get fought) and tell you. It carries on once the goal changes, or on Keep trying
 	;(not while one of the goal's items lies in the game's memory waiting to be tried again - Collect.ahk)
-	if ((seen || WkCollect.noPlace) && A_TickCount - WkCollect.progressAt > CollectStall
+	if ((seen || WkCollect.noPlace) && A_TickCount - WkCollect.progressAt > CollectStall && !csOwn
 		&& !(IsFunc("CollectItemsWaiting") && Func("CollectItemsWaiting").Call()))
 		{
 		WalkLog("collect: no progress on '" WkCollect.text "' in " Round(CollectStall / 60000) " minutes - stopping here, telling you")
@@ -3490,12 +3734,23 @@ CollectStep(seen, h, dist)
 		Sleep, 50
 		return true
 		}
+	;A goal to use things (X at each - Collect.ahk UseStep: the game's memory's things and the zone file's, nearest first), go to
+	;a place (GoStep) or talk to an NPC (TalkStep) by name: theirs. Nothing to go for: roaming - no monsters walked into
+	csGoal := WkCollect.last != "" ? WkCollect.last : WkCollect.text
+	if (csOwn)
+		{
+		if (Func(csKind = "use" ? "UseStep" : csKind = "go" ? "GoStep" : "TalkStep").Call(csGoal))
+			return Walking ? true : false
+		}
 	;Things lying about the zone that the goal names, by the game's memory (AutoFarmer Collect.ahk): walked to and picked
 	;up one by one. None seen: monsters and roaming as before
-	if (IsFunc("CollectItemStep") && Func("CollectItemStep").Call(WkCollect.last != "" ? WkCollect.last : WkCollect.text))
+	else if (IsFunc("CollectItemStep") && Func("CollectItemStep").Call(csGoal))
 		return Walking ? true : false
+	;(not a fight goal's: the walk / roam below, no monsters walked into)
+	if (csKind = "use" || csKind = "go" || csKind = "talk")
+		WkChaseFrom := 0
 	;Monsters?
-	if (A_TickCount - WkFoesAt > 600)
+	else if (A_TickCount - WkFoesAt > 600)
 		{
 		WkFoesAt := A_TickCount
 		foes := (A_TickCount > WkChaseSkipUntil) ? WalkFoes() : []
@@ -3581,9 +3836,16 @@ WalkGoalText()
 	if (IsFunc("NavGoal"))
 		{
 		g := Func("NavGoal").Call()
-		;(its kind, the NPC it names and its id kept - a talk goal's NPC: WalkTalkGoal)
+		;(its kind, the NPC it names and its id kept - a talk goal's NPC: WalkTalkGoal; the thing it names, its count and total and
+		;the game's own keys - WalkGoalKind, Collect.ahk's use / go / talk steps; an older helper's has no keys: "". Nothing read:
+		;none kept - the kind of a goal before is stale)
 		if (IsObject(g) && g.text != "")
-			WkGoalType := g.type, WkGoalNpc := g.npc, WkGoalId := g.goalid
+			WkGoalType := g.type, WkGoalNpc := g.npc, WkGoalId := g.goalid, WkGoalItem := g.item, WkGoalCount := g.count
+				, WkGoalTotal := g.total, WkGoalItemKey := g.itemkey, WkGoalMobKey := g.mobkey, WkGoalNpcFirst := g.npcfirst
+				, WkGoalNpcLast := g.npclast
+		else
+			WkGoalType := "", WkGoalNpc := "", WkGoalId := "", WkGoalItem := "", WkGoalCount := "", WkGoalTotal := ""
+				, WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
 		if (IsObject(g) && g.text != "" && g.shown != 0)
 			{
 			WkGoalFrom := "the game"
@@ -3644,7 +3906,8 @@ CollectCount(text)
 ;The quest goal's id off the game's memory (read-only) - "" when it isn't read for sure
 CollectGoalId()
 	{
-	return (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
+	;(a goal the game shows no way to: no usable reading, its id read all the same - WalkNav's WkNpGoal)
+	return (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : (WkNavNoPlace && WkNpGoal != "") ? WkNpGoal : ""
 	}
 
 ;The goal collecting is for has changed (the quest moved on): by the game's memory's goal id when it's known both then
@@ -4155,6 +4418,9 @@ WalkNoteKeep(args*)
 	if (IsObject(WkCollect))
 		{
 		WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
+		;(a goal to use things: the ones left for a while tried again - Collect.ahk)
+		if (IsFunc("UseForget"))
+			Func("UseForget").Call()
 		WalkNotifyClose()
 		StartCollect(WkCollect.text, "you said keep trying")
 		}
@@ -4505,8 +4771,49 @@ WalkNav(hScr, dScr)
 	;(the route kept away from mobs - mobavoid, on unless it's 0 - a collect goal's too: the quest's goal line goes along,
 	;read only if the ask is sent, and the mobs it names aren't avoided - only the others. 2026-10-24: a collect goal
 	;turned avoiding off for every mob - the map's rings went and the wizard walked into crabs it didn't need)
-	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"]) && WkArrived != 7
+	;(...and while using things, going to a place or talking to an NPC the game shows no way to: only a fight goal's collecting walks
+	;into mobs - WkCollect.kind)
+	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"])
+		&& !(WkArrived = 7 && !(IsObject(WkCollect) && WkCollect.kind != "" && WkCollect.kind != "fight"))
 	nav := Func("NavRead").Call(150, false, NavRoute, avoidMobs, Func("WalkGoalLine"))
+	;A goal the game shows no way to (a newer helper's noplace 1, held 2 s for this goal, two readings running with the same goal id;
+	;a missed reading keeps it 3 s): the arrow on screen is a phantom - WalkStep leaves it out, the goal's kind's own way instead.
+	;An older helper sends no noplace: never - the arrow as before
+	if (IsObject(nav))
+		{
+		WkNavLast := nav
+		if (nav.noplace = 1 && nav.noplaceheld != "" && nav.noplaceheld >= 2 && nav.goalid != "")
+			WkNpN := (WkNpGoal != "" && nav.goalid "|" = WkNpGoal "|") ? WkNpN + 1 : 1, WkNpGoal := nav.goalid, WkNpAt := A_TickCount
+		else
+			WkNpN := 0, WkNpGoal := ""
+		}
+	else if (WkNpN && A_TickCount - WkNpAt > 3000)
+		WkNpN := 0, WkNpGoal := ""
+	npWas := WkNavNoPlace ? 1 : 0
+	WkNavNoPlace := WkNpN >= 2 ? 1 : 0
+	if (WkNavNoPlace != npWas)
+		WalkLog(WkNavNoPlace ? "the game shows no way to this goal (the game's memory: no place for " Round(nav.noplaceheld, 1) " s) - the arrow on screen left out, the goal's kind's own way instead"
+			: "the game's memory no longer says the goal has no place - the arrow followed again")
+	;(a talk goal the game shows no way to, its NPC found by name - TalkStep, Collect.ahk: within ApproachUnits the NPC stands in for
+	;the goal's place, so the talk logic - WalkTalkGoal, the approach, X at its own prompt, the tries - works on it as on a goal that
+	;has one; further off TalkStep walks the route there. Another goal's: forgotten)
+	if (IsObject(WkNpTarget) && IsObject(nav) && nav.goalid != "" && nav.goalid "|" != WkNpTarget.goalid "|")
+		WkNpTarget := ""
+	;(...and a goal whose mode was left - to the walker's own talk logic, TalkStep's X, or a battle that finished it - and moved on
+	;out there: forgotten, so its collect deck, the held-back Escape and no-arrow notice don't carry on to the goals after it. One
+	;given up on: CollectCheck's)
+	if (IsObject(WkCollect) && WkArrived != 7 && !WkCollect.gaveUp && IsObject(nav)
+		&& nav.goalid != "" && WkCollect.goalid != "" && nav.goalid "|" != WkCollect.goalid "|")
+		{
+		WalkLog(WkCollect.kind ": the goal moved on (was '" WkCollect.text "') - forgotten")
+		WkCollect := ""
+		}
+	if (IsObject(nav) && IsObject(WkNpTarget) && nav.noplace = 1 && nav.x != "" && nav.y != ""
+		&& Sqrt((nav.x - WkNpTarget.x) ** 2 + (nav.y - WkNpTarget.y) ** 2) <= ApproachUnits)
+		{
+		nav.tx := WkNpTarget.x, nav.ty := WkNpTarget.y, nav.tz := WkNpTarget.z, nav.gx := WkNpTarget.x, nav.gy := WkNpTarget.y
+		nav.gz := WkNpTarget.z, nav.hops := 0, nav.dist := Sqrt((nav.x - WkNpTarget.x) ** 2 + (nav.y - WkNpTarget.y) ** 2)
+		}
 	;(where the arrow points not read, but the goal in this zone known: steered at the goal itself - not the whole reading
 	;dropped. 2026-10-25 11:42:01: "can't say where the arrow points", then a guessed arrival and a push)
 	if (IsObject(nav) && (nav.tx = "" || nav.ty = "") && nav.hops = 0 && nav.gx != "" && nav.gy != "")

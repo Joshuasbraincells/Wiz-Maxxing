@@ -3,54 +3,42 @@
 Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engine's speedhack keys).
 
 ## 1. Party of 4: synced quests
-- [x] One client per PC (2 desktops + 2 laptops); a leader picks the quest, the others follow it (v0.37.0)
-- [x] Bots talk over the home network: zone, position, in battle, health, ready (v0.37.0)
-- [x] Followers walk to the leader, into its battles, through its doors; the leader waits for them (v0.37.0)
-- [ ] Teleport to friend when the leader is somewhere a door doesn't lead (phase 2 - needs friends-list screenshots)
-- [x] Own name plate in a party battle: its name learned from solo battles (the game's log), its plate read by name (v0.38.0)
-- [x] Battle roles (hitter, healer, blader) so 4 bots don't all hit or all pass (v0.40.0)
+Four bots, one per PC, quest together: a leader picks the quest, the others follow it into its battles and through its doors, each with a battle role.
+- [ ] Teleport to a friend when the leader is somewhere a door doesn't lead
 
-## 2. Stuck: mitigate completely
-- [ ] Ranked list from the stuck analysis (workflow run wf_60d57f89-04e), then pick routes
-- [x] Inside a mob's reach or sight: walks out (the quest's side) instead of waiting there (v0.34.0)
-- [x] Walked through mob rings after a battle start (memory steering dropped, the arrow's straight way): route kept by the arrow, no turning on the spot in a ring (v0.35.0)
-- [x] The quest's goal line read from the game's memory instead of OCR - done 2026-10-24 (v0.51.0; read-only, vision\questmem.py, the helper's /goal and /nav's goalline): the line as the game draws it, its kind (defeat / collect / go to / talk to), count and the mob / item / NPC it names - the quest's mobs (walked into, not avoided), quest items, collecting and its count go by it; OCR only when it can't be read. Was: "Opiio (jn -rhe" for "Defeat Optio Agenor ...", the quest's own mob avoided
-- [x] Near quest goals ("really weird position correction logic when near quest goals", 2026-10-25 - v0.52.0): the last stretch walked closed loop by the game's memory at 1x (no walking over the goal and turning round), talk goals by the memory's goal (X at the NPC's own prompt, not a vendor's; 3 tries then a wait; never pushed on through the NPC; a shop opened is closed), the route round a fence or wall, another floor never "passed", the arrow's scale learned only with the goal in the zone, zones away the arrow's own number kept (no collecting or X at the way out), 1x from 600 off a way out (2500 off a goal), a missed mouse turn finished, not redone
-- [ ] "Use ..." goals with no place on the map ("its at a collection quest and isnt doing anything", 2026-10-25: Use Inactive Protector in District of the Stars): the goal's kind and item from the game's memory, the things to use from the zone file (all 4 protectors, even far off), walked to and X'd - not roamed for monsters; the phantom arrow ignored; go-to and talk goals with no place found by name
-- [ ] Other players' battles kept away from: active duel circles found in the game's memory (read-only; the log's "MSG_EndDuel ... NOT a part of it" to cross-check), the WHOLE arena blocked with a margin - the players' side too: the route now goes through it outside the mobs' sight, and any active arena pulls the wizard in (seen by you) - unless the duel has the quest's mob; fallback: the arena from where its mobs and players stand (opposite sides of the circle); drawn on the dashboard map (asked 2026-10-23)
-- [ ] Throne Room: the goal is behind a wall the zone map lacks
-- [ ] Measure it: badly-stuck count and time lost per run (07:10-09:34 run: 4 incidents)
+Done: the home network link, following and waiting, each bot's own name plate in party battles, battle roles (hitter, healer, blader).
 
-## 3. Card learning, use and battle logic: reliable
-- [ ] Live-test what shipped untested: draw for a killing enchant, learned hits, enchant learning, MoveToCard
-- [ ] The 913 s battle (07:10-09:34 run): find why it lasted so long
-- [ ] Fewer passes (24 passes to 74 casts in that run)
-- [x] Blades and traps by damage school - done 2026-10-24 (v0.50.0), from the game's memory (read-only: the helper's /cards fields heads and boosts): each hit's heads (Hydra's fire, ice and storm), the planned hit the one dealing the most with the boosts in hand and on (cast first too), the blades and traps of every school it needs searched (a Balance wizard's Elemental Blade, a pet's Stormblade - false picture matches dropped), Balanceblade/Bladestorm/Hex/Feint for every school, the kill check per head (an enchant once, on the head it adds least), boosts used up by fit, copies from deck / pet / treasure stacking, item cards never enchanted, learned boosts put in the slot their schools say; the support part: the hitter's plan and last hit's schools over the party (a support's blades for its plan, kept on through a hit they don't fit; a blade fitting neither its plan nor the support's school thrown away, once the hitter's plan is heard and sure). Still open: a support's blades on the hitter aren't in the hitter's own kill check; per-school enemy resist. Was: each hit's damage schools known (the wiki, the card's text - Hydra: storm, fire and ice heads); a blade/trap used when it matches any of the planned hit's schools (Elemental Blade: all three heads; only a Storm Blade in hand: still boosts Hydra's storm head) and counted per head in the kill check; a support's other-school blades (a pet's Storm Blade) cast on the hitter they boost; asked 2026-10-23 (code check: workflow wf_71ffa745-5e6, scratchpad blade_audit.md). Found: hits all taken as the wizard's school (a Balance wizard never looks for Elemental Blade/Trap); every blade counted on every hit; a learned Hydra stored as its first head only; Elemental/Spirit pictures are placeholders at 1440p; a support never looks in the hitter's school folder; a wand's cast clears every blade from the model. (Learned blades/traps no longer thrown away: v0.43.0)
-- [x] Blades / Elemental Blade not used ("the bot isn't using blades or elementals yet", 2026-10-24): a boost the game's memory has in hand that no picture found is cast at its card box (the /hand box paired with the game's card - only when that pairing is sure), and a slot picture that never finds the card is replaced by the card's own (backups\). Cause found: Balanceblade's picture is taken from ui1.121 (a set 2% smaller) by the helper, not ui1.144's own (vision.py Library.masters - fixed: a set within 1% of the size first, then the ones truly bigger, then the smaller; at 1.144 Balanceblade, Locust Swarm and Helping Hands now from ui1.144's own cut); Hex / Bladestorm have only 8x8 placeholders and the learner never got them in (a blank LearnMemWait; Bladestorm set with no %); "7 cards, 5 boxes" hands stop the pairing
-- [x] Traps on the enemy with the highest health, every battle ("Can we have the wizard trap the enemy with the highest health always?", 2026-10-24 - v0.51.0): a trap that fits the planned hit's schools goes on the enemy with the most health (the plates as the kill check reads them; a tie or not read: the planned hit's target); the Alt+1 boss and a party support's pick as before; counted in the kill check only on that enemy (solotraps:1). Was: traps only with a boss picked (Alt+1)
-- [x] Card titles read - done 2026-10-24 from the game's memory instead of OCR (read-only, vision\handmem.py, the helper's /cards): each card's real name, school, type, pips (X pips), treasure / item card, enchantment, damage heads / heal / % and the kind, and your pips of each kind - new cards learned with them (Sure 100%), known ones put right (never what you set), PipsNow the game's count. Was: the title banner of each card in hand OCR'd (today only its picture and text box are matched - "is the bot unable to read the card title?"), then a Fandom wiki lookup (not Wizard101 Central - it blocks bots) for its school, pips and damage heads, filling the Spells tab and the blade logic above; asked 2026-10-23. Found 2026-10-24: a hovered card is drawn ~1.55x bigger (81x135 -> ~125x195 at 1440p, UI 1.144) and its title and text are far clearer - read each new card hovered on purpose (the mouse onto it from above, ~250 ms, then OCR), not off the small hand
-- [x] Spells tab cells: Tab / Shift+Tab across, Enter / Shift+Enter down and up, as in a spreadsheet; asked 2026-10-24 (v0.47.1)
-- [x] A page to change the hotkeys: the dashboard's Keys tab - every action's key, caught by pressing it, refused when the game or the bot needs it; asked 2026-10-24 (v0.48.0)
-- [x] Spells tab: how sure the learner is of each card (Sure %, why under the picture: kind / number read alike twice or once, pips read or guessed); asked 2026-10-24 (v0.47.0)
-- [x] Deck switching: a "small" deck for weak collect mobs, a "large" deck for bosses - switched before the fight by what's ahead (collect goal / the quest's boss); asked 2026-10-23 (v0.47.0: deck profiles picked by dungeon run / pinned / Alt+1 boss / collect / farming / default; in-game deck by Equipment Set Ctrl+1-9; damage range with stats and crits)
-  - [x] Bosses and elites: the boss deck before the fight, Elite only when it takes 3+ of your best hits - done 2026-10-25 (v0.52.0; "it doesn't change decks for the bosses": read-only, vision\bossmem.py, the helper's /mobs fields 9-15 and /battle): each mob's title from the game's memory instead of the game files (Boss / Elite / Normal, rank, max health and the game's own boss flag - its NPCBehaviorTemplate, offsets by name), a boss ahead (the quest's goal names it, the walker's quest mob by its name or goal - not a same-family one, the dungeon run's way; not one only passed by) picks the boss deck out of battle and presses its Equipment Set before the fight (10 s after the last press, not the minute), an Elite only when its max health takes 3+ of the deck's strongest hit; kept till that battle's over or 30 s after it's gone, from the end of a trash battle (no thrash), let go with the bot off, another zone or 2 minutes unread; in the battle its enemies from the memory - the boss deck's settings without Alt+1 (not read: the boss ahead; a trash fight on the way: while its set is on); Alt+1 as before
-  - [ ] "Can this deck beat it": from its range and the boss's health and block (block / resists not read yet - the template's base effects name a resist looked up by level, not its number) (v0.49.0)
-  - [ ] Per-deck slot pictures - each deck its own hit1-4 etc. (asked: yes) (v0.50.0)
-  - [ ] Decks learned from the game (Learn this deck) (v0.51.0)
-  - [x] The dashboard's Cards tab gets two tabs of its own, Small deck and Large deck: each deck's settings and behaviour (its cards and slots, how it plays - blades/traps before hitting, healing, passing, when it's used) set there (v0.47.0: a button row - tabs can't sit in a tab)
-  - [x] Adaptive decks: more decks than the two - you add one (or the bot learns from the decks you set up in the game which ones you want) and define what it's for and how it plays; used for dungeons and farming. A dungeon's deck picked on the Dungeons tab (per recorded dungeon run); farming's on the Cards tab (v0.47.0: + Deck / Copy, up to 6; a dungeon run's deck on the Dungeons tab)
+## 2. Never stuck
+The walker gets anywhere a quest sends it, without help.
+- [ ] Pass behind moving mobs: which way each mob is walking, its sight cone projected along it, the route behind it; a line of mobs treated as one wall and routed all the way round
+- [ ] Keep away from other players' battles (active duel circles in the game's memory)
+- [ ] Measure it: badly-stuck count and time lost per run
+
+Done: mob rings and sight cones avoided, the quest's goal and its kind read from the game's memory, walking up to goals, "Use ..." / go-to / talk goals with no map marker.
+
+## 3. Battles: reliable, then smart
+Every card known from the game's memory and played well, with a deck that fits the fight.
+- [ ] Every card cast by the game's memory (where it sits in hand, its target's plate), pictures only a fallback - and every other on-screen check switched to memory where it can be
+- [ ] Battle logic learned: every battle recorded (enemies, cards, damage, rounds to the kill), which plays and deck make-ups kill each kind of enemy fastest learned from it, battles played by it and the deck changed to match (an enormous task)
+- [ ] "Can this deck beat it": the deck's damage against an enemy's health, block and resists
+- [ ] Decks learned from the ones set up in the game
+
+Done: cards read from memory, blades and traps by damage school, traps on the enemy with the most health, deck profiles with the boss deck put on before the fight, the Spells and Keys tabs.
 
 ## 4. Card quests and spell learning, automatic
-- [x] NPCs with a quest marker ("?") talked to when passed on the way (v0.35.0)
 - [ ] Spell quests taken and done as they come up
 - [ ] Training points spent at trainers (a set plan per school)
-- [ ] New spells put in the deck and learned by the card reader
+- [ ] New spells put in the deck and learned
+
+Done: NPCs with a quest marker talked to when passed.
 
 ## 5. Gear dungeons until all gear is swapped
 - [ ] Olympus, Waterworks, Hades, Darkmoor: routes, bosses, cheats
-- [ ] Gear read and compared to what's worn; better pieces equipped
+- [ ] Gear read and compared to what's worn; better pieces equipped before anything is sold
 - [ ] Repeat each until its gear is all swapped; then the next
+
+In progress: quick sell when the backpack's full (a setting, never in dungeons).
 
 ## 6. Perfect pets, automatic
 - [ ] Build on AutoPetTrainer: training, snacks (gold only)
-- [ ] Hatching for the wanted talents; stop when a pet has them all
+- [ ] Hatching for the wanted talents; stop when a pet has them all (pets kept out of quick sell by then)
