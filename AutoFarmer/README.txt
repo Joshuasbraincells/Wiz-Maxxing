@@ -194,6 +194,29 @@ Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
 kept off (mobgrow); every 10 minutes of walking without one it's made a tenth
 smaller again - never below what you set yourself in Settings (mobshrink).
 A collect goal keeps them off too (all but the mobs its goal line names).
+The quest's goal line from the game's memory (navmem:1, read-only - the
+helper's /goal, vision\questmem.py): the line under the quest arrow ("Defeat
+Gobblers in Colossus Boulevard (0 of 4)") is read exactly as the game draws
+it, with what it names - the mob or its kind, the item, the NPC - its kind
+(defeat, collect, go to, talk to) and its count, instead of by OCR of the
+screen, which slips letters ("Opiio (jn -rhe" for "Defeat Optio Agenor ...":
+the quest's own mob was kept away from). Which mobs are the quest's (walked
+into, not kept off), the quest items picked up, collecting and its count all
+go by it; a mob whose name only shares a word with the place (Grotto Crab in
+"... in The Grotto") is no longer taken for the quest's. When it can't be
+read (navmem:0, an older helper, no quest) or the game hides the line (the
+quest helper off), the line is OCR'd as before. The memory keeps the line
+whatever is drawn over it, so collecting a goal with no arrow starts only
+while the line shows on screen too (not over a dialogue or a window X
+opened, nor a screen Remote Desktop doesn't draw), and never while X was
+just pressed or the wizard's talking. A mob the helper took for the quest's
+(its name, its kind - "Gobblers" for a Gobbler Scavenger - or one by a
+fight goal) that catches the wizard doesn't make the mobs' reach bigger
+(mobgrow). In a game build the helper doesn't know yet, the look for the
+quest's data runs on its own, further apart while it finds nothing - the
+card and position reads don't wait for it.
+debug.log: "Walk: the quest's goal line: ... (from the game)" - "(from the
+screen)" when OCR'd; vision\vision.log: "goal (memory): ...".
 Turning: by the mouse - any turn while the wizard runs, backing up (turned
 round, walked off, turned back - not the S key), getting out of a mob's reach,
 walking to a quest item, following the party's leader, a dungeon run, close by
@@ -338,7 +361,8 @@ restart. Defaults fills in the defaults (Save to use them).
 	  timed), the wait after clicks, before playing a round, after a discard
 	  and before looking at the hand again.
 	- Health: heal under %, drink a potion under %, flee out of mana/cards.
-	- Card logic: boost first (traps on the boss, blades, bubble, aura, then
+	- Card logic: boost first (traps - on the boss, else on the enemy with
+	  the most health -, blades, bubble, aura, then
 	  the biggest hit it can cast - as always), hit first (the biggest hit it
 	  can cast as soon as it has one; boosts only in rounds it has none -
 	  quick on weak mobs), or boost first on a boss you picked (Alt+1) and
@@ -346,8 +370,8 @@ restart. Defaults fills in the defaults (Save to use them).
 	  check and its margin, which kinds of cards it plays at all (blades,
 	  traps/Feint, bubble, aura, the wand's hit, Tower Shield, Reshuffle - a
 	  kind switched off is discarded when "Discard cards it never plays" is
-	  on), boosting again after each hit, counting traps when you fight bosses
-	  alone, saving pips for a finishing hit, and discarding.
+	  on), boosting again after each hit, counting traps in the kill check
+	  when you fight alone, saving pips for a finishing hit, and discarding.
 
 Smart App Control (Windows 11 - "Smart App Control blocked"): it blocks the
 bot's exes (they aren't signed) and can't be told to allow them. Run the bot as
@@ -552,8 +576,9 @@ health, or no hit is enough yet, it plays exactly like before.
 	- It plays it safe rather than wasting a hit: it assumes no crits, adds a
 	  safety margin, only counts blades the program put on your own wizard,
 	  only counts traps if you set solotraps to 1 in PlayerStats.txt (only do
-	  that if you fight bosses alone), and never counts bubbles (anyone's
-	  global replaces yours).
+	  that if you fight alone) - and then only on the enemy they went on
+	  (the boss you picked, else the one with the most health) -, and never
+	  counts bubbles (anyone's global replaces yours).
 	- It's switched off in Dual mode, since both windows share what's been
 	  cast and it can't tell what has landed yet.
 
@@ -600,6 +625,48 @@ boosts, and plays them by that:
 	  stays counted as on it.
 	- New blades and traps learned from the game go in the slot their schools
 	  say (resources\elementalblade, storm\blade, resources\blade3...).
+	- A blade or trap the game has in hand that no picture finds (its slot
+	  picture missing, an 8x8 placeholder, or one that matches only some
+	  copies) is still played: the bot clicks it where it is - the card's box
+	  in the hand, laid on the game's cards left to right - with the same
+	  rules (a Sharpen / Potent, never on a pet's card, each copy once).
+	  Only when that's sure: the hand settled, as many boxes as cards, no box
+	  whose picture says another kind of card than the game has there, and
+	  the card's own box not known as another card. debug.log: "boosts
+	  searched for ...: blade3 (no picture)", "blade3: no picture found it -
+	  the game's Balanceblade is card 2 of 6 in hand: cast at its box ...",
+	  or "... not cast: <why>".
+	- A copy that already carries a Sharpen or Potent (only the game's hand
+	  finds one) never gets a second: a plain copy is sharpened first; that
+	  one's cast as it is and counted with the enchantment it carries.
+	- When the blade (or trap) kept for a Hydra can't be cast after all (its
+	  box can't be sure), the one held back for it goes instead the same
+	  round - even one before it in the battle's order (a pet's Stormblade).
+	- A slot picture that doesn't find the game's card on two looks running
+	  (the same box, two different looks at the hand) is replaced by the
+	  card's own picture (the old one kept in backups\), so the pictures
+	  work again, the game's memory read or not - never by a learned card
+	  the game hasn't named so (or the learner is still checking), and
+	  never over the slot's own card's picture. When the slot already has
+	  the card's own picture, debug.log says why it still misses.
+	- The pictures for your UI size: the set cut at that size (within 1%)
+	  comes first, then the sets cut bigger (smallest first - shrinking keeps
+	  detail), then the smaller ones (vision.py Library.masters). Till now a
+	  set up to 3% smaller came first: at 1440p (UI 1.144) Balanceblade,
+	  Locust Swarm and Helping Hands were looked for with ui1.121's pictures
+	  enlarged 2%, and about half the Balanceblades weren't found.
+	- Traps (Hex, Feint, Elemental and school traps - those that fit the
+	  planned hit's schools, one a round) go on the boss you pick with Alt+1;
+	  as a party battle's blader or healer, on the enemy the hitter goes
+	  for; else - every battle (you asked, 2026-10-24) - on the enemy with
+	  the most health, read off the plates as the kill check reads them. A
+	  tie, or health that can't be read: where your planned hit goes (the
+	  leftmost of them). debug.log: "trap3 on enemy 2 of 3 (3100/3100
+	  health - the most) ...". The kill check counts them only on the enemy
+	  they went on, and only with solotraps:1 ("I fight alone (count my
+	  traps)" in Settings) - found again each round by its plate and its
+	  most health; a trap on another enemy starts the count afresh, and one
+	  whose enemy is gone goes with it.
 	- Without the game's memory (navmem:0, an older helper, no helper) it
 	  plays as before, by the pictures and PlayerStats.txt. Hits of more than
 	  one school can then be typed in PlayerStats.txt, one line a head:

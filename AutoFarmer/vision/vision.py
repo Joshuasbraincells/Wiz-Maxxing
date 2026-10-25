@@ -111,8 +111,13 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              route=1): the route kept out of what each of the zone's mobs (navmem,
                                              read-only) sees, mobr far: shape 1 a circle all round, 2 a semi-circle in
                                              front, 3 a cone cone degrees wide in front (no shape: mobr all round and a
-                                             cone= / sight= cone) - not those named in the goal line, nor (a fight
-                                             goal) one by the goal
+                                             cone= / sight= cone) - not those the quest's goal names, nor (a fight
+                                             goal) one by the goal. The goal: the game's memory's (as /goal), else
+                                             goal= (the line AutoFarmer OCRs off the screen)
+                                               goalline|text|type|status|count|total|shown   (last, always: the quest's
+                                                                     goal from the game's memory as /goal's - all
+                                                                     empty when it can't be read; an older bot
+                                                                     doesn't look at it)
   /navto?x=&y=&z=[&avoid=1&mobr=300]      -> where the wizard is and the route to a spot of the bot's own (the potion
                                              seller): ok|1, zone|, pos|, route|x|y|left (all mobs kept away from with
                                              avoid=1)
@@ -124,14 +129,43 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              read lately (while walking with mob avoidance on): the one nearest the
                                              wizard, looked back to where it set off towards him (noticed him):
                                              caught|name|how far he was then|degrees off its facing then|came (1: it
-                                             came for him, 0: he walked into it)|seconds before; or "none (<why>)"
+                                             came for him, 0: he walked into it)|seconds before|quest (1: the helper
+                                             took it as the quest's - not avoided); or "none (<why>)"
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
                                              faces to the wizard (0: straight ahead of it), or "none (<why>)"
   /items[?goal=<the quest's goal line>]   -> the things lying about the zone a quest has you collect (the game's
                                              memory, read-only - Piece Of Coral), nearest first:
-                                             item|name|x|y|z|distance|quest (1: the goal line names it)|gid,
+                                             item|name|x|y|z|distance|quest (1: the goal names it)|gid,
                                              or "none (<why>)"
+                                             (the quest's goal for both: the game's memory's, as /goal's; goal= only
+                                             when that can't be read)
+  /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
+                                             vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
+                                               text|<the goal line>|<from>   (as the game shows it under the arrow:
+                                                                     "Defeat Crustacean Waverunner and Collect Foul
+                                                                     Tasting Algae in The Grotto (0 of 3)"; from: data -
+                                                                     built from the quest's data -, hud - the HUD's own
+                                                                     text, when the data's names can't all be read)
+                                               shown|<1/0>|<the HUD's line>|<the arrow's number>   (1 on screen, 0
+                                                                     hidden - a battle; "" not known. A loading screen or
+                                                                     a dialogue over it still reads 1)
+                                               kind|<type>|<status>  (BOUNTY defeat, BOUNTYCOLLECT defeat and collect,
+                                                                     USAGE collect / open / use / read, WAYPOINT go to,
+                                                                     PERSONA talk to, SCAVENGE...; INCOMPLETE / COMPLETE -
+                                                                     the quest moving on: ask again. "" not read)
+                                               count|<count>|<total> ("" none: talk and go-to goals; the line shows
+                                                                     "(count of total)" when total is over 1)
+                                               mob|<name>            (the mob a defeat goal names - or its kind:
+                                                                     "Gobblers")
+                                               item|<name>           (what a collect / use / go-to goal names)
+                                               npc|<name>            (who a talk goal names)
+                                               place|<the place>
+                                               quest|<title>|<quest id>|<goal id>|<ids: hud / thread>
+                                               exact|<1/0>           (1: the line and the fields above are the goal's
+                                                                     own data, every name found)
+                                             or one line "none|<why>" (not in the game world, no quest, the game's quest
+                                             classes being read - once, about a second -, the game not running...)
                                              A field that can't be read for sure is left empty (target|||): goal, target,
                                              dist and path while the quest helper is still on the last zone, target and
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
@@ -226,12 +260,15 @@ class Library:
         return sorted(names)
 
     def masters(self, rel, scale):
-        """cut copies of rel, best first: the smallest set at or above scale (shrinking keeps detail),
-        then bigger ones, then smaller ones, biggest first"""
+        """cut copies of rel, best first: one cut at this scale (within 1% - used as it is, make), the nearest
+        first; then the sets truly at or above scale, smallest first (shrinking keeps detail); then the smaller
+        ones, biggest first. (Till 2026-10-24 a set down to 3% smaller counted as at or above and came first: at
+        1.144 ui1.121's Balanceblade enlarged 2% missed about half its copies, the ui1.144 cut found them)"""
         have = [(d, sc) for d, sc in self.sets if os.path.exists(os.path.join(d, rel))]
-        up = sorted([x for x in have if x[1] >= scale * 0.97], key=lambda x: x[1])
-        down = sorted([x for x in have if x[1] < scale * 0.97], key=lambda x: -x[1])
-        return up + down
+        near = sorted([x for x in have if abs(x[1] / scale - 1) < 0.01], key=lambda x: abs(x[1] - scale))
+        up = sorted([x for x in have if x not in near and x[1] >= scale], key=lambda x: x[1])
+        down = sorted([x for x in have if x not in near and x[1] < scale], key=lambda x: -x[1])
+        return near + up + down
 
     def usable(self, rel):
         """whether rel has a cut copy big enough to use (the 8x8 placeholders of 2018 aren't). The folders
@@ -1795,46 +1832,158 @@ def family_in_line(name, line):
     return False
 
 
-def quest_mob(m, r, goal_line):
-    """the quest is about this mob: its name is in the goal line ("Defeat 3 Lost Souls ..."), or - the goal a fight
-    (or no goal line read) - it stands by the quest's goal in this zone (a boss the arrow leads to). Not a mob
-    wandering by a "Talk to ..." goal"""
+@functools.lru_cache(maxsize=1024)
+def name_matches(name, text):
+    """the name in a clean text - the game's own words, read from its memory - as its words, plurals too ("Flame Gem" in
+    "Flame Gems", "Jack O' Lantern" in "Use Jack O' Lantern ..."): no OCR slips allowed for"""
+    rx = mob_name_re(name or '')
+    clean = re.sub(r'\s+', ' ', re.sub(r'[^a-z0-9 ]', ' ', (text or '').lower())).strip()
+    return bool(rx is not None and clean and rx.search(clean))
+
+
+# The game's goal kinds that are fights (GoalTemplate::GOAL_TYPE_*): a mob of the kind the goal names, or one by its goal,
+# is the quest's too. Any other kind (USAGE collect / open / use, WAYPOINT go to, PERSONA talk to...): only a mob it names
+GOAL_FIGHTS = {'BOUNTY', 'BOUNTYCOLLECT', 'COLLECTAFTERBOUNTY'}
+
+
+def by_goal(m, r):
+    """the mob stands by the quest's goal in this zone (a boss the arrow leads to)"""
+    g = r.get('goal') if r else None
+    return (g is not None and r.get('hops') == 0
+            and math.hypot(m['pos'][0] - g[0], m['pos'][1] - g[1]) <= QUEST_NEAR and abs(m['pos'][2] - g[2]) <= 260)
+
+
+def quest_mob(m, r, goal_line, goal=None):
+    """the quest is about this mob. goal: the quest's goal from the game's memory (goal_now), when it's read - its own
+    words decide, exactly: a mob, item or one to go to / talk to it names is the quest's ("Defeat Governor Nereus",
+    "Go To Governor Nereus"), and - a fight goal (BOUNTY, BOUNTYCOLLECT) - a mob of the kind it names ("Gobblers" for a
+    Gobbler Scavenger) or standing by its goal. Else goal_line (AutoFarmer's OCR of the screen): its name in the line
+    ("Defeat 3 Lost Souls ...", OCR slips allowed for), or - the goal a fight (or no goal line read) - a mob of the kind
+    the line names, or by the goal. Not a mob wandering by a "Talk to ..." goal"""
+    if goal and goal.get('text'):
+        if goal.get('exact'):
+            if any(name_matches(m['name'], n) for n in (goal.get('mob'), goal.get('item'), goal.get('npc')) if n):
+                return True
+            if goal.get('type') not in GOAL_FIGHTS:
+                return False
+            return bool(goal.get('mob')) and family_in_line(m['name'], goal['mob']) or by_goal(m, r)
+        # (the HUD's own line - the goal's names not all read: its words, exactly)
+        line = goal['text']
+        if name_matches(m['name'], line):
+            return True
+        if not FIGHT_GOAL.search(line):
+            return False
+        return family_in_line(m['name'], line) or by_goal(m, r)
     if goal_line and name_in_line(m['name'], goal_line):
         return True
-    g = r.get('goal') if r else None
     if goal_line and not FIGHT_GOAL.search(goal_line):
         return False
     # (a fight goal naming the mob's kind, not its whole name - "Defeat Gobblers" for a Gobbler Scavenger: 2026-10-24
     # the wizard waited and backed away from the very mobs its quest wanted)
     if goal_line and family_in_line(m['name'], goal_line):
         return True
-    return (g is not None and r.get('hops') == 0
-            and math.hypot(m['pos'][0] - g[0], m['pos'][1] - g[1]) <= QUEST_NEAR and abs(m['pos'][2] - g[2]) <= 260)
+    return by_goal(m, r)
 
 
-def mobs_now(r, goal_line='', trail=False):
+def mobs_now(r, goal_line='', trail=False, goal=None):
     """(the zone's mobs [{name, pos, yaw, gid, template, quest}], why) - none ([], why) when they can't be read.
-    trail: the reading goes on MOB_TRAIL too (the walker's route asks)"""
+    trail: the reading goes on MOB_TRAIL too (the walker's route asks); goal: the memory's goal (goal_now) - goal_line
+    (the OCR's) only without it"""
     mobs, why = nav_reader().mobs()
     if mobs is None:
         return [], why
     for m in mobs:
-        m['quest'] = quest_mob(m, r, goal_line)
+        m['quest'] = quest_mob(m, r, goal_line, goal)
     if trail and r is not None and r.get('pos') is not None:
         MOB_TRAIL.append((time.time(), tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
                                                        for m in mobs}))
     return mobs, ''
 
 
-def items_now(goal_line=''):
-    """(the zone's quest items [{name, pos, yaw, gid, template, quest}], why) - quest: the goal line names it
-    ("Collect Piece Of Coral in The Grotto (0 of 4)"); none ([], why) when they can't be read"""
+def quest_item(name, goal_line, goal=None):
+    """the quest's goal names this item: the memory's goal (goal_now) - the item it names ("Collect Piece Of Coral in The
+    Grotto (0 of 4)": Piece Of Coral), exactly - else goal_line (the OCR's, slips allowed for)"""
+    if goal and goal.get('text'):
+        if goal.get('exact'):
+            return bool(goal.get('item')) and name_matches(name, goal['item'])
+        return name_matches(name, goal['text'])
+    return bool(goal_line) and name_in_line(name, goal_line)
+
+
+def items_now(goal_line='', goal=None):
+    """(the zone's quest items [{name, pos, yaw, gid, template, quest}], why) - quest: the goal names it (quest_item);
+    none ([], why) when they can't be read"""
     items, why = nav_reader().items()
     if items is None:
         return [], why
     for it in items:
-        it['quest'] = bool(goal_line) and name_in_line(it['name'], goal_line)
+        it['quest'] = quest_item(it['name'], goal_line, goal)
     return items, ''
+
+
+# ---------------------------------------------------------------- the quest's goal (vision\questmem.py)
+# The goal line under the quest arrow and what it names, read from the game's memory (read-only) - exact, where the line
+# AutoFarmer OCRs off the screen (&goal=) slips letters (2026-10-24: "Opiio (jn -rhe" for "Defeat Optio Agenor ..." - the
+# quest's own mob kept away from); that one only when the memory's can't be read
+GOAL_FRESH = 1.0            # s a goal reading is used again (the walker's /nav comes every step)
+GOAL_LOCK = threading.Lock()
+GOAL_LAST = {'at': -1e9, 'g': None, 'why': 'not read yet', 'said': None}
+
+
+def goal_now(r=None, max_age=GOAL_FRESH, wait=0.0):
+    """(g, why): the quest's active goal from the game's memory (navmem.goal - questmem.QuestMem.resolve: text, from,
+    exact, shown, visible, distance, type, status, count, total, name, mob, item, npc, place, quest, quest_id, goal_id,
+    ids_from) - a reading up to max_age s old used again; r: the navmem reading this request made (its quest helper ids
+    stand in for the HUD's); wait: s its reader may take to be made (0: not waited for - the first one is, in a thread).
+    None and why when it can't be read. Logged when the line, its kind or status change"""
+    now = time.monotonic()
+    with GOAL_LOCK:
+        if now - GOAL_LAST['at'] < max_age:
+            return GOAL_LAST['g'], GOAL_LAST['why']
+    g, why = nav_reader().goal(r, wait=wait)
+    with GOAL_LOCK:
+        GOAL_LAST.update(at=time.monotonic(), g=g, why=why)
+        said = (g['text'], g['type'], g['status'], g['from']) if g else ('', why)
+        if said != GOAL_LAST['said']:
+            GOAL_LAST['said'] = said
+            if g:
+                log(f"goal (memory, {g['ms']:.1f} ms): {g['text']!r} - {g['type'] or '?'} {g['status'] or ''}"
+                    + (f" {g['count']}/{g['total']}" if g['total'] is not None else '')
+                    + ''.join(f', {k} {g[k]!r}' for k in ('mob', 'item', 'npc') if g[k])
+                    + f" (from {g['from']}{'' if g['exact'] else ', not exact'}; {g['ids_from']} ids)"
+                    + ('' if g['shown'] in (None, g['text']) else f" - the HUD shows {g['shown']!r}")
+                    + (f" - {g['why']}" if g['why'] else ''))
+            else:
+                log(f'goal (memory): none ({why})')
+    return g, why
+
+
+def goal_cell(v):
+    """a field of /goal's and /nav's goal lines: no | or line breaks in it; None as empty"""
+    return '' if v is None else re.sub(r'[|\r\n]+', ' ', str(v)).strip()
+
+
+def goal_lines(g, why):
+    """/goal's answer (see the top) for a goal_now reading"""
+    if not g:
+        return ['none|' + goal_cell(why or 'no goal line')]
+    vis = '' if g['visible'] is None else ('1' if g['visible'] else '0')
+    return [f"text|{goal_cell(g['text'])}|{g['from']}",
+            f"shown|{vis}|{goal_cell(g['shown'])}|{goal_cell(g['distance'])}",
+            f"kind|{goal_cell(g['type'])}|{goal_cell(g['status'])}",
+            f"count|{goal_cell(g['count'])}|{goal_cell(g['total'])}",
+            f"mob|{goal_cell(g['mob'])}", f"item|{goal_cell(g['item'])}", f"npc|{goal_cell(g['npc'])}",
+            f"place|{goal_cell(g['place'])}",
+            f"quest|{goal_cell(g['quest'])}|{goal_cell(g['quest_id'])}|{goal_cell(g['goal_id'])}|{g['ids_from']}",
+            f"exact|{1 if g['exact'] else 0}"]
+
+
+def goal_nav_line(g):
+    """/nav's last line: goalline|text|type|status|count|total|shown - empty fields when the goal can't be read"""
+    if not g:
+        return 'goalline||||||'
+    vis = '' if g['visible'] is None else ('1' if g['visible'] else '0')
+    return '|'.join(['goalline'] + [goal_cell(g[k]) for k in ('text', 'type', 'status', 'count', 'total')] + [vis])
 
 
 # The mobs read lately: (time, the wizard's x, y, z, {gid: (name, x, y, z, yaw)}) - /caught looks back along it
@@ -1885,7 +2034,11 @@ def caught_line(now=None):
     if yaw is not None and dist > 1:
         c = ((me0[0] - x) * -math.sin(yaw) + (me0[1] - y) * -math.cos(yaw)) / dist
         off = f'{math.degrees(math.acos(max(-1.0, min(1.0, c)))):.0f}'
-    return f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}"
+    # (and whether the helper took it as the quest's - the last /nav's own split, by the game's memory's goal: its name, its
+    # kind, or one by a fight goal - left off the avoid list: the walker went into it for the quest)
+    qs = MOBS_SHOWN.get('quest') or set()
+    quest = 1 if gid in qs and now - (MOBS_SHOWN.get('at') or 0) <= CAUGHT_FRESH else 0
+    return f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}|{quest}"
 
 
 ROUTER = None
@@ -2652,7 +2805,7 @@ class Handler(BaseHTTPRequestHandler):
                 r, why = nm.read(path=False)
                 if r is None:
                     return self.reply('ERR ' + why)
-                mobs, why = mobs_now(r, q.get('goal', ''))
+                mobs, why = mobs_now(r, q.get('goal', ''), goal=goal_now(r)[0])
                 if not mobs:
                     return self.reply('none' + (' (' + why + ')' if why else ''))
                 me = r['pos'] or (0.0, 0.0, 0.0)
@@ -2673,7 +2826,7 @@ class Handler(BaseHTTPRequestHandler):
                 r, why = nm.read(path=False)
                 if r is None:
                     return self.reply('ERR ' + why)
-                items, why = items_now(q.get('goal', ''))
+                items, why = items_now(q.get('goal', ''), goal_now(r)[0])
                 ITEMS_SHOWN.update(quest={it['gid'] for it in items if it['quest']}, at=time.time())
                 if not items:
                     return self.reply('none' + (' (' + why + ')' if why else ''))
@@ -2695,12 +2848,15 @@ class Handler(BaseHTTPRequestHandler):
                 if r is None:
                     return self.reply('ERR ' + why)
                 lines = nav_lines(r, with_path)
+                # (the quest's goal from the game's memory - the line the mobs are matched against, and /nav's last line;
+                # its reader made in a thread the first time: not waited for here)
+                goal, _ = goal_now(r)
                 if with_route:
                     # (the mobs kept away from: all but the quest's - asked for with avoid=1)
                     avoid, near = None, None
                     if q.get('avoid', '0') not in ('', '0'):
                         near, cone = mob_avoid(q)
-                        mobs, _ = mobs_now(r, q.get('goal', ''), trail=True)
+                        mobs, _ = mobs_now(r, q.get('goal', ''), trail=True, goal=goal)
                         avoid = [m for m in mobs if not m['quest']]
                         MOBS_SHOWN.update(quest={m['gid'] for m in mobs if m['quest']}, near=near, avoid=True, at=time.time(),
                                           cone=cone)
@@ -2711,7 +2867,15 @@ class Handler(BaseHTTPRequestHandler):
                     except ValueError:
                         arc_r = 0.0
                     lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'), arc_r)
+                lines.append(goal_nav_line(goal))
                 return self.reply('\n'.join(lines))
+            if u.path == '/goal':
+                nm = nav_reader()
+                r, why = nm.read(path=False, wait=0.3)
+                if r is None:
+                    return self.reply('none|' + goal_cell(why))
+                # (asked fresh - the walker asks every 3 s at most; its reader waited for a moment the first time)
+                return self.reply('\n'.join(goal_lines(*goal_now(r, max_age=0.0, wait=0.3))))
             if u.path == '/navmap':
                 w, h = int(q['w']), int(q['h'])
                 out = q['out']

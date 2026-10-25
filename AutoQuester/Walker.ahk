@@ -110,8 +110,9 @@ global WkNavChecked, WkNavZScales, WkNavScaleZone, WkNavScaleAll, WkStandIn
 global NavRoute, WkNavRouted, WkNavLeft, WkRouteBest, WkRouteProg, WkRouteState
 ;(arrival and walking straight through a doorway by the game's memory, in game units: see the settings)
 global ArriveUnits, PushUnits
-;(X pressed at a prompt: what it opened looked at already; the quest's goal line as last read, and when)
-global WkAfterXLooked, WkGoalLine, WkGoalLineAt
+;(X pressed at a prompt: what it opened looked at already; the quest's goal line as last read, and when; where the last
+;WalkGoalText got it from: "the game" - its memory, AutoFarmer's NavGoal -, "the screen" - the OCR -, "" nowhere)
+global WkAfterXLooked, WkGoalLine, WkGoalLineAt, WkGoalFrom
 ;When each prompt's NPC was last looked at for a quest marker (WalkQuestMarker: {name letters: tick})
 global WkQmLooked
 ;When each NPC was last talked to for its quest marker - once per 5 minutes ({name letters: tick})
@@ -218,6 +219,7 @@ WalkerInit(prefix := "AutoQuester")
 	;potion shop left open held the wizard; blank > 1500 doesn't - the party leader never waited for followers)
 	WkLoading := 0, WkLoadedAt := 0, WkDlgLook := 0, WkCloseLook := 0, WkNavEscAt := 0
 	WkCollect := "", WkGoalReadAt := 0, WkAfterXLooked := 0, WkGoalLine := "", WkGoalLineAt := 0, WkRealSeenAt := 0, WkArrowAtX := 0
+	WkGoalFrom := ""
 	WkNoteKind := "", WkNoteTitle := "", WkNoteHwnd := 0, WkNoteShown := 0, WkNoteOff := 0, WkWaitFrom := 0, WkLastX := 0
 	WkResetAt := 0
 	WkNavOk := 0, WkNavUse := 0, WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavState := ""
@@ -460,8 +462,9 @@ WalkStep()
 			WkNoGuideFrom := A_TickCount
 		gone := A_TickCount - WkNoArrowFrom
 		;(no arrow and nothing standing in for it: a goal the game shows no way to - its line read where it sits; a
-		;collect goal: collecting - its things by the game's memory, else roaming)
-		if (!standIn && WkArrived != 7 && gone > 2000 && CollectNoPlace())
+		;collect goal: collecting - its things by the game's memory, else roaming. Not over X just pressed (6) or a talk
+		;(2): what X opened hides the arrow - once that's over, back to 0, it can start)
+		if (!standIn && WkArrived != 7 && WkArrived != 6 && WkArrived != 2 && gone > 2000 && CollectNoPlace())
 			return Walking ? true : false
 		;(not while collecting a goal the game shows no arrow for: no arrow is how it is, not a window an X opened)
 		if (gone > 15000 && !WkEscTried && WkLastX && A_TickCount - WkLastX < 120000 && !(IsObject(WkCollect) && WkCollect.noPlace && !WkCollect.gaveUp)
@@ -2048,7 +2051,8 @@ WalkEditDist(a, b)
 	return prev[lb + 1]
 	}
 
-;The quest's goal line under the arrow, read at most every 3 s (the arrow not on screen: where it usually is)
+;The quest's goal line under the arrow, read at most every 3 s - from the game's memory when it can be (WalkGoalText),
+;else by OCR (the arrow not on screen: where it usually is)
 WalkGoalLine()
 	{
 	if (WkGoalLineAt && A_TickCount - WkGoalLineAt < 3000)
@@ -2061,12 +2065,13 @@ WalkGoalLine()
 		px := GameLeft + GameW / 2 - 0.7 * s, py := GameTop + GameH - 220 * s + 81.7 * s
 		text := OcrRect(Round(px - 450 * s), Round(py + 28 * s), Round(900 * s), Round(60 * s))
 		text := ErrorLevel ? "" : Trim(RegExReplace(text, "\s+", " "))
+		WkGoalFrom := text != "" ? "the screen" : ""
 		}
-	;(what the quest's goal line says, in the log when it changes - which mobs are the quest's comes from it: at most once
-	;in 30 s, OCR slips change it too)
+	;(what the quest's goal line says, in the log when it changes - which mobs are the quest's comes from it: from the
+	;game's memory each time it changes (it's exact); read off the screen at most once in 30 s, OCR slips change it too)
 	static said := "", saidAt := 0
-	if (text != "" && text != said && (!saidAt || A_TickCount - saidAt > 30000))
-		said := text, saidAt := A_TickCount, WalkLog("the quest's goal line: " SubStr(text, 1, 120))
+	if (text != "" && text != said && (WkGoalFrom = "the game" || !saidAt || A_TickCount - saidAt > 30000))
+		said := text, saidAt := A_TickCount, WalkLog("the quest's goal line: " SubStr(text, 1, 120) " (from " WkGoalFrom ")")
 	WkGoalLine := text
 	return text
 	}
@@ -2729,6 +2734,15 @@ CollectNoPlace()
 	text := WalkGoalText()
 	if (text = "" || !CollectGoal(text))
 		return false
+	;(the memory keeps the line whatever is drawn over it - a dialogue or window X opened, a screen Remote Desktop doesn't
+	;draw: taken only while the line shows there too - its OCR a collect goal, or sharing a word with it; the memory's exact
+	;text is the one kept)
+	if (WkGoalFrom = "the game")
+		{
+		cnpOcr := WalkGoalOcr()
+		if (cnpOcr = "" || WalkDialogOpen() || !(CollectGoal(cnpOcr) || WalkLineShares(text, cnpOcr)))
+			return false
+		}
 	if (IsObject(WkCollect) && !WkCollect.gaveUp && !CollectGoalChanged(text))
 		{
 		WkCollect.sureAt := A_TickCount, WkCollect.noPlace := 1
@@ -2896,9 +2910,32 @@ CollectStep(seen, h, dist)
 	return Walking ? true : false
 	}
 
-;The quest goal's line under the arrow (e.g. "Defeat Frost Fins in Kataba IceBlock (2 of 5)"), read by
-;OCR just below where the last arrow read found the arrow. "" if it can't be read
+;The quest goal's line under the arrow (e.g. "Defeat Frost Fins in Kataba IceBlock (2 of 5)"): from the game's memory
+;when AutoFarmer's vision helper can read it (NavGoal in Vision.ahk, read-only - the line exactly as the game draws it;
+;2026-10-24 the OCR read "Opiio (jn -rhe" for "Defeat Optio Agenor ..." and the quest's own mob was kept away from) -
+;not while the game hides it (the memory keeps the text: a battle, the quest helper switched off - no line, as on the
+;screen) - else read by OCR just below where the last arrow read found the arrow. WkGoalFrom says which ("the game", "the
+;screen"). "" if it can't be read
 WalkGoalText()
+	{
+	if (IsFunc("NavGoal"))
+		{
+		g := Func("NavGoal").Call()
+		if (IsObject(g) && g.text != "" && g.shown != 0)
+			{
+			WkGoalFrom := "the game"
+			return g.text
+			}
+		}
+	WkGoalFrom := ""
+	t := WalkGoalOcr()
+	WkGoalFrom := t != "" ? "the screen" : ""
+	return t
+	}
+
+;The quest goal's line read off the screen by OCR, just below where the last arrow read found the arrow (WalkGoalText's
+;fallback; CollectNoPlace: whether the memory's line shows) - WkGoalFrom left as it is. "" if nothing's read
+WalkGoalOcr()
 	{
 	info := ArrowInfo()
 	px := info.pvx, py := info.pvy, s := info.scale ? info.scale : 1
@@ -2912,6 +2949,19 @@ WalkGoalText()
 		}
 	t := OcrRect(Round(px - 450 * s), Round(py + 28 * s), Round(900 * s), Round(60 * s))
 	return ErrorLevel ? "" : Trim(RegExReplace(t, "\s+", " "))
+	}
+
+;True if a word of a (4 letters or more) is among b's letters (WalkLetters: an OCR'd line's slips - 0 for O - put right)
+WalkLineShares(a, b)
+	{
+	wlsB := WalkLetters(b)
+	Loop, Parse, a, %A_Space%
+		{
+		wlsW := WalkLetters(A_LoopField)
+		if (StrLen(wlsW) >= 4 && InStr(wlsB, wlsW))
+			return true
+		}
+	return false
 	}
 
 ;True if a goal line is about collecting or defeating a number of things: a count ("(2 of 5)", "2/5")

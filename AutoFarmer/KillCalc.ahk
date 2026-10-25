@@ -4,7 +4,8 @@
 ; and picks the cheapest hit that kills every enemy. Whenever something can't be trusted it claims
 ; no kill, so the normal battle code plays the round instead.
 ; Uses the super-globals declared at the top of #1:: in Autofarmer.ahk: Stats, EnemyHP, BossSlot,
-; BossMax, HealthStatus, AppliedBlades, BossTraps, AuraRounds, EnchantedHits, PipsNow.
+; BossMax, HealthStatus, AppliedBlades, BossTraps (the traps on one enemy: TrapSlot, TrapFoe*), AuraRounds, EnchantedHits,
+; PipsNow.
 
 ;Reads PlayerStats.txt (key:value lines, ; starts a comment) on top of built-in defaults. quiet: lines
 ;that can't be read go to debug.log instead of a message box (reloading while the bot runs)
@@ -609,11 +610,11 @@ BoostCanGo(key)
 	}
 
 ;The card boxes of a fresh look at the hand (CardLearn.ahk LearnHandRead), each with the game's card on it - VisionCards',
-;left to right, only when they're as many: [{l, t, w, h, known, m, n (its number in the game's hand)}]; "" they aren't,
-;or either isn't there
-BoostBoxes()
+;left to right, only when they're as many: [{l, t, w, h, known, grey (1: greyed out), m, n (its number in the game's
+;hand)}]; "" they aren't, or either isn't there. bbWait: how long the game's hand may still be changing (VisionCards)
+BoostBoxes(bbWait := 300)
 	{
-	bbHand := IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : ""
+	bbHand := IsFunc("VisionCards") ? Func("VisionCards").Call(bbWait, 5000) : ""
 	if (!IsObject(bbHand) || !IsFunc("LearnHandRead"))
 		return ""
 	bbAns := Func("LearnHandRead").Call()
@@ -623,13 +624,183 @@ BoostBoxes()
 		bbF := StrSplit(A_LoopField, "|")
 		if (bbF.Length() < 12 || bbF[1] != "card" || (bbF.Length() >= 15 && bbF[15] = "0"))
 			continue
-		bbOut.Push({l: bbF[2] + 0, t: bbF[3] + 0, w: bbF[4] + 0, h: bbF[5] + 0, known: bbF[6]})
+		bbOut.Push({l: bbF[2] + 0, t: bbF[3] + 0, w: bbF[4] + 0, h: bbF[5] + 0, known: bbF[6], grey: bbF[8] = 1 ? 1 : 0})
 		}
 	if (!bbOut.Length() || bbOut.Length() != bbHand.cards.Length())
 		return ""
 	for bbI, bbB in bbOut
 		bbB.m := bbHand.cards[bbI], bbB.n := bbI
 	return {boxes: bbOut, hand: bbHand}
+	}
+
+;---- A boost no picture finds, cast where the game's memory has it (2026-10-24) ----
+;The game's hand (read-only) names a blade or trap no picture found - the slot's picture missing, an 8x8 placeholder, or one
+;the helper can't match on every copy (debug.log: "in hand (the game): Balanceblade ... no picture found it"): BoostSearch
+;notes it (BoostMemOnly) when this look's search is for it, BoostPick plans with it as with any found, and UseBlade / UseTrap
+;cast it at its card box (BoostMemBox) - only while the boxes and the game's cards line up for sure
+
+;The key of the boost cast from slot ("resources\blade3" -> "blade3", "storm\blade" -> "storm/blade" - BoostKey's); "" none
+BoostMemKey(slot)
+	{
+	if (slot = "")
+		return ""
+	SplitPath, slot, bmkName, bmkDir
+	return BoostKey(bmkName, bmkDir)
+	}
+
+;Whether this look's boost search (BoostSearch) is for boost key, the schools wanted being want: a school's own blade or
+;trap of a school in it (not Balance's - its own are blade3, trap3), a group's (elemental, spirit) of a group of them, every
+;school's (blade3, blade4, trap3, feint) always - as FindCards and BoostSearch look for them by their pictures
+BoostMemWanted(key, want)
+	{
+	if (RegExMatch(key, "^([a-z]+)/(blade|trap)$", bmwM))
+		{
+		for bmwI, bmwS in want
+			if (bmwS = bmwM1 && bmwS != "balance")
+				return true
+		return false
+		}
+	if (RegExMatch(key, "^(elemental|spirit)(blade|trap)$", bmwM))
+		{
+		for bmwI, bmwG in PlanGroups(want)
+			if (bmwG = bmwM1)
+				return true
+		return false
+		}
+	return (key = "blade3" || key = "blade4" || key = "trap3" || key = "feint")
+	}
+
+;What kind of card a hand box the helper knows by picture known holds (/hand's known: "balance/hit3", "resources/blade3",
+;"learned/<id>") - BoostMemBox's check that the boxes and the game's cards line up: "hit", "boost" (a blade, trap or aura),
+;"heal", "ward", "enchant"; "" not known for sure (no picture, a kind it doesn't tell, a learned card whose kind was only
+;read off it - flag mem: the game's)
+BoostBoxSays(known)
+	{
+	if (known = "")
+		return ""
+	if (InStr(known, "learned/") = 1)
+		{
+		bxsC := IsFunc("LearnCardOf") ? Func("LearnCardOf").Call(SubStr(known, 9)) : ""
+		if (!IsObject(bxsC) || !IsFunc("LearnHasFlag") || !Func("LearnHasFlag").Call(bxsC, "mem"))
+			return ""
+		return BoostKindSays(bxsC.type)
+		}
+	bxsN := SubStr(known, InStr(known, "/", false, 0) + 1)
+	if (RegExMatch(bxsN, "^(hit[1-4]|wand)$"))
+		return "hit"
+	if (bxsN = "feint" || bxsN = "aura" || RegExMatch(bxsN, "(blade|trap)[34]?$"))
+		return "boost"
+	if (RegExMatch(bxsN, "^heal[12]$"))
+		return "heal"
+	if (bxsN = "tower")
+		return "ward"
+	if (RegExMatch(bxsN, "^(sharpen|potent|enchant|strong|giant|monstrous|gargantuan|colossal|epic)$"))
+		return "enchant"
+	return ""
+	}
+
+;The same for a kind (the game's - VisionCards' kind - or a learned card's): "hit" damage / aoe, "boost" blade / trap /
+;aura, "heal", "ward", "enchant"; "" any other (damage over time, keep - the game's effects cut short -...)
+BoostKindSays(kind)
+	{
+	if (kind = "damage" || kind = "aoe")
+		return "hit"
+	if (kind = "blade" || kind = "trap" || kind = "aura")
+		return "boost"
+	return (kind = "heal" || kind = "ward" || kind = "enchant") ? kind : ""
+	}
+
+;Where boost key's card is in hand when no picture found it (UseBlade, UseTrap): a fresh look at the hand's card boxes laid
+;on the game's cards (BoostBoxes: the game's hand settled, as many boxes as cards, left to right), the first box holding a
+;copy of it (BoostMatches) that can go now (BoostCopyCanGo - sharp: a Sharpen / Potent in hand; use1, use2: its deck copy's
+;used flags), not greyed out nor one the game says can't be cast - and only while the pairing is sure: no box the bot knows
+;by a picture holds a card of another kind than the picture says (BoostBoxSays: a hit's picture on a blade - the boxes don't
+;line up), and this box's own picture, if it has one, is this card's (BoostMemBoxOk). ench 1: only a copy with an
+;enchantment on it (the one just sharpened - BoostSettleMem); wait: how long the game's hand may still be changing.
+;{x, y (the box's middle - ClickAt goes there from above the hand: MoveToCard), n, of (the box's number, how many), src (""
+;the deck's, "tc", "item"), item, name (the game's), ench (1: it carries an enchantment already)}; {x: "", why} none
+BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
+	{
+	global VisionCardsWhy
+	;(no card zoomed up under the mouse when the hand's boxes are read - CardLearn.ahk; the round's CenterMouse is off it)
+	if (IsFunc("LearnMouseClear"))
+		Func("LearnMouseClear").Call()
+	bmbAll := BoostBoxes(wait)
+	if (!IsObject(bmbAll))
+		return {x: "", why: "the hand's card boxes and the game's cards don't line up (" (VisionCardsWhy != "" ? VisionCardsWhy : "not as many, or the hand not read") ")"}
+	;(the boxes known by a picture: each one's card the kind its picture says)
+	for bmbI, bmbB in bmbAll.boxes
+		{
+		bmbSays := BoostBoxSays(bmbB.known), bmbKind := BoostKindSays(bmbB.m.kind)
+		if (bmbSays != "" && bmbKind != "" && bmbSays != bmbKind)
+			return {x: "", why: "box " bmbI " is known as " bmbB.known ", the game has " BoostMemName(bmbB.m) " (" bmbB.m.kind ") there - the boxes and the game's cards may not line up"}
+		}
+	bmbIdx := {}
+	for bmbI, bmbN in BoostMatches(key, bmbAll.hand.cards)
+		bmbIdx[bmbN] := 1
+	bmbWhy := "no copy of it among the game's cards now", bmbEnc := ""
+	for bmbI, bmbB in bmbAll.boxes
+		{
+		if (!bmbIdx.HasKey(bmbB.n))
+			continue
+		bmbM := bmbB.m, bmbNm := BoostMemName(bmbM)
+		if (ench && bmbM.ench = "")
+			{
+			bmbWhy := "no copy of it with an enchantment on it"
+			continue
+			}
+		if (!BoostMemBoxOk(key, bmbB.known, bmbNm))
+			{
+			bmbWhy := "its box (" bmbI ") is known as " bmbB.known " - another card's picture"
+			continue
+			}
+		if (bmbB.grey || bmbM.castable = "0")
+			{
+			bmbWhy := "it's greyed out (not enough pips)"
+			continue
+			}
+		bmbSrc := BoostSrcOf(bmbM), bmbItem := bmbM.item ? 1 : 0
+		;(a copy already enchanted goes on its plain or its sharpened flag, whichever is free - as UseBlade / UseTrap cast it)
+		if (!ench && !BoostCopyCanGo(key, bmbSrc, bmbItem, (bmbM.ench != "") ? 1 : sharp, use1, use2))
+			{
+			bmbWhy := "each copy's casts used this battle"
+			continue
+			}
+		;(ench 0: a plain copy first - one that carries an enchantment already can't take a Sharpen / Potent: it's cast as it
+		;is only when no plain copy can go - ench 1 in the answer, UseBlade / UseTrap)
+		bmbAt := {x: Round(bmbB.l + bmbB.w / 2), y: Round(bmbB.t + bmbB.h / 2), n: bmbI, of: bmbAll.boxes.Length(), src: bmbSrc, item: bmbItem, name: bmbNm, ench: (bmbM.ench != "") ? 1 : 0}
+		if (ench || !bmbAt.ench)
+			return bmbAt
+		if (!IsObject(bmbEnc))
+			bmbEnc := bmbAt
+		}
+	return IsObject(bmbEnc) ? bmbEnc : {x: "", why: bmbWhy}
+	}
+
+;Whether a hand box known as picture known can hold boost key's card the game names name (BoostMemBox): no picture; a
+;learned card's the game named so (flag game=) or never named; a slot's - a learned card there the game named so, else the
+;slot's own key is key (resources/blade3 for Balanceblade)
+BoostMemBoxOk(key, known, name)
+	{
+	if (known = "")
+		return true
+	bmoC := ""
+	if (InStr(known, "learned/") = 1)
+		bmoC := IsFunc("LearnCardOf") ? Func("LearnCardOf").Call(SubStr(known, 9)) : ""
+	else if (IsFunc("LearnCardInSlot"))
+		bmoC := Func("LearnCardInSlot").Call(StrReplace(known, "/", "\"))
+	bmoG := (IsObject(bmoC) && IsFunc("LearnFlag")) ? Func("LearnFlag").Call(bmoC, "game") : ""
+	if (bmoG != "")
+		return bmoG = name
+	if (InStr(known, "learned/") = 1)
+		return true
+	return BoostMemKey(StrReplace(known, "/", "\")) = key
+	}
+
+;A card of the game's hand by its name, for the log (the name on it - CardLearn.ahk LearnMemGame -, else its own)
+BoostMemName(m)
+	{
+	return IsFunc("LearnMemGame") ? Func("LearnMemGame").Call(m) : m.name
 	}
 
 ;Which copy of boost card key in hand the card at x, y is - UseBlade, UseTrap, with the game's hand read (BoostHand):
@@ -716,12 +887,14 @@ BoostAuraSchools()
 ;the game's hand. Balance's own blade and trap are Balanceblade and Hex (resources\blade3, trap3): its folder isn't
 ;searched. With the game's hand read (VisionCards), a picture found for a card that isn't in it is a false match - not
 ;used -, each boost found counts at the % of its card in hand (BoostPctMem) and its copies are noted (BoostHand: a
-;treasure or item card's stacks with the deck's)
+;treasure or item card's stacks with the deck's). A blade or trap in the game's hand no picture found, that this search is
+;for, is found all the same - by the game's hand (BoostMemOnly): UseBlade / UseTrap cast it at its card box (BoostMemBox)
 BoostSearch()
 	{
 	global
 	local bsHand, bsWant, bsSeen, bsI, bsS, bsH, bsHh, bsC, bsF, bsX, bsY, bsG, bsK, bsKeys, bsM, bsJ, bsN, bsP, bsSrc, bsLog, bsTr, bsHas, bsB, bsSlot, bsNm
-	SbFound := {}, GbFound := {}, BoostPctMem := {}, BoostHand := {}, BoostMemOk := 0
+	local bsMem, bsGo, bsMk
+	SbFound := {}, GbFound := {}, BoostPctMem := {}, BoostHand := {}, BoostMemOk := 0, BoostMemOnly := {}
 	blade := 0, trap := 0, blade2 := 0, trap2 := 0, BladeDir := "", TrapDir := "", bladetype := "", traptype := ""
 	if (!IsObject(BoostSrcUsed))
 		BoostSrcUsed := {}
@@ -830,16 +1003,50 @@ BoostSearch()
 					}
 				}
 			}
-		;(the game's blades and traps in hand no picture found: said once a battle - the learner puts them in their slot)
+		;(the game's blades and traps in hand no picture found: found by the game's hand when this search is for them - their
+		;slot's key by their schools and % (BoostSlotFor), not one the game says can't be cast now; cast at their card box -
+		;UseBlade / UseTrap, BoostMemBox; said once a battle)
+		bsMem := {}
 		for bsI, bsC in bsHand.cards
 			{
 			if ((bsC.kind != "blade" && bsC.kind != "trap") || bsHas.HasKey(bsI))
 				continue
-			bsB := BoostsParse(bsC.boosts), bsNm := IsFunc("LearnMemGame") ? Func("LearnMemGame").Call(bsC) : bsC.name
-			if (!IsObject(bsB) || BoostSaid.HasKey("miss|" bsNm))
+			bsB := BoostsParse(bsC.boosts), bsNm := BoostMemName(bsC)
+			if (!IsObject(bsB))
 				continue
-			BoostSaid["miss|" bsNm] := 1, bsSlot := BoostSlotFor(bsC.kind, bsB.sch, bsB.pct, hitschool)
-			DebugLog("  in hand (the game): " bsNm " (" bsC.kind " " bsB.sch " " bsB.pct "%) - no picture found it" (bsSlot != "" ? " (" bsSlot "); the learner puts it there when it's free" : " (no slot is for it)"))
+			bsSlot := BoostSlotFor(bsC.kind, bsB.sch, bsB.pct, hitschool), bsMk := BoostMemKey(bsSlot)
+			bsGo := (bsMk != "" && bsC.castable != "0" && BoostMemWanted(bsMk, bsWant))
+			if (bsGo)
+				{
+				if (!BoostHand.HasKey(bsMk))
+					BoostHand[bsMk] := []
+				bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsMem[bsMk] := 1
+				BoostHand[bsMk].Push({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP, ench: (bsC.ench != "") ? 1 : 0})
+				if (bsP != "")
+					{
+					if (!BoostPctMem.HasKey(bsMk) || bsP < BoostPctMem[bsMk])
+						BoostPctMem[bsMk] := bsP
+					bsS := bsMk "@" (bsSrc = "" ? "deck" : bsSrc)
+					if (!BoostPctMem.HasKey(bsS) || bsP < BoostPctMem[bsS])
+						BoostPctMem[bsS] := bsP
+					}
+				}
+			if (BoostSaid.HasKey("miss|" bsNm))
+				continue
+			BoostSaid["miss|" bsNm] := 1
+			DebugLog("  in hand (the game): " bsNm " (" bsC.kind " " bsB.sch " " bsB.pct "%) - no picture found it" (bsSlot = "" ? " (no slot is for it - not cast)"
+				: " (" bsSlot ")" (bsGo ? ": cast at its card box when the hand's boxes and the game's cards line up" : bsC.castable = "0" ? ": greyed out now" : ": not for this round's hits")))
+			}
+		;(each found so: its school's (SbFound - no picture spot), its group's (GbFound), every school's (blade3...: its flag)
+		for bsK in bsMem
+			{
+			BoostMemOnly[bsK] := 1
+			if (InStr(bsK, "/"))
+				SbFound[bsK] := {x: "", y: "", mem: 1}
+			else if (RegExMatch(bsK, "^(elemental|spirit)(blade|trap)$"))
+				GbFound[bsK] := 1
+			else
+				%bsK% := 1, %bsK%X := "", %bsK%Y := ""
 			}
 		}
 	;(this look's: the first school blade and trap in the schools' order, the first group's)
@@ -860,23 +1067,24 @@ BoostSearch()
 	;(said when it's more than your own school's - a plain one-school battle's log as before)
 	if (bsWant.Length() != 1 || bsWant[1] != hitschool || BoostMemOk)
 		{
+		;(one found by the game's hand alone - no picture: "(no picture)")
 		bsLog := "", bsTr := ""
 		for bsK in SbFound
 			if (InStr(bsK, "/blade"))
-				bsLog .= (bsLog = "" ? "" : ", ") bsK
+				bsLog .= (bsLog = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 			else
-				bsTr .= (bsTr = "" ? "" : ", ") bsK
+				bsTr .= (bsTr = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 		for bsK in GbFound
 			if (InStr(bsK, "blade"))
-				bsLog .= (bsLog = "" ? "" : ", ") bsK
+				bsLog .= (bsLog = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 			else
-				bsTr .= (bsTr = "" ? "" : ", ") bsK
+				bsTr .= (bsTr = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 		for bsI, bsK in ["blade3", "blade4"]
 			if (%bsK% == 1)
-				bsLog .= (bsLog = "" ? "" : ", ") bsK
+				bsLog .= (bsLog = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 		for bsI, bsK in ["trap3", "feint"]
 			if (%bsK% == 1)
-				bsTr .= (bsTr = "" ? "" : ", ") bsK
+				bsTr .= (bsTr = "" ? "" : ", ") bsK (BoostMemOnly.HasKey(bsK) ? " (no picture)" : "")
 		bsS := ""
 		for bsI, bsH in bsWant
 			bsS .= (bsS = "" ? "" : ",") bsH
@@ -935,13 +1143,14 @@ PlanName()
 
 ;The damage hit hitN would deal this round against the enemies left (PlanChoose: the planned hit deals the most) -
 ;HitDamage with the blades and traps on and those in hand that can still go (each once, at its %: SbFound, GbFound,
-;blade3, blade4, trap3 - traps when they go on the boss), an enchant in hand on it: an all-enemies hit on each enemy
+;blade3, blade4, trap3 - traps on the enemy this round's go on, TrapPick, else the one they're on: TrapSlot - the boss's,
+;the one with the most health; counted with solotraps:1 only), an enchant in hand on it: an all-enemies hit on each enemy
 ;left (its health the most it can take), a one-enemy hit on the one it does the most to; their health not read: an
 ;all-enemies hit times the plates found
 PlanProject(hitN)
 	{
 	global
-	local ppKeepB, ppKeepT, ppB, ppT, ppK, ppL, ppI, ppJ, ppE, ppD, ppSum, ppBest, ppOne, ppUe, ppHh, ppKeys
+	local ppKeepB, ppKeepT, ppB, ppT, ppK, ppL, ppI, ppJ, ppE, ppD, ppSum, ppBest, ppOne, ppUe, ppHh, ppKeys, ppTs
 	ppKeepB := AppliedBlades, ppKeepT := BossTraps
 	ppB := AppliedBlades.Clone(), ppT := BossTraps.Clone(), ppKeys := []
 	for ppI, ppL in [SbFound, GbFound]
@@ -963,10 +1172,10 @@ PlanProject(hitN)
 	ppOne := (ppHh.one != "") ? ppHh.one : (Stat(hitschool "." hitN "target") = 1)
 	if (IsObject(EnemyHP) && EnemyHP.Length())
 		{
-		ppSum := 0, ppBest := 0
+		ppSum := 0, ppBest := 0, ppTs := (BossChoosen != 1 && TrapPick) ? TrapPick : TrapSlot
 		for ppI, ppE in EnemyHP
 			{
-			ppD := Min(HitDamage(hitN, ppUe, ppI == BossSlot), ppE.cur)
+			ppD := Min(HitDamage(hitN, ppUe, ppI == ppTs), ppE.cur)
 			ppSum += ppD, ppBest := Max(ppBest, ppD)
 			}
 		ppD := ppOne ? ppBest : ppSum
@@ -1445,7 +1654,7 @@ SameHealth(a, b)
 ReadEnemyHealth()
 	{
 	EnemyHP := "", EnemyPlates := [], EnemyPlatesAt := A_TickCount
-	BossSlot := 0
+	BossSlot := 0, TrapSlot := 0
 	;platestrip is in pixels at UI scale 1: the plates grow with the UI
 	stripH := Round(Stat("platestrip") * UiScale)
 	if (stripH > GameH)
@@ -1656,7 +1865,173 @@ ReadEnemyHealth()
 				BossSlot := 0
 			}
 		}
+	;The enemy our traps are on (the kill check counts them on it only): the boss's plate; else the plate of the one with the
+	;most health they went on - TrapFoeSlot
+	TrapSlot := (BossChoosen == 1) ? BossSlot : TrapFoeSlot(list, plates)
 	return true
+	}
+
+;---- Traps on the enemy with the most health (the user, 2026-10-24: "Can we have the wizard trap the enemy with the
+;highest health always?") ----
+;No boss picked with Alt+1 and not a party's blader or healer: every battle's traps (Hex, Feint, Elemental and school
+;traps - those that fit the planned hit's schools: BoostPick) go on the enemy with the most health (TrapTarget); BossTraps
+;holds the traps on that one enemy (TrapPut), found again each round by its plate and its most health (TrapFoeSlot), and
+;the kill check counts them on it only - with solotraps:1 (you fight alone: another's hit uses them up unseen)
+
+;Where this round's traps go (the battle code, right before BoostPick): TrapOn, TrapAtX / TrapAtY, TrapMine (noted for
+;the kill check: TrapPut), TrapAtMax, TrapPick, TrapWhy. The boss picked with Alt+1: on it, as ever; a party battle's
+;blader or healer: the enemy the hitter goes for (Party.ahk PartyTrapTarget - not noted, as ever); else - with traps on
+;(usetraps) and one in hand - the enemy with the most health (TrapTarget). None found: no traps this round
+TrapWhere()
+	{
+	global
+	TrapOn := (BossChoosen == 1), TrapAtX := bossX, TrapAtY := bossY, TrapMine := TrapOn, TrapAtMax := "", TrapPick := 0, TrapWhy := ""
+	if (TrapOn)
+		return
+	if (PartySupport())
+		{
+		if (PartyTrapTarget(TrapAtX, TrapAtY))
+			TrapOn := 1
+		return
+		}
+	if (Stat("usetraps") && TrapsInHand() && TrapTarget(TrapAtX, TrapAtY, TrapAtMax))
+		TrapOn := 1, TrapMine := 1
+	}
+
+;A trap in hand the chain could cast: a Feint, Hex (trap3), trap4, a school's or a group's trap found (SbFound, GbFound -
+;BoostSearch: by its picture or the game's hand)
+TrapsInHand()
+	{
+	global
+	local tihI, tihL, tihK
+	if (feint == 1 || trap3 == 1 || trap4 == 1)
+		return true
+	for tihI, tihL in [SbFound, GbFound]
+		if (IsObject(tihL))
+			for tihK in tihL
+				if (BoostKind(tihK) = "trap")
+					return true
+	return false
+	}
+
+;Where a trap goes with no boss picked (TrapWhere): the enemy with the most health - the plates read as the kill check
+;reads them (ReadEnemyHealth: the helper's digits, else OCR; read again when the last read is over 8 s old); a tie, or
+;health not read: the planned hit's target among them (TrapHitPick). x, y: its plate; most: its most health ("" not read);
+;TrapPick its slot, TrapWhy which it is (the log). False: no plate found - nowhere sure to put it
+TrapTarget(ByRef x, ByRef y, ByRef most)
+	{
+	global
+	local ttI, ttE, ttTop, ttTied, ttN, ttOne
+	most := "", TrapPick := 0, TrapWhy := ""
+	if (A_TickCount - EnemyPlatesAt > 8000)
+		ReadEnemyHealth()
+	if (!IsObject(EnemyPlates) || !EnemyPlates.Length())
+		return false
+	if (IsObject(EnemyHP) && EnemyHP.Length() && EnemyHP.Length() = EnemyPlates.Length())
+		{
+		ttTop := "", ttTied := {}, ttN := 0, ttOne := ""
+		for ttI, ttE in EnemyHP
+			if (ttTop = "" || ttE.cur > ttTop)
+				ttTop := ttE.cur
+		for ttI, ttE in EnemyHP
+			if (ttE.cur = ttTop)
+				{
+				ttTied[ttI] := 1, ttN += 1
+				if (ttOne = "")
+					ttOne := ttI
+				}
+		TrapPick := (ttN > 1) ? TrapHitPick(ttTied) : ttOne
+		most := EnemyHP[TrapPick].max
+		TrapWhy := "enemy " TrapPick " of " EnemyPlates.Length() " (" EnemyHP[TrapPick].cur "/" most " health - "
+			. (ttN > 1 ? ttN " have the most: the planned hit's target" : "the most") ")"
+		}
+	else
+		{
+		TrapPick := TrapHitPick("")
+		TrapWhy := "enemy " TrapPick " of " EnemyPlates.Length() " (health not read" (HealthStatus != "" ? ": " HealthStatus : "") " - the planned hit's target)"
+		}
+	x := EnemyPlates[TrapPick].x, y := EnemyPlates[TrapPick].y
+	return true
+	}
+
+;The planned hit's target among the enemies among ({slot: 1}; "" all) - TrapTarget's in a tie or with health not read:
+;where the hit the round plans (PlanChoose) would be clicked - a hit on one enemy (<school>.<hit>target:1, a learned hit's
+;card) the one HitTarget picks (Autofarmer.ahk HitPick: the one it does the most to); an all-enemies hit, the weakest of
+;them. Among equal health, the leftmost; health not read, the leftmost plate
+TrapHitPick(among)
+	{
+	global
+	local thpP, thpD, thpC
+	thpP := PlanChoose(), thpD := ""
+	if (RegExMatch(thpP, "^hit[1-4]$") && Stats[hitschool "." thpP "target"] = 1)
+		thpD := HitDamage(thpP, false, false)
+	else if (InStr(thpP, "learned/") = 1 && IsFunc("LearnCardOf"))
+		{
+		thpC := Func("LearnCardOf").Call(SubStr(thpP, 9))
+		if (IsObject(thpC) && thpC.type = "damage" && thpC.target != 0)
+			thpD := LearnedHitDamage(thpC, false)
+		}
+	return HitPick(thpD, among)
+	}
+
+;A trap cast this round noted for the kill check (UseTrap: the boss's, or TrapTarget's pick - TrapMine): BossTraps holds
+;the traps on one enemy - the boss (BossSlot), else the one TrapFoeX / TrapFoeY (its plate) and TrapFoeMax (its most
+;health) say, found again each round (TrapFoeSlot). One on another enemy starts them afresh: those on the last one aren't
+;counted any more (still on it - left out is the safe side)
+TrapPut(key, bonus, src)
+	{
+	global
+	if (!IsObject(BossTraps))
+		BossTraps := {}
+	if (BossChoosen != 1)
+		{
+		if (TrapFoeX = "" || Abs(TrapAtX - TrapFoeX) > Px(40) || Abs(TrapAtY - TrapFoeY) > Px(40))
+			{
+			if (BossTraps.Count())
+				DebugLog("  a trap on another enemy than the last ones - those aren't counted any more")
+			BossTraps := {}, TrapFoeX := TrapAtX, TrapFoeY := TrapAtY, TrapFoeMax := TrapAtMax
+			TrapFoeN := IsObject(EnemyPlates) ? EnemyPlates.Length() : 0, TrapSlot := TrapPick
+			}
+		else if (TrapFoeMax = "" && TrapAtMax != "")
+			TrapFoeMax := TrapAtMax
+		DebugLog("  " key " on " (TrapWhy != "" ? TrapWhy : "the enemy with the most health") (Stat("solotraps") == 1 ? " - the kill check counts it there" : " - not counted (solotraps:0)"))
+		}
+	AddBoost(BossTraps, key, bonus, src)
+	}
+
+;The slot of the enemy the traps went on in this health read (ReadEnemyHealth: list its health, plates their boxes), no
+;boss picked: the plate round where it was (TrapFoeX / TrapFoeY) with its most health (TrapFoeMax - an enemy keeps it;
+;taken from this read if it wasn't read then). Its most health on no plate: it's gone, its traps with it. 0: none on, or
+;not sure which - two with that most health and a plate fewer than then (they may have moved along)
+TrapFoeSlot(list, plates)
+	{
+	global
+	local tfsI, tfsP, tfsE, tfsAt, tfsSame
+	if (TrapFoeX = "" || !IsObject(BossTraps) || !BossTraps.Count())
+		return 0
+	tfsAt := 0
+	for tfsI, tfsP in plates
+		if (IsObject(tfsP.box) && TrapFoeX >= tfsP.box.x1 && TrapFoeX <= tfsP.box.x2 && TrapFoeY >= tfsP.box.y1 && TrapFoeY <= tfsP.box.y2)
+			tfsAt := tfsAt ? -1 : tfsI
+	;(its most health not read when they went on: this read's of the plate where it was)
+	if (TrapFoeMax = "" && tfsAt > 0)
+		TrapFoeMax := list[tfsAt].max
+	if (TrapFoeMax = "")
+		return 0
+	tfsSame := 0
+	for tfsI, tfsE in list
+		tfsSame += (tfsE.max = TrapFoeMax) ? 1 : 0
+	if (!tfsSame)
+		{
+		DebugLog("  the enemy your traps went on is gone - they went with it")
+		BossTraps := {}, TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0
+		return 0
+		}
+	if (tfsAt <= 0 || list[tfsAt].max != TrapFoeMax)
+		return 0
+	if (tfsSame > 1 && plates.Length() != TrapFoeN)
+		return 0
+	return tfsAt
 	}
 
 ;---- The health numbers' 3s, 5s and 8s ----
@@ -1921,7 +2296,8 @@ HitDamage(hitName, useEnchant, toBoss)
 	}
 
 ;A hit's least damage from its base (its card's, an enchant added): your damage %, the blades and aura on, the traps on
-;the boss (solotraps), the enemies' resist less your pierce - HitDamage's, and a learned hit's in no slot (HitTarget).
+;the enemy they went on (solotraps:1 - toBoss: this is that enemy - the boss, or the one with the most health they went
+;on: TrapSlot), the enemies' resist less your pierce - HitDamage's, and a learned hit's in no slot (HitTarget).
 ;sch: the head's school - only the blades, aura and traps that fit it count; "*" every one, as before
 HitDamageFrom(base, toBoss := false, sch := "*")
 	{
@@ -1930,7 +2306,8 @@ HitDamageFrom(base, toBoss := false, sch := "*")
 	dmg := base * DamageMultiplier(Stat("damage")) * (sch = "*" ? BoostMult(AppliedBlades) : BoostMultFor(AppliedBlades, sch))
 	if (AuraRounds > 0 && (sch = "*" || BoostFits("aura", sch)))
 		dmg *= 1 + Stat("aura") / 100
-	;Another player's hit on the boss uses up our traps without us seeing it
+	;Another player's hit on the enemy uses up our traps without us seeing it: counted only with solotraps:1 (you fight
+	;alone), and only on the enemy they went on
 	if (toBoss && Stat("solotraps") == 1)
 		dmg *= (sch = "*" ? BoostMult(BossTraps) : BoostMultFor(BossTraps, sch))
 	resist := Stat("enemyresist") - Stat("pierce")
@@ -1963,9 +2340,11 @@ IsLethal(hitName, useEnchant)
 	if (Stat(hitschool "." hitName "target") = 1 && EnemyHP.Length() > 1)
 		return false
 	margin := 1 + Stat("killmargin") / 100
+	;(the traps counted on the enemy they went on only - TrapSlot: the boss's slot, or the one with the most health they
+	;went on; 0 none / its plate not found)
 	for i, e in EnemyHP
 		{
-		if (HitDamage(hitName, useEnchant, i == BossSlot) < e.cur * margin)
+		if (HitDamage(hitName, useEnchant, i == TrapSlot) < e.cur * margin)
 			return false
 		}
 	return true
@@ -1979,7 +2358,7 @@ HealthText()
 	text := ""
 	for i, e in EnemyHP
 		{
-		text .= (text = "" ? "" : ", ") . e.cur . "/" . e.max . (i == BossSlot ? " (boss)" : "")
+		text .= (text = "" ? "" : ", ") . e.cur . "/" . e.max . (i == BossSlot ? " (boss)" : (i == TrapSlot) ? " (your traps)" : "")
 		}
 	return text
 	}
@@ -1999,8 +2378,8 @@ ShowKillInfo()
 			if (inHand[A_Index] == 1)
 				{
 				info .= "`nhit" . A_Index . ": " . HitDamage("hit" . A_Index, 0, 0)
-				if (BossSlot)
-					info .= " (boss " . HitDamage("hit" . A_Index, 0, 1) . ")"
+				if (TrapSlot)
+					info .= " (" (TrapSlot == BossSlot ? "boss" : "trapped enemy") " " . HitDamage("hit" . A_Index, 0, 1) . ")"
 				}
 			}
 		if (KillHit != "")

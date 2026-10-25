@@ -22,6 +22,9 @@ global VisionDir := "", VisionPort := 47128, VisionErr
 global VisionPlateWhy
 ;Why the last VisionCards (the hand from the game's memory) got nothing; its last answer kept, its why and when
 global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy
+;How many fresh looks at the hand VisionFind has taken (CardLearn.ahk LearnBoostPicFix: one miss a look) - declared only:
+;a top-level := never runs here
+global VisionLookN
 
 ;Starts the helper (after stopping one left over from before) and waits up to 8 s for it to answer
 VisionStart()
@@ -181,7 +184,7 @@ VisionFind(dir, title, ByRef X, ByRef Y)
 		answer := VisionGet("/cards?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList())
 		if (answer = "")
 			return -1
-		VisionCards := [], VisionCardsAt := A_TickCount, VisionCardsKey := key, VisionMissing := ","
+		VisionCards := [], VisionCardsAt := A_TickCount, VisionCardsKey := key, VisionMissing := ",", VisionLookN := (VisionLookN ? VisionLookN : 0) + 1
 		Loop, Parse, answer, `n, `r
 			{
 			p := StrSplit(A_LoopField, "|")
@@ -385,6 +388,8 @@ VisionPlate(x1, y1, x2, y2)
 global NavWhy, NavWaitUntil, NavWait
 ;Set by the walker's F8 (walking on): the next NavRead asks the helper to forget the teleports it gave up
 global NavUnblock
+;Why the last NavGoal got nothing; when it may ask again
+global NavGoalWhy, NavGoalWaitUntil
 
 ;The wizard and the quest goal from the game's memory, as an object:
 ;  ok        1
@@ -400,6 +405,8 @@ global NavUnblock
 ;  left      (withRoute only) how far is left to walk along that route and the game's path on from it (game units)
 ;  jump, jx, jy  (withRoute only) right at a teleport on the game's path (the route stops at it): the seconds
 ;            waited there, and where it is; "" otherwise
+;  goaltext, goaltype, goalstatus, goalcount, goaltotal, goalshown  the quest's goal line from the game's memory and its
+;            kind, status, count, total, on screen (1/0) - as NavGoal's; "" when it can't be read (or an older helper)
 ;A value that couldn't be read for sure is "". Returns "" when it can't be asked: navmem:0, the helper not
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
@@ -441,7 +448,8 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""}
+		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""
+		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -474,6 +482,10 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			nav.blindahead := Trim(f[2]), nav.blindback := Trim(f[3]), nav.blindin := Trim(f[4])
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
+		;(the quest's goal line from the game's memory - the helper's last line; an older one has none)
+		else if (f[1] = "goalline")
+			nav.goaltext := Trim(f[2]), nav.goaltype := Trim(f[3]), nav.goalstatus := Trim(f[4]), nav.goalcount := NavNum(f[5])
+				, nav.goaltotal := NavNum(f[6]), nav.goalshown := NavNum(f[7])
 		else if (f[1] = "path" && withPath)
 			{
 			nav.path := [], nodes := SubStr(navLine, 6)
@@ -510,6 +522,76 @@ NavUri(text)
 	return navUriOut
 	}
 
+;The quest's active goal from the game's memory (the helper's /goal - READ-ONLY, vision\questmem.py: the line exactly as
+;the game draws it under the quest arrow, where the OCR of the screen slips letters - 2026-10-24 "Opiio (jn -rhe" for
+;"Defeat Optio Agenor ..."), as an object:
+;  text      the goal line ("Defeat Crustacean Waverunner and Collect Foul Tasting Algae in The Grotto (0 of 3)")
+;  from      data (built from the quest's own data) / hud (the HUD's own text: the data's names not all read)
+;  shown     1 on screen, 0 hidden (a battle), "" not known; hudtext the HUD's own line, distance the arrow's number
+;  type      BOUNTY (defeat), BOUNTYCOLLECT (defeat and collect), USAGE (collect / open / use / read), WAYPOINT (go to),
+;            PERSONA (talk to), SCAVENGE...; status INCOMPLETE / COMPLETE (the quest moving on); "" not read
+;  count, total  "(count of total)"; "" none (talk and go-to goals)
+;  mob, item, npc, place  what it names: the mob (or its kind: "Gobblers"), the item / object / one to go to, the NPC
+;  quest, questid, goalid  the quest's title and ids; exact 1: the line and the fields are the goal's own data
+;"" when it can't be read - navmem:0 in PlayerStats.txt, the helper not running or older (no /goal), no quest, the game
+;not read yet - NavGoalWhy says why (the walker reads the line off the screen then). After no answer or an ERR it isn't
+;asked again for 10 s (an older helper: 60 s)
+NavGoal(timeoutMs := 800)
+	{
+	if (!Stat("navmem"))
+		{
+		NavGoalWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGoalWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (NavGoalWaitUntil && A_TickCount < NavGoalWaitUntil)
+		return ""
+	answer := VisionGet("/goal", timeoutMs, true)
+	if (answer = "")
+		{
+		NavGoalWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGoalWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 10000)
+		return ""
+		}
+	NavGoalWaitUntil := 0
+	goal := {text: "", from: "", shown: "", hudtext: "", distance: "", type: "", status: "", count: "", total: "", mob: ""
+		, item: "", npc: "", place: "", quest: "", questid: "", goalid: "", exact: ""}
+	Loop, Parse, answer, `n, `r
+		{
+		f := StrSplit(A_LoopField, "|")
+		if (f[1] = "none")
+			{
+			NavGoalWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (f[1] = "text")
+			goal.text := Trim(f[2]), goal.from := Trim(f[3])
+		else if (f[1] = "shown")
+			goal.shown := NavNum(f[2]), goal.hudtext := Trim(f[3]), goal.distance := Trim(f[4])
+		else if (f[1] = "kind")
+			goal.type := Trim(f[2]), goal.status := Trim(f[3])
+		else if (f[1] = "count")
+			goal.count := NavNum(f[2]), goal.total := NavNum(f[3])
+		else if (f[1] = "mob" || f[1] = "item" || f[1] = "npc" || f[1] = "place")
+			goal[f[1]] := Trim(f[2])
+		else if (f[1] = "quest")
+			goal.quest := Trim(f[2]), goal.questid := Trim(f[3]), goal.goalid := Trim(f[4])
+		else if (f[1] = "exact")
+			goal.exact := NavNum(f[2])
+		}
+	if (goal.text = "")
+		{
+		NavGoalWhy := "an odd answer: " SubStr(RegExReplace(answer, "\s+", " "), 1, 60)
+		return ""
+		}
+	NavGoalWhy := ""
+	return goal
+	}
+
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
 ;mobs' real sight against the mobshape / mobradius settings
@@ -537,8 +619,9 @@ CaughtLog()
 ;are kept further off from now on - the shape's front (mobradius) when it caught the wizard in front of it (or all round:
 ;a circle, its facing unknown), its reach all round (mobbody) when from the side or behind - to where it caught him from
 ;and 25 more, 20 more at the least; 1500 at most (all round past the front: the front raised too). Left as it is when the battle was
-;the quest's - collecting, a mob named in the goal line, X pressed in the last 15 s (the goal's boss), a dungeon run that
-;fights every battle - or you were playing. f: /caught's fields; s: MobShape()
+;the quest's - collecting, a mob the helper took as the quest's (/caught's quest field: by the game's memory's goal), a mob
+;named in the goal line, X pressed in the last 15 s (the goal's boss), a dungeon run that fights every battle - or you were
+;playing. f: /caught's fields; s: MobShape()
 MobGrow(f, s)
 	{
 	if (Stat("mobgrow") = 0 || (Stats.HasKey("mobavoid") && !Stats["mobavoid"]))
@@ -547,6 +630,10 @@ MobGrow(f, s)
 	;(collecting: walking into mobs is the point - but not on the way to a quest item lying about: Collect.ahk)
 	mgWhy := (WkArrived = 7 && CiGid = "") ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
 		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : PlayerActive ? "you were playing" : ""
+	;(the quest's mob by the helper's own verdict - the game's memory's goal: its name, its kind, or one by a fight goal -
+	;left off the avoid list: /caught's 7th field; an older helper's has none)
+	if (mgWhy = "" && f[7] = 1)
+		mgWhy := "the quest's - the helper didn't keep it off"
 	;(the quest's mob: its name in the goal line last read)
 	if (mgWhy = "" && WkGoalLine != "" && IsFunc("WalkLetters"))
 		{

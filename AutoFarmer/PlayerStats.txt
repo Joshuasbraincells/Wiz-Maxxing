@@ -19,8 +19,10 @@ pierce:7
 enemyresist:15
 ; killmargin: only count a kill when predicted damage >= health + this % (covers shields, misreads)
 killmargin:15
-; solotraps: 0 = never count traps/feints on the boss (safe: another player's or a henchman's hit on the
-; boss uses them up without the script seeing it). Set it to 1 only if you fight bosses alone.
+; solotraps: whether the kill check counts your traps/feints. They're cast every battle either way: on the
+; boss picked with Alt+1, else on the enemy with the most health (a tie or health not read: where your
+; planned hit goes). 1 = counted, on the enemy they went on only. 0 = never counted (safe: another player's
+; or a henchman's hit uses them up without the script seeing it). Set it to 1 only if you fight alone.
 solotraps:0
 ; reboost: 1 = after each hit the script may cast its blades/traps again for the next hit.
 ; 0 = each blade/trap is cast once per battle (how AutoFarmer always played).
@@ -42,7 +44,8 @@ fleeon:1
 ; (Values may be written with or without a %. A line that can't be read pops up a warning at start.)
 
 ; ---- How it plays its cards (also in the dashboard's Settings window) ----
-; cardlogic: 1 = boost first - traps on the boss, blades, the bubble and aura - then the biggest hit it can cast;
+; cardlogic: 1 = boost first - traps (on the boss, else on the enemy with the most health), blades, the bubble and
+; aura - then the biggest hit it can cast;
 ; 2 = hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick
 ; on weak mobs); 3 = boost first once you've picked a boss (Alt+1), hit first otherwise
 cardlogic:1

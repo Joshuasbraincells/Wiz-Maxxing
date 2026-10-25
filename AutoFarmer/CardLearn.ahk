@@ -41,7 +41,9 @@
 ; name in the game>; its picture is still cut as before (/cut). A card the bot knows by its picture gets what the game
 ; says filled in - never what you set (flag user, a name you typed): only the learner's own guesses and OCR'd numbers.
 ; An enchanted card the bot doesn't know by its picture isn't learned (its picture is the enchanted one's): it is when it
-; shows up plain. LearnMemHand, LearnMemRead, LearnApplyMem.
+; shows up plain. LearnMemHand, LearnMemRead, LearnApplyMem. A blade or trap the game names whose slot's picture the
+; battle's look doesn't find on it twice running gets the card's own picture there (the old one in backups\ -
+; LearnBoostPicFix); meanwhile the battle casts it at its card box by the game's hand (KillCalc.ahk BoostMemBox).
 ; Out of battle, once a run (LearnOutOfBattle): learned "cards" that aren't cards are moved to backups\learned
 ; junk\, and a learned card's picture left in a slot that isn't its own is taken out (backups\learned strays\).
 ; Everything learned is listed in learned\cards.txt (and on the dashboard's Spells tab); debug.log: "learned a
@@ -499,8 +501,9 @@ LearnAllRound()
 
 ;Called once a round after the hand's been looked at (FindCards). True if a card went into a slot (or a
 ;slot's learned picture was just made to fit a copy that differs a little): look at the hand again, so
-;it's used this round
-LearnCards()
+;it's used this round. picFix 0: no boost slot picture counted as missed (LearnBoostPicFix) - Draw.ahk's call after a
+;treasure card's drawn, against a look at the hand taken before the draw
+LearnCards(picFix := 1)
 	{
 	if (!VisionOn || hitschool = "")
 		return false
@@ -588,6 +591,10 @@ LearnCards()
 			fresh++
 			placed += LearnNew(card)
 			}
+		;(a blade or trap the game names here whose slot's picture never finds it: the card's own put there -
+		;LearnBoostPicFix)
+		if (picFix && IsObject(card.mem))
+			placed += LearnBoostPicFix(card, f)
 		}
 	if (enchNew)
 		DebugLog("  " enchNew " enchanted card(s) in hand the bot doesn't know by their picture - learned when they show up plain")
@@ -979,6 +986,10 @@ LearnSeenAgain(card)
 		;in that box a second time first - one wrong pairing would rewrite a good card. One you set is yours to differ: only
 		;its blanks are filled in)
 		memR := IsObject(card.mem) ? LearnMemRead(card.mem) : ""
+		;(an object first: LearnMemWait is #Included blank, and a key set on a blank variable makes no object in AHK v1.1 -
+		;the second sighting was never seen, 2026-10-24: Hex learned as a blade stayed one, never in resources\trap3)
+		if (!IsObject(LearnMemWait))
+			LearnMemWait := {}
 		if (IsObject(memR) && LearnFlag(c, "game") = "" && memR.sure && !LearnHasFlag(c, "user")
 			&& ((c.type != "" && c.type != memR.kind) || (!c.guess && c.pips != "" && memR.pips != "" && c.pips != memR.pips)))
 			{
@@ -1224,6 +1235,10 @@ LearnApplyMem(c, r)
 		}
 	else if (c.guess && r.pips != "" && !r.xpip && !LearnHasFlag(c, "xpip"))
 		c.pips := r.pips, c.guess := 0
+	;(a card you set with no number, the game's kind the one you set: the game's number in the blank - nothing you typed
+	;changed. 2026-10-24: Bladestorm, set as a blade with no %, never got resources\blade4 - LearnBoostSlot wants its %)
+	if (lamUser && r.sure && c.type = r.kind && c.value = "" && r.value != "")
+		c.value := r.value
 	if (r.school != "" && r.school != c.sch && LearnFlag(c, "school") = "")
 		LearnSetFlag(c, "school", r.school)
 	if (r.tc && !LearnHasFlag(c, "tc") && !LearnHasFlag(c, "notc"))
@@ -1429,21 +1444,179 @@ LearnBoostSlot(c)
 	lbsV := LearnValueKnown(c)
 	if (lbsV = "")
 		return ""
-	SplitPath, lbsSlot, lbsName, lbsDir
-	;(the % for it: one every school shares, or your school's own - your wizard's <school>.<key>, else the plain one; another
-	;school's - blade.storm for a pet's Stormblade on your Balance wizard, storm.blade being the Storm wizard's own -, else
-	;the plain one: KillCalc.ahk BoostPct)
-	if (lbsDir = "resources" || lbsDir = c.sch)
-		lbsWant := LearnStatOf(c.sch, lbsName)
+	return LearnBoostPctOk(lbsSlot, lbsV, c.sch) ? lbsSlot : ""
+	}
+
+;Whether a blade or trap of pct % may be cast from boost slot rel (LearnBoostSlot, LearnBoostPicFix) for school sch's wizard:
+;at least the % PlayerStats.txt counts for that slot - one every school shares, or your school's own: your wizard's
+;<school>.<key>, else the plain one; another school's - blade.storm for a pet's Stormblade on your Balance wizard,
+;storm.blade being the Storm wizard's own -, else the plain one (KillCalc.ahk BoostPct); none set: any
+LearnBoostPctOk(rel, pct, sch)
+	{
+	SplitPath, rel, lbpName, lbpDir
+	if (lbpDir = "resources" || lbpDir = sch)
+		lbpWant := LearnStatOf(sch, lbpName)
 	else
-		lbsWant := Stats.HasKey(lbsName "." lbsDir) ? Stats[lbsName "." lbsDir] : LearnStatOf("", lbsName)
-	return (lbsWant = "" || lbsV + 0 >= lbsWant + 0) ? lbsSlot : ""
+		lbpWant := Stats.HasKey(lbpName "." lbpDir) ? Stats[lbpName "." lbpDir] : LearnStatOf("", lbpName)
+	return (lbpWant = "" || pct + 0 >= lbpWant + 0)
 	}
 
 ;Whether slot rel is a blade's or trap's: <school>\blade, \trap, resources\blade3, blade4, trap3, feint, elementalblade...
 LearnBoostSlotIs(rel)
 	{
 	return RegExMatch(rel, "i)^(resources\\(blade3|blade4|trap3|feint|elementalblade|elementaltrap|spiritblade|spirittrap)|[a-z]+\\(blade|trap))$")
+	}
+
+;---- A boost slot's picture that never finds the game's card (2026-10-24) ----
+;A blade or trap the game's memory names in a box (LearnMemHand's pairing - card.mem: the hand settled, as many boxes as
+;cards, the box not another learned card's), a plain copy (not greyed out, enchanted, a treasure or item card - those look
+;otherwise), whose slot by its schools and % (KillCalc.ahk BoostSlotFor - at least the % the slot counts: LearnBoostPctOk)
+;the battle's own look at the hand asked about and didn't find on that box twice running (a card zoomed up under the mouse
+;for one look isn't a picture that never finds it):
+;  - the slot's picture at this UI size isn't the card's own (an old cut, another card's), or there's none here and one cut
+;    at another size is resized for it: the card's own put there - the learned card's picture (a new card is learned by the
+;    box first: LearnNew), what was there kept in backups\ as LearnPlace keeps it (LearnUnplace puts it back), the slot the
+;    card's (another learned card that had it: out of it). The battle's pictures find it from then on, memory or not. Nothing
+;    usable for the slot anywhere (an 8x8 placeholder): LearnPlace's own job, by its rules
+;  - it IS the card's own: the helper isn't using it - another set's picture comes first in the helper's order
+;    (LearnShadowSet - vision.py Library.masters; since 2026-10-24 this size's own cut comes first, so that's rare), or the
+;    card looks otherwise now and then: said once a run; the card's cast at its box by the game's hand meanwhile
+;    (KillCalc.ahk BoostMemBox)
+;f: the box's /hand line, split. 1 if the slot's picture was written (the hand's looked at again)
+LearnBoostPicFix(card, f)
+	{
+	static misses := {}, said := {}, lookOf := {}
+	m := card.mem
+	if (!IsObject(m) || (m.kind != "blade" && m.kind != "trap") || card.grey || !card.isCard || card.tc || m.ench != "" || m.tc || m.item)
+		return 0
+	b := BoostsParse(m.boosts)
+	if (!IsObject(b))
+		return 0
+	slot := BoostSlotFor(m.kind, b.sch, b.pct, hitschool)
+	if (slot = "" || !LearnBoostPctOk(slot, b.pct, hitschool))
+		return 0
+	pic := StrReplace(slot, "\", "/"), name := LearnMemGame(m), key := slot "|" name
+	;(the battle's own look asked about it - and found it on this box: its picture works)
+	if (!InStr("," VisionPicList() ",", "," pic ",") || InStr(VisionMissing, "," pic ","))
+		return 0
+	l := f[2] + 0, w := f[4] + 0
+	if (IsObject(VisionCards))
+		for i, vc in VisionCards
+			if (vc.pic = pic && vc.x >= l - Px(10) && vc.x <= l + w + Px(10))
+				{
+				misses.Delete(key)
+				return 0
+				}
+	;(twice running for one box identity - the same picture or learned card known there: two misses on two different boxes
+	;or cards, a pairing that shifted, aren't twice)
+	if (!misses.HasKey(key) || misses[key].known != card.known)
+		misses[key] := {n: 0, known: card.known}
+	;(and one miss a look at the hand - VisionFind's count: the same look asked about again isn't a second)
+	if (VisionLookN = "" || lookOf[key] = VisionLookN)
+		return 0
+	lookOf[key] := VisionLookN
+	misses[key].n += 1
+	if (misses[key].n < 2)
+		return 0
+	here := LearnSetDir(false), dest := here "\" slot
+	setName := (here = A_WorkingDir) ? "main" : SubStr(here, StrLen(A_WorkingDir) + 2)
+	;(the box's card as a learned card: known by its own picture - only one the game named so, and not one the learner is
+	;still waiting to see so again: LearnMemWait -, else the slot's card the game names so)
+	lc := ""
+	if (InStr(card.known, "learned/") = 1)
+		{
+		lc := LearnCardOf(SubStr(card.known, 9))
+		if (!IsObject(lc) || LearnFlag(lc, "game") != name || (IsObject(LearnMemWait) && LearnMemWait.HasKey(lc.id)))
+			lc := ""
+		}
+	else
+		{
+		lc := LearnCardInSlot(slot)
+		if (!IsObject(lc) || LearnFlag(lc, "game") != name)
+			lc := ""
+		}
+	own := IsObject(lc) && FileExist(here "\learned\" lc.id ".png")
+	if (LearnRealPic(dest ".png"))
+		{
+		;(never over the slot's own learned card's picture - the game names it so too)
+		sow := LearnCardInSlot(slot)
+		sow := (IsObject(sow) && LearnFlag(sow, "game") = name && FileExist(here "\learned\" sow.id ".png") && LearnSameCard(dest, here "\learned\" sow.id)) ? sow : ""
+		if ((own && LearnSameCard(dest, here "\learned\" lc.id)) || IsObject(sow))
+			{
+			if (!said.HasKey(slot))
+				{
+				said[slot] := 1, sh := LearnShadowSet(slot)
+				DebugLog("  " slot ": its picture (" setName ") is the game's " name "'s own, yet the battle's look didn't find it twice running"
+					. (sh != "" ? " - the vision helper matches " sh "'s picture of it instead (it comes first in vision.py Library.masters' order)" : " (the card looks otherwise now and then?)")
+					. "; it's cast at its box by the game's hand")
+				}
+			return 0
+			}
+		}
+	else if (LearnFree(slot))
+		return 0
+	;(not learned yet - LearnNew learns a new card this round: its own picture next time; one in another slot: the game's
+	;boost= takes it out of that first - LearnApplyMem)
+	if (!own || (lc.slot != "" && lc.slot != slot))
+		return 0
+	src := here "\learned\" lc.id
+	back := A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" setName ", before learned card " lc.id ")"
+	SplitPath, dest,, destDir
+	FileCreateDir, %destDir%
+	FileCreateDir, % A_WorkingDir "\backups"
+	hadOld := FileExist(dest ".png") ? 1 : 0
+	if (hadOld)
+		FileCopy, %dest%.png, %back%.png, 1
+	if (FileExist(dest ".raw.png"))
+		FileCopy, %dest%.raw.png, %back%.raw.png, 1
+	FileCopy, %src%.png, %dest%.png, 1
+	if (ErrorLevel || !LearnSameFile(src ".png", dest ".png"))
+		{
+		DebugLog("  couldn't copy learned card " lc.id " to " dest ".png")
+		return 0
+		}
+	if (FileExist(src ".raw.png"))
+		FileCopy, %src%.raw.png, %dest%.raw.png, 1
+	;(pictures made from what was there before)
+	Loop, Files, % A_WorkingDir "\generated\ui*", D
+		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
+	old := LearnCardInSlot(slot)
+	if (IsObject(old) && old.id != lc.id)
+		{
+		old.slot := ""
+		DebugLog("  learned card " old.id " (" LearnDescribe(old) "): " slot " has the game's " name " now - not using it there any more")
+		}
+	if (lc.slot = "")
+		{
+		LearnStatsKeep(lc.sch, slot, lc.id), lc.slot := slot
+		if (IsObject(SlotGame))
+			SlotGame.Delete(pic)
+		LearnStats(lc)
+		}
+	LearnFreeCache := {}, misses.Delete(key)
+	LearnSave()
+	DebugLog("  " slot " (" setName "): its picture didn't find the game's " name " in hand twice running - the card's own put there (learned card " lc.id ")"
+		. (hadOld ? ", the old one kept in backups\" StrReplace(slot, "\", "_") " (" setName ", before learned card " lc.id ").png" : ""))
+	return 1
+	}
+
+;The picture set the vision helper takes slot rel's picture from at this UI size instead of this size's own (LearnSetDir),
+;by vision.py Library.masters' order among the sets with a real picture for it: one cut within 1% of the size (the nearest),
+;then the ones truly at or above it (the smallest), then the smaller ones (the biggest) - its folder's name ("ui1.121"), ""
+;this size's own or none. (Till 2026-10-24 a set down to 3% smaller came first: ui1.121's Balanceblade at 1.144)
+LearnShadowSet(rel)
+	{
+	lssBest := "", lssKey := ""
+	for lssI, lssSt in LearnSets()
+		{
+		if (!LearnRealPic(lssSt.path "\" rel ".png"))
+			continue
+		lssV := (lssSt.name = "main") ? 1 : SubStr(lssSt.name, 3) + 0
+		lssK := (Abs(lssV / UiScale - 1) < 0.01) ? Abs(lssV - UiScale) : (lssV >= UiScale) ? 10 + lssV : 100 - lssV
+		if (lssKey = "" || lssK < lssKey)
+			lssBest := lssSt, lssKey := lssK
+		}
+	return (IsObject(lssBest) && lssBest.path != LearnSetDir(false)) ? lssBest.name : ""
 	}
 
 ;Learned enchant c in the slot for its number (EnchantList's picture for its level)

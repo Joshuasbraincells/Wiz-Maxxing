@@ -289,8 +289,14 @@ global PartyHits := 0, PartyHitR := 0, PartyHitsSeen := "", PartyHitsDuel := "",
 ;round this round's cast goes out in, the round each treasure / item copy's cast went out in ({"storm/blade@tc": round} -
 ;KillCalc.ahk BoostSrcUsed) (Party.ahk PartyNoteBoosts)
 global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := "", PartySrcRound := {}
-;Where traps go this round: on (the boss picked with Alt+1, or a party support's pick) and where
-global TrapOn := 0, TrapAtX := 0, TrapAtY := 0
+;Where traps go this round: on (the boss picked with Alt+1, a party support's pick, else the enemy with the most health -
+;KillCalc.ahk TrapTarget) and where; TrapMine: noted for the kill check (BossTraps - not a party support's), the picked
+;enemy's most health and slot (TrapPick), why it was picked (the log)
+global TrapOn := 0, TrapAtX := 0, TrapAtY := 0, TrapMine := 0, TrapAtMax := "", TrapPick := 0, TrapWhy := ""
+;The enemy this battle's traps (BossTraps) went on when no boss was picked: where its plate was and its most health, how
+;many plates there were then (KillCalc.ahk TrapPut); its slot in each round's health read (TrapSlot - ReadEnemyHealth;
+;the boss's BossSlot when one was picked): the kill check counts them on it only (solotraps:1)
+global TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
 ;Blades and traps by damage school (KillCalc.ahk): the game's name of the card on each hit slot's picture ({"balance/hit3":
 ;"Hydra"} - CardLearn.ahk LearnCards; kept across battles), each hit's heads this look (HitHeads), the % of each boost's
 ;card in the game's hand, the aura's schools, the schools of the party's last hit (Party.ahk); the planned hit, its heads
@@ -305,6 +311,9 @@ global PlanHit := "", PlanHeads := "", PlanList := ""
 global BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
 global SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
 global BoostUnrec := [], BoostOneOfOff := {}
+;(the boosts this look found by the game's hand alone - no picture found them: cast at their card box - KillCalc.ahk
+;BoostSearch, BoostMemBox)
+global BoostMemOnly := {}
 LoadStats()
 ;"Wait while I play" on, 3 s, at every start - the bot never takes the mouse from you as it starts (you asked,
 ;2026-10-23); the tray menu, the dashboard and Settings change it for the run
@@ -1164,10 +1173,10 @@ if (!BotOn)
 	Goto, TestRound
 	}
 ;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
-;PartyTrapTarget); else none
-TrapOn := (BossChoosen == 1), TrapAtX := bossX, TrapAtY := bossY
-if (!TrapOn && PartySupport() && PartyTrapTarget(TrapAtX, TrapAtY))
-	TrapOn := 1
+;PartyTrapTarget); else, in every battle (the user, 2026-10-24: "the enemy with the highest health always"), the enemy
+;with the most health - a tie or health not read: the planned hit's target (KillCalc.ahk TrapTarget, only with a trap in
+;hand). Which traps: those that fit the planned hit's schools (BoostPick), one a round, as ever
+TrapWhere()
 
 ;The hit this round's boosts are for - with the game's hand read, the one dealing the most with the boosts in hand and on;
 ;a blader's or healer's: the hitter's - and the blades and traps that fit its schools, the most that adds first
@@ -1325,7 +1334,7 @@ BotToggle()
 		;(turned on in a battle: what was played meanwhile isn't known - no kill check till it ends, and the boss
 		;picked again with Alt+1)
 		if (inbattle == 1)
-			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - " HkText("boss") " the boss again for traps)")
+			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - " HkText("boss") " the boss again to put traps on it, else they go on the enemy with the most health)")
 		;(the walker starts afresh: the wizard may have moved meanwhile)
 		if (IsFunc("WalkReset"))
 			Func("WalkReset").Call()
@@ -1974,7 +1983,7 @@ UseOnHammer(ByRef title, ByRef card, ByRef dir, tx := "", ty := "")
 UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 	{
 	global
-	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved
+	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved, ubMem, ubAt, ubEnch
 	Find(title, blade, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" blade " at " foundX - GameLeft "," foundY - GameTop)
 
@@ -1983,30 +1992,51 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 	;(the game's hand read this look - KillCalc.ahk BoostSearch: which copy of the card this is. A pet's or gear's - an item
 	;card - is never sharpened: it can't be enchanted. A treasure or item card's copy stacks with the deck's - the user,
 	;2026-10-24 - so it goes once a battle besides the deck's casts; a copy that can't go swapped for one that can)
-	ubKey := BoostKey(title, dir), ubSrc := "", ubItem := 0, ubMoved := 0
-	if (blade == 1 && IsObject(BoostHand) && BoostHand.HasKey(ubKey))
+	ubKey := BoostKey(title, dir), ubSrc := "", ubItem := 0, ubMoved := 0, ubMem := 0, ubEnch := 0
+	;(no picture found it but the game's hand has it - BoostSearch's BoostMemOnly: cast at its card box, a fresh look at the
+	;hand's boxes laid on the game's cards - only while they line up for sure; that copy's own kind - KillCalc.ahk BoostMemBox)
+	if (blade != 1 && IsObject(BoostMemOnly) && BoostMemOnly.HasKey(ubKey))
+		{
+		ubAt := BoostMemBox(ubKey, sharpen == 1, Use1, Use2)
+		if (ubAt.x = "")
+			{
+			DebugLog("  " ubKey ": in hand (the game), no picture found it - not cast: " ubAt.why)
+			BoostOneOfBack("blade")
+			return UseHeldBack("blade", title)
+			}
+		blade := 1, foundX := ubAt.x, foundY := ubAt.y, ubSrc := ubAt.src, ubItem := ubAt.item, ubMem := 1, ubEnch := ubAt.ench ? 1 : 0
+		DebugLog("  " ubKey ": no picture found it - the game's " ubAt.name " is card " ubAt.n " of " ubAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop)
+		}
+	else if (blade == 1 && IsObject(BoostHand) && BoostHand.HasKey(ubKey))
 		{
 		ubCp := BoostCopyPick(ubKey, foundX, foundY, sharpen == 1, Use1, Use2)
 		if (!IsObject(ubCp))
 			{
 			DebugLog("  " ubKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Sharpen it can't get)")
-			;(the blades held back this round for it go on instead - KillCalc.ahk BoostOneOf: the chain's next one)
+			;(the blades held back this round for it go on instead - KillCalc.ahk BoostOneOf: the chain's next one; one before
+			;it in the chain, which has passed it already, right here - UseHeldBack)
 			BoostOneOfBack("blade")
-			return false
+			return UseHeldBack("blade", title)
 			}
 		ubSrc := ubCp.src, ubItem := ubCp.item, ubMoved := ubCp.moved
 		}
 	ubGo1 := (ubSrc = "") ? (Use1 != 1) : !BoostSrcUsed.HasKey(ubKey "@" ubSrc)
 	ubGo2 := (ubSrc = "") ? (Use2 != 1) : ubGo1
-	if (sharpen == 1) && (blade == 1) && ubGo1 && !ubItem && !ubMoved
+	;(a copy that carries an enchantment already - only the game's hand finds one, KillCalc.ahk BoostMemBox: a plain copy
+	;first - is never sharpened again: cast as it is, counted with the Sharpen it carries)
+	if (sharpen == 1) && (blade == 1) && ubGo1 && !ubItem && !ubMoved && !ubEnch
 		{
 		boostX := SharpX
 		ClickAt(SharpX, SharpY, 150)
 		ClickAt(foundX, foundY, 150)
-		CenterMouse()	
+		CenterMouse()
 		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
-		BoostSettle(n, foundX, foundY, boostX)
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has (one cast by the game's
+		;hand: where the game's hand has it then - no picture finds it)
+		if (ubMem)
+			BoostSettleMem(ubKey, foundX, foundY, boostX)
+		else
+			BoostSettle(n, foundX, foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
 			ErrorBox("UseBlade", dir, title)
@@ -2030,14 +2060,15 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 		else if (Manual != 1 && !PartySupport())
 			BoostUnrec.Push(ubKey (ubSrc != "" ? "@" ubSrc : "") "+")
 		return true
-		} else if (blade == 1) && ubGo2
+		} else if (blade == 1) && (ubGo2 || (ubEnch && ubGo1))
 			{
 			n := PicPath(dir "\" title ".png")
-			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick)
+			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick; nor one
+			;cast by the game's hand - its box: no picture finds it, and one that doesn't fit might match elsewhere)
 			keepX := foundX, keepY := foundY
-			if (!ubMoved)
+			if (!ubMoved && !ubMem)
 				ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
-			if (ErrorLevel || ubMoved)
+			if (ErrorLevel || ubMoved || ubMem)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -2049,17 +2080,20 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 				ClickAt(hammerX, hammerY, 200)
 				}
 			boosts++
-			if (ubSrc = "")
-				Use2 := 1
-			else
+			;(an enchanted copy takes the sharpened cast's flag while it's free)
+			if (ubSrc != "")
 				BoostSrcUsed[ubKey "@" ubSrc] := 1
+			else if (ubEnch && Use1 != 1)
+				Use1 := 1
+			else
+				Use2 := 1
 			if BladeOnUs(title)
 				{
-				AddBoost(AppliedBlades, ubKey, 0, ubSrc)
+				AddBoost(AppliedBlades, ubKey, ubEnch ? Stat("sharpen") : 0, ubSrc)
 				}
 			;(cast on you but not seen there: noted, as above)
 			else if (Manual != 1 && !PartySupport())
-				BoostUnrec.Push(ubKey (ubSrc != "" ? "@" ubSrc : ""))
+				BoostUnrec.Push(ubKey (ubSrc != "" ? "@" ubSrc : "") (ubEnch ? "+" : ""))
 			return true
 			} else
 				{
@@ -2070,7 +2104,7 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 	{
 	global
-	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved
+	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved, utMem, utAt, utEnch
 	Find(title, trap, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" trap " at " foundX - GameLeft "," foundY - GameTop)
 
@@ -2078,32 +2112,58 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 	Find("potent", potent, PotentX, PotentY, "resources")
 	;(which copy of the card this is, as UseBlade: an item card's never made potent; a treasure or item card's goes once a
 	;battle besides the deck's)
-	utKey := BoostKey(title, dir), utSrc := "", utItem := 0, utMoved := 0
-	if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.HasKey(utKey))
+	utKey := BoostKey(title, dir), utSrc := "", utItem := 0, utMoved := 0, utMem := 0, utEnch := 0
+	;(no picture found it but the game's hand has it: cast at its card box, as UseBlade's)
+	if (TrapOn == 1 && trap != 1 && IsObject(BoostMemOnly) && BoostMemOnly.HasKey(utKey))
+		{
+		utAt := BoostMemBox(utKey, potent == 1, Use1, Use2)
+		if (utAt.x = "")
+			{
+			DebugLog("  " utKey ": in hand (the game), no picture found it - not cast: " utAt.why)
+			if (utKey != "feint" && utKey != "trap4")
+				{
+				BoostOneOfBack("trap")
+				return UseHeldBack("trap", title)
+				}
+			return false
+			}
+		trap := 1, foundX := utAt.x, foundY := utAt.y, utSrc := utAt.src, utItem := utAt.item, utMem := 1, utEnch := utAt.ench ? 1 : 0
+		DebugLog("  " utKey ": no picture found it - the game's " utAt.name " is card " utAt.n " of " utAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop)
+		}
+	else if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.HasKey(utKey))
 		{
 		utCp := BoostCopyPick(utKey, foundX, foundY, potent == 1, Use1, Use2)
 		if (!IsObject(utCp))
 			{
 			DebugLog("  " utKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Potent it can't get)")
 			;(the traps held back this round for it go on instead - KillCalc.ahk BoostOneOf; not for a Feint or trap4: they
-			;aren't among those it picks from, so nothing was held back for them)
+			;aren't among those it picks from, so nothing was held back for them; one before it in the chain right here -
+			;UseHeldBack)
 			if (utKey != "feint" && utKey != "trap4")
+				{
 				BoostOneOfBack("trap")
+				return UseHeldBack("trap", title)
+				}
 			return false
 			}
 		utSrc := utCp.src, utItem := utCp.item, utMoved := utCp.moved
 		}
 	utGo1 := (utSrc = "") ? (Use1 != 1) : !BoostSrcUsed.HasKey(utKey "@" utSrc)
 	utGo2 := (utSrc = "") ? (Use2 != 1) : utGo1
-	if (TrapOn == 1) && (potent == 1) && (trap == 1) && utGo1 && !utItem && !utMoved
+	;(a copy already potent - the game's hand finds one: cast as it is, counted potent - as UseBlade's)
+	if (TrapOn == 1) && (potent == 1) && (trap == 1) && utGo1 && !utItem && !utMoved && !utEnch
 		{
 		boostX := PotentX
 		ClickAt(potentX, potentY, 150)
 		ClickAt(foundX, foundY, 150)
-		CenterMouse()	
+		CenterMouse()
 		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
-		BoostSettle(n, foundX, foundY, boostX)
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has (by the game's hand for
+		;one cast so)
+		if (utMem)
+			BoostSettleMem(utKey, foundX, foundY, boostX)
+		else
+			BoostSettle(n, foundX, foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
 			ErrorBox("UseTrap", dir, title)
@@ -2115,18 +2175,20 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 			Use1 := 1
 		else
 			BoostSrcUsed[utKey "@" utSrc] := 1
-		;(the kill check counts the boss's traps - a party support's on another enemy aren't)
-		if (BossChoosen == 1)
-			AddBoost(BossTraps, utKey, Stat("potent"), utSrc)
+		;(the kill check counts them on the enemy they went on - the boss's, the one with the most health: KillCalc.ahk
+		;TrapPut; a party support's aren't)
+		if (BossChoosen == 1 || TrapMine)
+			TrapPut(utKey, Stat("potent"), utSrc)
 		return true
-		} else if (TrapOn == 1) && (trap == 1) && utGo2
+		} else if (TrapOn == 1) && (trap == 1) && (utGo2 || (utEnch && utGo1))
 			{
 			n := PicPath(dir "\" title ".png")
-			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick)
+			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick, nor one
+			;cast by the game's hand)
 			keepX := foundX, keepY := foundY
-			if (!utMoved)
+			if (!utMoved && !utMem)
 				ImageSearch, foundX, foundY, GameLeft, GameTop, GameRight, GameBottom, % PicOptFile(n, CardTol)
-			if (ErrorLevel || utMoved)
+			if (ErrorLevel || utMoved || utMem)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -2135,20 +2197,46 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 			ClickAt(foundX, foundY, 150)
 			ClickAt(TrapAtX, TrapAtY, 200)
 			boosts++
-			if (utSrc = "")
-				Use2 := 1
-			else
+			if (utSrc != "")
 				BoostSrcUsed[utKey "@" utSrc] := 1
-			if (BossChoosen == 1)
-				AddBoost(BossTraps, utKey, 0, utSrc)
+			else if (utEnch && Use1 != 1)
+				Use1 := 1
+			else
+				Use2 := 1
+			if (BossChoosen == 1 || TrapMine)
+				TrapPut(utKey, utEnch ? Stat("potent") : 0, utSrc)
 			return true
 			} else 
 				{
 				return false
 				}
 	}
-	
-UseConvert(ByRef title, ByRef convert, ByRef dir) 
+
+;The blades (kind "blade") or traps ("trap") BoostOneOf held back, set again by BoostOneOfBack because the one it kept
+;(title) can't go after all: those before it in the battle chain (blade, blade2, blade3 / trap, trap2) the chain has
+;passed already - tried here, in the chain's order; those after it the chain reaches itself. True if one was cast. (Its
+;own function: inside UseBlade the name blade is the ByRef parameter; it can't loop - BoostOneOfBack empties its list)
+UseHeldBack(kind, title)
+	{
+	global
+	if (kind = "blade")
+		{
+		if (title != "blade" && blade == 1 && UseBlade("blade", blade, used%BladeU1%, used%BladeU2%, BladeDir))
+			return true
+		if ((title = "blade3" || title = "blade4") && blade2 == 1 && UseBlade(bladetype, %bladetype%, used%Blade2U1%, used%Blade2U2%, "resources"))
+			return true
+		if (title = "blade4" && blade3 == 1 && UseBlade("blade3", blade3, used15, used16, "resources"))
+			return true
+		return false
+		}
+	if (title != "trap" && trap == 1 && UseTrap("trap", trap, used%TrapU1%, used%TrapU2%, TrapDir))
+		return true
+	if (title = "trap3" && trap2 == 1 && UseTrap(traptype, %traptype%, used%Trap2U1%, used%Trap2U2%, "resources"))
+		return true
+	return false
+	}
+
+UseConvert(ByRef title, ByRef convert, ByRef dir)
 	{
 	global
 	CenterMouse()
@@ -2371,17 +2459,8 @@ HitTarget(title, dir, force := 0, dmg := "")
 		tx := BossX, ty := BossY, pick := "the boss"
 	else if (EnemyPlates.Length())
 		{
-		;(the enemy the hit does the most to - the least of its damage and that enemy's health: not a big hit thrown at
-		;one nearly dead while another's at full - 2026-10-23, a Hydra; one it kills, the healthiest of those; none, the
-		;weakest - the first to go. Its damage not known: the weakest, as before)
-		pick := 1, best := "", why := ""
-		if (IsObject(EnemyHP) && EnemyHP.Length() = EnemyPlates.Length())
-			for i, e in EnemyHP
-				{
-				eff := (dmg > 0) ? Min(dmg, e.cur) : -e.cur
-				if (best = "" || eff > best || (eff = best && e.cur < EnemyHP[pick].cur))
-					pick := i, best := eff
-				}
+		;(the enemy the hit does the most to - HitPick)
+		pick := HitPick(dmg), why := ""
 		if (dmg > 0 && IsObject(EnemyHP) && EnemyHP.Length() > 1 && EnemyHP.Length() = EnemyPlates.Length())
 			why := ", " Min(dmg, EnemyHP[pick].cur) " of its " dmg " damage on it" (dmg >= EnemyHP[pick].cur ? " - kills it" : "")
 		tx := EnemyPlates[pick].x, ty := EnemyPlates[pick].y
@@ -2404,6 +2483,27 @@ HitTarget(title, dir, force := 0, dmg := "")
 		TargetClick(tx, ty + Px(20))
 		DebugLog("  " title ": the target click didn't take - clicked the plate again at " tx - GameLeft "," ty + Px(20) - GameTop)
 		}
+	}
+
+;Which enemy a hit on one enemy goes for (HitTarget; KillCalc.ahk TrapTarget: the planned hit's target): the one it does
+;the most to - the least of its damage dmg and that enemy's health: not a big hit thrown at one nearly dead while another's
+;at full (2026-10-23, a Hydra); one it kills, the healthiest of those; none, the weakest - the first to go. Its damage not
+;known: the weakest. Equal: the leftmost. Health not read: the leftmost plate (1). among: only those slots ({slot: 1}), ""
+;all. Its slot in EnemyPlates
+HitPick(dmg, among := "")
+	{
+	global EnemyHP, EnemyPlates
+	hpPick := "", hpBest := ""
+	if (IsObject(EnemyHP) && EnemyHP.Length() = EnemyPlates.Length())
+		for hpI, hpE in EnemyHP
+			{
+			if (IsObject(among) && !among.HasKey(hpI))
+				continue
+			hpEff := (dmg > 0) ? Min(dmg, hpE.cur) : -hpE.cur
+			if (hpBest = "" || hpEff > hpBest || (hpEff = hpBest && hpE.cur < EnemyHP[hpPick].cur))
+				hpPick := hpI, hpBest := hpEff
+			}
+	return (hpPick = "") ? 1 : hpPick
 	}
 
 ;A target clicked: the mouse there, a moment on it (the game takes a nameplate click better hovered), the click;
@@ -2565,6 +2665,7 @@ ResetVariables()
 	;(a party battle's roles - and Alt+2's pick, for that battle only)
 	BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := 0, HammerGroup := "", SidePlatesKey := "", MySlot := 0
 	PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyLowKey := "", PartyLowX := "", PartyLowY := "", TrapOn := 0
+	TrapMine := 0, TrapAtMax := "", TrapPick := 0, TrapWhy := "", TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
 	PartyFlagDuel := "", PartyFlagRound := {}, PartyCastRound := ""
 	Manual := 0, ManualSchool := ""
 	bossX := 0
@@ -2576,7 +2677,7 @@ ResetVariables()
 	HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := "", PlanList := ""
 	BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
 	SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
-	BoostUnrec := [], BoostOneOfOff := {}
+	BoostUnrec := [], BoostOneOfOff := {}, BoostMemOnly := {}
 	EnemyHP := ""
 	BossSlot := 0
 	BossMax := 0
@@ -2929,9 +3030,10 @@ if ((on == 1) && (inbattle == 1))
 			MouseGetPos, BossX, bossY
 			UpdateGameRect()
 			BossRelX := (BossX - GameLeft) / UiScale, BossRelY := (BossY - GameTop) / UiScale
-			;A newly picked boss starts with no traps counted
+			;A newly picked boss starts with no traps counted (those on the enemy with the most health too: KillCalc.ahk
+			;TrapPut - BossTraps holds one enemy's)
 			BossMax := 0
-			BossTraps := {}
+			BossTraps := {}, TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
 			Gui, 1:Destroy
 			}
 	BlockInput, MouseMove
@@ -3764,6 +3866,33 @@ RefindAfterBoost(n, ByRef fx, ByRef fy, boostX)
 		DebugLog("    card not seen after the hand moved, using where it should be: " expX - GameLeft "," fy - GameTop)
 		fx := expX
 		}
+	}
+
+;A Sharpen or Potent was just put on the card at fx, fy that no picture finds - one cast by the game's hand (UseBlade,
+;UseTrap: BoostMemOnly) - and the hand re-centres: where the game's hand has boost key's card once it's settled (a fresh
+;look at the hand's boxes laid on the game's cards - KillCalc.ahk BoostMemBox): the copy with the enchantment on it, else a
+;copy of it that's there (the enchant didn't take); neither (they don't line up): where it should be, as RefindAfterBoost
+BoostSettleMem(key, ByRef fx, ByRef fy, boostX)
+	{
+	global
+	local bsmExp, bsmAt, bsmT0 := A_TickCount
+	bsmExp := fx + (fx < boostX ? HalfPitch : -HalfPitch)
+	Sleep, 250
+	VisionForget()
+	bsmAt := BoostMemBox(key, 0, "", "", 1, 1500)
+	if (bsmAt.x = "")
+		{
+		VisionForget()
+		bsmAt := BoostMemBox(key, 0, "", "", 0, 1500)
+		}
+	if (bsmAt.x != "")
+		{
+		DebugLog("    card moved from " fx - GameLeft "," fy - GameTop " to " bsmAt.x - GameLeft "," bsmAt.y - GameTop " (the game's hand: card " bsmAt.n " of " bsmAt.of ", " A_TickCount - bsmT0 " ms)")
+		fx := bsmAt.x, fy := bsmAt.y
+		return
+		}
+	DebugLog("    card not found in the game's hand after it moved (" bsmAt.why "), using where it should be: " bsmExp - GameLeft "," fy - GameTop)
+	fx := bsmExp
 	}
 
 ;Reads the wizard's stats off the Spellbook (StatsRead.ahk) into PlayerStats.txt and reloads them,

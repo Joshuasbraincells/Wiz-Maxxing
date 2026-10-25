@@ -133,8 +133,9 @@ DrawForKill()
 			DebugLog("  draw: the round ended with the draw - drawing off till the bot's restarted")
 			return false
 			}
-		;(a card it doesn't know learned now - an enchant gets its place, so it's found)
-		LearnCards()
+		;(a card it doesn't know learned now - an enchant gets its place, so it's found; no boost slot picture counted as
+		;missed against the round's look from before the draw - CardLearn.ahk LearnBoostPicFix)
+		LearnCards(0)
 		VisionForget(), FindEnchant()
 		DebugLog("  draw: drew a treasure card (" DrawsBattle " this battle) - " (enchant >= 1 ? "an enchant now in hand (+" Stat("enchant" enchant) ")" : "not an enchant"))
 		if (enchant >= 1)

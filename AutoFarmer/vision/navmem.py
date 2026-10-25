@@ -8,7 +8,10 @@
 
     hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
 
-    python navmem.py [-n 5] [-i 1] [--path] [--mobs]   readings from the command line (and how long each took)
+    goal, why = nm.goal()           # the quest's active goal: its line as the game shows it under the arrow, its kind,
+                                    # count and the mob / item / NPC it names (questmem.py), or None and why
+
+    python navmem.py [-n 5] [-i 1] [--path] [--mobs] [--goal]   readings from the command line (and how long each took)
 
 SAFETY. The game is opened with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else. The only process APIs used are
@@ -69,6 +72,10 @@ by a signature in its code, or checked by a type name / window name it carries):
              can borrow a mob's name). An object is re-checked at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
+           goal:    the goal line (txtGoalName under the QuestHelperHud, its ids at +0x2D8 / +0x2E0) and the quest
+             manager's quest data (WizQuestData -> WizGoalData -> its madlibs) - questmem.py, its offsets found by name
+             in the game's reflection registration (handmem.py's way), read under this lock, the names looked up outside
+             it; its reader made once per game in a thread like the hand's
            The quest thread (it updates every 100 ms) keeps its own zone name: after a zone change its goal
            belongs to the old zone until it catches up, so goal, target, distance and path count only while
            the thread's zone is the game's zone (and target / distance only while the arrow's hops are the
@@ -939,6 +946,9 @@ class NavMem:
         # cards alone when one of the walker's signatures isn't in this build (handmem.LightAttach)
         self._hand, self._hand_thread, self._hand_fail, self._light = None, None, (None, 0.0, ""), None
         self._failed_sig = False
+        # the quest's goal (questmem.py): its reader of the attached game, the thread making it (about a second), why it
+        # couldn't be made (the game it was for, when to try again)
+        self._quest, self._quest_thread, self._quest_fail = None, None, (None, 0.0, "")
 
     def close(self):
         with self.lock:
@@ -949,6 +959,7 @@ class NavMem:
                 self._light.close()
                 self._light = None
             self._hand = None
+            self._quest = None
 
     def _attach(self, pid):
         try:
@@ -1139,6 +1150,79 @@ class NavMem:
                 lt.close()
             return self._light, ""
 
+    # ------------------------------------------------------------ the quest's goal (questmem.py)
+    def goal(self, r=None, wait=0.5):
+        """(g, why): the quest's active goal, read now (questmem.QuestMem.resolve: text - the goal line as the game shows
+        it under the arrow -, from, exact, shown, visible, distance, type, status, count, total, name, mob, item, npc,
+        place, quest, quest_id, goal_id, ids_from, why, ms) - through the same read-only handle on the game as everything
+        here, its memory read under the same lock (the names looked up in Root.wad outside it); its reader made in a
+        thread once per game (its classes looked up, about a second - waited for up to wait s). wait 0: nothing waited
+        for (the walker's /nav) - the reader made and a name table not read yet read in a thread meanwhile (the line is
+        the HUD's own till then). r: a reading of read() whose quest helper ids stand in for the HUD's own (None: read
+        now). None and why when there's no goal line to give (the game not running, being attached to, the reader being
+        made, no quest...). Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            qm, why = self._quest_reader(st, wait)
+            if qm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st:
+                    return None, "the game changed"
+                if r is None:
+                    r = self._read(st, False)
+                snap = qm.snapshot((r.get("quest"), r.get("goalid")))
+            g = qm.resolve(snap, block=wait > 0)
+            if not g.get("text"):
+                return None, g.get("why") or "no goal line"
+            return g, ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the quest's goal failed (%r)" % (e,)
+
+    def _quest_reader(self, st, wait):
+        """(the quest goal's reader for game st, "") - made in a thread the first time; (None, why) meanwhile, or when it
+        can't be made (tried again later)"""
+        with self.lock:
+            qm = self._quest
+            if qm is not None and qm.st is st:
+                return qm, ""
+            fst, again, fwhy = self._quest_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._quest_thread
+            if th is None or not th.is_alive():
+                self._quest = None
+                th = self._quest_thread = threading.Thread(target=self._quest_make, args=(st,), name="quest", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            qm = self._quest
+            if qm is not None and qm.st is st:
+                return qm, ""
+            fst, again, fwhy = self._quest_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's quest classes (once, about a second)"
+
+    def _quest_make(self, st):
+        """the quest goal's reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import questmem
+            qm = questmem.QuestMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the quest's goal can't be read in this build: %s" % e) if sig else \
+                "the quest classes couldn't be read (%r)" % (e,)
+            self.log("questmem: " + why)
+            with self.lock:
+                self._quest_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+            return
+        with self.lock:
+            self._quest = qm
+
     # ------------------------------------------------------------ the zone's mobs
     def mobs(self):
         """(mobs, why): mobs = [{name, pos (x, y, z), yaw, gid, template}] - the mobs in the game's zone, their
@@ -1308,6 +1392,7 @@ def _main():
     ap.add_argument("-i", type=float, default=0.5)
     ap.add_argument("--path", action="store_true")
     ap.add_argument("--mobs", action="store_true", help="the zone's mobs too")
+    ap.add_argument("--goal", action="store_true", help="the quest's goal line too (questmem.py)")
     a = ap.parse_args()
     nm = NavMem(log=print)
     for k in range(a.n):
@@ -1335,6 +1420,11 @@ def _main():
                         c = (dx * -math.sin(mb["yaw"]) + dy * -math.cos(mb["yaw"])) / (math.hypot(dx, dy) or 1.0)
                         off = "  yaw %.2f, you %.0f deg off its facing" % (mb["yaw"], math.degrees(math.acos(max(-1.0, min(1.0, c)))))
                     print("             %-24s %-30s (%.0f, %.0f, %.0f)%s" % ((mb["name"], mb["template"]) + tuple(mb["pos"]) + (off,)))
+            if a.goal:
+                g, why = nm.goal(r, wait=30)
+                print("           goal: " + ("%r (from %s) %s %s %s/%s mob %r item %r npc %r - %.2f ms" % (
+                    g["text"], g["from"], g["type"], g["status"], g["count"], g["total"], g["mob"], g["item"], g["npc"],
+                    g["ms"]) if g else "none (%s)" % why))
         if k + 1 < a.n:
             time.sleep(a.i)
     print(nm.describe())
