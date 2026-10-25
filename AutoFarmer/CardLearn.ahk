@@ -131,7 +131,8 @@ DiscardUnused()
 				ox := o
 		;(an enchant - a treasure card's Monstrous, say - is never thrown away: it goes on a hit, slot or no slot
 		;(CastLearnedHit); nor a card the hand's look says is a treasure card)
-		if (LearnSlotOf(pid) != "" || ox != "" || !IsObject(lc) || lc.type = "" || LearnHasFlag(lc, "hold") || LearnHasFlag(lc, "tc")
+		;(nor a Reshuffle: never thrown away - the way back to a full deck, 2026-10-25)
+		if (LearnSlotOf(pid) != "" || ox != "" || !IsObject(lc) || lc.type = "" || LearnHasFlag(lc, "hold") || LearnHasFlag(lc, "tc") || LearnIsReshuffle(lc)
 			|| lc.type = "enchant" || c.tc = 1
 			;(nor a blade or trap at all: the bot can't yet tell the school it boosts - a pet's Storm Blade on a Balance
 			;support boosts the Storm hitter, an Elemental Blade a Balance wizard's Hydra - so it was thrown away as having
@@ -1348,8 +1349,17 @@ LearnPlace(c)
 	}
 
 ;The free slot for learned card c ("" none): see the top of this file
+;A Reshuffle - the card that puts your deck back together when the battle goes wrong: by the game's name for it (or yours)
+LearnIsReshuffle(c)
+	{
+	return IsObject(c) && RegExMatch(LearnFlag(c, "game") "|" c.name, "i)\breshuffle\b")
+	}
+
 LearnSlotFor(c)
 	{
+	;(Reshuffle: its own slot - cast when nothing else can go (Use Reshuffle) - whatever the game calls its kind)
+	if (LearnIsReshuffle(c))
+		return LearnFree("resources\reshuffle") ? "resources\reshuffle" : ""
 	sch := c.sch, kd := c.type
 	if (kd = "damage" || kd = "aoe")
 		{

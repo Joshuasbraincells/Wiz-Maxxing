@@ -1132,12 +1132,14 @@ BoostBest(list, kind)
 ;The hit planned, for the log: "Hydra (hit3)", "hit3", "the hitter's", "learned hit <id>"
 PlanName()
 	{
-	global PlanHit, hitschool
+	global PlanHit, hitschool, PlanWait
 	if (PlanHit = "hitter")
 		return "the hitter's hit"
 	if (InStr(PlanHit, "learned/") = 1)
 		return "learned hit " SubStr(PlanHit, 9)
 	pnN := (IsFunc("DashShortName") && RegExMatch(PlanHit, "^hit\d$")) ? Func("DashShortName").Call(PlanHit, hitschool) : ""
+	if (PlanHit = "" && PlanWait != "")
+		return PlanWait ", waiting for its pips"
 	return (pnN != "" && pnN != PlanHit) ? pnN " (" PlanHit ")" : PlanHit != "" ? PlanHit : "no hit"
 	}
 
@@ -1247,8 +1249,8 @@ PlanChoose()
 BoostPick()
 	{
 	global
-	local bpL, bpS, bpK, bpF, bpN, bpBest, bpG, bpC, bpI, bpFit, bpNot, bpLog, bpLc, bpCand, bpMax, bpWho
-	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := {}
+	local bpL, bpS, bpK, bpF, bpN, bpBest, bpG, bpC, bpI, bpFit, bpNot, bpLog, bpLc, bpCand, bpMax, bpWho, bpHand, bpBestV, bpHh
+	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := {}, PlanWait := ""
 	if (hitschool = "")
 		return
 	if (PartySupport() || (Manual = 1 && HammerSchool != hitschool))
@@ -1266,6 +1268,21 @@ BoostPick()
 			PlanHeads := LearnHitHeads(IsFunc("LearnCardOf") ? Func("LearnCardOf").Call(SubStr(PlanHit, 9)) : "")
 		else if (PlanHit != "")
 			PlanHeads := HitHeads(PlanHit)
+		;(no hit the pictures place or the pips pay for - a greyed Hydra waiting for its pips: the game's hand names it,
+		;and the boosts go on for that one while the pips come - 2026-10-25: Elemental Blade and Trap held back two
+		;rounds with Hydra greyed in hand. The strongest of the hand's hits; nothing's cast for it till it can be)
+		if (PlanHit = "" && BoostMemOk && IsFunc("VisionCards"))
+			{
+			bpHand := Func("VisionCards").Call(0, 5000), bpBestV := -1
+			if (IsObject(bpHand) && IsObject(bpHand.cards))
+				for bpI, bpC in bpHand.cards
+					if ((bpC.kind = "damage" || bpC.kind = "aoe") && bpC.num != "" && bpC.num + 0 > bpBestV)
+						{
+						bpHh := {}
+						if (HeadsParse(bpC.heads, bpHh))
+							bpBestV := bpC.num + 0, PlanHeads := bpHh, PlanHeads.src := "the game's hand", PlanWait := (bpC.display != "" ? bpC.display : bpC.name)
+						}
+			}
 		if (!IsObject(PlanHeads) || PlanHeads.total <= 0)
 			{
 			PlanHeads := {heads: {}, total: 1, sure: 0, src: "your school's"}

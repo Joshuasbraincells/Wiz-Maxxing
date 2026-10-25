@@ -309,6 +309,8 @@ global TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot
 global SlotGame := {}, HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := ""
 global PlanHit := "", PlanHeads := "", PlanList := ""
 global BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
+;(the game's hand's hit the boosts go for while it waits for its pips - KillCalc.ahk BoostPick)
+global PlanWait := ""
 global SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
 global BoostUnrec := [], BoostOneOfOff := {}
 ;(the boosts this look found by the game's hand alone - no picture found them: cast at their card box - KillCalc.ahk
