@@ -1,3 +1,4 @@
+#Requires AutoHotkey v1.1.33+
 #InstallMouseHook
 #InstallKeybdHook
 #SingleInstance force

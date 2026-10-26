@@ -1,3 +1,4 @@
+#Requires AutoHotkey v1.1.33+
 ; AutoQuester - walks your Wizard101 wizard towards the current quest goal by following the yellow
 ; quest arrow at the bottom of the screen. AHK v1.1. Walking only: AutoFarmer\Autofarmer.ahk does
 ; battles AND this walking in one script, so you normally don't need to run this one as well.

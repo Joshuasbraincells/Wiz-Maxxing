@@ -1,3 +1,4 @@
+#Requires AutoHotkey v1.1.33+
 ; Setup.ahk - gets a PC ready to run the Wizard101 bot. Compiled to Setup.exe by build.ps1; it sits next to
 ; AutoFarmer\ and AutoQuester\. AutoHotkey v1.1.
 ;

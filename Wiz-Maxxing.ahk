@@ -1,3 +1,4 @@
+#Requires AutoHotkey v1.1.33+
 ; Wiz-Maxxing.ahk - opens the bot: first checks GitHub for a newer version (Updater.ahk) and asks to install it,
 ; then starts AutoFarmer\Autofarmer.exe (else AutoFarmer\Autofarmer.ahk, with AutoHotkey). Built to
 ; Wiz-Maxxing.exe by build.ps1, with the wizard icon; Setup puts it in the Start menu and on the desktop.
@@ -97,9 +98,9 @@ if (!started && autoUp)
 			break
 		runErr := A_LastError
 		}
-	if (!started && A_IsCompiled && A_AhkPath != "" && FileExist(A_AhkPath) && FileExist(dir "\Autofarmer.ahk"))
+	if (!started && A_IsCompiled && (v1Ahk := AhkV1()) != "" && FileExist(dir "\Autofarmer.ahk"))
 		{
-		Run, % """" A_AhkPath """ """ dir "\Autofarmer.ahk""" (botArg = "" ? "" : " " botArg), %dir%, UseErrorLevel
+		Run, % """" v1Ahk """ """ dir "\Autofarmer.ahk""" (botArg = "" ? "" : " " botArg), %dir%, UseErrorLevel
 		started := !ErrorLevel
 		if (started)
 			UpLog("auto: started the bot as a script (Autofarmer.ahk by AutoHotkey) - Autofarmer.exe wouldn't run")
@@ -135,3 +136,27 @@ LaunchWhy(hasExe, err)
 
 #Include %A_ScriptDir%\Updater.ahk
 #Include %A_ScriptDir%\Watch.ahk
+
+;A v1.1 AutoHotkey to run the bot's scripts with ("" none): the installed one if it's v1.1 - with v2 installed too it
+;can be v2 (or its launcher), and the scripts are v1.1 - else v1.1 where the v2 installer puts it (a v1.1.x folder)
+AhkV1()
+	{
+	cands := [A_AhkPath]
+	SplitPath, A_AhkPath, , ahkDir
+	for each, root in [ahkDir, A_ProgramFiles "\AutoHotkey", A_AppData "\..\Local\Programs\AutoHotkey"]
+		{
+		if (root = "")
+			continue
+		cands.Push(root "\AutoHotkeyU64.exe")
+		Loop, Files, %root%\v1.1*, D
+			cands.Push(A_LoopFileFullPath "\AutoHotkeyU64.exe")
+		}
+	for each, exe in cands
+		if (exe != "" && FileExist(exe))
+			{
+			FileGetVersion, ver, %exe%
+			if (SubStr(ver, 1, 4) = "1.1.")
+				return exe
+			}
+	return ""
+	}

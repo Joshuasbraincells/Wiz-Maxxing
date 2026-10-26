@@ -1,3 +1,4 @@
+#Requires AutoHotkey v1.1.33+
 ; StatsReader.ahk - reads your wizard's Damage, Accuracy, Critical, Block and Armor Piercing off the
 ; Spellbook's stats pages and writes them into PlayerStats.txt as <school>.damage, <school>.pierce, ...
 ; for that wizard's school (the kill check uses <school>.damage and <school>.pierce). Run it while
