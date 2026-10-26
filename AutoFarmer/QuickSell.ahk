@@ -55,7 +55,7 @@ global QsBackKind, QsDgZones, QsDgOut
 ;quicksell: 0 off, 1 on, 2 the rehearsal (up to the confirmation, nothing sold)
 QsMode()
 	{
-	qm := Stats.Has("quicksell") ? Round(Stats["quicksell"]) : 0
+	qm := Stats.Has("quicksell") ? V1Round(Stats["quicksell"]) : 0  ; (v1: Round of a blank or text: 0)
 	return (qm = 1 || qm = 2) ? qm : 0
 	}
 
@@ -74,7 +74,7 @@ QsAfterDungeon()
 ;quicksellfree: sold with this many slots or fewer left (0: only when the game's own N/M reads full)
 QsFree()
 	{
-	qf := Stats.Has("quicksellfree") ? Round(Stats["quicksellfree"]) : 0
+	qf := Stats.Has("quicksellfree") ? V1Round(Stats["quicksellfree"]) : 0  ; (v1: Round of a blank or text: 0)
 	return qf > 0 ? Min(qf, 30) : 0
 	}
 
@@ -86,11 +86,12 @@ QsLog(msg)
 ;Said once in every ms (10 minutes) for its key; true when said now
 QsSay(key, msg, every := 600000)
 	{
+	global QsSaidAt ; (v1 globals it sets)
 	if (!IsObject(QsSaidAt))
-		QsSaidAt := {}
+		QsSaidAt := V1Obj()
 	if (QsSaidAt.Has(key) && A_TickCount - QsSaidAt[key] < every)
 		return false
-	QsSaidAt[key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'QsSaidAt.Push(<val>)'
+	QsSaidAt[key] := A_TickCount
 	QsLog(msg)
 	return true
 	}
@@ -105,7 +106,7 @@ QsIniPath()
 QsIni(key, def := "")
 	{
 	qSec := QsGid != "" ? QsGid : "pending"
-	qv := IniRead(QsIniPath(), qSec, key, A_Space)
+	qv := IniRead(QsIniPath(), qSec, key, "")  ; (v1's %A_Space% default: a blank - v2's A_Space would be a space)
 	return (qv = "" || qv = "ERROR") ? def : qv
 	}
 
@@ -113,16 +114,16 @@ QsIniSet(key, value)
 	{
 	qSec := QsGid != "" ? QsGid : "pending"
 	if (value = "")
-		IniDelete(QsIniPath(), qSec, key)
+		V1Do(IniDelete, QsIniPath(), qSec, key)  ; (v1: ErrorLevel when it fails - v2 throws)
 	else
-		IniWrite(value, QsIniPath(), qSec, key)
+		V1Do(IniWrite, value, QsIniPath(), qSec, key)
 	}
 
 ;What the count goes by: the backpack list's items the game's own N/M leaves out (emotes...), its size by that N/M, the
 ;slots left at which it's sold
 QsState()
 	{
-	return {uncounted: QsIni("uncounted", 0) + 0, cap: QsIni("cap", 0) + 0, free: QsFree()}
+	return V1Obj({uncounted: V1Add(QsIni("uncounted", 0), 0), cap: V1Add(QsIni("cap", 0), 0), free: QsFree()})  ; (v1: text + 0 - blank)
 	}
 
 ;A dungeon run started or stopped, a dungeon recorded, a zone entered through a sigil (Dungeons.ahk, Walker.ahk): this
@@ -157,16 +158,17 @@ QsHeld()
 ;count
 QsNoteBag(bag)
 	{
+	global QsLastBag, QsGid ; (v1 globals it sets)
 	QsLastBag := bag
 	if (bag.gid != "" && bag.gid != QsGid)
 		{
 		QsGid := bag.gid
 		;(a mark made before the character was known: its own now)
-		qPend := IniRead(QsIniPath(), "pending", "dungeon", A_Space)
+		qPend := IniRead(QsIniPath(), "pending", "dungeon", "")  ; (v1's %A_Space% default: a blank)
 		if (qPend != "")
 			{
 			QsIniSet("dungeon", qPend), QsIniSet("markitems", "")
-			IniDelete(QsIniPath(), "pending")
+			V1Do(IniDelete, QsIniPath(), "pending")
 			}
 		}
 	if (IsObject(bag.space) && bag.space.m > 0)
@@ -181,9 +183,9 @@ QsNoteBag(bag)
 	qMost := QsIni("markitems")
 	if (bag.items = "")
 		return
-	if (qMost = "" || bag.items > qMost)
+	if (qMost = "" || V1Gt(bag.items, qMost))  ; (v1: quicksell.ini's value compared as text when it isn't a number)
 		QsIniSet("markitems", bag.items)
-	else if (bag.items <= qMost - 10)
+	else if (V1Le(bag.items, V1Sub(qMost, 10)))
 		QsMarkClear("the backpack went from " qMost " down to " bag.items " items (sorted)")
 	}
 
@@ -207,6 +209,7 @@ QsCalibrate(items, n, m)
 ;A battle the bot played just ended (inbattle was 1)
 QsBattleEnd()
 	{
+	global QsBattleEndAt, QsLooks ; (v1 globals it sets)
 	QsBattleEndAt := A_TickCount, QsLooks := 0
 	}
 
@@ -215,6 +218,7 @@ QsBattleEnd()
 QsTick()
 	{
 	static qDue := [0, 3000, 8000]
+	global QsBlocked, QsFails, QsTryAt, QsLookAt, QsSetWas, QsStill, QsLeftover, QsLooks ; (v1 globals it sets)
 	qMode := QsMode()
 	if (qMode != QsSetWas)
 		{
@@ -248,6 +252,7 @@ QsTick()
 ;Windows a battle (or a run that stopped) left open: closed - at most every 3 s, 3 tries
 QsLeftoverTick()
 	{
+	global QsLeftoverAt, QsLeftoverTries, QsBusy, QsSince, QsManual, QsLeftover ; (v1 globals it sets)
 	QsLeftoverAt := QsLeftoverAt ? QsLeftoverAt : 0, QsLeftoverTries := QsLeftoverTries ? QsLeftoverTries : 0
 	if (A_TickCount - QsLeftoverAt < 3000)
 		return
@@ -272,6 +277,7 @@ QsStillFull()
 ;A look: the backpack from the game's memory, and what to do about it
 QsLook(why)
 	{
+	global QsMemSaid, QsStill, QsTryAt, QsLookAt ; (v1 globals it sets)
 	bag := NavBag()
 	if (!IsObject(bag))
 		{
@@ -344,15 +350,15 @@ QsLook(why)
 ;alert - no look), "none"; full (by the count), zeke, gold, counted, cap, why}. s: QsState's {uncounted, cap, free}
 QsDecide(bag, s)
 	{
-	qUnc := (s.uncounted > 0) ? s.uncounted : 0
-	qCap := (s.cap > 0) ? s.cap : ((bag.allowed > 0) ? bag.allowed : 0)
-	qFree := (s.free > 0) ? s.free : 0
+	qUnc := V1Gt(s.uncounted, 0) ? s.uncounted : 0  ; (v1: a blank - text in quicksell.ini - compared as text)
+	qCap := V1Gt(s.cap, 0) ? s.cap : (V1Gt(bag.allowed, 0) ? bag.allowed : 0)
+	qFree := V1Gt(s.free, 0) ? s.free : 0
 	qCounted := (bag.items != "" && bag.items >= 0) ? bag.items - qUnc : ""
 	qFull := (qCounted != "" && qCap > 0 && qCounted >= qCap - qFree) ? 1 : 0
 	qZeke := QsZekeUp(bag.tips)
-	qGold := (bag.goldMax > 0 && bag.gold != "" && bag.gold >= 0.95 * bag.goldMax) ? 1 : 0
+	qGold := (V1Gt(bag.goldMax, 0) && bag.gold != "" && bag.gold >= 0.95 * bag.goldMax) ? 1 : 0
 	qNow := (qCounted = "" ? "?" : qCounted) "/" (qCap ? qCap : "?")
-	qOut := {act: "none", full: qFull, zeke: qZeke, gold: qGold, counted: qCounted, cap: qCap, why: "the backpack is " qNow " by the count"}
+	qOut := V1Obj({act: "none", full: qFull, zeke: qZeke, gold: qGold, counted: qCounted, cap: qCap, why: "the backpack is " qNow " by the count"})
 	if (qFull)
 		qOut.act := "look", qOut.why := "the count says full (" qNow (qUnc ? ", " qUnc " not counted" : "") ")" (qZeke ? " and Zeke's alert is up" : "")
 	else if (qZeke && !qGold)
@@ -394,8 +400,9 @@ QsDungeonNow()
 ;At most 4 deeper zones (a teleport out of a dungeon isn't seen: the chain then ends there)
 QsZoneChange(from, to)
 	{
+	global QsDgZones, QsDgOut ; (v1 globals it sets)
 	if (!IsObject(QsDgZones))
-		QsDgZones := map()
+		QsDgZones := V1Obj()
 	qFromDg := QsDgZone(from), qToDg := QsDgZone(to)
 	if (qToDg)
 		{
@@ -412,10 +419,10 @@ QsZoneChange(from, to)
 		{
 		if (qDeep && QsMode())
 			QsLog("out of the dungeon (" from " -> " to ")" (to = QsDgOut || to = WkSigilFromZone ? "" : " - taken as out after 4 deeper zones"))
-		QsDgZones := map(), QsDgOut := ""
+		QsDgZones := V1Obj(), QsDgOut := ""
 		return
 		}
-	QsDgZones[to] := 1 ;  V1toV2: Invalid Index errors?, try 'QsDgZones.Push(<val>)'
+	QsDgZones[to] := 1
 	;(kept with quick sell off too - said only with it on)
 	if (QsMode())
 		QsLog("a dungeon's deeper zone: " to " (from " from ") - never quick sold in")
@@ -434,7 +441,7 @@ QsMayRun(&why, manual := false)
 	qSecs := Stats.Has("handsoff") ? Stats["handsoff"] : 3
 	if (!BotOn && !manual)
 		why := "the bot is off"
-	else if (afk)
+	else if (afkVar)
 		why := "holding (afk)"
 	else if (dualmode)
 		why := "dual mode"
@@ -446,13 +453,13 @@ QsMayRun(&why, manual := false)
 		why := "resting for health"
 	else if (WkLoading)
 		why := "a loading screen"
-	else if (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
+	else if (V1IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
 		why := "a battle"
 	else if (WkNoteKind != "")
 		why := "a `"needs you`" notice is up (" WkNoteKind ")"
-	else if (!manual && UserIdle() < Max(3, qSecs) * 1000)
+	else if (!manual && V1Lt(UserIdle(), V1Mul(V1Max(3, qSecs), 1000)))  ; (v1: a handsoff that isn't a number - Max blank, compared as text)
 		why := "you're at the keyboard or mouse"
-	else if (!GameActive() && !(IsFunc("GameToFront") && GameToFront.Call("quick sell", !manual)))
+	else if (!GameActive() && !(V1IsFunc("GameToFront") && GameToFront.Call("quick sell", !manual)))
 		why := "Wizard101 isn't the window in front"
 	return why = ""
 	}
@@ -464,6 +471,7 @@ QsMayRun(&why, manual := false)
 ;result ({res: sold, notfull, rehearsed, nothing, stopped, failed, crowns; why...})
 QsRun(d, bag, manual := false, rehearse := false)
 	{
+	global QsBusy, QsSince, QsManual, QsLeftover, QsStep, QsBefore ; (v1 globals it sets)
 	if (QsBusy)
 		return ""
 	QsBusy := 1, QsSince := A_TickCount, QsManual := manual ? 1 : 0, QsLeftover := 0, QsStep := 0
@@ -472,9 +480,9 @@ QsRun(d, bag, manual := false, rehearse := false)
 	SetStatus("Quick selling the backpack")
 	ReleaseKeys()
 	QsLogOpen()
-	QsBefore := {items: bag.items, gold: bag.gold, pouch: bag.goldMax, sets: {}}
+	QsBefore := V1Obj({items: bag.items, gold: bag.gold, pouch: bag.goldMax, sets: V1Obj()})
 	for qi, qs in bag.setItems
-		QsBefore.sets[qs.gid] := qs ;  V1toV2: Invalid Index errors?, try 'QsBefore.sets.Push(<val>)'
+		QsBefore.sets[qs.gid] := qs
 	QsLog((rehearse ? "REHEARSAL (nothing is sold) - " : "") (manual ? "asked for from the tray" : d.why) " - opening the backpack")
 	qRes := QsSteps(bag, manual, rehearse)
 	qRes := QsFinish(qRes)
@@ -502,7 +510,7 @@ QsSteps(bag, manual, rehearse)
 		return qr
 	;(2. its own N/M)
 	g := QsGui("InventorySpellbookPage/inventorySpace")
-	qSp := IsObject(g) ? QsParseSpace(g.win["InventorySpellbookPage/inventorySpace"].text) : ""
+	qSp := IsObject(g) ? QsParseSpace(V1At(g.win["InventorySpellbookPage/inventorySpace"], "text")) : ""
 	if (!IsObject(qSp))
 		{
 		qb := NavBag()
@@ -515,7 +523,7 @@ QsSteps(bag, manual, rehearse)
 		{
 		QsLog("the game's own count is " qSp.n "/" qSp.m " - not full: closing it, nothing sold")
 		qr := QsCloseBook()
-		return IsObject(qr) ? qr : {res: "notfull", why: qSp.n "/" qSp.m}
+		return IsObject(qr) ? qr : V1Obj({res: "notfull", why: qSp.n "/" qSp.m})
 		}
 	QsLog("the game's own count is " qSp.n "/" qSp.m (qSp.n >= qSp.m - QsFree() ? " - full" : "") ": quick selling (" (QsPets() ? "gear and pets" : "gear") ", for gold)")
 	;(4. Quick Sell - on its BACKPACK tab)
@@ -534,7 +542,7 @@ QsSteps(bag, manual, rehearse)
 	if (!qPicked)
 		{
 		QsLog("nothing Quick Sell can sell in " (qCats.list.Length ? "the groups" : "any group left") " - closing")
-		return (AHKv1v2_Temp := {res: "nothing", why: "nothing Quick Sell can sell in the gear" (QsPets() ? " and pet" : "") " groups", back: 1}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({res: "nothing", why: "nothing Quick Sell can sell in the gear" (QsPets() ? " and pet" : "") " groups", back: 1})
 		}
 	;(6. SELL: the confirmation)
 	qr := QsClickWait("buyWindow/sellAction", "SELL", "QuickSellConfirmationWindow", 3000, "the confirmation window")
@@ -548,7 +556,7 @@ QsSteps(bag, manual, rehearse)
 		{
 		QsSnap("the confirmation")
 		QsLog("rehearsal - not sold: closing the confirmation and the windows")
-		return {res: "rehearsed", why: "the rehearsal stops at the confirmation", nums: qNums, back: 1}
+		return V1Obj({res: "rehearsed", why: "the rehearsal stops at the confirmation", nums: qNums, back: 1})
 		}
 	;(8. SELL in the confirmation)
 	qr := QsConfirmSell(qNums)
@@ -561,8 +569,9 @@ QsSteps(bag, manual, rehearse)
 ;A step's end: a failure backed out of (window by window); windows a battle left open closed at the next look
 QsFinish(r)
 	{
+	global QsLeftover, QsLeftoverTries, QsLeftoverAt ; (v1 globals it sets)
 	if (!IsObject(r))
-		return {res: "failed", why: "?"}
+		return V1Obj({res: "failed", why: "?"})
 	if (r.res = "stopped" && r.kind = "cap")
 		r.res := "failed"
 	if (r.res = "failed")
@@ -585,6 +594,7 @@ QsFinish(r)
 ;freed under 5 slots and is still full, or there's nothing to sell
 QsAfter(r, manual)
 	{
+	global QsFails, QsTryAt, QsStill, QsLookAt, QsBlocked ; (v1 globals it sets)
 	QsFails := QsFails ? QsFails : 0
 	now := A_TickCount
 	;(groups left out for a Crown-shop item in them: said in the alerts - banking those items has the groups sold)
@@ -655,21 +665,21 @@ QsOpenBook()
 		return QsFail("a game message is up before the run (`"" g.box.caption "`")")
 	qLeft := ""
 	for qi, qp in ["shopGUI", "buyWindow", "QuickSellConfirmationWindow", "QuickSellWaitingWindow"]
-		if (g.win[qp].shown)
+		if (V1At(g.win[qp], "shown"))
 			qLeft .= (qLeft = "" ? "" : ", ") qp
 	if (qLeft != "")
 		{
 		QsLog("windows left open from before (" qLeft ") - closing them first")
 		if (!QsBackOut("windows left open from before"))
-			return {res: "failed", why: "windows left open from before (" qLeft ") couldn't be closed", backed: 1}
+			return V1Obj({res: "failed", why: "windows left open from before (" qLeft ") couldn't be closed", backed: 1})
 		g := QsGui(qPaths)
 		if (!IsObject(g))
 			return QsFail("the game's windows can't be read (" NavGuiWhy ")")
 		}
 	;(the backpack's page shown: the book's open on it - whatever the book's own window is called)
-	if (g.win["InventorySpellbookPage"].shown)
+	if (V1At(g.win["InventorySpellbookPage"], "shown"))
 		return ""
-	if (g.win["DeckConfiguration"].shown)
+	if (V1At(g.win["DeckConfiguration"], "shown"))
 		return QsClickWait("DeckConfiguration/Inventory", "", "InventorySpellbookPage", 3000, "the backpack page")
 	qr := QsKeyB("to open the backpack", 0)
 	if (IsObject(qr))
@@ -700,12 +710,13 @@ QsCloseBook()
 ;The book open (g: a QsGui read with DeckConfiguration and InventorySpellbookPage): its window or its backpack page shown
 QsBookOpen(g)
 	{
-	return IsObject(g) && (g.win["DeckConfiguration"].shown || g.win["InventorySpellbookPage"].shown)
+	return IsObject(g) && (V1At(g.win["DeckConfiguration"], "shown") || V1At(g.win["InventorySpellbookPage"], "shown"))
 	}
 
 ;Windows left open: closed at the next look (QsLeftoverTick) - tries counted afresh unless they're already being closed
 QsLeftoverSet()
 	{
+	global QsLeftover, QsLeftoverTries, QsLeftoverAt ; (v1 globals it sets)
 	if (!QsLeftover)
 		QsLeftover := 1, QsLeftoverTries := 0, QsLeftoverAt := A_TickCount
 	}
@@ -721,8 +732,8 @@ QsOpenQuickSell()
 		return QsFail("the Quick Sell window can't be read (" NavGuiWhy ")")
 	if (g.box.shown)
 		return QsFail("a game message after Quick Sell: `"" g.box.caption "`"")
-	if (g.win["shopGUI/sellTab"].checked != 1 || g.win["shopGUI/bankSellTab"].checked = 1)
-		return QsFail("Quick Sell isn't on its BACKPACK tab (never the bank's - BACKPACK " g.win["shopGUI/sellTab"].checked ", BANK " g.win["shopGUI/bankSellTab"].checked ")")
+	if (V1At(g.win["shopGUI/sellTab"], "checked") != 1 || V1At(g.win["shopGUI/bankSellTab"], "checked") = 1)
+		return QsFail("Quick Sell isn't on its BACKPACK tab (never the bank's - BACKPACK " V1At(g.win["shopGUI/sellTab"], "checked") ", BANK " V1At(g.win["shopGUI/bankSellTab"], "checked") ")")
 	return ""
 	}
 
@@ -734,8 +745,8 @@ QsOpenQuickSell()
 ;"" and why when a set item's or a Crown-shop item's kind isn't one the game's memory names
 QsCategories(bag, &why)
 	{
-	static qKnown := {hat: 1, robe: 1, shoes: 1, weapon: 1, athame: 1, amulet: 1, ring: 1, deck: 1, pet: 1, mount: 1, jewel: 1
-		, emote: 1, elixir: 1, housing: 1, treasurecard: 1, reagent: 1}
+	static qKnown := V1Obj({hat: 1, robe: 1, shoes: 1, weapon: 1, athame: 1, amulet: 1, ring: 1, deck: 1, pet: 1, mount: 1, jewel: 1
+		, emote: 1, elixir: 1, housing: 1, treasurecard: 1, reagent: 1})
 	why := ""
 	;(the sets not all read: an item of one could be sold - nothing is)
 	if (!bag.setsOk)
@@ -746,24 +757,24 @@ QsCategories(bag, &why)
 	qAll := [["Hat", "hat"], ["Robe", "robe"], ["Shoes", "shoes"], ["Weapon", "weapon"], ["Athame", "athame"], ["Amulet", "amulet"], ["Ring", "ring"], ["Deck", "deck"]]
 	if (QsPets())
 		qAll.Push(["Pet", "pet"])
-	qGuard := {}
+	qGuard := V1Obj()
 	for qi, qs in bag.setItems
 		{
 		qName := qs.name != "" ? qs.name : "id " qs.tid
 		;(a kind the game's memory doesn't name - another adjective, a list read in part: it could be in any group)
 		if (!qKnown.Has(qs.kind))
 			{
-			why := "an Equipment Set's item in the backpack (" qName ", set " qs.set ") is of a kind the bot can't tell - lock or equip it, or Quick Sell could sell it"
-			if (IsFunc("WalkNotify"))
-				WalkNotify.Call("quicksell", "lock or equip " qName, "It's in Equipment Set " qs.set " and in the backpack - quick sell could sell it, so it doesn't sell at all till it's locked or equipped.")
+			why := "an Equipment Set's item in the backpack (" qName ", set " qs["set"] ") is of a kind the bot can't tell - lock or equip it, or Quick Sell could sell it"
+			if (V1IsFunc("WalkNotify"))
+				WalkNotify.Call("quicksell", "lock or equip " qName, "It's in Equipment Set " qs["set"] " and in the backpack - quick sell could sell it, so it doesn't sell at all till it's locked or equipped.")
 			return ""
 			}
-		qGuard[qs.kind] := (qGuard.Has(qs.kind) ? qGuard[qs.kind] ", " : "") qName " (set " qs.set ")" ;  V1toV2: Invalid Index errors?, try 'qGuard.Push(<val>)'
+		qGuard[qs.kind] := (qGuard.Has(qs.kind) ? qGuard[qs.kind] ", " : "") qName " (set " qs["set"] ")"
 		}
 	;(a Crown-shop item the game doesn't flag as a Crowns item - "Crown-S05-Robe-093": the game's Quick Sell may take it for
 	;plain gear, and locked items - the bot can't read locks - keep the confirmation's gear count from showing it: its
 	;group left out. One of a kind the bot can't tell: nothing sold)
-	qShop := {}
+	qShop := V1Obj()
 	if (IsObject(bag.crownShop))
 		for qi, qx in bag.crownShop
 			{
@@ -772,11 +783,11 @@ QsCategories(bag, &why)
 				why := "a Crown-shop item in the backpack (" qx.name ") is of a kind the bot can't tell - nothing sold (never a Crowns item)"
 				return ""
 				}
-			qGuard[qx.kind] := (qGuard.Has(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)" ;  V1toV2: Invalid Index errors?, try 'qGuard.Push(<val>)'
-			qShop[qx.kind] := (qShop.Has(qx.kind) ? qShop[qx.kind] ", " : "") qx.name ;  V1toV2: Invalid Index errors?, try 'qShop.Push(<val>)'
+			qGuard[qx.kind] := (qGuard.Has(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)"
+			qShop[qx.kind] := (qShop.Has(qx.kind) ? qShop[qx.kind] ", " : "") qx.name
 			}
 	;(shopLeft: the groups left out for a Crown-shop item - for the alerts)
-	qOut := {list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""}
+	qOut := V1Obj({list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""})
 	for qi, qc in qAll
 		{
 		if (qGuard.Has(qc[2]))
@@ -789,12 +800,12 @@ QsCategories(bag, &why)
 		qc2 := bag.cats.Has(qc[2]) ? bag.cats[qc[2]] : ""
 		;(memPlain: its items that are neither Crowns items (nor Crown-shop ones) nor unsellable, by the game's memory - each
 		;item counted once; an older helper's line without it: worked out)
-		qn := !IsObject(qc2) ? 0 : qc2.plain != "" ? qc2.plain : Max(0, qc2.n - qc2.crowns - qc2.nosell)
-		qOut.list.Push({name: qc[1], kind: qc[2], path: "BackpackStuff/ShopCategory_" qc[1], memPlain: qn, memCrowns: IsObject(qc2) ? qc2.crowns : 0})
+		qn := !IsObject(qc2) ? 0 : qc2.plain != "" ? qc2.plain : V1Max(0, V1Sub(V1Sub(qc2.n, qc2.crowns), qc2.nosell))  ; (v1: an older helper's count not read - blank)
+		qOut.list.Push(V1Obj({name: qc[1], kind: qc[2], path: "BackpackStuff/ShopCategory_" qc[1], memPlain: qn, memCrowns: IsObject(qc2) ? qc2.crowns : 0}))
 		if (qc[2] = "pet")
-			qOut.petMax += qn
+			qOut.petMax := V1Add(qOut.petMax, qn)  ; (v1: an expression - a blank qn made it blank)
 		else
-			qOut.gearMax += qn
+			qOut.gearMax := V1Add(qOut.gearMax, qn)
 		if (IsObject(bag.crownShop))
 			for qj, qx in bag.crownShop
 				if (qx.kind = qc[2] && StrLen(qOut.crownShop) < 400)
@@ -802,7 +813,7 @@ QsCategories(bag, &why)
 		}
 	;(items whose kind wasn't read may be in any group)
 	if (bag.cats.Has("?"))
-		qOut.gearMax += bag.cats["?"].n, qOut.petMax += bag.cats["?"].n
+		qOut.gearMax := V1Add(qOut.gearMax, bag.cats["?"].n), qOut.petMax := V1Add(qOut.petMax, bag.cats["?"].n)  ; (v1: a blank count made them blank)
 	if (qOut.skipped != "")
 		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group (bank Crown-shop items to have their group sold): " qOut.skipped)
 	if (qOut.crownShop != "")
@@ -817,7 +828,7 @@ QsSelectGroup(c, &picked)
 	picked := 0
 	;(its button clicked unless it's the group shown already - a second click could take it off)
 	g := QsGui(c.path)
-	if (!IsObject(g) || !IsObject(g.win[c.path]) || !(g.win[c.path].shown && g.win[c.path].checked = 1))
+	if (!IsObject(g) || !IsObject(g.win[c.path]) || !(V1At(g.win[c.path], "shown") && V1At(g.win[c.path], "checked") = 1))
 		{
 		qr := QsClickWait(c.path, "", c.path, 3000, c.name "'s group", "checked")
 		if (IsObject(qr))
@@ -832,7 +843,7 @@ QsSelectGroup(c, &picked)
 		return ""
 		}
 	;(its first page only Crowns items: left alone - unless the game's memory has plain ones in it too, on a later page)
-	if (!qRows.plain && c.memPlain <= 0)
+	if (!qRows.plain && V1Le(c.memPlain, 0))  ; (v1: a blank count compared as text - "" <= 0 is true)
 		{
 		QsLog(c.name ": only Crowns items (" qRows.shown ") - left alone")
 		return ""
@@ -877,15 +888,15 @@ QsRows()
 	g := QsGui(qPaths)
 	if (!IsObject(g) || g.box.shown)
 		return ""
-	qOut := {shown: 0, plain: 0, checked: 0, plainChecked: 0, crownsChecked: 0, names: ""}
+	qOut := V1Obj({shown: 0, plain: 0, checked: 0, plainChecked: 0, crownsChecked: 0, names: ""})
 	Loop 10
 		{
 		qRow := g.win["buyWindow/shoplist" A_Index - 1], qSel := g.win["buyWindow/num" A_Index - 1 "/Selected"], qCr := g.win["buyWindow/shoplist" A_Index - 1 "/CrownsIcon"]
-		if (!qRow.shown)
+		if (!V1At(qRow, "shown"))
 			continue
 		qOut.shown += 1
-		qCrown := qCr.shown ? 1 : 0
-		qOn := qSel.checked = 1 ? 1 : 0
+		qCrown := V1At(qCr, "shown") ? 1 : 0
+		qOn := V1At(qSel, "checked") = 1 ? 1 : 0
 		qOut.plain += !qCrown, qOut.checked += qOn
 		qOut.plainChecked += (qOn && !qCrown), qOut.crownsChecked += (qOn && qCrown)
 		if (qRow.text != "" && StrLen(qOut.names) < 300)
@@ -908,7 +919,7 @@ QsAll(c)
 		Sleep(150)
 		g := QsGui("buyWindow,buyWindow/num0/Selected,buyWindow/num1/Selected,buyWindow/num2/Selected")
 		if (IsObject(g) && !g.box.shown && A_TickCount - qt >= 450 && !c.memCrowns
-			&& (g.win["buyWindow/num0/Selected"].checked = 1 || g.win["buyWindow/num1/Selected"].checked = 1 || g.win["buyWindow/num2/Selected"].checked = 1))
+			&& (V1At(g.win["buyWindow/num0/Selected"], "checked") = 1 || V1At(g.win["buyWindow/num1/Selected"], "checked") = 1 || V1At(g.win["buyWindow/num2/Selected"], "checked") = 1))
 			return ""
 		if (IsObject(g) && g.box.shown)
 			{
@@ -930,7 +941,7 @@ QsAll(c)
 ;lost: the gold over the pouch (sold all the same: you said so)
 QsConfirm(cats, &nums)
 	{
-	nums := {}
+	nums := V1Obj()
 	qPaths := "QuickSellConfirmationWindow/SellButton"
 	for qi, qn in QsConfirmNames()
 		qPaths .= ",QuickSellConfirmationWindow/" qn "Number,QuickSellConfirmationWindow/" qn "Gold"
@@ -943,7 +954,7 @@ QsConfirm(cats, &nums)
 	for qi, qn in QsConfirmNames()
 		{
 		qNumW := g.win["QuickSellConfirmationWindow/" qn "Number"], qGoldW := g.win["QuickSellConfirmationWindow/" qn "Gold"]
-		nums[qn] := {n: qNumW.shown ? QsDigits(qNumW.text) : "", gold: qGoldW.shown ? QsDigits(qGoldW.text) : ""} ;  V1toV2: Invalid Index errors?, try 'nums.Push(<val>)'
+		nums[qn] := V1Obj({n: V1At(qNumW, "shown") ? QsDigits(qNumW.text) : "", gold: V1At(qGoldW, "shown") ? QsDigits(qGoldW.text) : ""})
 		}
 	qOk := QsConfirmOk(nums, QsPets(), QsBefore.gold, QsBefore.pouch, cats.gearMax, cats.petMax, &qWhy, &qLost)
 	nums.lost := qLost
@@ -958,7 +969,7 @@ QsConfirm(cats, &nums)
 		return QsFail("the confirmation: " qWhy)
 		}
 	w := g.win["QuickSellConfirmationWindow/SellButton"]
-	if (!QsReadWord(w.l, w.t, w.r, w.b, g, "SELL"))
+	if (!QsReadWord(V1At(w, "l"), V1At(w, "t"), V1At(w, "r"), V1At(w, "b"), g, "SELL"))  ; (v1: its window not in the answer - blank)
 		return QsFail("the confirmation's SELL button doesn't read SELL on screen - not clicked")
 	return ""
 	}
@@ -1021,7 +1032,7 @@ QsConfirmOk(nums, pets, gold, pouch, gearMax, petMax, &why, &lost)
 		why := nums.Pet.n " pets in it - more than the backpack holds (" petMax ")"
 		return false
 		}
-	if (pouch > 0 && gold != "")
+	if (V1Gt(pouch, 0) && gold != "")  ; (v1: the pouch not read - blank - compared as text)
 		lost := Max(0, gold + nums.Total.gold - pouch)
 	return true
 	}
@@ -1036,7 +1047,7 @@ QsConfirmSell(nums)
 	w := IsObject(g) ? g.win["QuickSellConfirmationWindow/SellButton"] : ""
 	;(the Crown check round it kept tight: the window's own "Crown Equipment" / "Crown Furniture" labels are above it -
 	;the memory's numbers are its Crown check)
-	qRad := IsObject(w) && w.found ? Round(Max(w.r - w.l, w.b - w.t) * GameW / g.rootW / 2) + 40 : ""
+	qRad := IsObject(w) && w.found ? V1Round(V1Div(V1Div(V1Mul(V1Max(V1Sub(w.r, w.l), V1Sub(w.b, w.t)), GameW), g.rootW), 2)) + 40 : ""  ; (v1: its rect not read - blank math, Round 0)
 	qr := QsClickTarget("QuickSellConfirmationWindow/SellButton", "SELL", qRad)
 	if (IsObject(qr))
 		return qr
@@ -1050,7 +1061,7 @@ QsConfirmSell(nums)
 		g := QsGui("QuickSellWaitingWindow,QuickSellConfirmationWindow")
 		if (!IsObject(g))
 			continue
-		if (g.win["QuickSellWaitingWindow"].shown)
+		if (V1At(g.win["QuickSellWaitingWindow"], "shown"))
 			return ""
 		if (g.box.shown)
 			{
@@ -1073,12 +1084,12 @@ QsConfirmSell(nums)
 QsVerify(nums)
 	{
 	qt := A_TickCount, qb := ""
-	qWant := (QsBefore.pouch > 0) ? Min(QsBefore.pouch, QsBefore.gold + nums.Total.gold) : QsBefore.gold + nums.Total.gold
+	qWant := V1Gt(QsBefore.pouch, 0) ? V1Min(QsBefore.pouch, V1Add(QsBefore.gold, nums.Total.gold)) : V1Add(QsBefore.gold, nums.Total.gold)  ; (v1: the pouch or gold not read - blank)
 	while (A_TickCount - qt < 15000)
 		{
 		Sleep(300)
 		qb := NavBag()
-		if (IsObject(qb) && qb.items != "" && qb.items <= QsBefore.items - nums.Total.n + 1 && qb.gold != "" && qb.gold >= qWant - 1)
+		if (IsObject(qb) && qb.items != "" && qb.items <= QsBefore.items - nums.Total.n + 1 && qb.gold != "" && V1Ge(qb.gold, V1Sub(qWant, 1)))  ; (v1: the gold before not read - blank - compared as text)
 			break
 		qb := ""
 		}
@@ -1095,16 +1106,16 @@ QsVerify(nums)
 		Sleep(300)
 		qSets := NavBag()
 		}
-	qHave := {}, qGone := ""
+	qHave := V1Obj(), qGone := ""
 	if (!IsObject(qSets) || !qSets.setsOk)
 		QsLog("the Equipment Sets couldn't be read after the sale - their items in the backpack not checked")
 	else
 		{
 		for qi, qs in qSets.setItems
-			qHave[qs.gid] := 1 ;  V1toV2: Invalid Index errors?, try 'qHave.Push(<val>)'
+			qHave[qs.gid] := 1
 		for qg, qs in QsBefore.sets
 			if (!qHave.Has(qg))
-				qGone .= (qGone = "" ? "" : ", ") (qs.name != "" ? qs.name : "id " qs.tid) " (set " qs.set ")"
+				qGone .= (qGone = "" ? "" : ", ") (qs.name != "" ? qs.name : "id " qs.tid) " (set " qs["set"] ")"
 		}
 	QsLog("quick sold " nums.Total.n " items for " QsThousands(nums.Total.gold) " gold (bag " QsBefore.items " -> " qb.items " of " qb.allowed
 		. ", gold " QsThousands(QsBefore.gold) " -> " QsThousands(qb.gold) ")" (nums.lost > 0 ? " - " QsThousands(nums.lost) " gold lost over the pouch" : ""))
@@ -1112,12 +1123,12 @@ QsVerify(nums)
 	if (qGone != "")
 		{
 		if (!StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": an Equipment Set's item was sold (" qGone ")"))
-			Stats["quicksell"] := 0 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+			Stats["quicksell"] := 0
 		QsLog("an Equipment Set's item is gone after the sale: " qGone " - quick sell turned OFF")
 		WalkNotify("quicksell", "an Equipment Set lost an item", "Quick sell sold " qGone " - it has turned itself off (Settings: THE BACKPACK). Lock the items your Equipment Sets use, then switch it on again.")
 		AlertSend("inventory", "Equipment Set item sold", "Quick sell sold " qGone " from an Equipment Set - it has turned itself off.")
 		}
-	return {res: "sold", why: "", n: nums.Total.n, gold: nums.Total.gold, lost: nums.lost, after: qb, gone: qGone}
+	return V1Obj({res: "sold", why: "", n: nums.Total.n, gold: nums.Total.gold, lost: nums.lost, after: qb, gone: qGone})
 	}
 
 ;After the sale the game closes the book itself; still open: its close button
@@ -1127,11 +1138,11 @@ QsCloseAfterSale()
 	while (A_TickCount - qt < 1500)
 		{
 		g := QsGui("DeckConfiguration,InventorySpellbookPage,QuickSellWaitingWindow")
-		if (IsObject(g) && !QsBookOpen(g) && !g.win["QuickSellWaitingWindow"].shown && !g.box.shown)
+		if (IsObject(g) && !QsBookOpen(g) && !V1At(g.win["QuickSellWaitingWindow"], "shown") && !g.box.shown)
 			return ""
 		Sleep(300)
 		}
-	return QsBackOut("the book left open after the sale") ? "" : {res: "failed", why: "the book stayed open"}
+	return QsBackOut("the book left open after the sale") ? "" : V1Obj({res: "failed", why: "the book stayed open"})
 	}
 
 ;---- Backing out ----
@@ -1142,6 +1153,7 @@ QsCloseAfterSale()
 ;other reason (the windows not read, a close that failed): tried again at the next look (QsLeftover). QsBackKind: why not
 QsBackOut(why)
 	{
+	global QsBackKind, NavGuiWaitUntil, QsLeftover ; (v1 globals it sets)
 	qPaths := "QuickSellConfirmationWindow,QuickSellConfirmationWindow/QuickSellConfirmationCloseButton,QuickSellWaitingWindow,shopGUI,buyWindow,buyWindow/exit,DeckConfiguration,InventorySpellbookPage,DeckConfiguration/Close_Button"
 	qClosed := "", QsBackKind := ""
 	Loop 8
@@ -1162,8 +1174,8 @@ QsBackOut(why)
 			QsLeftoverSet()
 			return false
 			}
-		qWhat := g.box.shown ? "box" : g.win["QuickSellConfirmationWindow"].shown ? "confirmation" : g.win["QuickSellWaitingWindow"].shown ? "waiting"
-			: g.win["buyWindow"].shown || g.win["shopGUI"].shown ? "quicksell" : QsBookOpen(g) ? "book" : ""
+		qWhat := g.box.shown ? "box" : V1At(g.win["QuickSellConfirmationWindow"], "shown") ? "confirmation" : V1At(g.win["QuickSellWaitingWindow"], "shown") ? "waiting"
+			: V1At(g.win["buyWindow"], "shown") || V1At(g.win["shopGUI"], "shown") ? "quicksell" : QsBookOpen(g) ? "book" : ""
 		if (qWhat = "")
 			{
 			if (qClosed != "")
@@ -1208,7 +1220,7 @@ QsBackOut(why)
 			qr := QsClickTarget("QuickSellConfirmationWindow/QuickSellConfirmationCloseButton", ""), qGone := "QuickSellConfirmationWindow"
 		else if (qWhat = "quicksell")
 			qr := QsClickTarget("buyWindow/exit", ""), qGone := "buyWindow"
-		else if (g.win["DeckConfiguration/Close_Button"].shown)
+		else if (V1At(g.win["DeckConfiguration/Close_Button"], "shown"))
 			qr := QsClickTarget("DeckConfiguration/Close_Button", ""), qGone := "DeckConfiguration,InventorySpellbookPage"
 		else
 			qr := QsKeyB("to close the book (its close button not read)", 1), qGone := "DeckConfiguration,InventorySpellbookPage"
@@ -1246,7 +1258,7 @@ QsBackOut(why)
 QsAllHidden(g, paths)
 	{
 	for qi, qp in StrSplit(paths, ",")
-		if (g.win[qp].shown)
+		if (V1At(g.win[qp], "shown"))
 			return false
 	return true
 	}
@@ -1266,12 +1278,12 @@ QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 		&& RegExMatch(qCap, "i)^Would you like to include Crowns Items in the selected items\?$"))
 		{
 		if (QsHasLabel(btns, "No") = 1)
-			return {say: "No", crownSel: 1, why: "the `"include Crowns Items?`" box - No: they stay out"}
-		return {say: "", crown: 1, why: "the `"include Crowns Items?`" box without one No button"}
+			return V1Obj({say: "No", crownSel: 1, why: "the `"include Crowns Items?`" box - No: they stay out"})
+		return V1Obj({say: "", crown: 1, why: "the `"include Crowns Items?`" box without one No button"})
 		}
 	;(any other Crown box - by its words, or by a Crowns box's key in the game's memory or its log: nothing clicked)
 	if (RegExMatch(qCap " " qTitle " " logMsg, "i)cr[o0]wn") || RegExMatch(qCk " " Trim(box.titleKey) " " logKey, "GUI2_0000098[67]|GUI2_0000100[01]"))
-		return (AHKv1v2_Temp := {say: "", crown: 1, why: "a Crowns box (" (logKey != "" ? logKey : "no key in the log") (qCk != "" ? ", " qCk : "") ")"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({say: "", crown: 1, why: "a Crowns box (" (logKey != "" ? logKey : "no key in the log") (qCk != "" ? ", " qCk : "") ")"})
 	;(the pets box after the confirmation's SELL: Yes only with quicksellpets and the confirmation's own count - read off the
 	;shown box's own caption (the game's memory: its key, if any, a pets box's); the log's message, when it's there, the same)
 	if (logKey = "GUI2_00000988" || logKey = "GUI2_00000989")
@@ -1279,19 +1291,20 @@ QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 		qN := QsPetsCount(qCap), qLogN := QsPetsCount(logMsg)
 		;(the shown box's own words must be a pets box's - the log's key alone may be an earlier box's: nothing clicked)
 		if (qN = "")
-			return {say: "", why: "a pets box by the game's log, but the shown box's own words aren't a pets box's (`"" qCap "`")"}
+			return V1Obj({say: "", why: "a pets box by the game's log, but the shown box's own words aren't a pets box's (`"" qCap "`")"})
 		if (stage = "sell" && pets && qN != "" && petCount != "" && qN = petCount && (logMsg = "" || qLogN = qN)
 			&& (qCk = "" || qCk = "GUI2_00000988" || qCk = "GUI2_00000989") && QsHasLabel(btns, "Yes") = 1)
-			return {say: "Yes", why: "the pets box (" qN ", as the confirmation counted) - Yes: quicksellpets is on"}
+			return V1Obj({say: "Yes", why: "the pets box (" qN ", as the confirmation counted) - Yes: quicksellpets is on"})
 		if (QsHasLabel(btns, "No") = 1)
-			return (AHKv1v2_Temp := {say: "No", why: "the pets box (" (qN = "" ? "its caption not read as one" : qN) (logMsg != "" && qLogN != qN ? ", the game's log " (qLogN = "" ? "?" : qLogN) : ""), AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
-		return {say: "", why: "the pets box without one No button"}
+			return V1Obj({say: "No", why: "the pets box (" (qN = "" ? "its caption not read as one" : qN) (logMsg != "" && qLogN != qN ? ", the game's log " (qLogN = "" ? "?" : qLogN) : "")
+				. (petCount != "" ? ", the confirmation " petCount : "") (pets ? "" : ", quicksellpets off") ") - No"})
+		return V1Obj({say: "", why: "the pets box without one No button"})
 		}
 	;(an OK-only box that's safe to OK - its own words shown, never the log's key alone)
 	qKey := box.captionKey != "" ? box.captionKey : logKey
 	if (qCap != "" && RegExMatch(qKey, "^(GUI_NoQuickSell|GUI_NoQuickSellWhileShopping|GUI_00001109|GUI2_00001002|Housing_18)$") && btns.Length = 1 && QsHasLabel(btns, "OK") = 1)
-		return {say: "OK", why: "a message to OK (" qKey ")"}
-	return (AHKv1v2_Temp := {say: "", why: "a game message it doesn't know (" (qKey != "" ? qKey : "no key") ")"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({say: "OK", why: "a message to OK (" qKey ")"})
+	return V1Obj({say: "", why: "a game message it doesn't know (" (qKey != "" ? qKey : "no key") ")"})
 	}
 
 ;The pets box's count in its words ("You are selling 3 Pets. Are you sure you want to sell these Pets?" - a Pet: 1), else ""
@@ -1354,29 +1367,30 @@ QsAnswerBox(g, stage, mark, petCount, &said)
 ;Yes inside the run's 60 s)
 QsClickBox(g, say, crownSel)
 	{
+	global QsStep ; (v1 globals it sets)
 	;(two boxes up: the one read may not be the one on top - none clicked)
-	if (g.box.count != 1)
-		return (AHKv1v2_Temp := {res: "failed", why: (g.box.count = "" ? "how many message boxes are up couldn't be read" : g.box.count " message boxes are up") " - none clicked"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+	if (g.box["count"] != 1)
+		return V1Obj({res: "failed", why: (g.box["count"] = "" ? "how many message boxes are up couldn't be read" : g.box["count"] " message boxes are up") " - none clicked"})
 	qb := "", qn := 0
 	for qi, qx in g.btns
 		if (Trim(qx.label) = say)
 			qb := qx, qn += 1
 	if (qn != 1)
-		return {res: "failed", why: "the box has " qn " `"" say "`" buttons"}
-	if (Abs(qb.r - qb.l - 128) > 2 || Abs(qb.b - qb.t - 32) > 2 || qb.greyed = 1)
-		return (AHKv1v2_Temp := {res: "failed", why: "the box's `"" say "`" button isn't as the game's file has it (" qb.r - qb.l "x" qb.b - qb.t (qb.greyed = 1 ? ", greyed" : "") ")"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
-	if (qb.l < 0 || qb.t < 0 || qb.r > g.rootW || qb.b > g.rootH)
-		return {res: "failed", why: "the box's `"" say "`" button is off the game"}
+		return V1Obj({res: "failed", why: "the box has " qn " `"" say "`" buttons"})
+	if (V1Gt(V1Abs(V1Sub(V1Sub(qb.r, qb.l), 128)), 2) || V1Gt(V1Abs(V1Sub(V1Sub(qb.b, qb.t), 32)), 2) || qb.greyed = 1)  ; (v1: a rect not read - blank math, compared as text)
+		return V1Obj({res: "failed", why: "the box's `"" say "`" button isn't as the game's file has it (" V1Sub(qb.r, qb.l) "x" V1Sub(qb.b, qb.t) (qb.greyed = 1 ? ", greyed" : "") ")"})
+	if (V1Lt(qb.l, 0) || V1Lt(qb.t, 0) || V1Gt(qb.r, g.rootW) || V1Gt(qb.b, g.rootH))
+		return V1Obj({res: "failed", why: "the box's `"" say "`" button is off the game"})
 	QsPx(qb.l, qb.t, qb.r, qb.b, g.rootW, g.rootH, &qx, &qy)
 	if (!QsPxOk(qx, qy, &qWhyPx))
-		return {res: "failed", why: "the box's `"" say "`" button: " qWhyPx}
+		return V1Obj({res: "failed", why: "the box's `"" say "`" button: " qWhyPx})
 	if (!QsReadWord(qb.l, qb.t, qb.r, qb.b, g, say))
-		return {res: "failed", why: "the box's button doesn't read `"" say "`" on screen - not clicked"}
+		return V1Obj({res: "failed", why: "the box's button doesn't read `"" say "`" on screen - not clicked"})
 	;(the Crown check round it kept tight - the button and 40 px: the box's own words are checked in memory and the log
 	;(QsBoxAnswer), and over the confirmation its "Crown Equipment" label shows just above the box)
-	qRad := Round(Max(qb.r - qb.l, qb.b - qb.t) * GameW / g.rootW / 2) + 40
+	qRad := V1Round(V1Div(V1Div(V1Mul(V1Max(V1Sub(qb.r, qb.l), V1Sub(qb.b, qb.t)), GameW), g.rootW), 2)) + 40
 	if (!crownSel && !NoCrownsNear(qx, qy, qRad, "Backpack", "Quick sell", "by the Quick Sell window", "it only sells for gold", "quick sell stopped"))
-		return {res: "failed", why: "`"Crown`" read by the box's button (or the screen couldn't be read) - not clicked"}
+		return V1Obj({res: "failed", why: "`"Crown`" read by the box's button (or the screen couldn't be read) - not clicked"})
 	Critical()
 	if (!QsOk(&qWhy, &qKind, say != "Yes"))
 		{
@@ -1399,11 +1413,11 @@ QsCrownBox(box, why)
 	{
 	QsLog("a Crowns box: `"" box.caption "`" - nothing clicked (gold only), quick sell turned OFF; the windows are left to you")
 	if (!StatsSet([["quicksell", 0]], "quick sell turned itself off " A_YYYY "-" A_MM "-" A_DD ": a Crowns box came up (" SubStr(box.caption, 1, 60) ")"))
-		Stats["quicksell"] := 0 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats["quicksell"] := 0
 	AlertSend("crowns", "quick sell stopped", "A Crowns box came up in the Quick Sell window - nothing clicked (gold only), quick sell turned off: `"" box.caption "`"")
 	WalkNotify("window", "a Crowns box is up in Wizard101", "`"" box.caption "`" - quick sell clicked nothing and turned itself off. Answer it yourself (No).")
 	QsTray("Quick sell saw a Crowns box and stopped without clicking - it's turned itself off.", 2)
-	return {res: "crowns", why: why}
+	return V1Obj({res: "crowns", why: why})
 	}
 
 ;---- Clicks, keys and checks ----
@@ -1435,12 +1449,12 @@ QsBattleNow()
 
 QsStop(kind, why)
 	{
-	return {res: "stopped", kind: kind, why: why}
+	return V1Obj({res: "stopped", kind: kind, why: why})
 	}
 
 QsFail(why)
 	{
-	return {res: "failed", why: why}
+	return V1Obj({res: "failed", why: why})
 	}
 
 ;/gui for paths ("" when it can't be read - NavGuiWhy)
@@ -1490,6 +1504,7 @@ QsClickWait(path, label, waitPath, ms, what, prop := "shown")
 ;default; a close button's: the button and 40 px), the run still fine (QsOk) right before
 QsClickTarget(path, label, r := "")
 	{
+	global QsStep ; (v1 globals it sets)
 	qOver := QsTargetOver(path)
 	g := QsGui(path (qOver != "" ? "," qOver : ""))
 	if (!IsObject(g))
@@ -1500,7 +1515,7 @@ QsClickTarget(path, label, r := "")
 	if (!QsTargetOk(path, w, g.rootW, g.rootH, label, &qWhy))
 		return QsFail(path " not clicked: " qWhy)
 	for qi, qp in StrSplit(qOver, ",")
-		if (qp != "" && g.win[qp].shown)
+		if (qp != "" && V1At(g.win[qp], "shown"))
 			return QsFail(path " not clicked: " qp " is shown over it (never clicked)")
 	QsPx(w.l, w.t, w.r, w.b, g.rootW, g.rootH, &qx, &qy)
 	QsJitter(w.l, w.t, w.r, w.b, g.rootW, g.rootH, &qx, &qy)
@@ -1554,8 +1569,9 @@ QsClickAt(x, y, &why)
 ;B (the game's backpack key - it toggles the book: open read first, by the caller): the run still fine right before
 QsKeyB(what, open)
 	{
+	global QsStep ; (v1 globals it sets)
 	Critical()
-	if (!QsOk(&qWhy, &qKind, open := 1))
+	if (!QsOk(&qWhy, &qKind, open = 1))  ; (v1: open = 1 - a comparison)
 		{
 		Critical("Off")
 		return QsStop(qKind, qWhy)
@@ -1573,12 +1589,13 @@ QsTargetSize(path)
 	static qSizes := ""
 	if (!IsObject(qSizes))
 		{
-		qSizes := {"InventorySpellbookPage/QuickSell_Item": [50, 50], "buyWindow/AllAction": [57, 32], "buyWindow/sellAction": [254, 32]
-			, "buyWindow/exit": [47, 47], "QuickSellConfirmationWindow/SellButton": [177, 32]
-			, "QuickSellConfirmationWindow/QuickSellConfirmationCloseButton": [47, 47], "DeckConfiguration/Close_Button": [40, 37]
-			, "DeckConfiguration/Inventory": [40, 37]}
+		;(v1 {"key": v} - v2's literal takes no quoted keys: the same keys and values as pairs)
+		qSizes := V1Obj("InventorySpellbookPage/QuickSell_Item", [50, 50], "buyWindow/AllAction", [57, 32], "buyWindow/sellAction", [254, 32]
+			, "buyWindow/exit", [47, 47], "QuickSellConfirmationWindow/SellButton", [177, 32]
+			, "QuickSellConfirmationWindow/QuickSellConfirmationCloseButton", [47, 47], "DeckConfiguration/Close_Button", [40, 37]
+			, "DeckConfiguration/Inventory", [40, 37])
 		for qi, qc in ["Hat", "Robe", "Shoes", "Weapon", "Athame", "Amulet", "Ring", "Deck", "Pet"]
-			qSizes["BackpackStuff/ShopCategory_" qc] := [49, 49] ;  V1toV2: Invalid Index errors?, try 'qSizes.Push(<val>)'
+			qSizes["BackpackStuff/ShopCategory_" qc] := [49, 49]
 		}
 	return qSizes.Has(path) ? qSizes[path] : ""
 	}
@@ -1601,7 +1618,7 @@ QsTargetOk(path, w, rootW, rootH, label, &why)
 		why := "its rect is odd (" w.l "," w.t "," w.r "," w.b ")"
 	else if (w.l < 0 || w.t < 0 || w.r > rootW || w.b > rootH)
 		why := "off the game (" w.l "," w.t "," w.r "," w.b " in " rootW "x" rootH ")"
-	else if (w.pl != "" && (w.l < w.pl - 1 || w.t < w.pt - 1 || w.r > w.pr + 1 || w.b > w.pb + 1))
+	else if (w.pl != "" && (V1Lt(w.l, V1Sub(w.pl, 1)) || V1Lt(w.t, V1Sub(w.pt, 1)) || V1Gt(w.r, V1Add(w.pr, 1)) || V1Gt(w.b, V1Add(w.pb, 1))))  ; (v1: a parent rect read in part - blank math, compared as text)
 		why := "outside its parent (" w.l "," w.t "," w.r "," w.b " in " w.pl "," w.pt "," w.pr "," w.pb ")"
 	else if (Abs(w.r - w.l - qSize[1]) > 2 || Abs(w.b - w.t - qSize[2]) > 2)
 		why := "its size " w.r - w.l "x" w.b - w.t " isn't the game file's " qSize[1] "x" qSize[2]
@@ -1615,14 +1632,15 @@ QsTargetOk(path, w, rootW, rootH, label, &why)
 ;The middle of a GUI rect (the root's units) in screen pixels (pure)
 QsPx(l, t, r, b, rootW, rootH, &x, &y)
 	{
-	x := Round(GameLeft + (l + r) / 2 * GameW / rootW)
-	y := Round(GameTop + (t + b) / 2 * GameH / rootH)
+	;(v1: a rect not read - blank math, and Round of a blank: 0)
+	x := V1Round(V1Add(GameLeft, V1Div(V1Mul(V1Div(V1Add(l, r), 2), GameW), rootW)))
+	y := V1Round(V1Add(GameTop, V1Div(V1Mul(V1Div(V1Add(t, b), 2), GameH), rootH)))
 	}
 
 ;A random bit off the middle (clickrandom on): inside the rect's middle 40%
 QsJitter(l, t, r, b, rootW, rootH, &x, &y)
 	{
-	if (Stat("clickrandom") <= 0)
+	if (V1Le(Stat("clickrandom"), 0))  ; (v1: a blank or text setting compared as text)
 		return
 	qw := Floor((r - l) * GameW / rootW * 0.2), qh := Floor((b - t) * GameH / rootH * 0.2)
 	qdx := Random(-qw, qw)
@@ -1648,7 +1666,7 @@ QsPxOk(x, y, &why)
 ;No, Yes, OK, SELL (SEL, 5ELL)
 QsReadWord(l, t, r, b, g, word)
 	{
-	static qRe := {No: "i)^n[o0]$", Yes: "i)^y[e3]s$", OK: "i)^[o0]k(ay)?$", SELL: "i)^(sell|sel|5ell|seli|seil|5el)$"}
+	static qRe := V1Obj({No: "i)^n[o0]$", Yes: "i)^y[e3]s$", OK: "i)^[o0]k(ay)?$", SELL: "i)^(sell|sel|5ell|seli|seil|5el)$"})
 	QsPx(l, t, l, t, g.rootW, g.rootH, &qx1, &qy1)
 	QsPx(r, b, r, b, g.rootW, g.rootH, &qx2, &qy2)
 	qPad := Round(3 * GameW / g.rootW)
@@ -1671,7 +1689,7 @@ QsReadWord(l, t, r, b, g, word)
 QsParseSpace(text)
 	{
 	if (RegExMatch(text, "(\d{1,4})\s*/\s*(\d{1,4})", &qm))
-		return {n: qm[1] + 0, m: qm[2] + 0}
+		return V1Obj({n: qm[1] + 0, m: qm[2] + 0})
 	return ""
 	}
 
@@ -1696,10 +1714,11 @@ QsThousands(n)
 
 QsLogOpen()
 	{
+	global QsLogEvents, QsLogPos, QsLogHead ; (v1 globals it sets)
 	QsLogEvents := [], QsLogPos := "", QsLogHead := ""
 	if (RcLog = "" || !FileExist(RcLog))
 		return
-	qf := FileOpen(RcLog, "r", "CP0")
+	qf := V1Try(FileOpen, RcLog, "r", "CP0")  ; (v1: 0 when it can't be opened - v2 throws)
 	if (!IsObject(qf))
 		return
 	QsLogHead := qf.Read(17), QsLogPos := qf.Length
@@ -1710,9 +1729,10 @@ QsLogOpen()
 ;MSG_QuickSellRequest (sold)
 QsLogNew()
 	{
+	global QsLogHead, QsLogPos, QsLogEvents ; (v1 globals it sets)
 	if (QsLogPos = "" || RcLog = "")
 		return
-	qf := FileOpen(RcLog, "r", "CP0")
+	qf := V1Try(FileOpen, RcLog, "r", "CP0")  ; (v1: 0 when it can't be opened - v2 throws)
 	if (!IsObject(qf))
 		return
 	qSize := qf.Length, qTop := qf.Read(17)
@@ -1739,13 +1759,13 @@ QsLogNew()
 		{
 		if (InStr(A_LoopField, "DisplayMessageBox("))
 			{
-			RegExMatch(A_LoopField, "msg = (.*?), title = (.*?), msg string key = (\w*)(?:, title string key = (\w*))?", &qm)
-			QsLogEvents.Push({kind: "box", key: qm[3] != "" ? qm[3] : qm[4], msg: qm[1], title: qm[2]})
+			qOk := RegExMatch(A_LoopField, "msg = (.*?), title = (.*?), msg string key = (\w*)(?:, title string key = (\w*))?", &qm)
+			QsLogEvents.Push(V1Obj({kind: "box", key: !qOk ? "" : qm[3] != "" ? qm[3] : qm[4], msg: qOk ? qm[1] : "", title: qOk ? qm[2] : ""}))  ; (v1: no match - qm1..qm4 blank)
 			}
 		else if (RegExMatch(A_LoopField, "Loaded GUI '(?:.*[\\/])?([\w]+)\.gui'", &qm))
-			QsLogEvents.Push({kind: "gui", key: qm[1]})
+			QsLogEvents.Push(V1Obj({kind: "gui", key: qm[1]}))
 		else if (InStr(A_LoopField, "MSG_QuickSellRequest"))
-			QsLogEvents.Push({kind: "sold", key: ""})
+			QsLogEvents.Push(V1Obj({kind: "sold", key: ""}))
 		}
 	}
 
@@ -1830,7 +1850,7 @@ QsMenuNow(rehearse := false)
 		}
 	if (!rehearse)
 		QsMarkClear("a quick sell was asked for from the tray")
-	QsRun({why: "asked for from the tray"}, bag, true, rehearse)
+	QsRun(V1Obj({why: "asked for from the tray"}), bag, true, rehearse)
 	}
 
 ;---- The only places this file gives the game input or looks at the screen (tests put recorders here) ----
@@ -1843,7 +1863,7 @@ QsInputMove(x, y)
 	MouseLockOn("quicksell")
 	MouseMove(x, y, MouseSpeedNow())
 	MouseLockMoved()
-	Sleep(Max(150, Stats.Has("clickwait") ? Stats["clickwait"] : 40))
+	Sleep(V1N(V1Max(150, Stats.Has("clickwait") ? Stats["clickwait"] : 40)))  ; (v1: a clickwait that isn't a number - Max blank, Sleep 0)
 	MouseLockOff("quicksell")
 	}
 
@@ -1859,7 +1879,7 @@ QsInputMouseAt(x, y)
 QsInputClickAt(x, y)
 	{
 	MouseLockOn("quicksell")
-	Click(x ", " y)
+	Click(x, y)
 	MouseLockOff("quicksell")
 	}
 
@@ -1873,30 +1893,41 @@ QsInputKeyB()
 
 QsBattlePic()
 	{
-	ErrorLevel := !ImageSearch(&qbX, &qbY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundstart.png"))
+	V1ImageSearch(&qbX, &qbY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundstart.png"))
 	return ErrorLevel = 0
 	}
 
 QsOcr(x, y, w, h, scale, mode)
 	{
-	return OcrRect(x, y, w, h, "en", scale, qoLines, mode)
+	return OcrRect(x, y, w, h, "en", scale, &qoLines, mode)
 	}
 
 QsTray(text, icon := 1)
 	{
-	TrayTip("Wizard101 bot", text, icon)
+	TrayTip(text, "Wizard101 bot", icon)
 	}
 
 QsSnap(step)
 	{
-	if (IsFunc("LogMirrorSnap"))
+	if (V1IsFunc("LogMirrorSnap"))
 		LogMirrorSnap.Call(0, "quicksell")
 	}
 
 QsActivateGame()
 	{
-	WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+	global ErrorLevel ; (v1 globals it sets)
+	V1Try(WinActivate, "ahk_class " GameClass " ahk_exe " GameExe)  ; (v1: no window - nothing; v2 throws)
 	ErrorLevel := !WinWaitActive("ahk_class " GameClass " ahk_exe " GameExe, , 2)
 	Sleep(800)
 	}
 ;QS-INPUT-END
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+QuickSellBlank()
+	{
+	global QsBusy := "", QsBattleEndAt := "", QsLooks := "", QsTryAt := "", QsFails := "", QsBlocked := "", QsLookAt := "", QsStill := ""
+	global QsSetWas := "", QsGid := "", QsSaidAt := "", QsMemSaid := "", QsLeftover := "", QsLeftoverTries := "", QsLeftoverAt := "", QsSince := ""
+	global QsManual := "", QsStep := "", QsLogPos := "", QsLogHead := "", QsLogEvents := "", QsBefore := "", QsLastBag := "", QsBackKind := ""
+	global QsDgZones := "", QsDgOut := ""
+	}

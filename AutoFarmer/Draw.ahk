@@ -25,18 +25,18 @@ DrawWouldKill()
 	global
 	local was, wasStat, h, e
 	DrawKeep := ""
-	if (!Stat("drawenchant") || enchant >= 1)
+	if (!Stat("drawenchant") || V1Ge(enchant, 1))  ; (v1: enchant blank before the first look at the hand: none)
 		return false
 	;(the kill check with a made-up enchant - level 8, its damage drawneed - then put back)
 	was := enchant, wasStat := Stats.Has("enchant8") ? Stats["enchant8"] : ""
-	Stats["enchant8"] := Stat("drawneed") > 0 ? Stat("drawneed") : 100, enchant := 8 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
-	if (FindLethalHit(h, e) && e)
+	Stats["enchant8"] := Stat("drawneed") > 0 ? Stat("drawneed") : 100, enchant := 8
+	if (FindLethalHit(&h, &e) && e)
 		DrawKeep := h
 	enchant := was
 	if (wasStat = "")
 		Stats.Delete("enchant8")
 	else
-		Stats["enchant8"] := wasStat ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats["enchant8"] := wasStat
 	return DrawKeep != ""
 	}
 
@@ -205,7 +205,7 @@ DrawMakeRoom(ans)
 ;the catalog's tc for a learned one): never right-clicked away (DiscardCard), that uses it up
 DiscardIsTc(x)
 	{
-	ans := IsFunc("LearnHandRead") ? LearnHandRead() : ""
+	ans := V1IsFunc("LearnHandRead") ? LearnHandRead() : ""
 	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
@@ -227,7 +227,7 @@ DrawWord(&band)
 	band := ""
 	MouseMove(ScreenX, ScreenY - Px(250), 0)
 	Sleep(150)
-	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, lines)
+	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, &lines)
 	if (ErrorLevel || !IsObject(lines))
 		return ""
 	for i, line in lines
@@ -256,7 +256,8 @@ DrawLit(w)
 	{
 	MouseMove(ScreenX, ScreenY - Px(250), 0)
 	Sleep(120)
-	ErrorLevel := !PixelSearch(&px, &py, w.x - Px(4), w.y - Px(4), w.x + w.w + Px(4), w.y + w.h + Px(4), 0xFFFF00, 0)
+	;(v2 port: v1's px, py renamed - in v2 a local px would hide the Px() function it calls)
+	V1PixelSearch(&dlX, &dlY, w.x - Px(4), w.y - Px(4), w.x + w.w + Px(4), w.y + w.h + Px(4), 0xFFFF00, 0, "Fast RGB")
 	return ErrorLevel = 0
 	}
 
@@ -268,9 +269,17 @@ DrawRoundUp()
 	while (A_TickCount - t0 < 1200)
 		{
 		Sleep(150)
-		ErrorLevel := !ImageSearch(&px, &py, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
+		V1ImageSearch(&px, &py, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
 		if (ErrorLevel = 0)
 			return true
 		}
 	return false
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+DrawBlank()
+	{
+	global DrawsBattle := "", DrawOff := "", DrawBroken := "", DrawKeep := "", DrawEmptyAt := "", enchant := "", Stats := "", VisionOn := ""
+	global LearnAll := "", Manual := "", RoundAgain := "", BotOn := "", hitschool := "", GameLeft := "", GameTop := ""
 	}

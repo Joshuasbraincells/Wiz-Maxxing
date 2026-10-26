@@ -456,7 +456,7 @@ restart. Defaults fills in the defaults (Save to use them).
 
 Smart App Control (Windows 11 - "Smart App Control blocked"): it blocks the
 bot's exes (they aren't signed) and can't be told to allow them. Run the bot as
-scripts instead: install AutoHotkey v1.1 from autohotkey.com (Download > v1.1),
+scripts instead: install AutoHotkey v2 from autohotkey.com (Download > v2),
 then open ..\Wiz-Maxxing.ahk (not Wiz-Maxxing.exe) - and Setup.ahk for Setup.
 Started as a script, everything the bot starts is a script too, by the same
 AutoHotkey (the bot, the update check, "Open with Wizard101", Setup's
@@ -474,7 +474,7 @@ Python 3 with numpy and Pillow (pip install numpy pillow katsuba - katsuba only
 draws the zone's walls on the zone map; Setup.exe installs all three); without
 it cards are found the old way (ImageSearch) and the walker follows the arrow on
 screen. Rebuild after changing a script:
-double-click ..\build.cmd (needs AutoHotkey v1.1 with its compiler; close the bot first).
+double-click ..\build.cmd (needs AutoHotkey v2 with its compiler; close the bot first).
 Ready-built: the Releases page of the GitHub repo (a zip with everything). Hover the wizard icon in the tray to see what
 the walker is doing; debug.log has the battle and walking decisions in order.
 

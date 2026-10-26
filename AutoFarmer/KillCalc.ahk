@@ -11,6 +11,7 @@
 ;that can't be read go to debug.log instead of a message box (reloading while the bot runs)
 LoadStats(quiet := false)
 	{
+	global Stats ; (v1 globals it sets)
 	defaults := "damage:130,pierce:0,enemyresist:15,killmargin:15,solotraps:0,reboost:0,discardunaffordable:0,discardunused:1,discardmax:3,learnedhits:1,fleeon:1,healthocr:1,ocrscale:2,platestrip:110"
 		. ",blade:35,elementalblade:35,spiritblade:35,blade3:25,blade4:20,sharpen:10"
 		. ",trap:40,elementaltrap:30,spirittrap:30,trap3:30,trap4:0,feint:70,potent:10"
@@ -21,16 +22,16 @@ LoadStats(quiet := false)
 		. ",storm.hit1pips:0,storm.hit2pips:5,storm.hit3pips:7,storm.hit4pips:9"
 		. ",fire.hit1pips:4,fire.hit2pips:6,fire.hit3pips:7,fire.hit4pips:6"
 		. ",myth.hit1pips:4,myth.hit2pips:6,myth.hit3pips:7,myth.hit4pips:5"
-	Stats := {}
+	Stats := V1Obj()
 	Loop Parse, defaults, ","
 		{
 		ParseStat(A_LoopField)
 		}
 	;(and the Settings window's: Settings.ahk CfgList)
-	if (IsFunc("CfgList"))
+	if (V1IsFunc("CfgList"))
 		for each, cfgS in CfgList.Call()
 			if (cfgS.Has("def") && !Stats.Has(cfgS.key))
-				Stats[cfgS.key] := cfgS.def ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+				Stats[cfgS.key] := cfgS.def
 	bad := ""
 	Loop Read, A_WorkingDir "\PlayerStats.txt"
 		{
@@ -38,6 +39,10 @@ LoadStats(quiet := false)
 			{
 			bad .= A_LoopReadLine . "`n"
 			}
+		}
+	else
+		{
+		;(v1: no PlayerStats.txt - no lines read, the defaults kept; v2's Loop Read throws for a missing file without an Else)
 		}
 	if (bad != "" && quiet)
 		DebugLog("PlayerStats.txt lines that couldn't be read (built-in defaults used): " StrReplace(Trim(bad, "`n"), "`n", " | "))
@@ -54,7 +59,7 @@ ParseStat(line)
 	if (RegExMatch(line, "^\s*([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?\s*$", &m))
 		{
 		key := StrLower(m[1])
-		Stats[key] := m[2] + 0 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats[key] := m[2] + 0
 		return true
 		}
 	return (Trim(line) == "")
@@ -99,7 +104,7 @@ DamageMultiplier(D)
 ;sharpened / potent (bonus). Its % the game's (the card in hand, BoostPctMem) else PlayerStats.txt's (BoostPct)
 AddBoost(list, key, bonus, src := "")
 	{
-	list[key (src != "" ? "@" src : "") (bonus ? "+" : "")] := BoostPctFor(key, src) + bonus ;  V1toV2: Invalid Index errors?, try 'list.Push(<val>)'
+	list[key (src != "" ? "@" src : "") (bonus ? "+" : "")] := BoostPctFor(key, src) + bonus
 	}
 
 BoostMult(list)
@@ -176,7 +181,7 @@ BoostSchools(key)
 BoostFits(key, sch)
 	{
 	bfS := BoostSchools(key)
-	return bfS = "all" || (bfS != "" && sch != "" && InStr("," bfS ",", "," sch ","))
+	return (bfS = "all" || (bfS != "" && sch != "" && InStr("," bfS ",", "," sch ","))) ? 1 : 0  ; (v1: || gave 1 or 0 - v2 InStr's position)
 	}
 
 ;Whether boost card key fits any of the schools in list (a comma list)
@@ -236,12 +241,12 @@ HeadsParse(text, out)
 	{
 	if (text = "" || text = "?")
 		return false
-	hpHeads := {}, hpTotal := 0
+	hpHeads := V1Obj(), hpTotal := 0
 	Loop Parse, text, ",+"
 		{
 		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):(\d+)$", &hpM) || !BadgeNumber(hpM[1]))
 			return false
-		hpHeads[hpM[1]] := (hpHeads.Has(hpM[1]) ? hpHeads[hpM[1]] : 0) + hpM[2], hpTotal += hpM[2] ;  V1toV2: Invalid Index errors?, try 'hpHeads.Push(<val>)'
+		hpHeads[hpM[1]] := (hpHeads.Has(hpM[1]) ? hpHeads[hpM[1]] : 0) + hpM[2], hpTotal += hpM[2]
 		}
 	if (hpTotal <= 0)
 		return false
@@ -272,7 +277,7 @@ BoostsParse(text)
 	if (bpaPct = "")
 		return ""
 	bpaL := Sort(bpaL)
-	return (AHKv1v2_Temp := {sch: bpaAll ? "all" : StrReplace(bpaL, "`n", ","), pct: bpaPct}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+	return V1Obj({sch: bpaAll ? "all" : StrReplace(bpaL, "`n", ","), pct: bpaPct})
 	}
 
 ;A boost card's % in the game's hand (VisionCards' card): its boosts' least, else its number ("" none)
@@ -391,8 +396,8 @@ KeyFlags(key)
 	{
 	static kfT := ""
 	if (!IsObject(kfT))
-		kfT := {feint: [1, 2], elementaltrap: [5, 6], trap3: [7, 8], trap4: [9, 10], elementalblade: [13, 14], blade3: [15, 16]
-			, blade4: [17, 18], spiritblade: [49, 50], spirittrap: [51, 52]}
+		kfT := V1Obj({feint: [1, 2], elementaltrap: [5, 6], trap3: [7, 8], trap4: [9, 10], elementalblade: [13, 14], blade3: [15, 16]
+			, blade4: [17, 18], spiritblade: [49, 50], spirittrap: [51, 52]})
 	kfB := BoostBase(key)
 	if (kfT.Has(kfB))
 		return kfT[kfB]
@@ -419,7 +424,14 @@ FlagKey(n)
 UsedFlag(n)
 	{
 	global
-	return used%n%
+	;(v2 port: v1 made used1..used52 dynamically - v2 reaches only a variable that exists: declared here, for this,
+	;UsedFlagSet, Autofarmer.ahk ResetUsed and Party.ahk's used%n%)
+	global used1, used2, used3, used4, used5, used6, used7, used8, used9, used10, used11, used12, used13, used14, used15, used16, used17, used18, used19, used20, used21, used22, used23, used24, used25, used26
+		, used27, used28, used29, used30, used31, used32, used33, used34, used35, used36, used37, used38, used39, used40, used41, used42, used43, used44, used45, used46, used47, used48, used49, used50, used51, used52
+	try
+		return used%n%
+	catch
+		return ""  ; (v1: a flag not set yet read blank)
 	}
 
 UsedFlagSet(n, v)
@@ -436,9 +448,9 @@ HitHeads(hitName)
 	{
 	global hitschool, HeadsMemo
 	if (!IsObject(HeadsMemo))
-		HeadsMemo := {}
+		HeadsMemo := V1Obj()
 	if (!HeadsMemo.Has(hitName "|" hitschool))
-		HeadsMemo[hitName "|" hitschool] := HitHeadsFind(hitName) ;  V1toV2: Invalid Index errors?, try 'HeadsMemo.Push(<val>)'
+		HeadsMemo[hitName "|" hitschool] := HitHeadsFind(hitName)
 	return HeadsMemo[hitName "|" hitschool]
 	}
 
@@ -451,25 +463,25 @@ HitHeads(hitName)
 HitHeadsFind(hitName)
 	{
 	global hitschool, SlotGame, BoostSaid
-	hhOut := {heads: {}, total: 0, sure: 0, xpip: 0, src: "", one: "", item: (hitName = "wand") ? 1 : 0}
+	hhOut := V1Obj({heads: V1Obj(), total: 0, sure: 0, xpip: 0, src: "", one: "", item: (hitName = "wand") ? 1 : 0})
 	if (hitschool = "")
 		return hhOut
 	hhName := IsObject(SlotGame) ? SlotGame[hitschool "/" hitName] : ""
-	hhLc := IsFunc("LearnCardInSlot") ? LearnCardInSlot.Call(hitschool "\" hitName) : ""
+	hhLc := V1IsFunc("LearnCardInSlot") ? LearnCardInSlot.Call(hitschool "\" hitName) : ""
 	if (hhName = "" && IsObject(hhLc))
 		hhName := LearnFlag.Call(hhLc, "game")
-	if (hhName != "" && IsFunc("VisionCards"))
+	if (hhName != "" && V1IsFunc("VisionCards"))
 		{
 		;(the hand read this look - no new read)
 		hhHand := VisionCards.Call(300, 5000)
 		if (IsObject(hhHand))
 			for hhI, hhM in hhHand.cards
-				if ((IsFunc("LearnMemGame") ? LearnMemGame.Call(hhM) : hhM.name) = hhName && (hhM.kind = "damage" || hhM.kind = "aoe") && HeadsParse(hhM.heads, hhOut))
+				if ((V1IsFunc("LearnMemGame") ? LearnMemGame.Call(hhM) : hhM.name) = hhName && (hhM.kind = "damage" || hhM.kind = "aoe") && HeadsParse(hhM.heads, hhOut))
 					{
 					hhOut.xpip := (hhM.xpip && hitName != "wand") ? 1 : 0, hhOut.src := "the game", hhOut.one := (hhM.kind = "damage") ? 1 : 0
 					hhOut.item := (hhM.item || hitName = "wand") ? 1 : 0
 					;(the slot's learned card - this card, by its game name - with a number you set on the Spells tab: yours)
-					if (IsObject(hhLc) && LearnHasFlag.Call(hhLc, "user") && IsFunc("LearnHitBase")
+					if (IsObject(hhLc) && LearnHasFlag.Call(hhLc, "user") && V1IsFunc("LearnHitBase")
 						&& (LearnFlag.Call(hhLc, "game") = "" || LearnFlag.Call(hhLc, "game") = hhName))
 						HeadsToYours(hhOut, LearnHitBase.Call(hhLc))
 					return hhOut
@@ -479,7 +491,7 @@ HitHeadsFind(hitName)
 		{
 		hhOut.xpip := (LearnHasFlag.Call(hhLc, "xpip") && hitName != "wand") ? 1 : 0, hhOut.src := "the game (learned card)"
 		hhOut.item := (LearnHasFlag.Call(hhLc, "item") || hitName = "wand") ? 1 : 0
-		if (LearnHasFlag.Call(hhLc, "user") && IsFunc("LearnHitBase"))
+		if (LearnHasFlag.Call(hhLc, "user") && V1IsFunc("LearnHitBase"))
 			HeadsToYours(hhOut, LearnHitBase.Call(hhLc))
 		return hhOut
 		}
@@ -487,10 +499,10 @@ HitHeadsFind(hitName)
 	;(PlayerStats.txt's heads only while they add up to <school>.<hit>, or it isn't set - the learner writes both, CardLearn.ahk
 	;LearnStats: a number put there since - the Settings window, another card in the slot, the picture cut again - is the
 	;slot's card now, not the old heads)
-	hhSum := 0, hhPer := {}
+	hhSum := 0, hhPer := V1Obj()
 	for hhI, hhS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
 		if ((hhV := Stat(hitschool "." hitName hhS)) > 0)
-			hhPer[hhS] := hhV, hhSum += hhV ;  V1toV2: Invalid Index errors?, try 'hhPer.Push(<val>)'
+			hhPer[hhS] := hhV, hhSum += hhV
 	hhV := Stat(hitschool "." hitName)
 	if (hhSum > 0 && (hhV <= 0 || hhV = hhSum))
 		{
@@ -498,10 +510,10 @@ HitHeadsFind(hitName)
 		return hhOut
 		}
 	if (hhSum > 0 && IsObject(BoostSaid) && !BoostSaid.Has("heads|" hitschool "." hitName))
-		BoostSaid["heads|" hitschool "." hitName] := 1, DebugLog("  PlayerStats.txt: the heads of " hitschool "." hitName " (" HeadsText({heads: hhPer})
-			. ") add up to " hhSum ", not its " hitschool "." hitName ":" hhV " - left out, one head of your school counted") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+		BoostSaid["heads|" hitschool "." hitName] := 1, DebugLog("  PlayerStats.txt: the heads of " hitschool "." hitName " (" HeadsText(V1Obj({heads: hhPer}))
+			. ") add up to " hhSum ", not its " hitschool "." hitName ":" hhV " - left out, one head of your school counted")
 	if (hhV > 0)
-		hhOut.heads[hitschool] := hhV, hhOut.total := hhV, hhOut.src := "your school's" ;  V1toV2: Invalid Index errors?, try 'hhOut.heads.Push(<val>)'
+		hhOut.heads[hitschool] := hhV, hhOut.total := hhV, hhOut.src := "your school's"
 	return hhOut
 	}
 
@@ -512,10 +524,10 @@ HeadsToYours(hh, uv)
 	{
 	if (uv = "" || !(uv > 0) || hh.total <= 0 || uv = hh.total)
 		return
-	htyOut := {}, htySum := 0, htyBig := ""
+	htyOut := V1Obj(), htySum := 0, htyBig := ""
 	for htyS, htyB in hh.heads
 		{
-		htyOut[htyS] := Floor(htyB * uv / hh.total), htySum += htyOut[htyS] ;  V1toV2: Invalid Index errors?, try 'htyOut.Push(<val>)'
+		htyOut[htyS] := Floor(htyB * uv / hh.total), htySum += htyOut[htyS]
 		if (htyBig = "" || htyB > hh.heads[htyBig])
 			htyBig := htyS
 		}
@@ -529,24 +541,24 @@ HeadsToYours(hh, uv)
 LearnHitHeads(c)
 	{
 	global hitschool
-	lhOut := {heads: {}, total: 0, sure: 0, xpip: 0, src: "", one: "", item: 0}
+	lhOut := V1Obj({heads: V1Obj(), total: 0, sure: 0, xpip: 0, src: "", one: "", item: 0})
 	if (!IsObject(c))
 		return lhOut
-	lhOut.xpip := (IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "xpip")) ? 1 : 0
-	lhOut.item := (IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "item")) ? 1 : 0
-	if (IsFunc("LearnFlag") && HeadsParse(LearnFlag.Call(c, "heads"), lhOut))
+	lhOut.xpip := (V1IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "xpip")) ? 1 : 0
+	lhOut.item := (V1IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "item")) ? 1 : 0
+	if (V1IsFunc("LearnFlag") && HeadsParse(LearnFlag.Call(c, "heads"), lhOut))
 		{
 		lhOut.src := "the game (learned card)"
-		if (IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "user") && IsFunc("LearnHitBase"))
+		if (V1IsFunc("LearnHasFlag") && LearnHasFlag.Call(c, "user") && V1IsFunc("LearnHitBase"))
 			HeadsToYours(lhOut, LearnHitBase.Call(c))
 		return lhOut
 		}
-	lhBase := IsFunc("LearnHitBase") ? LearnHitBase.Call(c) : ""
+	lhBase := V1IsFunc("LearnHitBase") ? LearnHitBase.Call(c) : ""
 	if (lhBase = "" || lhBase <= 0)
 		return lhOut
-	lhS := IsFunc("LearnFlag") ? LearnFlag.Call(c, "school") : ""
+	lhS := V1IsFunc("LearnFlag") ? LearnFlag.Call(c, "school") : ""
 	lhS := BadgeNumber(lhS) ? lhS : hitschool
-	lhOut.heads[lhS] := lhBase, lhOut.total := lhBase, lhOut.src := "its school's" ;  V1toV2: Invalid Index errors?, try 'lhOut.heads.Push(<val>)'
+	lhOut.heads[lhS] := lhBase, lhOut.total := lhBase, lhOut.src := "its school's"
 	return lhOut
 	}
 
@@ -554,9 +566,9 @@ LearnHitHeads(c)
 ;school (HitDamageFrom), floored and added; the enchant's add (once - it's one card) on the head where it adds the least
 HeadsDamage(hh, per, add, toBoss)
 	{
-	hdD := {}, hdSum := 0
+	hdD := V1Obj(), hdSum := 0
 	for hdS, hdB in hh.heads
-		hdD[hdS] := HitDamageFrom(hdB * per, toBoss, hdS), hdSum += hdD[hdS] ;  V1toV2: Invalid Index errors?, try 'hdD.Push(<val>)'
+		hdD[hdS] := HitDamageFrom(hdB * per, toBoss, hdS), hdSum += hdD[hdS]
 	if (add <= 0)
 		return hdSum
 	hdBest := ""
@@ -648,8 +660,8 @@ BoostCanGo(key)
 ;hand)}]; "" they aren't, or either isn't there. bbWait: how long the game's hand may still be changing (VisionCards)
 BoostBoxes(bbWait := 300)
 	{
-	bbHand := IsFunc("VisionCards") ? VisionCards.Call(bbWait, 5000) : ""
-	if (!IsObject(bbHand) || !IsFunc("LearnHandRead"))
+	bbHand := V1IsFunc("VisionCards") ? VisionCards.Call(bbWait, 5000) : ""
+	if (!IsObject(bbHand) || !V1IsFunc("LearnHandRead"))
 		return ""
 	bbAns := LearnHandRead.Call()
 	bbOut := []
@@ -658,13 +670,13 @@ BoostBoxes(bbWait := 300)
 		bbF := StrSplit(A_LoopField, "|")
 		if (bbF.Length < 12 || bbF[1] != "card" || (bbF.Length >= 15 && bbF[15] = "0"))
 			continue
-		bbOut.Push({l: bbF[2] + 0, t: bbF[3] + 0, w: bbF[4] + 0, h: bbF[5] + 0, known: bbF[6], grey: bbF[8] = 1 ? 1 : 0})
+		bbOut.Push(V1Obj({l: bbF[2] + 0, t: bbF[3] + 0, w: bbF[4] + 0, h: bbF[5] + 0, known: bbF[6], grey: bbF[8] = 1 ? 1 : 0}))
 		}
 	if (!bbOut.Length || bbOut.Length != bbHand.cards.Length)
 		return ""
 	for bbI, bbB in bbOut
 		bbB.m := bbHand.cards[bbI], bbB.n := bbI
-	return {boxes: bbOut, hand: bbHand}
+	return V1Obj({boxes: bbOut, hand: bbHand})
 	}
 
 ;---- A boost no picture finds, cast where the game's memory has it (2026-10-24) ----
@@ -714,8 +726,8 @@ BoostBoxSays(known)
 		return ""
 	if (InStr(known, "learned/") = 1)
 		{
-		bxsC := IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(known, 9)) : ""
-		if (!IsObject(bxsC) || !IsFunc("LearnHasFlag") || !LearnHasFlag.Call(bxsC, "mem"))
+		bxsC := V1IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(known, 9)) : ""
+		if (!IsObject(bxsC) || !V1IsFunc("LearnHasFlag") || !LearnHasFlag.Call(bxsC, "mem"))
 			return ""
 		return BoostKindSays(bxsC.type)
 		}
@@ -770,21 +782,21 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 	{
 	global VisionCardsWhy
 	;(no card zoomed up under the mouse when the hand's boxes are read - CardLearn.ahk; the round's CenterMouse is off it)
-	if (IsFunc("LearnMouseClear"))
+	if (V1IsFunc("LearnMouseClear"))
 		LearnMouseClear.Call()
 	bmbAll := BoostBoxes(wait)
 	if (!IsObject(bmbAll))
-		return (AHKv1v2_Temp := {x: "", why: "the hand's card boxes and the game's cards don't line up (" (VisionCardsWhy != "" ? VisionCardsWhy : "not as many, or the hand not read") ")"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({x: "", why: "the hand's card boxes and the game's cards don't line up (" (VisionCardsWhy != "" ? VisionCardsWhy : "not as many, or the hand not read") ")"})
 	;(the boxes known by a picture: each one's card the kind its picture says)
 	for bmbI, bmbB in bmbAll.boxes
 		{
 		bmbSays := BoostBoxSays(bmbB.known), bmbKind := BoostKindSays(bmbB.m.kind)
 		if (bmbSays != "" && bmbKind != "" && bmbSays != bmbKind)
-			return {x: "", why: "box " bmbI " is known as " bmbB.known ", the game has " BoostMemName(bmbB.m) " (" bmbB.m.kind ") there - the boxes and the game's cards may not line up"}
+			return V1Obj({x: "", why: "box " bmbI " is known as " bmbB.known ", the game has " BoostMemName(bmbB.m) " (" bmbB.m.kind ") there - the boxes and the game's cards may not line up"})
 		}
-	bmbIdx := {}
+	bmbIdx := V1Obj()
 	for bmbI, bmbN in BoostMatches(key, bmbAll.hand.cards)
-		bmbIdx[bmbN] := 1 ;  V1toV2: Invalid Index errors?, try 'bmbIdx.Push(<val>)'
+		bmbIdx[bmbN] := 1
 	bmbWhy := "no copy of it among the game's cards now", bmbEnc := "", bmbNote := ""
 	for bmbI, bmbB in bmbAll.boxes
 		{
@@ -817,13 +829,13 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 			}
 		;(ench 0: a plain copy first - one that carries an enchantment already can't take a Sharpen / Potent: it's cast as it
 		;is only when no plain copy can go - ench 1 in the answer, UseBlade / UseTrap)
-		bmbAt := {x: Round(bmbB.l + bmbB.w / 2), y: Round(bmbB.t + bmbB.h / 2), n: bmbI, of: bmbAll.boxes.Length, src: bmbSrc, item: bmbItem, name: bmbNm, ench: (bmbM.ench != "") ? 1 : 0, note: bmbNote}
+		bmbAt := V1Obj({x: Round(bmbB.l + bmbB.w / 2), y: Round(bmbB.t + bmbB.h / 2), n: bmbI, of: bmbAll.boxes.Length, src: bmbSrc, item: bmbItem, name: bmbNm, ench: (bmbM.ench != "") ? 1 : 0, note: bmbNote})
 		if (ench || !bmbAt.ench)
 			return bmbAt
 		if (!IsObject(bmbEnc))
 			bmbEnc := bmbAt
 		}
-	return IsObject(bmbEnc) ? bmbEnc : {x: "", why: bmbWhy}
+	return IsObject(bmbEnc) ? bmbEnc : V1Obj({x: "", why: bmbWhy})
 	}
 
 ;Whether a hand box known as picture known can hold boost key's card the game names name (BoostMemBox): no picture; a
@@ -839,10 +851,10 @@ BoostMemBoxOk(key, known, name, cards := "")
 		return true
 	bmoC := ""
 	if (InStr(known, "learned/") = 1)
-		bmoC := IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(known, 9)) : ""
-	else if (IsFunc("LearnCardInSlot"))
+		bmoC := V1IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(known, 9)) : ""
+	else if (V1IsFunc("LearnCardInSlot"))
 		bmoC := LearnCardInSlot.Call(StrReplace(known, "/", "\"))
-	bmoG := (IsObject(bmoC) && IsFunc("LearnFlag")) ? LearnFlag.Call(bmoC, "game") : ""
+	bmoG := (IsObject(bmoC) && V1IsFunc("LearnFlag")) ? LearnFlag.Call(bmoC, "game") : ""
 	if (bmoG != "")
 		return (bmoG = name) || BoostMemNoneOf(bmoG, "", cards)
 	if (InStr(known, "learned/") = 1)
@@ -881,7 +893,7 @@ BoostMemNoneOf(name, key, cards)
 ;A card of the game's hand by its name, for the log (the name on it - CardLearn.ahk LearnMemGame -, else its own)
 BoostMemName(m)
 	{
-	return IsFunc("LearnMemGame") ? LearnMemGame.Call(m) : m.name
+	return V1IsFunc("LearnMemGame") ? LearnMemGame.Call(m) : m.name
 	}
 
 ;Which copy of boost card key in hand the card at x, y is - UseBlade, UseTrap, with the game's hand read (BoostHand):
@@ -898,7 +910,7 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 		bcpT := bcpC.src "|" (bcpC.item ? 1 : 0), bcpOne := bcpOne && (bcpF = "" || bcpT = bcpF), bcpF := bcpT
 	;(and only while the game's hand holds no other blade or trap - a click found on another boost's box is then moved onto
 	;the real card by the look; this look's cached hand: no read)
-	bcpHand := bcpOne && IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : "", bcpN := 0
+	bcpHand := bcpOne && V1IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : "", bcpN := 0
 	if (IsObject(bcpHand))
 		for bcpI, bcpC in bcpHand.cards
 			bcpN += (bcpC.kind = "blade" || bcpC.kind = "trap") ? 1 : 0
@@ -906,9 +918,9 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 	bcpAll := bcpOne ? "" : BoostBoxes()
 	if (IsObject(bcpAll))
 		{
-		bcpIs := {}
+		bcpIs := V1Obj()
 		for bcpI, bcpN in BoostMatches(key, bcpAll.hand.cards)
-			bcpIs[bcpN] := 1 ;  V1toV2: Invalid Index errors?, try 'bcpIs.Push(<val>)'
+			bcpIs[bcpN] := 1
 		bcpAt := "", bcpGo := ""
 		for bcpI, bcpB in bcpAll.boxes
 			{
@@ -916,10 +928,10 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 				continue
 			bcpSrc := BoostSrcOf(bcpB.m), bcpItem := bcpB.m.item ? 1 : 0
 			if (x >= bcpB.l - 5 && x <= bcpB.l + bcpB.w + 5)
-				bcpAt := {src: bcpSrc, item: bcpItem, can: BoostCopyCanGo(key, bcpSrc, bcpItem, sharp, use1, use2), moved: 0}
+				bcpAt := V1Obj({src: bcpSrc, item: bcpItem, can: BoostCopyCanGo(key, bcpSrc, bcpItem, sharp, use1, use2), moved: 0})
 			;(another copy's box: only one that can go plain - UseBlade / UseTrap never sharpen or make potent a copy moved to)
 			else if (!IsObject(bcpGo) && BoostCopyCanGo(key, bcpSrc, bcpItem, 0, use1, use2))
-				bcpGo := {src: bcpSrc, item: bcpItem, can: 1, moved: 1, x: Round(bcpB.l + bcpB.w / 2), y: Round(bcpB.t + bcpB.h * 0.45)}
+				bcpGo := V1Obj({src: bcpSrc, item: bcpItem, can: 1, moved: 1, x: Round(bcpB.l + bcpB.w / 2), y: Round(bcpB.t + bcpB.h * 0.45)})
 			}
 		if (IsObject(bcpAt) && bcpAt.can)
 			return bcpAt
@@ -934,14 +946,14 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 		}
 	;(one kind, or the boxes and the cards don't line up: by the copies BoostSearch saw - each kind of them in turn, the
 	;deck's, then an item card's, then a treasure card's: the first that can go, as BoostCanGo has it)
-	bcpSrcs := map(), bcpAny := 0
+	bcpSrcs := V1Obj(), bcpAny := 0
 	for bcpI, bcpC in BoostHand[key]
-		bcpSrcs[bcpC.src = "" ? "deck" : bcpC.src] := 1, bcpAny := bcpAny || bcpC.item ;  V1toV2: Invalid Index errors?, try 'bcpSrcs.Push(<val>)'
+		bcpSrcs[bcpC.src = "" ? "deck" : bcpC.src] := 1, bcpAny := bcpAny || bcpC.item
 	for bcpS in bcpSrcs
 		{
 		bcpSrc := (bcpS = "deck") ? "" : bcpS
 		if (BoostCopyCanGo(key, bcpSrc, bcpAny, sharp, use1, use2))
-			return {src: bcpSrc, item: bcpAny, can: 1, moved: 0}
+			return V1Obj({src: bcpSrc, item: bcpAny, can: 1, moved: 0})
 		}
 	return ""
 	}
@@ -950,7 +962,7 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 ;read for sure), else "" (yours)
 BoostAuraSchools()
 	{
-	basHand := IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
+	basHand := V1IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
 	basOut := "", basN := 0
 	if (IsObject(basHand))
 		for basI, basC in basHand.cards
@@ -975,12 +987,14 @@ BoostSearch()
 	global
 	local bsHand, bsWant, bsSeen, bsI, bsS, bsH, bsHh, bsC, bsF, bsX, bsY, bsG, bsK, bsKeys, bsM, bsJ, bsN, bsP, bsSrc, bsLog, bsTr, bsHas, bsB, bsSlot, bsNm
 	local bsMem, bsGo, bsMk
-	SbFound := map(), GbFound := map(), BoostPctMem := map(), BoostHand := map(), BoostMemOk := 0, BoostMemOnly := map()
+	;(v2 port: the targets of the dynamic %bsK% / %bsK%X / %bsK%Y below - v2 assigns only a variable that exists)
+	global blade3, blade4, trap3, feint, Blade3X, Blade3Y, Blade4X, Blade4Y, trap3X, trap3Y, feintX, feintY
+	SbFound := V1Obj(), GbFound := V1Obj(), BoostPctMem := V1Obj(), BoostHand := V1Obj(), BoostMemOk := 0, BoostMemOnly := V1Obj()
 	blade := 0, trap := 0, blade2 := 0, trap2 := 0, BladeDir := "", TrapDir := "", bladetype := "", traptype := ""
 	if (!IsObject(BoostSrcUsed))
-		BoostSrcUsed := {}
+		BoostSrcUsed := V1Obj()
 	if (!IsObject(BoostSaid))
-		BoostSaid := {}
+		BoostSaid := V1Obj()
 	if (hitschool = "")
 		return
 	;(the game's hand as the helper read it this look - an older helper's, with no heads or boosts, isn't used here: the
@@ -1009,7 +1023,7 @@ BoostSearch()
 		if (BoostMemOk)
 			for bsI, bsC in bsHand.cards
 				{
-				bsHh := {}
+				bsHh := V1Obj()
 				if ((bsC.kind = "damage" || bsC.kind = "aoe") && HeadsParse(bsC.heads, bsHh))
 					for bsS in bsHh.heads
 						if (!InStr(bsSeen, "," bsS ","))
@@ -1028,25 +1042,25 @@ BoostSearch()
 		if (bsS = "balance")
 			continue
 		bsF := 0, bsX := "", bsY := ""
-		Find("blade", bsF, bsX, bsY, bsS)
+		Find("blade", &bsF, &bsX, &bsY, &bsS)
 		if (bsF == 1)
-			SbFound[bsS "/blade"] := {x: bsX, y: bsY} ;  V1toV2: Invalid Index errors?, try 'SbFound.Push(<val>)'
+			SbFound[bsS "/blade"] := V1Obj({x: bsX, y: bsY})
 		bsF := 0, bsX := "", bsY := ""
-		Find("trap", bsF, bsX, bsY, bsS)
+		Find("trap", &bsF, &bsX, &bsY, &bsS)
 		if (bsF == 1)
-			SbFound[bsS "/trap"] := {x: bsX, y: bsY} ;  V1toV2: Invalid Index errors?, try 'SbFound.Push(<val>)'
+			SbFound[bsS "/trap"] := V1Obj({x: bsX, y: bsY})
 		}
 	for bsI, bsG in PlanGroups(bsWant)
 		{
 		if (Tri(bsG, "blade"))
-			GbFound[bsG "blade"] := 1 ;  V1toV2: Invalid Index errors?, try 'GbFound.Push(<val>)'
+			GbFound[bsG "blade"] := 1
 		if (Tri(bsG, "trap"))
-			GbFound[bsG "trap"] := 1 ;  V1toV2: Invalid Index errors?, try 'GbFound.Push(<val>)'
+			GbFound[bsG "trap"] := 1
 		}
 	;(the game's hand read: a picture found for a card it doesn't have is a false match; each one's cards - their % and copies)
 	if (BoostMemOk)
 		{
-		bsKeys := [], bsHas := {}
+		bsKeys := [], bsHas := V1Obj()
 		for bsK in SbFound
 			bsKeys.Push(bsK)
 		for bsK in GbFound
@@ -1066,28 +1080,28 @@ BoostSearch()
 				else
 					%bsK% := 0
 				if (!BoostSaid.Has("false|" bsK))
-					BoostSaid["false|" bsK] := 1, DebugLog("  the " bsK " picture matched, but the game has no such card in hand - a false match, not used") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+					BoostSaid["false|" bsK] := 1, DebugLog("  the " bsK " picture matched, but the game has no such card in hand - a false match, not used")
 				continue
 				}
-			BoostHand[bsK] := [] ;  V1toV2: Invalid Index errors?, try 'BoostHand.Push(<val>)'
+			BoostHand[bsK] := []
 			for bsJ, bsN in bsM
 				{
-				bsC := bsHand.cards[bsN], bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsHas[bsN] := 1 ;  V1toV2: Invalid Index errors?, try 'bsHas.Push(<val>)'
-				BoostHand[bsK].Push({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP})
+				bsC := bsHand.cards[bsN], bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsHas[bsN] := 1
+				BoostHand[bsK].Push(V1Obj({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP}))
 				if (bsP != "")
 					{
 					if (!BoostPctMem.Has(bsK) || bsP < BoostPctMem[bsK])
-						BoostPctMem[bsK] := bsP ;  V1toV2: Invalid Index errors?, try 'BoostPctMem.Push(<val>)'
+						BoostPctMem[bsK] := bsP
 					bsS := bsK "@" (bsSrc = "" ? "deck" : bsSrc)
 					if (!BoostPctMem.Has(bsS) || bsP < BoostPctMem[bsS])
-						BoostPctMem[bsS] := bsP ;  V1toV2: Invalid Index errors?, try 'BoostPctMem.Push(<val>)'
+						BoostPctMem[bsS] := bsP
 					}
 				}
 			}
 		;(the game's blades and traps in hand no picture found: found by the game's hand when this search is for them - their
 		;slot's key by their schools and % (BoostSlotFor), not one the game says can't be cast now; cast at their card box -
 		;UseBlade / UseTrap, BoostMemBox; said once a battle)
-		bsMem := map()
+		bsMem := V1Obj()
 		for bsI, bsC in bsHand.cards
 			{
 			if ((bsC.kind != "blade" && bsC.kind != "trap") || bsHas.Has(bsI))
@@ -1100,32 +1114,32 @@ BoostSearch()
 			if (bsGo)
 				{
 				if (!BoostHand.Has(bsMk))
-					BoostHand[bsMk] := [] ;  V1toV2: Invalid Index errors?, try 'BoostHand.Push(<val>)'
-				bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsMem[bsMk] := 1 ;  V1toV2: Invalid Index errors?, try 'bsMem.Push(<val>)'
-				BoostHand[bsMk].Push({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP, ench: (bsC.ench != "") ? 1 : 0})
+					BoostHand[bsMk] := []
+				bsP := BoostCardPct(bsC), bsSrc := BoostSrcOf(bsC), bsMem[bsMk] := 1
+				BoostHand[bsMk].Push(V1Obj({src: bsSrc, item: bsC.item ? 1 : 0, pct: bsP, ench: (bsC.ench != "") ? 1 : 0}))
 				if (bsP != "")
 					{
 					if (!BoostPctMem.Has(bsMk) || bsP < BoostPctMem[bsMk])
-						BoostPctMem[bsMk] := bsP ;  V1toV2: Invalid Index errors?, try 'BoostPctMem.Push(<val>)'
+						BoostPctMem[bsMk] := bsP
 					bsS := bsMk "@" (bsSrc = "" ? "deck" : bsSrc)
 					if (!BoostPctMem.Has(bsS) || bsP < BoostPctMem[bsS])
-						BoostPctMem[bsS] := bsP ;  V1toV2: Invalid Index errors?, try 'BoostPctMem.Push(<val>)'
+						BoostPctMem[bsS] := bsP
 					}
 				}
 			if (BoostSaid.Has("miss|" bsNm))
 				continue
-			BoostSaid["miss|" bsNm] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			BoostSaid["miss|" bsNm] := 1
 			DebugLog("  in hand (the game): " bsNm " (" bsC.kind " " bsB.sch " " bsB.pct "%) - no picture found it" (bsSlot = "" ? " (no slot is for it - not cast)"
 				: " (" bsSlot ")" (bsGo ? ": cast at its card box when the hand's boxes and the game's cards line up" : bsC.castable = "0" ? ": greyed out now" : ": not for this round's hits")))
 			}
 		;(each found so: its school's (SbFound - no picture spot), its group's (GbFound), every school's (blade3...: its flag)
 		for bsK in bsMem
 			{
-			BoostMemOnly[bsK] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+			BoostMemOnly[bsK] := 1
 			if (InStr(bsK, "/"))
-				SbFound[bsK] := {x: "", y: "", mem: 1} ;  V1toV2: Invalid Index errors?, try 'SbFound.Push(<val>)'
+				SbFound[bsK] := V1Obj({x: "", y: "", mem: 1})
 			else if (RegExMatch(bsK, "^(elemental|spirit)(blade|trap)$"))
-				GbFound[bsK] := 1 ;  V1toV2: Invalid Index errors?, try 'GbFound.Push(<val>)'
+				GbFound[bsK] := 1
 			else
 				%bsK% := 1, %bsK%X := "", %bsK%Y := ""
 			}
@@ -1203,13 +1217,13 @@ TowerMem(hand)
 			{
 			tower := 0
 			if (!BoostSaid.Has("false|tower"))
-				BoostSaid["false|tower"] := 1, DebugLog("  the tower picture matched, but the game has no shield in hand - a false match, not used") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				BoostSaid["false|tower"] := 1, DebugLog("  the tower picture matched, but the game has no shield in hand - a false match, not used")
 			}
 		;(a Tower Shield in hand and another shield too - a school's or a team's, which the picture may be on: as shipped at
 		;UI 1.144 resources\tower is a Spirit Shield's - the Tower Shield at its card box when the boxes line up for sure,
 		;else the picture's spot as before - Autofarmer.ahk UseMemAt, 2026-10-25)
 		else if (twmM.Length && twmM.Length < twmWard)
-			BoostMemOnly["tower"] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+			BoostMemOnly["tower"] := 1
 		return
 		}
 	if (!twmM.Length)
@@ -1220,10 +1234,10 @@ TowerMem(hand)
 			twmGo := twmN
 	twmC := hand.cards[twmGo != "" ? twmGo : twmM[1]], twmNm := BoostMemName(twmC)
 	if (twmGo != "")
-		tower := 1, towerX := "", towerY := "", BoostMemOnly["tower"] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+		tower := 1, towerX := "", towerY := "", BoostMemOnly["tower"] := 1
 	if (!BoostSaid.Has("miss|" twmNm))
 		BoostSaid["miss|" twmNm] := 1, DebugLog("  in hand (the game): " twmNm " (" twmC.kind " " twmC.value ") - no picture found it (resources\tower)"
-			. (twmGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			. (twmGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now"))
 	}
 
 ;---- Your school's bubble (a global) by the game's hand (2026-10-26) ----
@@ -1246,12 +1260,12 @@ TowerMem(hand)
 ;sch's damage is its card)
 BubbleSlotName(sch)
 	{
-	if (sch = "" || !IsFunc("LearnCardInSlot"))
+	if (sch = "" || !V1IsFunc("LearnCardInSlot"))
 		return ""
 	bsnC := LearnCardInSlot.Call(sch "\bubble")
 	if (!IsObject(bsnC))
 		return ""
-	bsnG := IsFunc("LearnFlag") ? LearnFlag.Call(bsnC, "game") : ""
+	bsnG := V1IsFunc("LearnFlag") ? LearnFlag.Call(bsnC, "game") : ""
 	return (bsnG != "") ? bsnG : Trim(bsnC.name)
 	}
 
@@ -1322,7 +1336,7 @@ BubbleMem(hand)
 			{
 			bubble := 0
 			if (!BoostSaid.Has("false|bubble"))
-				BoostSaid["false|bubble"] := 1, DebugLog("  the bubble picture matched, but the game has no global in hand - a false match, not used") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				BoostSaid["false|bubble"] := 1, DebugLog("  the bubble picture matched, but the game has no global in hand - a false match, not used")
 			}
 		;(the global the bot put up in hand and none of the slot's to cast besides: the picture is on that one, on a global
 		;that isn't the slot's - one that doesn't boost your school, one you set to another kind -, or on a card the game's
@@ -1331,13 +1345,13 @@ BubbleMem(hand)
 			{
 			bubble := 0
 			if (!BoostSaid.Has("up|" BubbleUp))
-				BoostSaid["up|" BubbleUp] := 1, DebugLog("  the bubble in hand is " BubbleUp ", the global the bot put up this battle - not cast again") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				BoostSaid["up|" BubbleUp] := 1, DebugLog("  the bubble in hand is " BubbleUp ", the global the bot put up this battle - not cast again")
 			}
 		;(the slot's global in hand and another global the picture may be on - the one up already, one that doesn't boost
 		;your school, or another of the slot's (its name then not known by the picture): the slot's at its card box when the
 		;boxes line up for sure, the one cast named (BubbleUp) - ClickBubble)
 		else if (bbuM.Length && bbuAll > 1)
-			BoostMemOnly[bbuKey] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+			BoostMemOnly[bbuKey] := 1
 		return
 		}
 	if (!bbuM.Length)
@@ -1348,17 +1362,17 @@ BubbleMem(hand)
 			bbuGo := bbuN
 	bbuC := hand.cards[bbuGo != "" ? bbuGo : bbuM[1]], bbuNm := BoostMemName(bbuC)
 	if (bbuGo != "")
-		bubble := 1, bubbleX := "", bubbleY := "", BoostMemOnly[bbuKey] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+		bubble := 1, bubbleX := "", bubbleY := "", BoostMemOnly[bbuKey] := 1
 	if (!BoostSaid.Has("miss|" bbuNm))
 		BoostSaid["miss|" bbuNm] := 1, DebugLog("  in hand (the game): " bbuNm " (bubble " bbuC.value (bbuC.boosts != "" ? ", " bbuC.boosts : "") ") - no picture found it (" hitschool "\bubble)"
-			. (bbuGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			. (bbuGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now"))
 	}
 
 ;Whether the game's hand (this look's - VisionCards) holds the global the bot put up this battle (BubbleUp)
 BubbleUpHeld()
 	{
 	global BubbleUp
-	if (BubbleUp = "" || !IsFunc("VisionCards"))
+	if (BubbleUp = "" || !V1IsFunc("VisionCards"))
 		return false
 	buhHand := VisionCards.Call(300, 5000)
 	if (IsObject(buhHand))
@@ -1380,7 +1394,7 @@ BubbleIs(c)
 ;whatever the game says): your bubble, whatever kind the game gives it - never a false match of the slot's picture
 BubbleUserSlot(c, sch)
 	{
-	if (!IsObject(c) || sch = "" || !IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag"))
+	if (!IsObject(c) || sch = "" || !V1IsFunc("LearnCardInSlot") || !V1IsFunc("LearnHasFlag"))
 		return false
 	busC := LearnCardInSlot.Call(sch "\bubble")
 	if (!IsObject(busC) || !LearnHasFlag.Call(busC, "user"))
@@ -1396,7 +1410,7 @@ BubbleUserSlot(c, sch)
 BubbleUserOff(c, sch)
 	{
 	global LearnedCards
-	if (!IsObject(c) || !IsObject(LearnedCards) || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+	if (!IsObject(c) || !IsObject(LearnedCards) || !V1IsFunc("LearnHasFlag") || !V1IsFunc("LearnFlag"))
 		return false
 	buoNm := BoostMemName(c), buoBest := "", buoRank := 0
 	for buoI, buoL in LearnedCards
@@ -1421,7 +1435,7 @@ BubbleHandName()
 	{
 	global hitschool
 	bhnSlot := BubbleSlotName(hitschool)
-	bhnHand := IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
+	bhnHand := V1IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
 	if (!IsObject(bhnHand))
 		return bhnSlot
 	bhnOut := "", bhnMany := 0, bhnHas := 0
@@ -1469,7 +1483,7 @@ BubbleHandName()
 MemUserOff(c, sch, kind)
 	{
 	global LearnedCards
-	if (!IsObject(c) || !IsObject(LearnedCards) || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+	if (!IsObject(c) || !IsObject(LearnedCards) || !V1IsFunc("LearnHasFlag") || !V1IsFunc("LearnFlag"))
 		return false
 	muoNm := BoostMemName(c), muoBest := "", muoRank := 0
 	for muoI, muoL in LearnedCards
@@ -1491,7 +1505,7 @@ MemUserOff(c, sch, kind)
 ;game gives it (another, or none: its effects cut short), never a false match of the slot's picture
 MemUserSlot(c, rel, kind)
 	{
-	if (!IsObject(c) || rel = "" || !IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+	if (!IsObject(c) || rel = "" || !V1IsFunc("LearnCardInSlot") || !V1IsFunc("LearnHasFlag") || !V1IsFunc("LearnFlag"))
 		return false
 	musC := LearnCardInSlot.Call(rel)
 	if (!IsObject(musC) || musC.type != kind || !LearnHasFlag.Call(musC, "user"))
@@ -1526,7 +1540,7 @@ AbsorbFreeCard(c)
 ;read); a picture cut by hand: not known - no
 AbsorbSlotFree()
 	{
-	if (!IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag"))
+	if (!V1IsFunc("LearnCardInSlot") || !V1IsFunc("LearnHasFlag"))
 		return 0
 	asfC := LearnCardInSlot.Call("resources\absorb")
 	return (IsObject(asfC) && asfC.pips != "" && asfC.pips + 0 = 0 && !asfC.guess && !LearnHasFlag.Call(asfC, "xpip")) ? 1 : 0
@@ -1537,15 +1551,15 @@ AbsorbSlotFree()
 AbsorbPicThere()
 	{
 	global PicDir
-	if (IsFunc("LearnCardInSlot") && IsObject(LearnCardInSlot.Call("resources\absorb")))
+	if (V1IsFunc("LearnCardInSlot") && IsObject(LearnCardInSlot.Call("resources\absorb")))
 		return true
-	return FileExist(A_WorkingDir "\resources\absorb.png") || (PicDir != "" && FileExist(PicDir "\resources\absorb.png"))
+	return (FileExist(A_WorkingDir "\resources\absorb.png") || (PicDir != "" && FileExist(PicDir "\resources\absorb.png"))) ? 1 : 0  ; (v1: 1 or 0 - v2 the attributes)
 	}
 
 ;Whether absorbs are cast: Tower Shield on (usetower) and useabsorb (on unless 0)
 AbsorbOn()
 	{
-	return Stat("usetower") && StatOr("useabsorb", 1)
+	return (Stat("usetower") && StatOr("useabsorb", 1)) ? 1 : 0  ; (v1: && gave 1 or 0 - v2 the setting)
 	}
 
 ;BoostSearch's look at absorbs by the game's hand (hand: VisionCards', read for sure): the absorb picture found with no absorb
@@ -1573,20 +1587,20 @@ AbsorbMem(hand)
 			{
 			absorb := 0
 			if (!BoostSaid.Has("false|absorb"))
-				BoostSaid["false|absorb"] := 1, DebugLog("  the absorb picture matched, but the game has no absorb in hand - a false match, not used") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				BoostSaid["false|absorb"] := 1, DebugLog("  the absorb picture matched, but the game has no absorb in hand - a false match, not used")
 			}
 		else if (abmM.Length > 1)
-			BoostMemOnly["absorb"] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+			BoostMemOnly["absorb"] := 1
 		return
 		}
 	if (!abmM.Length)
 		return
 	abmC := hand.cards[abmGo != "" ? abmGo : abmM[1]], abmNm := BoostMemName(abmC)
 	if (abmGo != "")
-		absorb := 1, absorbX := "", absorbY := "", BoostMemOnly["absorb"] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+		absorb := 1, absorbX := "", absorbY := "", BoostMemOnly["absorb"] := 1
 	if (!BoostSaid.Has("miss|" abmNm))
 		BoostSaid["miss|" abmNm] := 1, DebugLog("  in hand (the game): " abmNm " (absorb " abmC.value ") - no picture found it (resources\absorb)"
-			. (abmGo != "" ? ": cast at its card box on Tower Shield's turns (defending; the filler only one that costs no pips)" : ": greyed out now")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			. (abmGo != "" ? ": cast at its card box on Tower Shield's turns (defending; the filler only one that costs no pips)" : ": greyed out now"))
 	}
 
 ;Whether a negative aura boosting schools bs (its boosts as BoostsParse has them: "all", "fire", "death,ice") adds to the
@@ -1648,7 +1662,7 @@ NegAuraMem(hand)
 		if (!BoostSaid.Has("miss|" namNm))
 			BoostSaid["miss|" namNm] := 1, DebugLog("  in hand (the game): " namNm " (a negative aura, " namC.value (namC.boosts != "" && namC.boosts != "?" ? ", " namC.boosts : "") ")"
 				. (namOff ? " - you set it to another kind on the Spells tab: not played" : !IsObject(namB) ? " - adds no damage taken: not played" : namC.castable = "0" ? " - greyed out now"
-				: " - cast at its card box on the trap target before the boosts, once in 4 rounds an enemy, when it adds to the planned hit")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				: " - cast at its card box on the trap target before the boosts, once in 4 rounds an enemy, when it adds to the planned hit"))
 		}
 	}
 
@@ -1668,7 +1682,7 @@ NegAuraWhere(&x, &y, &key, &who)
 		{
 		nawPick := TrapPick, nawWhy := TrapWhy
 		if (PartySupport())
-			nawGot := PartyTrapTarget(x, y), who := "the hitter's target"
+			nawGot := PartyTrapTarget(&x, &y), who := "the hitter's target"
 		else
 			nawGot := TrapTarget(&x, &y, &nawMost), who := TrapWhy
 		TrapPick := nawPick, TrapWhy := nawWhy
@@ -1733,14 +1747,14 @@ NegAuraNote(key, rnd)
 	{
 	global NegAuraOn
 	if (!IsObject(NegAuraOn))
-		NegAuraOn := {}
+		NegAuraOn := V1Obj()
 	nanNoG := SubStr(key, 1, 1) != "g"
 	for nanI, nanK in StrSplit(key, "|")
 		if (nanK != "")
 			{
-			NegAuraOn[nanK] := rnd ;  V1toV2: Invalid Index errors?, try 'NegAuraOn.Push(<val>)'
+			NegAuraOn[nanK] := rnd
 			if (nanNoG)
-				NegAuraOn["nog " nanK] := rnd ;  V1toV2: Invalid Index errors?, try 'NegAuraOn.Push(<val>)'
+				NegAuraOn["nog " nanK] := rnd
 			}
 	}
 
@@ -1750,7 +1764,7 @@ NegAuraNote(key, rnd)
 BattleFoeAt(x)
 	{
 	global GameLeft, GameW
-	if (x = "" || !IsFunc("NavBattle"))
+	if (x = "" || !V1IsFunc("NavBattle"))
 		return ""
 	bfaB := NavBattle.Call()
 	if (!IsObject(bfaB) || !IsObject(bfaB.foes))
@@ -1805,7 +1819,7 @@ ConvertMem(hand)
 			{
 			convert := 0
 			if (!BoostSaid.Has("false|convert"))
-				BoostSaid["false|convert"] := 1, DebugLog("  the convert picture matched, but the game has no " hitschool " prism in hand - a false match, not used") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+				BoostSaid["false|convert"] := 1, DebugLog("  the convert picture matched, but the game has no " hitschool " prism in hand - a false match, not used")
 			}
 		return
 		}
@@ -1817,10 +1831,10 @@ ConvertMem(hand)
 			cvmGo := cvmN
 	cvmC := hand.cards[cvmGo != "" ? cvmGo : cvmM[1]], cvmNm := BoostMemName(cvmC)
 	if (cvmGo != "")
-		convert := 1, convertX := "", convertY := "", BoostMemOnly[cvmKey] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostMemOnly.Push(<val>)'
+		convert := 1, convertX := "", convertY := "", BoostMemOnly[cvmKey] := 1
 	if (!BoostSaid.Has("miss|" cvmNm))
 		BoostSaid["miss|" cvmNm] := 1, DebugLog("  in hand (the game): " cvmNm " (a " hitschool " prism) - no picture found it (" hitschool "\convert)"
-			. (cvmGo != "" ? ": cast at its card box at the boss picked with Alt+1 when it's of your school" : ": greyed out now")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			. (cvmGo != "" ? ": cast at its card box at the boss picked with Alt+1 when it's of your school" : ": greyed out now"))
 	}
 
 ;Whether the boss picked with Alt+1 is of your school - it resists your hits: your prism converts them (Autofarmer.ahk
@@ -1883,7 +1897,7 @@ PlanName()
 		return "the hitter's hit"
 	if (InStr(PlanHit, "learned/") = 1)
 		return "learned hit " SubStr(PlanHit, 9)
-	pnN := (IsFunc("DashShortName") && RegExMatch(PlanHit, "^hit\d$")) ? DashShortName.Call(PlanHit, hitschool) : ""
+	pnN := (V1IsFunc("DashShortName") && RegExMatch(PlanHit, "^hit\d$")) ? DashShortName.Call(PlanHit, hitschool) : ""
 	if (PlanHit = "" && PlanWait != "")
 		return PlanWait ", waiting for its pips"
 	return (pnN != "" && pnN != PlanHit) ? pnN " (" PlanHit ")" : PlanHit != "" ? PlanHit : "no hit"
@@ -1911,25 +1925,25 @@ PlanProject(hitN)
 		if (BoostCanGo(ppK) && !ppB.Has(ppK) && !ppT.Has(ppK))
 			{
 			if (BoostKind(ppK) = "trap")
-				ppT[ppK] := BoostPctFor(ppK) ;  V1toV2: Invalid Index errors?, try 'ppT.Push(<val>)'
+				ppT[ppK] := BoostPctFor(ppK)
 			else
-				ppB[ppK] := BoostPctFor(ppK) ;  V1toV2: Invalid Index errors?, try 'ppB.Push(<val>)'
+				ppB[ppK] := BoostPctFor(ppK)
 			}
 	AppliedBlades := ppB, BossTraps := ppT
-	ppHh := HitHeads(hitN), ppUe := (enchant >= 1 && !ppHh.item)
+	ppHh := HitHeads(hitN), ppUe := (V1Ge(enchant, 1) && !ppHh.item)
 	ppOne := (ppHh.one != "") ? ppHh.one : (Stat(hitschool "." hitN "target") = 1)
 	if (IsObject(EnemyHP) && EnemyHP.Length)
 		{
 		ppSum := 0, ppBest := 0, ppTs := (BossChoosen != 1 && TrapPick) ? TrapPick : TrapSlot
 		for ppI, ppE in EnemyHP
 			{
-			ppD := Min(HitDamage(hitN, ppUe, ppI :== ppTs), ppE.cur)
+			ppD := Min(HitDamage(hitN, ppUe, ppI == ppTs), ppE.cur)
 			ppSum += ppD, ppBest := Max(ppBest, ppD)
 			}
 		ppD := ppOne ? ppBest : ppSum
 		}
 	else
-		ppD := HitDamage(hitN, ppUe, BossChoosen :== 1) * ((ppOne || EnemyPlates.Length < 1) ? 1 : EnemyPlates.Length)
+		ppD := HitDamage(hitN, ppUe, BossChoosen == 1) * ((ppOne || EnemyPlates.Length < 1) ? 1 : EnemyPlates.Length)
 	AppliedBlades := ppKeepB, BossTraps := ppKeepT
 	return ppD
 	}
@@ -1976,10 +1990,10 @@ PlanChoose()
 			if (%pcH% == 1)
 				return pcH
 		}
-	if (IsFunc("LearnHitCards") && LastHandAnswer != "")
+	if (V1IsFunc("LearnHitCards") && LastHandAnswer != "")
 		{
 		pcLh := LearnHitCards.Call(LastHandAnswer)
-		if (pcLh.Length())
+		if (pcLh.Length)
 			return "learned/" pcLh[1].id
 		}
 	return ""
@@ -1996,43 +2010,43 @@ BoostPick()
 	{
 	global
 	local bpL, bpS, bpK, bpF, bpN, bpBest, bpG, bpC, bpI, bpFit, bpNot, bpLog, bpLc, bpCand, bpMax, bpWho, bpHand, bpBestV, bpHh
-	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := {}, PlanWait := ""
+	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := V1Obj(), PlanWait := ""
 	if (hitschool = "")
 		return
 	if (PartySupport() || (Manual = 1 && HammerSchool != hitschool))
 		{
-		PlanHit := "hitter", PlanHeads := {heads: {}, total: 0, sure: 0, src: "the hitter's"}
+		PlanHit := "hitter", PlanHeads := V1Obj({heads: V1Obj(), total: 0, sure: 0, src: "the hitter's"})
 		bpL := HammerPlan != "" ? HammerPlan : (BadgeNumber(HammerSchool) ? HammerSchool : "")
 		Loop Parse, bpL, ","
 			if (BadgeNumber(A_LoopField) && !PlanHeads.heads.Has(A_LoopField))
-				PlanHeads.heads[A_LoopField] := 1, PlanHeads.total += 1 ;  V1toV2: Invalid Index errors?, try 'PlanHeads.heads.Push(<val>)'
+				PlanHeads.heads[A_LoopField] := 1, PlanHeads.total += 1
 		}
 	else
 		{
 		PlanHit := PlanChoose()
 		if (InStr(PlanHit, "learned/") = 1)
-			PlanHeads := LearnHitHeads(IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(PlanHit, 9)) : "")
+			PlanHeads := LearnHitHeads(V1IsFunc("LearnCardOf") ? LearnCardOf.Call(SubStr(PlanHit, 9)) : "")
 		else if (PlanHit != "")
 			PlanHeads := HitHeads(PlanHit)
 		;(no hit the pictures place or the pips pay for - a greyed Hydra waiting for its pips: the game's hand names it,
 		;and the boosts go on for that one while the pips come - 2026-10-25: Elemental Blade and Trap held back two
 		;rounds with Hydra greyed in hand. The strongest of the hand's hits; nothing's cast for it till it can be)
-		if (PlanHit = "" && BoostMemOk && IsFunc("VisionCards"))
+		if (PlanHit = "" && BoostMemOk && V1IsFunc("VisionCards"))
 			{
 			bpHand := VisionCards.Call(0, 5000), bpBestV := -1
 			if (IsObject(bpHand) && IsObject(bpHand.cards))
 				for bpI, bpC in bpHand.cards
 					if ((bpC.kind = "damage" || bpC.kind = "aoe") && bpC.num != "" && bpC.num + 0 > bpBestV)
 						{
-						bpHh := {}
+						bpHh := V1Obj()
 						if (HeadsParse(bpC.heads, bpHh))
 							bpBestV := bpC.num + 0, PlanHeads := bpHh, PlanHeads.src := "the game's hand", PlanWait := (bpC.display != "" ? bpC.display : bpC.name)
 						}
 			}
 		if (!IsObject(PlanHeads) || PlanHeads.total <= 0)
 			{
-			PlanHeads := {heads: {}, total: 1, sure: 0, src: "your school's"}
-			PlanHeads.heads[hitschool] := 1 ;  V1toV2: Invalid Index errors?, try 'PlanHeads.heads.Push(<val>)'
+			PlanHeads := V1Obj({heads: V1Obj(), total: 1, sure: 0, src: "your school's"})
+			PlanHeads.heads[hitschool] := 1
 			}
 		;(its schools for the party's supports only when they're known - the game's, PlayerStats.txt's heads: one taken as
 		;your school's goes out blank, so a support never throws a blade away for a guess - BoostMisfitDiscard)
@@ -2142,8 +2156,8 @@ BoostOneOf(list, kind)
 			}
 		}
 	if (!IsObject(BoostOneOfOff))
-		BoostOneOfOff := {}
-	BoostOneOfOff[kind] := booOff ;  V1toV2: Invalid Index errors?, try 'BoostOneOfOff.Push(<val>)'
+		BoostOneOfOff := V1Obj()
+	BoostOneOfOff[kind] := booOff
 	}
 
 ;The flags of kind ("blade" / "trap") BoostOneOf took off this round set again: the one it kept can't be cast after all
@@ -2157,7 +2171,7 @@ BoostOneOfBack(kind)
 	boobL := ""
 	for boobI, boobV in BoostOneOfOff[kind]
 		%boobV% := 1, boobL .= (boobL = "" ? "" : ", ") boobV
-	BoostOneOfOff[kind] := [] ;  V1toV2: Invalid Index errors?, try 'BoostOneOfOff.Push(<val>)'
+	BoostOneOfOff[kind] := []
 	DebugLog("  the " kind "s held back this round can go instead: " boobL)
 	}
 
@@ -2200,7 +2214,7 @@ BoostMisfitDiscard()
 	BoostMisfitDone := 1
 	;(the hitter's plan only - never its school taken for it)
 	bmdWant := HammerPlan
-	if (bmdWant = "" || hitschool = "" || (IsFunc("PlayerActing") && PlayerActing.Call()))
+	if (bmdWant = "" || hitschool = "" || (V1IsFunc("PlayerActing") && PlayerActing.Call()))
 		return 0
 	bmdAll := BoostBoxes()
 	if (!IsObject(bmdAll))
@@ -2209,9 +2223,9 @@ BoostMisfitDiscard()
 	while (bmdI <= bmdAll.boxes.Length && bmdDid < bmdMost)
 		{
 		bmdB := bmdAll.boxes[bmdI], bmdC := bmdB.m, bmdP := BoostsParse(bmdC.boosts), bmdLc := ""
-		if (InStr(bmdB.known, "learned/") = 1 && IsFunc("LearnCardOf"))
+		if (InStr(bmdB.known, "learned/") = 1 && V1IsFunc("LearnCardOf"))
 			bmdLc := LearnCardOf.Call(SubStr(bmdB.known, 9))
-		else if (bmdB.known != "" && IsFunc("LearnCardInSlot"))
+		else if (bmdB.known != "" && V1IsFunc("LearnCardInSlot"))
 			bmdLc := LearnCardInSlot.Call(StrReplace(bmdB.known, "/", "\"))
 		bmdFits := !IsObject(bmdP) || bmdP.sch = "all"
 		if (!bmdFits)
@@ -2228,7 +2242,7 @@ BoostMisfitDiscard()
 		s(Stats.Has("clickwait") ? Stats["clickwait"] : 40)
 		Click("right")
 		bmdDid += 1
-		DebugLog("  Discarded " (IsFunc("LearnMemGame") ? LearnMemGame.Call(bmdC) : bmdC.name) " - it boosts " bmdP.sch ", not the hitter's " bmdWant " nor your " hitschool " (right-click at " bmdX - GameLeft "," bmdY - GameTop ")")
+		DebugLog("  Discarded " (V1IsFunc("LearnMemGame") ? LearnMemGame.Call(bmdC) : bmdC.name) " - it boosts " bmdP.sch ", not the hitter's " bmdWant " nor your " hitschool " (right-click at " bmdX - GameLeft "," bmdY - GameTop ")")
 		bmdAll.boxes.RemoveAt(bmdI)
 		for bmdK, bmdO in bmdAll.boxes
 			bmdO.l += (bmdK < bmdI ? HalfPitch : -HalfPitch)
@@ -2245,7 +2259,8 @@ BladeOnUs(card)
 	{
 	if (card = "blade4")
 		return true
-	return (school != "") && (school = hitschool) && (Abs(hammerX - schoolX) < Px(10)) && (Abs(hammerY - schoolY) < Px(10))
+	;(v1: a place not read - blank: "" < 10 compared as text, true)
+	return (school != "") && (school = hitschool) && V1Lt(V1Abs(V1Sub(hammerX, schoolX)), Px(10)) && V1Lt(V1Abs(V1Sub(hammerY, schoolY)), Px(10))
 	}
 
 ;A hit uses up the hammer's blades and the boss's traps. With reboost:1 the battle code may also cast
@@ -2259,6 +2274,7 @@ BladeOnUs(card)
 ;all of them, as before
 ConsumeBoosts(hh := "")
 	{
+	global PartyLastSch, AppliedBlades, BossTraps, PartyHits, PartyHitR, BoostUnrec ; (v1 globals it sets)
 	cbSure := IsObject(hh) && hh.sure && hh.total > 0
 	cbGone := []
 	if (cbSure)
@@ -2294,8 +2310,8 @@ ConsumeBoosts(hh := "")
 		}
 	else
 		{
-		AppliedBlades := {}
-		BossTraps := {}
+		AppliedBlades := V1Obj()
+		BossTraps := V1Obj()
 		PartyLastSch := ""
 		}
 	PartyHits := (PartyHits ? PartyHits : 0) + 1, PartyHitR := (BlRound ? BlRound : 0) + 1
@@ -2349,7 +2365,7 @@ ParseHealth(text)
 		mx := StrReplace(m[2], ",") + 0
 		if (mx <= 0) || (cur < 1) || (cur > mx)
 			return ""
-		list.Push({cur: cur, max: mx})
+		list.Push(V1Obj({cur: cur, max: mx}))
 		pos += StrLen((m&&m[0]))
 		}
 	;Anything but a space touching a pair, or a digit (or l/I/| standing in for a 1) near it, means part of a number was misread
@@ -2416,6 +2432,7 @@ SameHealth(a, b)
 ;health on its own at both sizes. Anything that doesn't add up -> false (health unknown)
 ReadEnemyHealth()
 	{
+	global EnemyHP, EnemyPlates, EnemyPlatesAt, BossSlot, TrapSlot, HealthStatus, BossMax, BossTraps ; (v1 globals it sets)
 	EnemyHP := "", EnemyPlates := [], EnemyPlatesAt := A_TickCount
 	BossSlot := 0, TrapSlot := 0
 	;platestrip is in pixels at UI scale 1: the plates grow with the UI
@@ -2444,7 +2461,7 @@ ReadEnemyHealth()
 	Loop 2
 		{
 		stripRead := A_Index
-		seen := OcrRect(GameLeft, GameTop, GameW, stripH, "en", (A_Index == 1) ? scale1 : scale2, rects)
+		seen := OcrRect(GameLeft, GameTop, GameW, stripH, "en", (A_Index == 1) ? scale1 : scale2, &rects)
 		if (ErrorLevel)
 			{
 			HealthStatus := ErrorLevel
@@ -2478,7 +2495,7 @@ ReadEnemyHealth()
 				dupe := true
 			}
 		if (!dupe)
-			plates.Push({name: n, health: ""})
+			plates.Push(V1Obj({name: n, health: ""}))
 		}
 	for i, hl in healths
 		{
@@ -2491,7 +2508,7 @@ ReadEnemyHealth()
 				owner := p
 			}
 		if (!IsObject(owner))
-			plates.Push(owner := {name: "", health: hl, votes: []})
+			plates.Push(owner := V1Obj({name: "", health: hl, votes: []}))
 		else if (!IsObject(owner.health))
 			owner.health := hl
 		;(the strip's own read of the line only finds the plate - no vote: read plain, the red numbers on the
@@ -2506,7 +2523,7 @@ ReadEnemyHealth()
 			{
 			a := plates[A_Index], b := plates[A_Index + 1]
 			if ((IsObject(a.name) ? a.name.x : a.health.x) > (IsObject(b.name) ? b.name.x : b.health.x))
-				plates[A_Index] := b, plates[A_Index + 1] := a ;  V1toV2: Invalid Index errors?, try 'plates.Push(<val>)'
+				plates[A_Index] := b, plates[A_Index + 1] := a
 			}
 		}
 	if (offRow != "")
@@ -2517,7 +2534,7 @@ ReadEnemyHealth()
 		;(none read: there's always a first plate - its box is where a single-target hit is clicked; not with the Crown
 		;shop's buttons read up there - its Earn Crowns / Upgrade Now)
 		if (plates.Length < 1 && !RegExMatch(seen, "i)cr[o0]wn|upgrade|earn"))
-			EnemyPlates.Push({x: GameLeft + Px(205), y: GameTop + Px(36)})
+			EnemyPlates.Push(V1Obj({x: GameLeft + Px(205), y: GameTop + Px(36)}))
 		return false
 		}
 	;Where each plate is (its name, else its health line), left to right: a single-target hit clicks one
@@ -2526,7 +2543,7 @@ ReadEnemyHealth()
 	for i, p in plates
 		{
 		b := IsObject(p.name) ? p.name : p.health
-		EnemyPlates.Push({x: b.x + b.w // 2, y: b.y + b.h // 2, name: IsObject(p.name) ? p.name.text : ""})
+		EnemyPlates.Push(V1Obj({x: b.x + b.w // 2, y: b.y + b.h // 2, name: IsObject(p.name) ? p.name.text : ""}))
 		}
 
 	;2) Each plate's health also read on its own at both sizes. Every read is a vote: at least two must
@@ -2552,7 +2569,7 @@ ReadEnemyHealth()
 		;(by the helper first, by the digits' shape - VisionPlate: two votes; else OCR)
 		vp := VisionPlate(cx - b.h * 3, cy, cx + cw + b.h * 3, cy + ch)
 		if (IsObject(vp))
-			p.votes.Push([{cur: vp.cur, max: vp.max}]), p.votes.Push([{cur: vp.cur, max: vp.max}])
+			p.votes.Push([V1Obj({cur: vp.cur, max: vp.max})]), p.votes.Push([V1Obj({cur: vp.cur, max: vp.max})])
 		gl := IsObject(vp) ? "" : HealthGlyphs(cx - b.h * 3, cy, cw + b.h * 6, ch)
 		;(the plate's own box kept as it is - the boss click's matched against it below)
 		gx := cx, gy := cy, gw := cw, gh := ch
@@ -2560,15 +2577,15 @@ ReadEnemyHealth()
 			GlyphsBox(gl, (gl[1].y2 - gl[1].y1) // 2 + 2, &gx, &gy, &gw, &gh)
 		if (!IsObject(vp))
 			{
-			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, redLines, 1), gl)))
-			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, redLines, 1), gl)))
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale1, &redLines, 1), gl)))
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", scale2, &redLines, 1), gl)))
 			}
 		;(the two don't make two agreeing reads - one came out short: a third, at a size between)
 		got := 0
 		for j, v in p.votes
 			got += IsObject(v) ? 1 : 0
 		if (got < 2)
-			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", (scale1 + scale2) / 2, redLines, 1), gl)))
+			p.votes.Push(ParseHealth(HealthDigits(OcrRect(gx, gy, gw, gh, "en", (scale1 + scale2) / 2, &redLines, 1), gl)))
 		agreed := "", count := 0
 		for j, v in p.votes
 			{
@@ -2589,7 +2606,7 @@ ReadEnemyHealth()
 		list.Push(agreed[1])
 		;Whole plate, for matching the Alt+1 boss click: the diamond sits left of the text, pips above it
 		top := IsObject(p.name) ? p.name : b
-		p.box := {x1: (top.x < cx ? top.x : cx) - top.h * 5, y1: top.y - top.h * 2, x2: cx + cw + top.h, y2: cy + ch + top.h}
+		p.box := V1Obj({x1: (top.x < cx ? top.x : cx) - top.h * 5, y1: top.y - top.h * 2, x2: cx + cw + top.h, y2: cy + ch + top.h})
 		}
 	EnemyHP := list
 	HealthStatus := ""
@@ -2622,7 +2639,7 @@ ReadEnemyHealth()
 			if (alive == 0)
 				{
 				;Boss is gone, any traps we put on it went with it
-				BossTraps := {}
+				BossTraps := V1Obj()
 				BossSlot := 0
 				}
 			else if (alive > 1)
@@ -2654,7 +2671,7 @@ TrapWhere()
 		return
 	if (PartySupport())
 		{
-		if (PartyTrapTarget(TrapAtX, TrapAtY))
+		if (PartyTrapTarget(&TrapAtX, &TrapAtY))
 			TrapOn := 1
 		return
 		}
@@ -2695,14 +2712,14 @@ TrapTarget(&x, &y, &most)
 		return false
 	if (IsObject(EnemyHP) && EnemyHP.Length && EnemyHP.Length = EnemyPlates.Length)
 		{
-		ttTop := "", ttTied := {}, ttN := 0, ttOne := ""
+		ttTop := "", ttTied := V1Obj(), ttN := 0, ttOne := ""
 		for ttI, ttE in EnemyHP
 			if (ttTop = "" || ttE.cur > ttTop)
 				ttTop := ttE.cur
 		for ttI, ttE in EnemyHP
 			if (ttE.cur = ttTop)
 				{
-				ttTied[ttI] := 1, ttN += 1 ;  V1toV2: Invalid Index errors?, try 'ttTied.Push(<val>)'
+				ttTied[ttI] := 1, ttN += 1
 				if (ttOne = "")
 					ttOne := ttI
 				}
@@ -2738,19 +2755,19 @@ TrapTarget(&x, &y, &most)
 ;(how it was put on its plate), why (what failed: pick 0)}
 TrapMemHealth()
 	{
-	if (!IsFunc("NavBattle"))
-		return {pick: 0, why: "not asked (no Vision.ahk)"}
+	if (!V1IsFunc("NavBattle"))
+		return V1Obj({pick: 0, why: "not asked (no Vision.ahk)"})
 	tmhB := NavBattle.Call()
 	if (!IsObject(tmhB))
-		return {pick: 0, why: "not read (" NavBattleWhy ")"}
+		return V1Obj({pick: 0, why: "not read (" NavBattleWhy ")"})
 	tmhFoes := []
 	for tmhI, tmhF in tmhB.foes
 		if (tmhF.health != "" && tmhF.health > 0)
 			tmhFoes.Push(tmhF)
 	if (!tmhFoes.Length)
-		return {pick: 0, why: "no enemy's health read"}
+		return V1Obj({pick: 0, why: "no enemy's health read"})
 	;(each foe's plate: foe -> plate, plate -> foe, how)
-	tmhPlate := {}, tmhFoe := {}, tmhHow := {}
+	tmhPlate := V1Obj(), tmhFoe := V1Obj(), tmhHow := V1Obj()
 	for tmhI, tmhF in tmhFoes
 		if (tmhF.x != "")
 			{
@@ -2759,7 +2776,7 @@ TrapMemHealth()
 				if (!tmhFoe.Has(tmhJ) && (tmhD = "" || Abs(tmhP.x - tmhFx) < tmhD))
 					tmhBest := tmhJ, tmhD := Abs(tmhP.x - tmhFx)
 			if (tmhBest && tmhD <= Px(160))
-				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by where it is" ;  V1toV2: Invalid Index errors?, try 'tmhPlate.Push(<val>)'
+				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by where it is"
 			}
 	for tmhI, tmhF in tmhFoes
 		if (!tmhPlate.Has(tmhI) && tmhF.name != "")
@@ -2769,7 +2786,7 @@ TrapMemHealth()
 				if (!tmhFoe.Has(tmhJ) && PlateNameLike(tmhP.name, tmhF.name))
 					tmhBest := tmhBest ? -1 : tmhJ
 			if (tmhBest > 0)
-				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by its name" ;  V1toV2: Invalid Index errors?, try 'tmhPlate.Push(<val>)'
+				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by its name"
 			}
 	;(the one left of each - not a plate whose name was read as another's)
 	if (tmhFoes.Length - tmhPlate.Count = 1 && EnemyPlates.Length - tmhFoe.Count = 1)
@@ -2777,7 +2794,7 @@ TrapMemHealth()
 			if (!tmhPlate.Has(tmhI))
 				for tmhJ, tmhP in EnemyPlates
 					if (!tmhFoe.Has(tmhJ) && tmhP.name = "")
-						tmhPlate[tmhI] := tmhJ, tmhFoe[tmhJ] := tmhI, tmhHow[tmhI] := "as the one left" ;  V1toV2: Invalid Index errors?, try 'tmhPlate.Push(<val>)'
+						tmhPlate[tmhI] := tmhJ, tmhFoe[tmhJ] := tmhI, tmhHow[tmhI] := "as the one left"
 	;The most health now; the leftmost plate of those that have it
 	tmhTop := ""
 	for tmhI, tmhF in tmhFoes
@@ -2794,9 +2811,9 @@ TrapMemHealth()
 				tmhPick := tmhI
 			}
 	if (tmhLost != "")
-		return {pick: 0, why: "the one with the most health (" tmhLost ", " tmhTop ") not found on a plate (" EnemyPlates.Length " plates, " tmhFoes.Length " enemies)"}
+		return V1Obj({pick: 0, why: "the one with the most health (" tmhLost ", " tmhTop ") not found on a plate (" EnemyPlates.Length " plates, " tmhFoes.Length " enemies)"})
 	tmhF := tmhFoes[tmhPick]
-	return {pick: tmhPlate[tmhPick], cur: tmhF.health, max: tmhF.max, name: tmhF.name, tied: tmhTied, how: tmhHow[tmhPick], why: ""}
+	return V1Obj({pick: tmhPlate[tmhPick], cur: tmhF.health, max: tmhF.max, name: tmhF.name, tied: tmhTied, how: tmhHow[tmhPick], why: ""})
 	}
 
 ;A plate's OCR'd name (capitals, maybe cut short - "SELWYN SKYW...") is the mob's name: letters only (digits OCR swaps in
@@ -2827,7 +2844,7 @@ TrapHitPick(among)
 	thpP := PlanChoose(), thpD := ""
 	if (RegExMatch(thpP, "^hit[1-4]$") && Stats[hitschool "." thpP "target"] = 1)
 		thpD := HitDamage(thpP, false, false)
-	else if (InStr(thpP, "learned/") = 1 && IsFunc("LearnCardOf"))
+	else if (InStr(thpP, "learned/") = 1 && V1IsFunc("LearnCardOf"))
 		{
 		thpC := LearnCardOf.Call(SubStr(thpP, 9))
 		if (IsObject(thpC) && thpC.type = "damage" && thpC.target != 0)
@@ -2844,14 +2861,14 @@ TrapPut(key, bonus, src)
 	{
 	global
 	if (!IsObject(BossTraps))
-		BossTraps := {}
+		BossTraps := V1Obj()
 	if (BossChoosen != 1)
 		{
 		if (TrapFoeX = "" || Abs(TrapAtX - TrapFoeX) > Px(40) || Abs(TrapAtY - TrapFoeY) > Px(40))
 			{
 			if (BossTraps.Count)
 				DebugLog("  a trap on another enemy than the last ones - those aren't counted any more")
-			BossTraps := {}, TrapFoeX := TrapAtX, TrapFoeY := TrapAtY, TrapFoeMax := TrapAtMax
+			BossTraps := V1Obj(), TrapFoeX := TrapAtX, TrapFoeY := TrapAtY, TrapFoeMax := TrapAtMax
 			TrapFoeN := IsObject(EnemyPlates) ? EnemyPlates.Length : 0, TrapSlot := TrapPick
 			}
 		else if (TrapFoeMax = "" && TrapAtMax != "")
@@ -2886,7 +2903,7 @@ TrapFoeSlot(list, plates)
 	if (!tfsSame)
 		{
 		DebugLog("  the enemy your traps went on is gone - they went with it")
-		BossTraps := {}, TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0
+		BossTraps := V1Obj(), TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0
 		return 0
 		}
 	if (tfsAt <= 0 || list[tfsAt].max != TrapFoeMax)
@@ -2912,16 +2929,19 @@ HealthGlyphs(x, y, w, h)
 	px := CaptureRGB(x, y, w, h)
 	if (!IsObject(px))
 		return ""
-	inkAt := [], colInk := []
+	;(v1: inkAt was sparse - a pixel not inked read blank, and so did one past the picture: the band / low look below
+	;reads the row under a glyph 1-2 px high on the last row - so a V1Obj, not an Array, which throws outside its
+	;length; colInk[A_Index] := 0 grew the array - v2 assigns an array's items only inside its length)
+	inkAt := V1Obj(), colInk := []
 	Loop w
-		colInk[A_Index] := 0 ;  V1toV2: Invalid Index errors?, try 'colInk.Push(<val>)'
+		colInk.Push(0)
 	Loop w * h
 		{
 		c := px[A_Index]
 		r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
 		;(the numbers' red - not the orange-red of a school icon: its green well above its blue)
 		if (r > 110 && g < 45 && b < 45 && r - g > 80 && g - b < 18)
-			inkAt[A_Index] := 1, colInk[Mod(A_Index - 1, w) + 1] += 1 ;  V1toV2: Invalid Index errors?, try 'inkAt.Push(<val>)'
+			inkAt[A_Index] := 1, colInk[Mod(A_Index - 1, w) + 1] += 1
 		}
 	;Runs of inked columns, and the usual width of one
 	runs := [], start := 0, widths := ""
@@ -2990,7 +3010,7 @@ HealthGlyphs(x, y, w, h)
 				}
 			}
 		if (top)
-			gl.Push({x1: q[1], x2: q[2], y1: top, y2: bottom}), heights .= (heights = "" ? "" : ",") bottom - top + 1
+			gl.Push(V1Obj({x1: q[1], x2: q[2], y1: top, y2: bottom})), heights .= (heights = "" ? "" : ",") bottom - top + 1
 		}
 	if (!gl.Length)
 		return []
@@ -3098,7 +3118,7 @@ HealthGlyphs(x, y, w, h)
 			else
 				low := inked / (bw * (y1 - y0 + 1))
 			}
-		out.Push({x1: x + g.x1 - 1, x2: x + g.x2 - 1, y1: y + g.y1 - 1, y2: y + g.y2 - 1, band: band, low: low})
+		out.Push(V1Obj({x1: x + g.x1 - 1, x2: x + g.x2 - 1, y1: y + g.y1 - 1, y2: y + g.y2 - 1, band: band, low: low}))
 		}
 	return out
 	}
@@ -3152,7 +3172,7 @@ HitDamage(hitName, useEnchant, toBoss)
 	if (EnchantedHits[hitName])
 		hdAdd := Stat("enchant" . EnchantedHits[hitName])
 	;(never on an item card - a pet's, the wand's: it can't be enchanted)
-	else if (useEnchant && enchant >= 1 && !hdHh.item)
+	else if (useEnchant && V1Ge(enchant, 1) && !hdHh.item)
 		hdAdd := Stat("enchant" . enchant)
 	return HeadsDamage(hdHh, hdPer, hdAdd, toBoss)
 	}
@@ -3188,7 +3208,7 @@ LearnedHitDamage(c, enchanted)
 	if (lhdHh.total <= 0)
 		return ""
 	;(an X-pip hit: its number is a pip's - all your pips go)
-	return HeadsDamage(lhdHh, lhdHh.xpip ? Max(PipsNow, 1) : 1, (enchanted && enchant >= 1) ? Stat("enchant" . enchant) : 0, BossChoosen :== 1)
+	return HeadsDamage(lhdHh, lhdHh.xpip ? Max(PipsNow, 1) : 1, (enchanted && V1Ge(enchant, 1)) ? Stat("enchant" . enchant) : 0, BossChoosen == 1)
 	}
 
 IsLethal(hitName, useEnchant)
@@ -3206,7 +3226,7 @@ IsLethal(hitName, useEnchant)
 	;went on; 0 none / its plate not found)
 	for i, e in EnemyHP
 		{
-		if (HitDamage(hitName, useEnchant, i :== TrapSlot) < e.cur * margin)
+		if (HitDamage(hitName, useEnchant, i == TrapSlot) < e.cur * margin)
 			return false
 		}
 	return true
@@ -3268,7 +3288,10 @@ ShowKillInfo()
 	tip := WinExist("ahk_class tooltips_class32 ahk_pid " . DllCall("GetCurrentProcessId"))
 	if (tip)
 		{
-		WinGetPos(&tx, &ty, &tw, &th, "ahk_id " tip)
+		try
+			WinGetPos(&tx, &ty, &tw, &th, "ahk_id " tip)
+		catch
+			return  ; (v1: the tooltip gone already - its place read blank: nothing done)
 		if (tx < GameRight) && (tx + tw > GameLeft) && (ty < GameBottom) && (ty + th > GameTop)
 			ToolTip(, , , 20)
 		}
@@ -3303,6 +3326,7 @@ Affordable(hitName)
 PipsRead()
 	{
 	global school
+	global PipsNote, PipOrbs ; (v1 globals it sets)
 	prRow := PipValue(), PipsNote := ""
 	prHand := VisionCards(1500)
 	if (!IsObject(prHand) || !IsObject(prHand.me) || !prHand.me.ok)
@@ -3323,13 +3347,15 @@ PipsRead()
 PipValue()
 	{
 	global playerX, playerY
+	global PipOrbs ; (v1 globals it sets)
 	if (playerX = "" || playerY = "" || (playerX = 0 && playerY = 0))
 		return -1
 	;(and how many of the 7 orb slots are filled, for saving pips: PipOrbs)
 	PipOrbs := 0
 	orb := Px(11), w := Round(20 * UiScale * 6) + orb, h := orb
-	px := CaptureRGB(playerX - Px(6), playerY + Px(50), w, h)
-	if (!IsObject(px))
+	;(v2 port: v1's local px renamed pvPx - in v2 a local px would hide the Px() function it calls)
+	pvPx := CaptureRGB(playerX - Px(6), playerY + Px(50), w, h)
+	if (!IsObject(pvPx))
 		return -1
 	;The colour counts below are areas, so they grow with the square of the UI scale
 	area := UiScale * UiScale
@@ -3342,7 +3368,7 @@ PipValue()
 			row := (A_Index - 1) * w + Round(20 * UiScale * slot)
 			Loop orb
 				{
-				c := px[row + A_Index], r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
+				c := pvPx[row + A_Index], r := (c >> 16) & 0xFF, g := (c >> 8) & 0xFF, b := c & 0xFF
 				if (b > 150 && r > 110 && g < 120)
 					purple++
 				;(a Myth school pip: gold with a big blue triangle, so not much gold shows)
@@ -3381,11 +3407,11 @@ CaptureRGB(x, y, w, h)
 	{
 	hdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", hdc, "Ptr")
-	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	bi := Buffer(40, 0)
 	NumPut("UInt", 40, bi, 0), NumPut("Int", w, bi, 4), NumPut("Int", -h, bi, 8)
 	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	bits := 0
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", &bits, "Ptr", 0, "UInt", 0, "Ptr")
 	if (!hbm)
 		{
 		DllCall("DeleteDC", "Ptr", mdc), DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdc)
@@ -3418,10 +3444,10 @@ KillHitsText()
 		khDmg := HitDamage(kh, false, false)
 		if (khDmg <= 0)
 			continue
-		khName := IsFunc("DashShortName") && kh != "wand" ? DashShortName.Call(kh, hitschool) : ""
+		khName := V1IsFunc("DashShortName") && kh != "wand" ? DashShortName.Call(kh, hitschool) : ""
 		;(a wand's hit is always one enemy's)
 		khOne := kh = "wand" || Stat(hitschool "." kh "target") = 1
-		khBoost := (kh != "wand" && enchant >= 1) ? HitDamage(kh, true, false) : 0
+		khBoost := (kh != "wand" && V1Ge(enchant, 1)) ? HitDamage(kh, true, false) : 0
 		;(its heads, when they're known - the game's: [fire 230 + ice 230 + storm 230 (the game)])
 		khHh := HitHeads(kh)
 		out .= (out = "" ? "" : "; ") (khName != "" && khName != kh ? khName " (" kh ")" : kh) " " khDmg (khOne ? " one enemy" : " all enemies")
@@ -3440,7 +3466,7 @@ FindLethalHit(&hitName, &withEnchant)
 		hitName := "wand"
 		return true
 		}
-	Loop (enchant >= 1) ? 2 : 1
+	Loop (V1Ge(enchant, 1) ? 2 : 1)  ; (v1: enchant blank before the first look at the hand: once)
 		{
 		useEnchant := A_Index - 1
 		Loop 4
@@ -3469,6 +3495,7 @@ FindLethalHit(&hitName, &withEnchant)
 PlanPips()
 	{
 	global hit1, hit2, hit3, hit4, BossChoosen, enchant, roundnumber, OwnHpPct, OwnHpRound, player
+	global PipSaveFor, PipSaveBare, PipSaveRounds, PipSaveTarget, PipSaveStall, PipSaveLastPips, PipSaveGaveUp ; (v1 globals it sets)
 	PipSaveFor := "", PipSaveBare := 0
 	maxWait := Stat("pipsave")
 	if (maxWait <= 0 || PipSaveGaveUp || PipsNow < 0 || !IsObject(EnemyHP) || !EnemyHP.Length)
@@ -3500,7 +3527,7 @@ PlanPips()
 		return
 		}
 	;Your health, off your name plate, read this round: no saving when it's low - or can't be read
-	if (OwnHpRound != roundnumber && player == 1 && IsFunc("OwnHealthLow"))
+	if (OwnHpRound != roundnumber && player == 1 && V1IsFunc("OwnHealthLow"))
 		OwnHealthLow.Call()
 	if (OwnHpRound != roundnumber)
 		{
@@ -3538,9 +3565,10 @@ PlanPips()
 PipLethalLater(name, wait)
 	{
 	global enchant
+	global AuraRounds ; (v1 globals it sets)
 	keep := AuraRounds
 	AuraRounds := Max(0, AuraRounds - wait)
-	lethal := IsLethal(name, 0) || (enchant >= 1 && IsLethal(name, 1))
+	lethal := IsLethal(name, 0) || (V1Ge(enchant, 1) && IsLethal(name, 1))
 	AuraRounds := keep
 	return lethal
 	}
@@ -3548,10 +3576,24 @@ PipLethalLater(name, wait)
 ;Whether hit name is lethal with none of the boosts a wand hit would use up (blades, traps, aura, enchant)
 PipLethalBare(name)
 	{
+	global AppliedBlades, BossTraps, AuraRounds ; (v1 globals it sets)
 	keepBlades := AppliedBlades, keepTraps := BossTraps, keepAura := AuraRounds
-	AppliedBlades := {}, BossTraps := {}, AuraRounds := 0
+	AppliedBlades := V1Obj(), BossTraps := V1Obj(), AuraRounds := 0
 	lethal := IsLethal(name, 0)
 	AppliedBlades := keepBlades, BossTraps := keepTraps, AuraRounds := keepAura
 	return lethal
 	}
 
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+KillCalcBlank()
+	{
+	global towerX := "", towerY := "", bubbleX := "", bubbleY := "", convertX := "", convertY := "", enchant := "", used := "", TrapOn := ""
+	global potent := "", sharpen := "", BoostHand := "", BoostSrcUsed := "", BoostSaid := "", hitschool := "", Manual := "", HammerSchool := ""
+	global HammerPlan := "", BossChoosen := "", wand := "", BoostExtra := "", AppliedBlades := "", BossTraps := "", SbFound := "", GbFound := ""
+	global EnemyHP := "", TrapPick := "", TrapSlot := "", EnemyPlates := "", KillHit := "", BoostMemOk := "", PipSaveFor := "", LastHandAnswer := ""
+	global BoostOneOfOff := "", PlanHeads := "", PlanHit := "", BoostMisfitDone := "", LearnAll := "", Stats := "", GameLeft := "", GameTop := ""
+	global HalfPitch := "", bossX := "", bossY := "", feint := "", trap3 := "", trap4 := "", EnemyPlatesAt := "", HealthStatus := "", TrapFoeX := ""
+	global TrapAtX := "", TrapAtY := "", TrapFoeY := "", TrapAtMax := "", TrapWhy := "", TrapFoeMax := ""
+	}

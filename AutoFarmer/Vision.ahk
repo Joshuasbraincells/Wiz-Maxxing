@@ -14,10 +14,10 @@
 ; NavRead (at the bottom) asks the helper where the wizard is and where the quest arrow points, read from the
 ; game's memory - for the walker (Walker.ahk). Only ever read: see "The game's memory" below.
 
-global VisionOn := 0, VisionPid := 0, VisionFails := 0, VisionCards := "", VisionCardsAt := 0, VisionCardsKey := "", VisionMissing := ","
+global VisionOn, VisionPid, VisionFails, VisionCardsVar, VisionCardsAt, VisionCardsKey, VisionMissing ;(v1 never ran: VisionOn := 0, VisionPid := 0, VisionFails := 0, VisionCards := "", VisionCardsAt := 0, VisionCardsKey := "", VisionMissing := "," - blank at start: VisionBlank)
 ;The helper's folder ("" = vision\ next to the script) and port (tests use another one, so they don't stop
 ;the bot's own helper); why the last VisionGet got nothing
-global VisionDir := "", VisionPort := 47128, VisionErr
+global VisionDir, VisionPort, VisionErr ;(v1 never ran: VisionDir := "", VisionPort := 47128 - blank at start: VisionBlank)
 ;Why the last VisionPlate read nothing
 global VisionPlateWhy
 ;Why the last VisionCards (the hand from the game's memory) got nothing; its last answer kept, its why and when
@@ -29,6 +29,7 @@ global VisionLookN
 ;Starts the helper (after stopping one left over from before) and waits up to 8 s for it to answer
 VisionStart()
 	{
+	global VisionOn, VisionPort, VisionMissing, VisionPid, VisionFails, ErrorLevel ; (v1 globals it sets)
 	VisionOn := 0
 	;(a global's starting value in an #Included file never runs: set here)
 	if (!VisionPort)
@@ -49,9 +50,7 @@ VisionStart()
 		DebugLog("Vision: " dir "\vision.py isn't there - cards are found with ImageSearch")
 		return false
 		}
-	{   ErrorLevel := "ERROR"
-	   Try ErrorLevel := Run("""" py """ """ dir "\vision.py"" --parent " DllCall("GetCurrentProcessId") " --port " VisionPort, dir, "Hide", &VisionPid)
-	}
+	V1Run("`"" py "`" `"" dir "\vision.py`" --parent " DllCall("GetCurrentProcessId") " --port " VisionPort, dir, "Hide", &VisionPid)
 	if (ErrorLevel)
 		{
 		DebugLog("Vision: couldn't start " py " - cards are found with ImageSearch")
@@ -108,6 +107,7 @@ VisionPython()
 ;doesn't count towards that (/nav: the game not running is no reason to stop asking about cards)
 VisionGet(path, timeoutMs := 1500, noCount := false)
 	{
+	global VisionErr, ErrorLevel, VisionOn, VisionFails ; (v1 globals it sets)
 	VisionErr := ""
 	;(the helper's gone: no point asking - a closed port costs 2 s)
 	if (VisionOn && VisionPid)
@@ -134,7 +134,7 @@ VisionGet(path, timeoutMs := 1500, noCount := false)
 				req.Abort()
 				;(a timeout counts double: the second one turns the helper off)
 				if (!noCount)
-					VisionFails++
+					VisionFails := V1N(VisionFails) + 1   ; (v1: a blank counted as 0)
 				throw "no answer in " timeoutMs " ms"
 				}
 			Sleep(10)
@@ -146,7 +146,7 @@ VisionGet(path, timeoutMs := 1500, noCount := false)
 			VisionFails := 0
 		return text = "" ? " " : text
 		}
-	Catch Error as e
+	catch Any as e   ; (v1: catch caught anything thrown - the strings thrown above too)
 		{
 		VisionErr := Trim(IsObject(e) ? e.Message : e, " `t`r`n")
 		if (VisionOn && !noCount && ++VisionFails >= 3)
@@ -178,29 +178,31 @@ VisionPicList()
 ;questions of the next 0.4 s (FindCards asks about every card in one go)
 VisionFind(dir, title, &X, &Y)
 	{
+	global VisionCardsVar, VisionCardsAt, VisionCardsKey, VisionMissing, VisionLookN ; (v1 globals it sets)
 	if (!VisionOn || hitschool = "")
 		return -1
 	key := hitschool "|" BoostExtra "|" UiScale "|" ScreenX "|" ScreenY
-	if (!IsObject(VisionCards) || A_TickCount - VisionCardsAt > 400 || key != VisionCardsKey)
+	if (!IsObject(VisionCardsVar) || A_TickCount - VisionCardsAt > 400 || key != VisionCardsKey)
 		{
 		answer := VisionGet("/cards?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList())
 		if (answer = "")
 			return -1
-		VisionCards := [], VisionCardsAt := A_TickCount, VisionCardsKey := key, VisionMissing := ",", VisionLookN := (VisionLookN ? VisionLookN : 0) + 1
+		VisionCardsVar := [], VisionCardsAt := A_TickCount, VisionCardsKey := key, VisionMissing := ",", VisionLookN := (VisionLookN ? VisionLookN : 0) + 1
 		Loop Parse, answer, "`n", "`r"
 			{
 			p := StrSplit(A_LoopField, "|")
 			if (p.Length = 4)
-				VisionCards.Push({pic: p[1], x: p[2] + 0, y: p[3] + 0, d: p[4] + 0})
-			else if (p[1] = "missing")
-				VisionMissing .= p[2] ","
+				VisionCardsVar.Push(V1Obj({pic: p[1], x: V1Add(p[2], 0), y: V1Add(p[3], 0), d: V1Add(p[4], 0)}))
+			;(v1: a field that isn't there - an empty line's first - read blank)
+			else if (V1At(p, 1) = "missing")
+				VisionMissing .= V1At(p, 2) ","
 			}
 		}
 	want := StrReplace(dir, "\", "/") "/" title
 	;(a picture the helper wasn't asked about, or couldn't look for: ImageSearch's job)
 	if (!InStr("," VisionPicList() ",", "," want ",") || InStr(VisionMissing, "," want ","))
 		return -1
-	for i, c in VisionCards
+	for i, c in VisionCardsVar
 		if (c.pic = want)
 			{
 			X := c.x, Y := c.y
@@ -212,6 +214,7 @@ VisionFind(dir, title, &X, &Y)
 ;Forget the last look at the hand (it's changed: a card was cast or discarded)
 VisionForget()
 	{
+	global VisionCardsAt, VisionMemAt ; (v1 globals it sets)
 	VisionCardsAt := 0, VisionMemAt := 0
 	}
 
@@ -247,6 +250,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 	;(when the last wait for a settled hand ran out: for 10 s after, asked once with no retries - the 1.5 s wait was paid
 	;two to six times a round)
 	static vcGaveUp := 0
+	global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy ; (v1 globals it sets)
 	if (maxAgeMs > 0 && VisionMemAt && A_TickCount - VisionMemAt <= maxAgeMs)
 		{
 		VisionCardsWhy := VisionMemWhy
@@ -292,32 +296,33 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			}
 		Sleep(100)
 		}
-	vcOut := {me: "", cards: [], ms: ""}
+	vcOut := V1Obj({me: "", cards: [], ms: ""})
 	Loop Parse, vcAns, "`n", "`r"
 		{
 		vcF := StrSplit(A_LoopField, "|")
-		if (vcF[1] = "me" && vcF.Length >= 14)
+		;(v1: a field that isn't there - an empty line's first, an older helper's 18-25 - read blank)
+		if (V1At(vcF, 1) = "me" && vcF.Length >= 14)
 			{
-			vcMe := {health: NavNum(vcF[2]), max: NavNum(vcF[3]), school: Format("{:L}", Trim(vcF[14])), ok: 1}
+			vcMe := V1Obj({health: NavNum(vcF[2]), max: NavNum(vcF[3]), school: Format("{:L}", Trim(vcF[14])), ok: 1})
 			for vcI, vcKey in ["generic", "power", "balance", "death", "fire", "ice", "life", "myth", "storm", "shadow"]
 				{
-				vcMe[vcKey] := NavNum(vcF[vcI + 3]) ;  V1toV2: Invalid Index errors?, try 'vcMe.Push(<val>)'
+				vcMe[vcKey] := NavNum(vcF[vcI + 3])
 				if (vcMe[vcKey] = "")
 					vcMe.ok := 0
 				}
 			vcOut.me := vcMe
 			}
-		else if (vcF[1] = "card" && vcF.Length >= 17)
+		else if (V1At(vcF, 1) = "card" && vcF.Length >= 17)
 			{
-			vcCard := {slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
+			vcCard := V1Obj({slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
 				, pips: NavNum(vcF[8]), xpip: vcF[9] = 1, shadow: NavNum(vcF[10]), castable: vcF[11], tc: vcF[12] = 1, item: vcF[13] = 1
-				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(vcF[18]), schoolpips: vcF[19]
-				, enchfx: vcF[20], valueench: vcF[21], tid: vcF[22], text: vcF[23], heads: vcF[24], boosts: vcF[25], nf: vcF.Length}
-			vcCard.num := RegExMatch(vcCard.value, "\d+", &vcNum) ? (vcNum&&vcNum[0]) + 0 : ""
+				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(V1At(vcF, 18)), schoolpips: V1At(vcF, 19)
+				, enchfx: V1At(vcF, 20), valueench: V1At(vcF, 21), tid: V1At(vcF, 22), text: V1At(vcF, 23), heads: V1At(vcF, 24), boosts: V1At(vcF, 25), nf: vcF.Length})
+			vcCard.num := RegExMatch(vcCard.value, "\d+", &vcNum) ? vcNum[0] + 0 : ""
 			vcOut.cards.Push(vcCard)
 			}
-		else if (vcF[1] = "hand")
-			vcOut.ms := vcF[3]
+		else if (V1At(vcF, 1) = "hand")
+			vcOut.ms := V1At(vcF, 3)
 		}
 	vcGaveUp := 0
 	if (!IsObject(vcOut.me))
@@ -326,7 +331,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 		return VisionCardsKeep("")
 		}
 	;(the wizard on screen another school than the game's memory's: another client's - not used)
-	if (vcOut.me.school != "" && school != "" && IsFunc("BadgeNumber") && BadgeNumber.Call(school) && Format("{:L}", school) != vcOut.me.school)
+	if (vcOut.me.school != "" && school != "" && V1IsFunc("BadgeNumber") && BadgeNumber.Call(school) && Format("{:L}", school) != vcOut.me.school)
 		{
 		VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
 		return VisionCardsKeep("")
@@ -337,6 +342,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 ;VisionCards' answer kept, with its why, for its maxAgeMs
 VisionCardsKeep(vckOut)
 	{
+	global VisionMemLast, VisionMemWhy, VisionMemAt ; (v1 globals it sets)
 	VisionMemLast := vckOut, VisionMemWhy := VisionCardsWhy, VisionMemAt := A_TickCount
 	return vckOut
 	}
@@ -348,7 +354,8 @@ VisionBadge(x1, y1, x2, y2, &bx, &by, nearX := 0, nearY := 0)
 	{
 	if (!VisionOn)
 		return -1
-	answer := VisionGet("/badge?x1=" Round(x1) "&y1=" Round(y1) "&x2=" Round(x2) "&y2=" Round(y2) "&scale=" Round(UiScale, 3) "&schools=storm,fire,myth,balance,ice,life,death")
+	;(v1: Round of a blank was 0 - Autofarmer's plate not found leaves playerX blank, and the badge is asked about 0, 0, 0, 0)
+	answer := VisionGet("/badge?x1=" V1Round(x1) "&y1=" V1Round(y1) "&x2=" V1Round(x2) "&y2=" V1Round(y2) "&scale=" Round(UiScale, 3) "&schools=storm,fire,myth,balance,ice,life,death")
 	if (answer = "" || InStr(answer, "unclear"))
 		return -1
 	sch := "", bestFar := ""
@@ -359,7 +366,7 @@ VisionBadge(x1, y1, x2, y2, &bx, &by, nearX := 0, nearY := 0)
 			continue
 		far := (nearX || nearY) ? (p[2] - nearX) ** 2 + (p[3] - nearY) ** 2 : A_Index
 		if (bestFar = "" || far < bestFar)
-			sch := p[1], bx := p[2] + 0, by := p[3] + 0, bestFar := far
+			sch := p[1], bx := V1Add(p[2], 0), by := V1Add(p[3], 0), bestFar := far   ; (v1: not a number + 0 was blank)
 		}
 	return sch
 	}
@@ -369,15 +376,17 @@ VisionBadge(x1, y1, x2, y2, &bx, &by, nearX := 0, nearY := 0)
 ;0-0.3), or "" - why in VisionPlateWhy
 VisionPlate(x1, y1, x2, y2)
 	{
+	global VisionPlateWhy ; (v1 globals it sets)
 	VisionPlateWhy := ""
 	if (!VisionOn)
 		{
 		VisionPlateWhy := "the vision helper isn't running"
 		return ""
 		}
-	answer := VisionGet("/plate?x1=" Round(x1) "&y1=" Round(y1) "&x2=" Round(x2) "&y2=" Round(y2), 1500)
+	;(v1: Round of a blank was 0 - PlateHealth's nx, ny are blank when your plate wasn't found: the helper asked about 0, 0, 0, 0)
+	answer := VisionGet("/plate?x1=" V1Round(x1) "&y1=" V1Round(y1) "&x2=" V1Round(x2) "&y2=" V1Round(y2), 1500)
 	if (RegExMatch(answer, "^health\|(\d+)\|(\d+)\|([\d.]+)", &m) && m[2] > 0)
-		return {cur: m[1] + 0, max: m[2] + 0, worst: m[3] + 0}
+		return V1Obj({cur: m[1] + 0, max: m[2] + 0, worst: m[3] + 0})
 	VisionPlateWhy := answer = "" ? (VisionErr = "" ? "no answer" : VisionErr) : RegExReplace(Trim(answer, " `r`n"), "^none\|")
 	return ""
 	}
@@ -433,6 +442,7 @@ global NavUiWhy, NavUiWaitUntil, NavUiRootW
 ;goal (the helper decides)
 NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := false, goalLine := "")
 	{
+	global NavWhy, NavUnblock, NavWait, NavWaitUntil ; (v1 globals it sets)
 	if (!Stat("navmem"))
 		{
 		NavWhy := "navmem:0 in PlayerStats.txt"
@@ -443,7 +453,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		NavWhy := "the vision helper isn't running"
 		return ""
 		}
-	if (A_TickCount < NavWaitUntil)
+	if (V1Lt(A_TickCount, NavWaitUntil))   ; (v1: blank - never failed - compared as text: not waiting)
 		return ""
 	unblock := (withRoute && NavUnblock) ? "&unblock=1" : ""
 	if (withRoute && avoidMobs)
@@ -452,69 +462,69 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		unblock .= NavMobArgs() "&goal=" NavUri(SubStr(goalNow, 1, 160))
 		}
 	;(the wizard's turning circle: the helper looks round its arc to the aim - walls on it or not)
-	arcAsk := (withRoute && IsFunc("WalkTurnRadius")) ? "&arcr=" WalkTurnRadius.Call() : ""
+	arcAsk := (withRoute && V1IsFunc("WalkTurnRadius")) ? "&arcr=" WalkTurnRadius.Call() : ""
 	answer := VisionGet("/nav?path=" (withPath ? 1 : 0) "&route=" (withRoute ? 1 : 0) unblock arcAsk, timeoutMs, true)
 	if (InStr(unblock, "&unblock=1") && answer != "")
 		NavUnblock := 0
 	if (answer = "")
 		{
 		NavWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
-		NavWait := NavWait >= 1000 ? Min(NavWait * 2, InStr(VisionErr, "no answer") ? 4000 : 30000) : 1000
+		NavWait := V1Ge(NavWait, 1000) ? Min(NavWait * 2, InStr(VisionErr, "no answer") ? 4000 : 30000) : 1000
 		NavWaitUntil := A_TickCount + NavWait
 		return ""
 		}
-	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
+	nav := V1Obj({ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
 		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""
-		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: "", noplace: "", noplaceheld: ""}
+		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: "", noplace: "", noplaceheld: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
 		navLine := A_LoopField
 		f := StrSplit(navLine, "|")
-		if (f[1] = "ok")
-			nav.ok := NavNum(f[2])
-		else if (f[1] = "zone")
+		if (V1At(f, 1) = "ok")
+			nav.ok := NavNum(V1At(f, 2))
+		else if (V1At(f, 1) = "zone")
 			nav.zone := Trim(SubStr(navLine, 6))
-		else if (f[1] = "pos")
-			nav.x := NavNum(f[2]), nav.y := NavNum(f[3]), nav.z := NavNum(f[4]), nav.yaw := NavNum(f[5])
-		else if (f[1] = "target")
-			nav.tx := NavNum(f[2]), nav.ty := NavNum(f[3]), nav.tz := NavNum(f[4])
-		else if (f[1] = "goal")
-			nav.gx := NavNum(f[2]), nav.gy := NavNum(f[3]), nav.gz := NavNum(f[4]), nav.hops := NavNum(f[5])
-		else if (f[1] = "dist")
-			nav.dist := NavNum(f[2])
-		else if (f[1] = "quest")
-			nav.enabled := NavNum(f[2]), nav.questid := Trim(f[3]), nav.goalid := Trim(f[4])
-		else if (f[1] = "route" && withRoute)
+		else if (V1At(f, 1) = "pos")
+			nav.x := NavNum(V1At(f, 2)), nav.y := NavNum(V1At(f, 3)), nav.z := NavNum(V1At(f, 4)), nav.yaw := NavNum(V1At(f, 5))
+		else if (V1At(f, 1) = "target")
+			nav.tx := NavNum(V1At(f, 2)), nav.ty := NavNum(V1At(f, 3)), nav.tz := NavNum(V1At(f, 4))
+		else if (V1At(f, 1) = "goal")
+			nav.gx := NavNum(V1At(f, 2)), nav.gy := NavNum(V1At(f, 3)), nav.gz := NavNum(V1At(f, 4)), nav.hops := NavNum(V1At(f, 5))
+		else if (V1At(f, 1) = "dist")
+			nav.dist := NavNum(V1At(f, 2))
+		else if (V1At(f, 1) = "quest")
+			nav.enabled := NavNum(V1At(f, 2)), nav.questid := Trim(V1At(f, 3)), nav.goalid := Trim(V1At(f, 4))
+		else if (V1At(f, 1) = "route" && withRoute)
 			{
-			nav.ax := NavNum(f[2]), nav.ay := NavNum(f[3]), nav.left := NavNum(f[4]), nav.jump := NavNum(f[5]), nav.jx := NavNum(f[6]), nav.jy := NavNum(f[7])
+			nav.ax := NavNum(V1At(f, 2)), nav.ay := NavNum(V1At(f, 3)), nav.left := NavNum(V1At(f, 4)), nav.jump := NavNum(V1At(f, 5)), nav.jx := NavNum(V1At(f, 6)), nav.jy := NavNum(V1At(f, 7))
 			;(8-11: a mob on the way the route can't go round - seconds waited for it, where it is, its name)
-			nav.mob := NavNum(f[8]), nav.mx := NavNum(f[9]), nav.my := NavNum(f[10]), nav.mobname := Trim(f[11])
+			nav.mob := NavNum(V1At(f, 8)), nav.mx := NavNum(V1At(f, 9)), nav.my := NavNum(V1At(f, 10)), nav.mobname := Trim(V1At(f, 11))
 			;(12: inside a mob's ring or sight - its name: the aim leads out of it; 13: turning walking on round to the
 			;aim - 1 its arc's clear of the walls, 0 not, "" not known)
-			nav.escape := Trim(f[12]), nav.arc := f.Length >= 13 ? Trim(f[13]) : ""
+			nav.escape := Trim(V1At(f, 12)), nav.arc := f.Length >= 13 ? Trim(V1At(f, 13)) : ""
 			}
 		;(the mob whose ring or sight the arrow's straight way comes into, and backing up would - moves off the route)
-		else if (f[1] = "blind" && withRoute)
-			nav.blindahead := Trim(f[2]), nav.blindback := Trim(f[3]), nav.blindin := Trim(f[4])
-		else if (f[1] = "routewhy" && withRoute)
+		else if (V1At(f, 1) = "blind" && withRoute)
+			nav.blindahead := Trim(V1At(f, 2)), nav.blindback := Trim(V1At(f, 3)), nav.blindin := Trim(V1At(f, 4))
+		else if (V1At(f, 1) = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
 		;(no place: the game shows no way to the goal - 1, a place 0, "" not known; how long the 1 has held, s - an older
 		;helper sends no such line)
-		else if (f[1] = "noplace")
-			nav.noplace := NavNum(f[2]), nav.noplaceheld := NavNum(f[3])
+		else if (V1At(f, 1) = "noplace")
+			nav.noplace := NavNum(V1At(f, 2)), nav.noplaceheld := NavNum(V1At(f, 3))
 		;(the quest's goal line from the game's memory - the helper's last line; an older one has none)
-		else if (f[1] = "goalline")
-			nav.goaltext := Trim(f[2]), nav.goaltype := Trim(f[3]), nav.goalstatus := Trim(f[4]), nav.goalcount := NavNum(f[5])
-				, nav.goaltotal := NavNum(f[6]), nav.goalshown := NavNum(f[7])
-		else if (f[1] = "path" && withPath)
+		else if (V1At(f, 1) = "goalline")
+			nav.goaltext := Trim(V1At(f, 2)), nav.goaltype := Trim(V1At(f, 3)), nav.goalstatus := Trim(V1At(f, 4)), nav.goalcount := NavNum(V1At(f, 5))
+				, nav.goaltotal := NavNum(V1At(f, 6)), nav.goalshown := NavNum(V1At(f, 7))
+		else if (V1At(f, 1) = "path" && withPath)
 			{
 			nav.path := [], nodes := SubStr(navLine, 6)
 			Loop Parse, nodes, "`;"
 				{
 				xyz := StrSplit(A_LoopField, ",")
 				if (xyz.Length = 3 && NavNum(xyz[1]) != "" && NavNum(xyz[2]) != "" && NavNum(xyz[3]) != "")
-					nav.path.Push({x: NavNum(xyz[1]), y: NavNum(xyz[2]), z: NavNum(xyz[3])})
+					nav.path.Push(V1Obj({x: NavNum(xyz[1]), y: NavNum(xyz[2]), z: NavNum(xyz[3])}))
 				}
 			}
 		}
@@ -531,7 +541,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 ;Text for a URL: its UTF-8 bytes, all but letters, digits and -._~ as %XX (the helper reads it as UTF-8)
 NavUri(text)
 	{
-	navUriBuf := Buffer(StrPut(text, "UTF-8"), 0) ; V1toV2: if 'navUriBuf' is a UTF-16 string, use 'VarSetStrCapacity(&navUriBuf, StrPut(text, "UTF-8"))' and replace all instances of 'navUriBuf.Ptr' with 'StrPtr(navUriBuf)'
+	navUriBuf := Buffer(StrPut(text, "UTF-8"), 0)
 	navUriLen := StrPut(text, navUriBuf.Ptr, "UTF-8") - 1
 	navUriOut := ""
 	Loop navUriLen
@@ -565,6 +575,7 @@ NavUri(text)
 ;asked again for 10 s (an older helper: 60 s)
 NavGoal(timeoutMs := 800)
 	{
+	global NavGoalWhy, NavGoalWaitUntil ; (v1 globals it sets)
 	if (!Stat("navmem"))
 		{
 		NavGoalWhy := "navmem:0 in PlayerStats.txt"
@@ -585,39 +596,39 @@ NavGoal(timeoutMs := 800)
 		return ""
 		}
 	NavGoalWaitUntil := 0
-	goal := {text: "", from: "", shown: "", hudtext: "", distance: "", type: "", status: "", count: "", total: "", mob: ""
+	goal := V1Obj({text: "", from: "", shown: "", hudtext: "", distance: "", type: "", status: "", count: "", total: "", mob: ""
 		, item: "", npc: "", place: "", quest: "", questid: "", goalid: "", exact: "", typenum: "", itemkey: "", mobkey: ""
-		, npcfirst: "", npclast: "", namekey: ""}
+		, npcfirst: "", npclast: "", namekey: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "none")
+		if (V1At(f, 1) = "none")
 			{
 			NavGoalWhy := Trim(SubStr(A_LoopField, 6))
 			return ""
 			}
-		if (f[1] = "text")
-			goal.text := Trim(f[2]), goal.from := Trim(f[3])
-		else if (f[1] = "shown")
-			goal.shown := NavNum(f[2]), goal.hudtext := Trim(f[3]), goal.distance := Trim(f[4])
+		if (V1At(f, 1) = "text")
+			goal.text := Trim(V1At(f, 2)), goal.from := Trim(V1At(f, 3))
+		else if (V1At(f, 1) = "shown")
+			goal.shown := NavNum(V1At(f, 2)), goal.hudtext := Trim(V1At(f, 3)), goal.distance := Trim(V1At(f, 4))
 		;(kind's number: a kindnum line - or a 4th field here, as a helper may send it)
-		else if (f[1] = "kind")
-			goal.type := Trim(f[2]), goal.status := Trim(f[3]), goal.typenum := f.Length >= 4 ? NavNum(f[4]) : goal.typenum
-		else if (f[1] = "count")
-			goal.count := NavNum(f[2]), goal.total := NavNum(f[3])
-		else if (f[1] = "mob" || f[1] = "item" || f[1] = "npc" || f[1] = "place")
-			goal[f[1]] := Trim(f[2])
-		else if (f[1] = "quest")
-			goal.quest := Trim(f[2]), goal.questid := Trim(f[3]), goal.goalid := Trim(f[4])
-		else if (f[1] = "exact")
-			goal.exact := NavNum(f[2])
+		else if (V1At(f, 1) = "kind")
+			goal.type := Trim(V1At(f, 2)), goal.status := Trim(V1At(f, 3)), goal.typenum := f.Length >= 4 ? NavNum(V1At(f, 4)) : goal.typenum
+		else if (V1At(f, 1) = "count")
+			goal["count"] := NavNum(V1At(f, 2)), goal.total := NavNum(V1At(f, 3))
+		else if (V1At(f, 1) = "mob" || V1At(f, 1) = "item" || V1At(f, 1) = "npc" || V1At(f, 1) = "place")
+			goal[V1At(f, 1)] := Trim(V1At(f, 2))
+		else if (V1At(f, 1) = "quest")
+			goal.quest := Trim(V1At(f, 2)), goal.questid := Trim(V1At(f, 3)), goal.goalid := Trim(V1At(f, 4))
+		else if (V1At(f, 1) = "exact")
+			goal.exact := NavNum(V1At(f, 2))
 		;(the goal's raw keys - an older helper sends none of these lines)
-		else if (f[1] = "itemkey" || f[1] = "mobkey" || f[1] = "namekey")
-			goal[f[1]] := Trim(f[2])
-		else if (f[1] = "npckeys")
-			goal.npcfirst := Trim(f[2]), goal.npclast := Trim(f[3])
-		else if (f[1] = "kindnum")
-			goal.typenum := NavNum(f[2])
+		else if (V1At(f, 1) = "itemkey" || V1At(f, 1) = "mobkey" || V1At(f, 1) = "namekey")
+			goal[V1At(f, 1)] := Trim(V1At(f, 2))
+		else if (V1At(f, 1) = "npckeys")
+			goal.npcfirst := Trim(V1At(f, 2)), goal.npclast := Trim(V1At(f, 3))
+		else if (V1At(f, 1) = "kindnum")
+			goal.typenum := NavNum(V1At(f, 2))
 		}
 	if (goal.text = "")
 		{
@@ -641,6 +652,7 @@ NavGoal(timeoutMs := 800)
 ;answer: NavMobsWhy says why, and after an ERR or no answer it isn't asked again for 5 s
 NavMobs(goalLine := "", timeoutMs := 400)
 	{
+	global NavMobsWhy, NavMobsWaitUntil ; (v1 globals it sets)
 	NavMobsWhy := ""
 	if (!Stat("navmem"))
 		{
@@ -685,10 +697,10 @@ NavMobs(goalLine := "", timeoutMs := 400)
 			NavMobsWhy := Trim(RegExReplace(Trim(A_LoopField), "^none\s*\(?|\)$"))
 			return ""
 			}
-		if (nmF[1] != "mob" || nmF.Length < 8)
+		if (V1At(nmF, 1) != "mob" || nmF.Length < 8)   ; (v1: an empty line's first field read blank)
 			continue
-		nmM := {name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
-			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: ""}
+		nmM := V1Obj({name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
+			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: ""})
 		;(9-14: what it is - an older helper's lines have none)
 		if (nmF.Length >= 14)
 			nmM.title := Trim(nmF[9]), nmM.rank := NavNum(nmF[10]), nmM.health := NavNum(nmF[11]), nmM.school := Trim(nmF[12])
@@ -717,6 +729,7 @@ NavMobs(goalLine := "", timeoutMs := 400)
 ;again for 5 s
 NavItems(goalLine := "", far := false, timeoutMs := 2500)
 	{
+	global NavItemsWhy, NavItemsWaitUntil ; (v1 globals it sets)
 	NavItemsWhy := ""
 	if (!Stat("navmem"))
 		{
@@ -756,10 +769,10 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 			return ""
 			}
 		niF := StrSplit(A_LoopField, "|")
-		if (niF[1] != "item" || niF.Length < 8)
+		if (V1At(niF, 1) != "item" || niF.Length < 8)   ; (v1: an empty line's first field read blank)
 			continue
-		niT := {name: Trim(niF[2]), x: NavNum(niF[3]), y: NavNum(niF[4]), z: NavNum(niF[5]), dist: NavNum(niF[6])
-			, quest: niF[7] = 1 ? 1 : 0, gid: Trim(niF[8]), key: "", template: "", src: "mem", kind: "item"}
+		niT := V1Obj({name: Trim(niF[2]), x: NavNum(niF[3]), y: NavNum(niF[4]), z: NavNum(niF[5]), dist: NavNum(niF[6])
+			, quest: niF[7] = 1 ? 1 : 0, gid: Trim(niF[8]), key: "", template: "", src: "mem", kind: "item"})
 		;(9-12: its key, template, where it's from, its kind - an older helper's lines stop at 8)
 		if (niF.Length >= 11)
 			niT.key := Trim(niF[9]), niT.template := Trim(niF[10]), niT.src := Trim(niF[11]), niT.kind := niF.Length >= 12 ? Trim(niF[12]) : ""
@@ -777,6 +790,7 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 ;asked again for 5 s; an older helper's "unknown request": 60 s)
 NavBattle(timeoutMs := 700)
 	{
+	global NavBattleWhy, NavBattleWaitUntil ; (v1 globals it sets)
 	NavBattleWhy := ""
 	if (!Stat("navmem"))
 		{
@@ -806,20 +820,21 @@ NavBattle(timeoutMs := 700)
 		return ""
 		}
 	NavBattleWaitUntil := 0
-	nbOut := {me: "", foes: [], parts: []}
+	nbOut := V1Obj({me: "", foes: [], parts: []})
 	Loop Parse, nbAns, "`n", "`r"
 		{
 		nbF := StrSplit(A_LoopField, "|")
-		if (nbF[1] = "none")
+		;(v1: an empty line's first field read blank)
+		if (V1At(nbF, 1) = "none")
 			{
 			NavBattleWhy := Trim(SubStr(A_LoopField, 6))
 			return ""
 			}
-		if (nbF[1] != "part" || nbF.Length < 12)
+		if (V1At(nbF, 1) != "part" || nbF.Length < 12)
 			continue
-		nbP := {me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
+		nbP := V1Obj({me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
 			, boss: (nbF[7] = "1" ? 1 : nbF[7] = "0" ? 0 : ""), title: Trim(nbF[8]), rank: NavNum(nbF[9]), school: Trim(nbF[10])
-			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""}
+			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""})
 		nbOut.parts.Push(nbP)
 		if (nbP.me && !IsObject(nbOut.me))
 			nbOut.me := nbP
@@ -843,6 +858,7 @@ NavBattle(timeoutMs := 700)
 ;yet): NavUiWhy says why - not asked again for 60 s after a failure
 NavUiScale(timeoutMs := 500)
 	{
+	global NavUiWhy, NavUiWaitUntil, NavUiRootW ; (v1 globals it sets)
 	NavUiWhy := ""
 	if (!Stat("navmem") || !VisionOn || dualmode == 1)
 		{
@@ -856,9 +872,10 @@ NavUiScale(timeoutMs := 500)
 		}
 	nuAns := Trim(VisionGet("/uiroot", timeoutMs, true), " `t`r`n")
 	nuF := StrSplit(nuAns, "|")
-	if (nuF[1] != "root" || NavNum(nuF[2]) = "" || NavNum(nuF[2]) <= 0 || GameW <= 0)
+	;(v1: a field that isn't there - an empty answer's first - read blank)
+	if (V1At(nuF, 1) != "root" || NavNum(V1At(nuF, 2)) = "" || NavNum(V1At(nuF, 2)) <= 0 || GameW <= 0)
 		{
-		NavUiWhy := nuAns = "" ? (VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")) : nuF[1] = "none" ? Trim(SubStr(nuAns, 6)) : "an odd answer: " SubStr(nuAns, 1, 40)
+		NavUiWhy := nuAns = "" ? (VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")) : V1At(nuF, 1) = "none" ? Trim(SubStr(nuAns, 6)) : "an odd answer: " SubStr(nuAns, 1, 40)
 		NavUiWaitUntil := A_TickCount + 60000
 		return ""
 		}
@@ -871,14 +888,14 @@ NavUiScale(timeoutMs := 500)
 ;would have been). Asked at a round's start (the main loop), till the memory answers for that size and set
 PicMemCheck()
 	{
-	static done := {}
+	static done := V1Obj()
 	pmcKey := GameW "x" GameH "|" PicSet
-	if (done.Has(pmcKey) || !IsObject(PicSets) || !IsObject(PicSets[PicSet]))
+	if (done.Has(pmcKey) || !IsObject(PicSets) || !IsObject(V1At(PicSets, PicSet)))   ; (v1: no such set - blank)
 		return
 	pmcSc := NavUiScale()
 	if (pmcSc = "")
 		return
-	done[pmcKey] := 1 ;  V1toV2: Invalid Index errors?, try 'done.Push(<val>)'
+	done[pmcKey] := 1
 	if (Abs(pmcSc / UiScale - 1) > 0.008)
 		DebugLog("UI size: the game's memory says UI scale " Round(pmcSc, 3) " (its GUI " NavUiRootW " units wide in a " GameW " px window) - the pictures in use are at " Round(UiScale, 3) " (" (PicSet = 1 ? "the main set" : SubStr(PicDir, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2))) "): they disagree - nothing switched on it (only a cross-check for now)")
 	}
@@ -898,6 +915,7 @@ PicMemCheck()
 ;made): NavBagWhy says why (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s)
 NavBag(timeoutMs := 600)
 	{
+	global NavBagWhy, NavBagWaitUntil ; (v1 globals it sets)
 	NavBagWhy := ""
 	if (!Stat("navmem"))
 		{
@@ -927,36 +945,36 @@ NavBag(timeoutMs := 600)
 		return ""
 		}
 	NavBagWaitUntil := 0
-	nbgOut := {items: "", allowed: "", extra: "", gold: "", goldMax: "", gid: "", walked: "", emotes: "", setsOk: 0, space: "", cats: {}
-		, tips: [], sets: [], setItems: [], crownShop: [], rootW: "", rootH: ""}
+	nbgOut := V1Obj({items: "", allowed: "", extra: "", gold: "", goldMax: "", gid: "", walked: "", emotes: "", setsOk: 0, space: "", cats: V1Obj()
+		, tips: [], sets: [], setItems: [], crownShop: [], rootW: "", rootH: ""})
 	Loop Parse, nbgAns, "`n", "`r"
 		{
 		nbgF := StrSplit(A_LoopField, "|")
-		if (nbgF[1] = "none")
+		if (V1At(nbgF, 1) = "none")
 			{
 			NavBagWhy := Trim(SubStr(A_LoopField, 6))
 			return ""
 			}
-		if (nbgF[1] = "bag" && nbgF.Length >= 7)
-			nbgOut.items := NavNum(nbgF[2]), nbgOut.allowed := NavNum(nbgF[3]), nbgOut.extra := NavNum(nbgF[4]), nbgOut.gold := NavNum(nbgF[5])
-				, nbgOut.goldMax := NavNum(nbgF[6]), nbgOut.gid := Trim(nbgF[7]), nbgOut.walked := NavNum(nbgF[8]), nbgOut.emotes := NavNum(nbgF[9])
-				, nbgOut.setsOk := nbgF[10] = "1" ? 1 : 0
-		else if (nbgF[1] = "space" && NavNum(nbgF[2]) != "" && NavNum(nbgF[3]) != "")
-			nbgOut.space := {n: NavNum(nbgF[2]), m: NavNum(nbgF[3]), text: Trim(nbgF[4])}
-		else if (nbgF[1] = "cat" && Trim(nbgF[2]) != "")
-			nbgOut.cats[Trim(nbgF[2])] := {n: NavNum(nbgF[3]), crowns: NavNum(nbgF[4]), nosell: NavNum(nbgF[5]), plain: NavNum(nbgF[6])} ;  V1toV2: Invalid Index errors?, try 'nbgOut.cats.Push(<val>)'
-		else if (nbgF[1] = "crownshop" && Trim(nbgF[3]) != "")
-			nbgOut.crownShop.Push({kind: Trim(nbgF[2]), name: Trim(nbgF[3])})
-		else if (nbgF[1] = "tip")
-			nbgOut.tips.Push({i: NavNum(nbgF[2]), shown: nbgF[3] = "1" ? 1 : 0, l: NavNum(nbgF[4]), t: NavNum(nbgF[5]), r: NavNum(nbgF[6])
-				, b: NavNum(nbgF[7]), image: Trim(nbgF[8]), button: Trim(nbgF[9]), name: Trim(nbgF[10])})
-		else if (nbgF[1] = "set")
-			nbgOut.sets.Push({n: NavNum(nbgF[2]), equipped: nbgF[3] = "1" ? 1 : 0, ids: NavNum(nbgF[4]), name: Trim(nbgF[5])})
-		else if (nbgF[1] = "setitem")
-			nbgOut.setItems.Push({set: NavNum(nbgF[2]), equipped: nbgF[3] = "1" ? 1 : 0, gid: Trim(nbgF[4]), tid: NavNum(nbgF[5])
-				, name: Trim(nbgF[6]), kind: Trim(nbgF[7]), crowns: nbgF[8] = "1" ? 1 : 0})
-		else if (nbgF[1] = "root")
-			nbgOut.rootW := NavNum(nbgF[2]), nbgOut.rootH := NavNum(nbgF[3])
+		if (V1At(nbgF, 1) = "bag" && nbgF.Length >= 7)
+			nbgOut.items := NavNum(V1At(nbgF, 2)), nbgOut.allowed := NavNum(V1At(nbgF, 3)), nbgOut.extra := NavNum(V1At(nbgF, 4)), nbgOut.gold := NavNum(V1At(nbgF, 5))
+				, nbgOut.goldMax := NavNum(V1At(nbgF, 6)), nbgOut.gid := Trim(V1At(nbgF, 7)), nbgOut.walked := NavNum(V1At(nbgF, 8)), nbgOut.emotes := NavNum(V1At(nbgF, 9))
+				, nbgOut.setsOk := V1At(nbgF, 10) = "1" ? 1 : 0
+		else if (V1At(nbgF, 1) = "space" && NavNum(V1At(nbgF, 2)) != "" && NavNum(V1At(nbgF, 3)) != "")
+			nbgOut.space := V1Obj({n: NavNum(V1At(nbgF, 2)), m: NavNum(V1At(nbgF, 3)), text: Trim(V1At(nbgF, 4))})
+		else if (V1At(nbgF, 1) = "cat" && Trim(V1At(nbgF, 2)) != "")
+			nbgOut.cats[Trim(V1At(nbgF, 2))] := V1Obj({n: NavNum(V1At(nbgF, 3)), crowns: NavNum(V1At(nbgF, 4)), nosell: NavNum(V1At(nbgF, 5)), plain: NavNum(V1At(nbgF, 6))})
+		else if (V1At(nbgF, 1) = "crownshop" && Trim(V1At(nbgF, 3)) != "")
+			nbgOut.crownShop.Push(V1Obj({kind: Trim(V1At(nbgF, 2)), name: Trim(V1At(nbgF, 3))}))
+		else if (V1At(nbgF, 1) = "tip")
+			nbgOut.tips.Push(V1Obj({i: NavNum(V1At(nbgF, 2)), shown: V1At(nbgF, 3) = "1" ? 1 : 0, l: NavNum(V1At(nbgF, 4)), t: NavNum(V1At(nbgF, 5)), r: NavNum(V1At(nbgF, 6))
+				, b: NavNum(V1At(nbgF, 7)), image: Trim(V1At(nbgF, 8)), button: Trim(V1At(nbgF, 9)), name: Trim(V1At(nbgF, 10))}))
+		else if (V1At(nbgF, 1) = "set")
+			nbgOut.sets.Push(V1Obj({n: NavNum(V1At(nbgF, 2)), equipped: V1At(nbgF, 3) = "1" ? 1 : 0, ids: NavNum(V1At(nbgF, 4)), name: Trim(V1At(nbgF, 5))}))
+		else if (V1At(nbgF, 1) = "setitem")
+			nbgOut.setItems.Push(V1Obj({set: NavNum(V1At(nbgF, 2)), equipped: V1At(nbgF, 3) = "1" ? 1 : 0, gid: Trim(V1At(nbgF, 4)), tid: NavNum(V1At(nbgF, 5))
+				, name: Trim(V1At(nbgF, 6)), kind: Trim(V1At(nbgF, 7)), crowns: V1At(nbgF, 8) = "1" ? 1 : 0}))
+		else if (V1At(nbgF, 1) = "root")
+			nbgOut.rootW := NavNum(V1At(nbgF, 2)), nbgOut.rootH := NavNum(V1At(nbgF, 3))
 		}
 	if (nbgOut.items = "" || nbgOut.allowed = "")
 		{
@@ -976,6 +994,7 @@ NavBag(timeoutMs := 600)
 ;read - as NavBag: NavGuiWhy
 NavGui(paths, timeoutMs := 600)
 	{
+	global NavGuiWhy, NavGuiWaitUntil ; (v1 globals it sets)
 	NavGuiWhy := ""
 	if (!Stat("navmem"))
 		{
@@ -1005,26 +1024,26 @@ NavGui(paths, timeoutMs := 600)
 		return ""
 		}
 	NavGuiWaitUntil := 0
-	nguOut := {rootW: "", rootH: "", win: {}, box: {shown: 0, title: "", caption: "", titleKey: "", captionKey: ""}, btns: []}
+	nguOut := V1Obj({rootW: "", rootH: "", win: V1Obj(), box: V1Obj({shown: 0, title: "", caption: "", titleKey: "", captionKey: ""}), btns: []})
 	Loop Parse, nguAns, "`n", "`r"
 		{
 		nguF := StrSplit(A_LoopField, "|")
-		if (nguF[1] = "none")
+		if (V1At(nguF, 1) = "none")
 			{
 			NavGuiWhy := Trim(SubStr(A_LoopField, 6))
 			return ""
 			}
-		if (nguF[1] = "root")
-			nguOut.rootW := NavNum(nguF[2]), nguOut.rootH := NavNum(nguF[3])
-		else if (nguF[1] = "win" && nguF.Length >= 18)
-			nguOut.win[Trim(nguF[2])] := {found: Trim(nguF[3]) != "" ? 1 : 0, type: Trim(nguF[3]), shown: nguF[4] = "1" ? 1 : 0, l: NavNum(nguF[5]), t: NavNum(nguF[6])
-				, r: NavNum(nguF[7]), b: NavNum(nguF[8]), checked: NavNum(nguF[9]), greyed: NavNum(nguF[10]), text: Trim(nguF[11]), key: Trim(nguF[12])
-				, dups: NavNum(nguF[13]), pl: NavNum(nguF[14]), pt: NavNum(nguF[15]), pr: NavNum(nguF[16]), pb: NavNum(nguF[17]), matches: NavNum(nguF[18])} ;  V1toV2: Invalid Index errors?, try 'nguOut.win.Push(<val>)'
-		else if (nguF[1] = "box")
-			nguOut.box := {shown: nguF[2] = "1" ? 1 : 0, title: Trim(nguF[3]), caption: Trim(nguF[4]), titleKey: Trim(nguF[5]), captionKey: Trim(nguF[6]), count: NavNum(nguF[7])}
-		else if (nguF[1] = "btn" && nguF.Length >= 9)
-			nguOut.btns.Push({name: Trim(nguF[2]), label: Trim(nguF[3]), l: NavNum(nguF[4]), t: NavNum(nguF[5]), r: NavNum(nguF[6]), b: NavNum(nguF[7])
-				, key: Trim(nguF[8]), greyed: NavNum(nguF[9])})
+		if (V1At(nguF, 1) = "root")
+			nguOut.rootW := NavNum(V1At(nguF, 2)), nguOut.rootH := NavNum(V1At(nguF, 3))
+		else if (V1At(nguF, 1) = "win" && nguF.Length >= 18)
+			nguOut.win[Trim(V1At(nguF, 2))] := V1Obj({found: Trim(V1At(nguF, 3)) != "" ? 1 : 0, type: Trim(V1At(nguF, 3)), shown: V1At(nguF, 4) = "1" ? 1 : 0, l: NavNum(V1At(nguF, 5)), t: NavNum(V1At(nguF, 6))
+				, r: NavNum(V1At(nguF, 7)), b: NavNum(V1At(nguF, 8)), checked: NavNum(V1At(nguF, 9)), greyed: NavNum(V1At(nguF, 10)), text: Trim(V1At(nguF, 11)), key: Trim(V1At(nguF, 12))
+				, dups: NavNum(V1At(nguF, 13)), pl: NavNum(V1At(nguF, 14)), pt: NavNum(V1At(nguF, 15)), pr: NavNum(V1At(nguF, 16)), pb: NavNum(V1At(nguF, 17)), matches: NavNum(V1At(nguF, 18))})
+		else if (V1At(nguF, 1) = "box")
+			nguOut.box := V1Obj({shown: V1At(nguF, 2) = "1" ? 1 : 0, title: Trim(V1At(nguF, 3)), caption: Trim(V1At(nguF, 4)), titleKey: Trim(V1At(nguF, 5)), captionKey: Trim(V1At(nguF, 6)), count: NavNum(V1At(nguF, 7))})
+		else if (V1At(nguF, 1) = "btn" && nguF.Length >= 9)
+			nguOut.btns.Push(V1Obj({name: Trim(V1At(nguF, 2)), label: Trim(V1At(nguF, 3)), l: NavNum(V1At(nguF, 4)), t: NavNum(V1At(nguF, 5)), r: NavNum(V1At(nguF, 6)), b: NavNum(V1At(nguF, 7))
+				, key: Trim(V1At(nguF, 8)), greyed: NavNum(V1At(nguF, 9))}))
 		}
 	if (nguOut.rootW = "" || nguOut.rootW <= 0 || nguOut.rootH = "" || nguOut.rootH <= 0)
 		{
@@ -1043,15 +1062,15 @@ CaughtLog()
 		return
 	a := VisionGet("/caught", 600, true)
 	f := StrSplit(Trim(a, " `r`n"), "|")
-	if (f[1] != "caught" || f.Length < 6)
+	if (V1At(f, 1) != "caught" || f.Length < 6)   ; (v1: an empty answer's first field read blank)
 		return
 	s := MobShape()
 	if (s.wide >= 360)
-		where := (f[3] <= s.range ? "inside" : "outside") " the circle set (" s.range " all round)"
+		where := (V1Le(f[3], s.range) ? "inside" : "outside") " the circle set (" s.range " all round)"
 	else if (f[4] = "")
 		where := "its facing unknown"
 	else
-		where := ((f[4] <= s.wide / 2 && f[3] <= s.range) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
+		where := ((V1Le(f[4], s.wide / 2) && V1Le(f[3], s.range)) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
 	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
 		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
 	MobGrow(f, s)
@@ -1066,18 +1085,19 @@ CaughtLog()
 ;playing. f: /caught's fields; s: MobShape()
 MobGrow(f, s)
 	{
+	global MobWalkMs ; (v1 globals it sets)
 	if (Stat("mobgrow") = 0 || (Stats.Has("mobavoid") && !Stats["mobavoid"]))
 		return
-	mgName := f[2], mgDist := Round(f[3]), mgOff := f[4]
+	mgName := f[2], mgDist := V1Round(f[3]), mgOff := f[4]   ; (v1: Round of a blank or text was 0)
 	;(collecting: walking into mobs is the point - but not on the way to a quest item lying about: Collect.ahk)
 	mgWhy := (WkArrived = 7 && CiGid = "") ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
 		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : PlayerActive ? "you were playing" : ""
 	;(the quest's mob by the helper's own verdict - the game's memory's goal: its name, its kind, or one by a fight goal -
 	;left off the avoid list: /caught's 7th field; an older helper's has none)
-	if (mgWhy = "" && f[7] = 1)
+	if (mgWhy = "" && V1At(f, 7) = 1)   ; (v1: an older helper's 6 fields - the 7th blank)
 		mgWhy := "the quest's - the helper didn't keep it off"
 	;(the quest's mob: its name in the goal line last read)
-	if (mgWhy = "" && WkGoalLine != "" && IsFunc("WalkLetters"))
+	if (mgWhy = "" && WkGoalLine != "" && V1IsFunc("WalkLetters"))
 		{
 		mgKey := WalkLetters.Call(mgName)
 		if (StrLen(mgKey) >= 4 && InStr(WalkLetters.Call(WkGoalLine), mgKey))
@@ -1090,7 +1110,7 @@ MobGrow(f, s)
 		}
 	;(caught: the 10 minutes before the reach is made smaller start again - MobShrinkTick)
 	MobWalkMs := 0
-	mgFront := s.wide >= 360 || mgOff = "" || mgOff <= s.wide / 2
+	mgFront := s.wide >= 360 || mgOff = "" || V1Le(mgOff, s.wide / 2)
 	mgSet := mgFront ? "mobradius" : "mobbody"
 	mgWas := mgFront ? s.range : s.body
 	mgTo := Min(1500, Max(mgWas + 20, mgDist + 25))
@@ -1104,7 +1124,7 @@ MobGrow(f, s)
 	mgPairs := [[mgSet, mgTo]]
 	if (!mgFront && mgTo > s.range)
 		mgPairs.Push(["mobradius", mgTo]), mgWhat .= " (and how far they notice you, " s.range " -> " mgTo ")"
-	if (IsFunc("CfgWrite") && CfgWrite.Call(mgPairs))
+	if (V1IsFunc("CfgWrite") && CfgWrite.Call(mgPairs))
 		DebugLog("  not the quest's mob - " mgWhat " raised " mgWas " -> " mgTo " (Settings: " mgSet ")")
 	}
 
@@ -1117,6 +1137,7 @@ MobGrow(f, s)
 MobShrinkTick()
 	{
 	static lastAt := 0
+	global MobWalkMs ; (v1 globals it sets)
 	now := A_TickCount
 	if (lastAt && now - lastAt < 5000 && BotOn && Walking && inbattle != 1 && !PlayerActive)
 		MobWalkMs := (MobWalkMs ? MobWalkMs : 0) + now - lastAt
@@ -1130,7 +1151,7 @@ MobShrinkTick()
 	r := Max(Max(300, Stat("mobradiusfloor")), Round(s.range * 0.9)), b := Max(Max(120, Stat("mobbodyfloor")), Round(s.body * 0.9))
 	if (r >= s.range && b >= s.body)
 		return
-	if (IsFunc("CfgWrite") && CfgWrite.Call([["mobradius", r], ["mobbody", b]]))
+	if (V1IsFunc("CfgWrite") && CfgWrite.Call([["mobradius", r], ["mobbody", b]]))
 		DebugLog("Walk: 10 minutes walking without a mob catching the wizard - mobs kept off less far: how far they notice you " s.range " -> " r ", their reach all round " s.body " -> " b " (Settings: mobshrink)")
 	}
 
@@ -1138,10 +1159,11 @@ MobShrinkTick()
 ;default, 3 a cone in front), wide (degrees: 360, 180, mobcone - 60), range (mobradius: how far, 300), name}
 MobShape()
 	{
-	shape := Stats.Has("mobshape") ? Round(Stats["mobshape"]) : 2
+	shape := Stats.Has("mobshape") ? V1Round(Stats["mobshape"]) : 2   ; (v1: Round of text was 0)
 	shape := (shape >= 1 && shape <= 3) ? shape : 2
-	cone := Stats.Has("mobcone") && Stats["mobcone"] >= 5 ? Min(180, Round(Stats["mobcone"])) : 60
-	return (AHKv1v2_Temp := {shape: shape, wide: shape = 1 ? 360 : shape = 2 ? 180 : cone, range: Stat("mobradius") > 0 ? Round(Stat("mobradius")) : 300, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+	cone := Stats.Has("mobcone") && V1Ge(Stats["mobcone"], 5) ? Min(180, V1Round(Stats["mobcone"])) : 60
+	return V1Obj({shape: shape, wide: shape = 1 ? 360 : shape = 2 ? 180 : cone, range: V1Gt(Stat("mobradius"), 0) ? V1Round(Stat("mobradius")) : 300
+		, body: V1Gt(Stat("mobbody"), 0) ? V1Round(Stat("mobbody")) : 120, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"})
 	}
 
 ;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off
@@ -1160,4 +1182,16 @@ NavNum(v)
 	if (RegExMatch(v, "i)^([-+]?\d+(?:\.\d*)?|[-+]?\.\d+)(?:e([-+]?\d+))?$", &num))
 		return num[2] = "" ? num[1] + 0 : (num[1] + 0.0) * (10.0 ** num[2])
 	return ""
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+VisionBlank()
+	{
+	global VisionOn := "", VisionPid := "", VisionFails := "", VisionCardsVar := "", VisionCardsAt := "", VisionCardsKey := "", VisionMissing := ""
+	global VisionDir := "", VisionPort := "", VisionErr := "", VisionPlateWhy := "", VisionCardsWhy := "", VisionMemLast := "", VisionMemAt := ""
+	global VisionMemWhy := "", VisionLookN := "", NavWhy := "", NavWaitUntil := "", NavWait := "", NavUnblock := "", NavGoalWhy := ""
+	global NavGoalWaitUntil := "", NavMobsWhy := "", NavMobsWaitUntil := "", NavBattleWhy := "", NavBattleWaitUntil := "", NavBagWhy := ""
+	global NavBagWaitUntil := "", NavGuiWhy := "", NavGuiWaitUntil := "", NavItemsWhy := "", NavItemsWaitUntil := "", NavUiWhy := ""
+	global NavUiWaitUntil := "", NavUiRootW := ""
 	}

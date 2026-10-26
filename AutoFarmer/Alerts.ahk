@@ -32,7 +32,7 @@ AlertUrl()
 		return AlertTestUrl
 	credPtr := 0, url := ""
 	is64 := (A_PtrSize = 8)
-	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(AlertTarget()) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
+	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16")
 	if (!DllCall("Advapi32\CredReadW", "Ptr", targetW.Ptr, "UInt", 1, "UInt", 0, "Ptr*", &credPtr) || !credPtr)
 		return ""
 	blobSize := NumGet(credPtr + 0, is64 ? 32 : 24, "UInt")
@@ -46,7 +46,7 @@ AlertUrl()
 ;Keeps the webhook's address in Windows Credential Manager ("" removes it). True if done
 AlertUrlSave(url)
 	{
-	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(AlertTarget()) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
+	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16")
 	if (url = "")
 		{
 		DllCall("Advapi32\CredDeleteW", "Ptr", targetW.Ptr, "UInt", 1, "UInt", 0)
@@ -54,10 +54,10 @@ AlertUrlSave(url)
 		}
 	is64 := (A_PtrSize = 8)
 	user := "discord-webhook"
-	userW := Buffer((StrLen(user) + 1) * 2, 0), StrPut(user, userW.Ptr, "UTF-16") ; V1toV2: if 'userW' is a UTF-16 string, use 'VarSetStrCapacity(&userW, (StrLen(user) + 1) * 2)' and replace all instances of 'userW.Ptr' with 'StrPtr(userW)'
+	userW := Buffer((StrLen(user) + 1) * 2, 0), StrPut(user, userW.Ptr, "UTF-16")
 	blobSize := StrLen(url) * 2
-	blob := Buffer(blobSize + 2, 0), StrPut(url, blob.Ptr, "UTF-16") ; V1toV2: if 'blob' is a UTF-16 string, use 'VarSetStrCapacity(&blob, blobSize + 2)' and replace all instances of 'blob.Ptr' with 'StrPtr(blob)'
-	cred := Buffer(is64 ? 80 : 52, 0) ; V1toV2: if 'cred' is a UTF-16 string, use 'VarSetStrCapacity(&cred, is64 ? 80 : 52)' and replace all instances of 'cred.Ptr' with 'StrPtr(cred)'
+	blob := Buffer(blobSize + 2, 0), StrPut(url, blob.Ptr, "UTF-16")
+	cred := Buffer(is64 ? 80 : 52, 0)
 	NumPut("UInt", 1, cred, 4)                          ;Type: CRED_TYPE_GENERIC
 	NumPut("Ptr", targetW.Ptr, cred, 8)                    ;TargetName
 	NumPut("UInt", blobSize, cred, is64 ? 32 : 24)      ;CredentialBlobSize
@@ -79,8 +79,9 @@ AlertUrlOk(url)
 ;wrong and what to do. Sent in the background
 AlertSend(kind, title, text)
 	{
+	global AlertLast, AlertWait ; (v1 globals it sets)
 	;(the log's OneDrive copy, when it's on: what the game showed - at most every 20 s)
-	if (IsFunc("LogMirrorSnap"))
+	if (V1IsFunc("LogMirrorSnap"))
 		LogMirrorSnap.Call(20000, kind)
 	if (Stats.Has("alertson") && !Stats["alertson"])
 		return
@@ -88,7 +89,7 @@ AlertSend(kind, title, text)
 	if (url = "")
 		return
 	if (!IsObject(AlertLast))
-		AlertLast := {}
+		AlertLast := V1Obj()
 	now := A_TickCount
 	if (AlertLast.Has(kind) && now - AlertLast[kind] < 600000)
 		return
@@ -101,13 +102,13 @@ AlertSend(kind, title, text)
 		for i, w in AlertWait
 			if (w.kind = kind)
 				return
-		AlertWait.Push({kind: kind, title: title, text: text})
+		AlertWait.Push(V1Obj({kind: kind, title: title, text: text}))
 		DebugLog("Discord: alert '" title "' held - another went less than 20 s ago")
 		SetTimer(AlertFlush,-(20000 - (now - AlertLast[""]) + 200))
 		return
 		}
-	AlertLast[kind] := now, AlertLast[""] := now ;  V1toV2: Invalid Index errors?, try 'AlertLast.Push(<val>)'
-	zone := IsFunc("WalkZone") ? WalkZone.Call() : ""
+	AlertLast[kind] := now, AlertLast[""] := now
+	zone := V1IsFunc("WalkZone") ? WalkZone.Call() : ""
 	at := FormatTime(, "HH:mm")
 	AlertPost(url, "**Wizard101 bot needs you: " title "**`n" text "`n_" (zone != "" ? zone " - " : "") at "_", kind)
 	}
@@ -116,6 +117,7 @@ AlertSend(kind, title, text)
 ;when it couldn't be sent). Never logs the address
 AlertPost(url, content, kind, wait := false)
 	{
+	global AlertReqs ; (v1 globals it sets)
 	body := "{`"content`": `"" AlertJson(SubStr(content, 1, 1900)) "`", `"username`": `"Wiz-Maxxing`", `"allowed_mentions`": {`"parse`": []}}"
 	try
 		{
@@ -134,7 +136,7 @@ AlertPost(url, content, kind, wait := false)
 		return req.Status
 	if (!IsObject(AlertReqs))
 		AlertReqs := []
-	AlertReqs.Push({req: req, kind: kind, at: A_TickCount})
+	AlertReqs.Push(V1Obj({req: req, kind: kind, at: A_TickCount}))
 	SetTimer(AlertPoll,1000)
 	return ""
 	}
@@ -142,6 +144,7 @@ AlertPost(url, content, kind, wait := false)
 ;The sends under way: their answers logged (204 = Discord took it)
 AlertPoll()
 	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	if (!IsObject(AlertReqs) || !AlertReqs.Length)
 		{
 		SetTimer(AlertPoll,0)
@@ -186,8 +189,9 @@ AlertJson(s)
 ;remove it. The address is typed hidden and kept only in Windows Credential Manager
 AlertSetup()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	;(a walking key the bot holds let go: this box can stay up a while)
-	if (IsFunc("ReleaseKeys"))
+	if (V1IsFunc("ReleaseKeys"))
 		ReleaseKeys.Call()
 	have := AlertUrl() != ""
 	prompt := have ? "Alerts go to a Discord webhook already.`n`nPaste a new webhook address to change it, leave it empty to send a test message, or type OFF to remove it." : "In Discord: the channel's settings > Integrations > Webhooks > New Webhook > Copy Webhook URL.`nPaste it here - it's kept in Windows Credential Manager on this PC only.`n`nThe bot then messages that channel when the wizard needs you."
@@ -199,7 +203,7 @@ AlertSetup()
 		{
 		AlertUrlSave("")
 		DebugLog("Discord: alerts' webhook removed")
-		TrayTip("Wizard101 bot", "Discord alerts are off (the webhook was removed).", 1)
+		TrayTip("Discord alerts are off (the webhook was removed).", "Wizard101 bot", 1)
 		return
 		}
 	isNew := (url != "")
@@ -238,15 +242,10 @@ AlertFlush:
 AlertFlush()
 	return
 
-;###############  V1toV2 FUNCS  ###############
-AlertPoll() { ; V1toV2: Lbl->Func
+;###############  (v2 port: v1's labels, as functions)  ###############
+AlertFlush() { ; (v1: a label - its code ran in the global scope)
 	global
-	AlertPoll()
-	return
-}
-;##############################################
-AlertFlush() { ; V1toV2: Lbl->Func
-	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	if (IsObject(AlertWait) && AlertWait.Length)
 		{
 		AlertFlushOne := AlertWait.RemoveAt(1)
@@ -256,3 +255,10 @@ AlertFlush() { ; V1toV2: Lbl->Func
 		}
 	return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+AlertsBlank()
+	{
+	global AlertLast := "", AlertReqs := "", AlertTestUrl := "", AlertWait := ""
+	}

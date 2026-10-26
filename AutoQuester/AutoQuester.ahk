@@ -1,5 +1,5 @@
 #Warn Unreachable, Off
-#Requires Autohotkey v2.0
+#Requires AutoHotkey v2.0
 ; AutoQuester - walks your Wizard101 wizard towards the current quest goal by following the yellow
 ; quest arrow at the bottom of the screen. AHK v1.1. Walking only: AutoFarmer\Autofarmer.ahk does
 ; battles AND this walking in one script, so you normally don't need to run this one as well.
@@ -7,21 +7,28 @@
 ;   Shift+F8  quit
 ; Keys are only sent while Wizard101 is the active window. When there's no arrow (battle, loading
 ; screen, dialogue) it stops and waits. The walking itself lives in Walker.ahk (settings at its top).
-; V1toV2: Removed #NoEnv
+;(v1's #NoEnv: always so in v2)
 #SingleInstance force
-; V1toV2: Removed SetBatchLines, -1
+;(v1's SetBatchLines -1: v2 always runs at full speed)
+V1Start(), AutoQuesterBlank(), WalkerBlank(), MouseSteerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 CoordMode("Pixel", "Screen")
 CoordMode("Mouse", "Screen")
+;(v1's default sending mode was Event - v2's is Input, which moves the mouse at once (MouseMove's speed ignored)
+;and sends with no key or click delays: W/A/S/D, X, Space, the right button and the clicks as v1 sent them)
+SendMode("Event")
 SetWorkingDir(A_ScriptDir)
 
 global GameExe := "WizardGraphicalClient.exe"
 global GameClass := "Wizard Graphical Client"
 global GameLeft := 0, GameTop := 0, GameW := 0, GameH := 0
+;(AutoFarmer's globals the walker files read - blank here, as in v1: it has no settings, mouse lock, dungeon runs, vision
+;helper, picture sets, "Play for me" or player watch)
+Stats := "", PlayerActive := "", DgRun := "", VisionOn := "", UiScale := ""
 
-OnExit("WalkerQuit")
+OnExit(WalkerQuit)
 ;No standard tray menu: its "Pause Script" would freeze the walker with a key held down
 Tray := A_TrayMenu
-Tray.Delete() ; V1toV2: not 100% replacement of NoStandard, Only if NoStandard is used at the beginning
+Tray.Delete() ; (v1: Menu, Tray, NoStandard - the standard items are all there is so far)
 Tray.Add("Start/stop walking (F8)", ToggleWalk)
 Tray.Add("Exit (Shift+F8)", QuitApp)
 Tray.Default := "Start/stop walking (F8)"
@@ -50,11 +57,12 @@ return
 ;Finds the Wizard101 client area on screen (same as AutoFarmer)
 UpdateGameRect()
 	{
-	hwnd := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
+	global GameLeft, GameTop, GameW, GameH ; (v1 globals it sets)
+	hwnd := V1Try(WinGetID, "ahk_class " GameClass " ahk_exe " GameExe)  ; (v1: blank with no game window)
 	if (!hwnd)
 		return false
-	rect := Buffer(16, 0) ; V1toV2: if 'rect' is a UTF-16 string, use 'VarSetStrCapacity(&rect, 16)' and replace all instances of 'rect.Ptr' with 'StrPtr(rect)'
-	pt := Buffer(8, 0) ; V1toV2: if 'pt' is a UTF-16 string, use 'VarSetStrCapacity(&pt, 8)' and replace all instances of 'pt.Ptr' with 'StrPtr(pt)'
+	rect := Buffer(16, 0)
+	pt := Buffer(8, 0)
 	DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rect.Ptr)
 	DllCall("ClientToScreen", "Ptr", hwnd, "Ptr", pt.Ptr)
 	w := NumGet(rect, 8, "Int"), h := NumGet(rect, 12, "Int")
@@ -66,14 +74,16 @@ UpdateGameRect()
 
 #Include "%A_ScriptDir%\Walker.ahk"
 #Include "%A_ScriptDir%\ArrowReader.ahk"
+#Include "%A_ScriptDir%\..\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
-;###############  V1toV2 FUNCS  ###############
-HK1_F8() { ; V1toV2: HK->Func
+;(v1's hotkey and label bodies, as functions: assume-global, as v1 ran them)
+HK1_F8() { ; (v1: the F8 hotkey)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 ToggleWalk()
 }
 ;##############################################
-ToggleWalk(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+ToggleWalk(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: the label ToggleWalk - a menu item too)
 global
 WalkToggle()
 if (Walking)
@@ -81,18 +91,19 @@ if (Walking)
 return
 }
 ;##############################################
-HK2_F8() { ; V1toV2: HK->Func
+HK2_F8() { ; (v1: the Shift+F8 hotkey)
 global
 QuitApp()
 }
 ;##############################################
-QuitApp(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+QuitApp(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: the label QuitApp - a menu item too)
 global
 ExitApp()
 }
 ;##############################################
-WalkLoop() { ; V1toV2: Lbl->Func
+WalkLoop() { ; (v1: the label WalkLoop - its timer)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 ;A quick stop+start can queue a second run of this; only run while walking
 if (!Walking)
 	return
@@ -109,3 +120,11 @@ if (StatusKind != "stuck")
 	SetStatus("stopped - press F8 to start walking")
 return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+AutoQuesterBlank()
+	{
+	global GameExe := "", GameClass := "", GameLeft := "", GameTop := "", GameW := "", GameH := "", Walking := "", KeysDown := "", HeldW := ""
+	global StatusKind := ""
+	}

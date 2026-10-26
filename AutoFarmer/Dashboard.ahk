@@ -12,9 +12,9 @@
 ; Its Map button (or the tray menu) opens a second window: a top-down picture of the zone the wizard is in,
 ; drawn by the vision helper (/navmap) - see "The map" below.
 
-global DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld := "", DashStart := 0
+global DashHwnd, DashCon, DashShown, DashPaused, DashHeld, DashStart ;(v1 never ran: DashHwnd := 0, DashCon := 0, DashShown := 0, DashPaused := 0, DashHeld := "", DashStart := 0 - blank at start: DashboardBlank)
 ;Counts (rounds, passes, ...) and casts per card; what it sees ({key: text}); card names off PlayerStats.txt
-global DashN := "", DashCasts := "", DashSees := "", DashNames := ""
+global DashN, DashCasts, DashSees, DashNames ;(v1 never ran: DashN := "", DashCasts := "", DashSees := "", DashNames := "" - blank at start: DashboardBlank)
 global DashHead, DashStatText, DashSeeText, DashConsole, DashPauseBtn, DashHandsBtn
 ;CPU and RAM in use, on the STATISTICS row (DashUsage)
 global DashUsageText
@@ -49,262 +49,261 @@ global DashMapBtn, DashMapHwnd, DashMapPic, DashMapPicH, DashMapText, DashMapSho
 global DashMapAt, DashMapW, DashMapH, DashMapFile, DashMapNote, DashMapNav, DashMapPicAt
 
 ;Makes the window (shown unless dashboard.ini says it was hidden). Called once at start
+;(v2 port: the window is the Gui object Dash, its map window MapGui, the Colours window LogCol - each control by its
+;v1 variable's name: Dash["DashHead"]. Every v1 gLabel is a DashGLabel binding: the label's function called as v1
+;ran the label - Dungeons', Spells', Decks' and Hotkeys' too, by their v1 label names)
 DashInit()
 	{
-	DashN := {}, DashCasts := {}, DashSees := {}, DashStart := A_TickCount
+	global DashN, DashCasts, DashSees, DashStart, DashSimple, DashCon, Dash, DashHwnd ; (v1 globals it sets)
+	DashN := V1Obj(), DashCasts := V1Obj(), DashSees := V1Obj(), DashStart := A_TickCount
 	DashSimple := ViewSimple("dashboard")
+	;(v1: the log box's hwnd blank till the box is made, and DllCall took a blank as 0 - v2 throws on a blank: a line
+	;logged in between - by another thread, DashHwnd set already - goes to no window, as in v1)
+	DashCon := 0
 	Dash := Gui("+Resize +MinSize740x640", "Wizard101 bot " BotVersion()), DashHwnd := Dash.Hwnd
 	Dash.OnEvent("Close", DashGuiClose)
 	Dash.OnEvent("Size", DashGuiSize)
+	;(v1: Gui, Dash:Color, 1B1D22, 111317 - v2 has no control colour for the window: each Edit and DropDownList that
+	;took it says Background111317 itself, as the ListViews do; the read-only NetLog took the window's, 1B1D22. v1's
+	;DropDownList face had the window's colour too, its list the controls' - v2's Background is one colour for both)
 	Dash.BackColor := "1B1D22"
 	Dash.MarginX := 12, Dash.MarginY := 10
 	Dash.SetFont("s11 w600 cF2F2F2", "Segoe UI")
-	ogcTextDashHead := Dash.Add("Text", "x12 y10 w526 h22 vDashHead", BotVersion())
+	Dash.Add("Text", "x12 y10 w526 h22 vDashHead", BotVersion())
 	;(the Updates button: the heading row's right end - DashGuiSize keeps it there)
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDashBugBtn := Dash.Add("Button", "x544 y7 w88 h24 vDashBugBtn", "Report a bug")
-	ogcButtonDashBugBtn.OnEvent("Click", DashBugButton.Bind("Normal"))
-	ogcButtonDashUpdBtn := Dash.Add("Button", "x640 y7 w136 h24 vDashUpdBtn", "Check for updates")
-	ogcButtonDashUpdBtn.OnEvent("Click", DashUpdButton.Bind("Normal"))
+	Dash.Add("Button", "x544 y7 w88 h24 vDashBugBtn", "Report a bug").OnEvent("Click", DashGLabel.Bind(DashBugButton, "Normal"))
+	Dash.Add("Button", "x640 y7 w136 h24 vDashUpdBtn", "Check for updates").OnEvent("Click", DashGLabel.Bind(DashUpdButton, "Normal"))
 	;(the button says "Checking..." a while after a click: DashUpdBusy)
 	;Four tabs: Bot (statistics, what it sees, the log), Dungeons (Dungeons.ahk), Spells (the cards the bot learned by
 	;itself: Spells.ahk) and Cards (your hand, the enemies' spells)
 	Dash.SetFont("s9 w600 cF2F2F2", "Segoe UI")
-	Tab := ogcTab3DashTabs := Dash.Add("Tab3", "x6 y36 w772 h764 +Buttons -Theme vDashTabs", ["Bot", "Dungeons", "Spells", "Cards", "Network", "Keys"])
-	Tab.UseTab(1)
+	tabs := Dash.Add("Tab3", "x6 y36 w772 h764 +Buttons -Theme vDashTabs", ["Bot", "Dungeons", "Spells", "Cards", "Network", "Keys"])
+	tabs.UseTab(1)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x12 y68 w86 h16", "STATISTICS")
 	Dash.SetFont("s8 w400 c9AA0A6", "Segoe UI")
-	ogcDashUsageText := Dash.Add("Text", "x100 y69 w270 h16 vDashUsageText", "CPU / RAM ...")
+	Dash.Add("Text", "x100 y69 w270 h16 vDashUsageText", "CPU / RAM ...")
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x372 y68 w150 h16", "WHAT IT SEES")
 	;(the Map button at the right end of that row; DashGuiSize keeps it there)
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDashCfgBtn := Dash.Add("Button", "x618 y64 w76 h22 vDashCfgBtn", "Settings")
-	ogcButtonDashCfgBtn.OnEvent("Click", DashSettingsButton.Bind("Normal"))
-	ogcButtonDashMapBtn := Dash.Add("Button", "x700 y64 w76 h22 vDashMapBtn", "Map")
-	ogcButtonDashMapBtn.OnEvent("Click", DashMapButton.Bind("Normal"))
+	Dash.Add("Button", "x618 y64 w76 h22 vDashCfgBtn", "Settings").OnEvent("Click", DashGLabel.Bind(DashSettingsButton, "Normal"))
+	Dash.Add("Button", "x700 y64 w76 h22 vDashMapBtn", "Map").OnEvent("Click", DashGLabel.Bind(DashMapButton, "Normal"))
 	Dash.SetFont("s9 w400 cDADADA", "Consolas")
-	ogcDashStatText := Dash.Add("Text", "x12 y88 w350 h190 vDashStatText")
-	ogcDashSeeText := Dash.Add("Text", "x372 y88 w400 h196 vDashSeeText")
+	Dash.Add("Text", "x12 y88 w350 h190 vDashStatText")
+	Dash.Add("Text", "x372 y88 w400 h196 vDashSeeText")
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
-	ogcTextDashLogHead := Dash.Add("Text", "x12 y286 w200 h16 vDashLogHead", "LOG")
+	Dash.Add("Text", "x12 y286 w200 h16 vDashLogHead", "LOG")
 	;(each kind of line in its colour - movement, battle, waits... - set with the small Colours button: a rich edit, as
 	;an Edit can't colour its lines; read-only, no wrap)
 	Dash.SetFont("s8 w400 c000000", "Segoe UI")
-	ogcButtonDashColBtn := Dash.Add("Button", "x694 y283 w78 h20 vDashColBtn", "Colours")
-	ogcButtonDashColBtn.OnEvent("Click", DashLogColorsBtn.Bind("Normal"))
+	Dash.Add("Button", "x694 y283 w78 h20 vDashColBtn", "Colours").OnEvent("Click", DashGLabel.Bind(DashLogColorsBtn, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
 	DllCall("LoadLibrary", "Str", "Msftedit.dll", "Ptr")
-	ogcCustomDashConsole := Dash.Add("Custom", "ClassRICHEDIT50W x12 y306 w760 h452 +0x200000 +0x100000 +0x4 +0x800 +0x100 +0x40 +0x80 vDashConsole"), DashCon := ogcCustomDashConsole.hwnd
+	DashCon := Dash.Add("Custom", "ClassRICHEDIT50W x12 y306 w760 h452 +0x200000 +0x100000 +0x4 +0x800 +0x100 +0x40 +0x80 vDashConsole").Hwnd
 	DashLogInit()
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDashPauseBtn := Dash.Add("Button", "x12 y768 w110 h26 vDashPauseBtn", "Pause log")
-	ogcButtonDashPauseBtn.OnEvent("Click", DashPauseLog.Bind("Normal"))
-	ogcButtonDashClearBtn := Dash.Add("Button", "x130 y768 w80 h26 vDashClearBtn", "Clear")
-	ogcButtonDashClearBtn.OnEvent("Click", DashClearLog.Bind("Normal"))
-	ogcButtonDashLogBtn := Dash.Add("Button", "x218 y768 w120 h26 vDashLogBtn", "Open debug.log")
-	ogcButtonDashLogBtn.OnEvent("Click", DashOpenLog.Bind("Normal"))
-	ogcButtonDashBotBtn := Dash.Add("Button", "x346 y768 w120 h26 vDashBotBtn", "Bot: on (" HkText("bot") ")")
-	ogcButtonDashBotBtn.OnEvent("Click", DashBotToggle.Bind("Normal"))
-	ogcButtonDashWalkBtn := Dash.Add("Button", "x346 y768 w150 h26 vDashWalkBtn", "Walking on/off (" HkText("walk") ")")
-	ogcButtonDashWalkBtn.OnEvent("Click", DashWalkToggle.Bind("Normal"))
-	ogcButtonDashFolderBtn := Dash.Add("Button", "x504 y768 w140 h26 vDashFolderBtn", "Open bot folder")
-	ogcButtonDashFolderBtn.OnEvent("Click", DashFolder.Bind("Normal"))
-	ogcButtonDashHandsBtn := Dash.Add("Button", "x652 y768 w124 h26 vDashHandsBtn", "Wait for me: on")
-	ogcButtonDashHandsBtn.OnEvent("Click", DashHandsToggle.Bind("Normal"))
-	ogcButtonDashFrontBtn := Dash.Add("Button", "x652 y768 w124 h26 vDashFrontBtn", "Game to front: off")
-	ogcButtonDashFrontBtn.OnEvent("Click", DashFrontToggle.Bind("Normal"))
-	ogcButtonDashViewBtn := Dash.Add("Button", "x652 y768 w110 h26 vDashViewBtn", "Advanced view")
-	ogcButtonDashViewBtn.OnEvent("Click", DashViewToggle.Bind("Normal"))
+	Dash.Add("Button", "x12 y768 w110 h26 vDashPauseBtn", "Pause log").OnEvent("Click", DashGLabel.Bind(DashPauseLog, "Normal"))
+	Dash.Add("Button", "x130 y768 w80 h26 vDashClearBtn", "Clear").OnEvent("Click", DashGLabel.Bind(DashClearLog, "Normal"))
+	Dash.Add("Button", "x218 y768 w120 h26 vDashLogBtn", "Open debug.log").OnEvent("Click", DashGLabel.Bind(DashOpenLog, "Normal"))
+	Dash.Add("Button", "x346 y768 w120 h26 vDashBotBtn", "Bot: on (" HkText("bot") ")").OnEvent("Click", DashGLabel.Bind(DashBotToggle, "Normal"))
+	Dash.Add("Button", "x346 y768 w150 h26 vDashWalkBtn", "Walking on/off (" HkText("walk") ")").OnEvent("Click", DashGLabel.Bind(DashWalkToggle, "Normal"))
+	Dash.Add("Button", "x504 y768 w140 h26 vDashFolderBtn", "Open bot folder").OnEvent("Click", DashGLabel.Bind(DashFolder, "Normal"))
+	Dash.Add("Button", "x652 y768 w124 h26 vDashHandsBtn", "Wait for me: on").OnEvent("Click", DashGLabel.Bind(DashHandsToggle, "Normal"))
+	Dash.Add("Button", "x652 y768 w124 h26 vDashFrontBtn", "Game to front: off").OnEvent("Click", DashGLabel.Bind(DashFrontToggle, "Normal"))
+	Dash.Add("Button", "x652 y768 w110 h26 vDashViewBtn", "Advanced view").OnEvent("Click", DashGLabel.Bind(DashViewToggle, "Normal"))
 	;The Dungeons tab: a run recorded once, walked again and again (Dungeons.ahk)
-	Tab.UseTab(2)
+	tabs.UseTab(2)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x12 y68 w400 h16", "DUNGEON FARMING")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextDgHelp := Dash.Add("Text", "x12 y88 w760 h48 vDgHelp", DashDgHelpText())
+	Dash.Add("Text", "x12 y88 w760 h48 vDgHelp", DashDgHelpText())
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDgRecBtn := Dash.Add("Button", "x12 y142 w120 h26 vDgRecBtn", "Record a run")
-	ogcButtonDgRecStopBtn := Dash.Add("Button", "x138 y142 w150 h26 vDgRecStopBtn Disabled", "Stop recording (" HkText("record") ")")
-	ogcButtonDgRunBtn := Dash.Add("Button", "x300 y142 w90 h26 vDgRunBtn", "Run")
-	ogcButtonDgStopBtn := Dash.Add("Button", "x396 y142 w90 h26 vDgStopBtn Disabled", "Stop run")
-	ogcButtonDgDelBtn := Dash.Add("Button", "x498 y142 w90 h26 vDgDelBtn", "Delete")
-	ogcButtonDgFolderBtn := Dash.Add("Button", "x594 y142 w110 h26 vDgFolderBtn", "Open folder")
+	Dash.Add("Button", "x12 y142 w120 h26 vDgRecBtn", "Record a run").OnEvent("Click", DashGLabel.Bind(DgRecordClick, "Normal"))
+	Dash.Add("Button", "x138 y142 w150 h26 vDgRecStopBtn Disabled", "Stop recording (" HkText("record") ")").OnEvent("Click", DashGLabel.Bind(DgRecStopClick, "Normal"))
+	Dash.Add("Button", "x300 y142 w90 h26 vDgRunBtn", "Run").OnEvent("Click", DashGLabel.Bind(DgRunClick, "Normal"))
+	Dash.Add("Button", "x396 y142 w90 h26 vDgStopBtn Disabled", "Stop run").OnEvent("Click", DashGLabel.Bind(DgStopClick, "Normal"))
+	Dash.Add("Button", "x498 y142 w90 h26 vDgDelBtn", "Delete").OnEvent("Click", DashGLabel.Bind(DgDeleteClick, "Normal"))
+	Dash.Add("Button", "x594 y142 w110 h26 vDgFolderBtn", "Open folder").OnEvent("Click", DashGLabel.Bind(DgFolderClick, "Normal"))
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDgTimesLabel := Dash.Add("Text", "x12 y182 w44 h18 vDgTimesLabel", "Run it")
+	Dash.Add("Text", "x12 y182 w44 h18 vDgTimesLabel", "Run it")
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditDgTimes := Dash.Add("Edit", "x58 y179 w60 h22 Number Right vDgTimes", "0")
-	ogcUpDownDgTimesUD := Dash.Add("UpDown", "vDgTimesUD Range0-9999 0x80", "0")
+	Dash.Add("Edit", "x58 y179 w60 h22 Number Right Background111317 vDgTimes", "0")
+	Dash.Add("UpDown", "vDgTimesUD Range0-9999 0x80", "0")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDgTimesNote := Dash.Add("Text", "x126 y182 w220 h18 vDgTimesNote", "times (0 = until you stop it)")
-	ogcCheckboxDgAvoid := Dash.Add("Checkbox", "x352 y182 w186 h18 vDgAvoid", "Keep away from mobs on the way")
+	Dash.Add("Text", "x126 y182 w220 h18 vDgTimesNote", "times (0 = until you stop it)")
+	Dash.Add("Checkbox", "x352 y182 w186 h18 vDgAvoid", "Keep away from mobs on the way")
 	;(the deck a run's fought with - kept in its file: Decks.ahk)
-	ogcTextDgDeckT := Dash.Add("Text", "x542 y182 w36 h18 vDgDeckT", "Deck")
+	Dash.Add("Text", "x542 y182 w36 h18 vDgDeckT", "Deck")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcDropDownListDgDeck := Dash.Add("DropDownList", "x580 y179 w190 AltSubmit vDgDeck", ["(none)"])
+	Dash.Add("DropDownList", "x580 y179 w190 AltSubmit Background111317 vDgDeck", ["(none)"]).OnEvent("Change", DashGLabel.Bind(DgDeckPick, "Normal"))
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	ogcTextDgStatus := Dash.Add("Text", "x12 y208 w760 h52 vDgStatus", "Not running.")
+	Dash.Add("Text", "x12 y208 w760 h52 vDgStatus", "Not running.")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcDgList := Dash.Add("ListView", "x12 y262 w760 h526 vDgList AltSubmit -Multi Background111317 cDADADA", ["Run", "Steps", "Zones", "X", "Battles", "Recorded", "File"])
-	ogcDgList.ModifyCol(1, 300), ogcDgList.ModifyCol(2, "60 Integer"), ogcDgList.ModifyCol(3, "60 Integer"), ogcDgList.ModifyCol(4, "50 Integer"), ogcDgList.ModifyCol(5, "70 Integer")
-	ogcDgList.ModifyCol(6, 140), ogcDgList.ModifyCol(7, 0)
+	lv := Dash.Add("ListView", "x12 y262 w760 h526 vDgList AltSubmit -Multi Background111317 cDADADA", ["Run", "Steps", "Zones", "X", "Battles", "Recorded", "File"])
+	lv.OnEvent("DoubleClick", DashGLabel.Bind(DgListEvent, "DoubleClick"))
+	lv.OnNotify(-101, DashLvItem.Bind(DgListEvent))
+	lv.ModifyCol(1, 300), lv.ModifyCol(2, "60 Integer"), lv.ModifyCol(3, "60 Integer"), lv.ModifyCol(4, "50 Integer"), lv.ModifyCol(5, "70 Integer")
+	lv.ModifyCol(6, 140), lv.ModifyCol(7, 0)
 	;The Spells tab: the cards the bot learned by itself, and your corrections (Spells.ahk)
-	Tab.UseTab(3)
+	tabs.UseTab(3)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x12 y68 w400 h16", "LEARNED SPELLS")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextSpHelp := Dash.Add("Text", "x12 y88 w760 h32 vSpHelp", "Every card the bot learned by itself, and what it took it for. Pick one to see it. Change kind or Edit puts one right (applied out of battle; the learner never changes what you set). Forget: out of the list.")
+	Dash.Add("Text", "x12 y88 w760 h32 vSpHelp", "Every card the bot learned by itself, and what it took it for. Pick one to see it. Change kind or Edit puts one right (applied out of battle; the learner never changes what you set). Forget: out of the list.")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonSpKindBtn := Dash.Add("Button", "x12 y124 w100 h26 vSpKindBtn", "Change kind...")
-	ogcButtonSpEditBtn := Dash.Add("Button", "x118 y124 w64 h26 vSpEditBtn", "Edit...")
-	ogcButtonSpForgetBtn := Dash.Add("Button", "x188 y124 w64 h26 vSpForgetBtn", "Forget")
-	ogcButtonSpHoldBtn := Dash.Add("Button", "x258 y124 w96 h26 vSpHoldBtn", "Never discard")
-	ogcButtonSpPicBtn := Dash.Add("Button", "x360 y124 w92 h26 vSpPicBtn", "Show picture")
-	ogcButtonSpFolderBtn := Dash.Add("Button", "x458 y124 w86 h26 vSpFolderBtn", "Open folder")
-	ogcButtonSpMovedBtn := Dash.Add("Button", "x550 y124 w100 h26 vSpMovedBtn", "Moved away...")
-	ogcButtonSpRefreshBtn := Dash.Add("Button", "x656 y124 w66 h26 vSpRefreshBtn", "Refresh")
+	Dash.Add("Button", "x12 y124 w100 h26 vSpKindBtn", "Change kind...").OnEvent("Click", DashGLabel.Bind(SpKindClick, "Normal"))
+	Dash.Add("Button", "x118 y124 w64 h26 vSpEditBtn", "Edit...").OnEvent("Click", DashGLabel.Bind(SpEditClick, "Normal"))
+	Dash.Add("Button", "x188 y124 w64 h26 vSpForgetBtn", "Forget").OnEvent("Click", DashGLabel.Bind(SpForgetClick, "Normal"))
+	Dash.Add("Button", "x258 y124 w96 h26 vSpHoldBtn", "Never discard").OnEvent("Click", DashGLabel.Bind(SpHoldClick, "Normal"))
+	Dash.Add("Button", "x360 y124 w92 h26 vSpPicBtn", "Show picture").OnEvent("Click", DashGLabel.Bind(SpPicClick, "Normal"))
+	Dash.Add("Button", "x458 y124 w86 h26 vSpFolderBtn", "Open folder").OnEvent("Click", DashGLabel.Bind(SpFolderClick, "Normal"))
+	Dash.Add("Button", "x550 y124 w100 h26 vSpMovedBtn", "Moved away...").OnEvent("Click", DashGLabel.Bind(SpMovedClick, "Normal"))
+	Dash.Add("Button", "x656 y124 w66 h26 vSpRefreshBtn", "Refresh").OnEvent("Click", DashGLabel.Bind(SpRefreshClick, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	ogcTextSpStatus := Dash.Add("Text", "x12 y156 w760 h30 vSpStatus")
+	Dash.Add("Text", "x12 y156 w760 h30 vSpStatus")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcSpList := Dash.Add("ListView", "x12 y190 w612 h598 vSpList AltSubmit Background111317 cDADADA", ["Name", "Kind", "School", "Pips", "Value", "Sure", "In use", "Text read", "TC", "Learned", "Set", "Id"])
-	ogcSpList.ModifyCol(1, 96), ogcSpList.ModifyCol(2, 84), ogcSpList.ModifyCol(3, 50), ogcSpList.ModifyCol(4, 34), ogcSpList.ModifyCol(5, 66), ogcSpList.ModifyCol(6, "44 Integer")
-	ogcSpList.ModifyCol(7, 112), ogcSpList.ModifyCol(8, 100), ogcSpList.ModifyCol(9, 26), ogcSpList.ModifyCol(10, 96), ogcSpList.ModifyCol(11, 50), ogcSpList.ModifyCol(12, 0)
+	lv := Dash.Add("ListView", "x12 y190 w612 h598 vSpList AltSubmit Background111317 cDADADA", ["Name", "Kind", "School", "Pips", "Value", "Sure", "In use", "Text read", "TC", "Learned", "Set", "Id"])
+	lv.OnNotify(-101, DashLvItem.Bind(SpListEvent))
+	lv.OnEvent("DoubleClick", DashGLabel.Bind(SpListEvent, "DoubleClick"))
+	lv.ModifyCol(1, 96), lv.ModifyCol(2, 84), lv.ModifyCol(3, 50), lv.ModifyCol(4, 34), lv.ModifyCol(5, 66), lv.ModifyCol(6, "44 Integer")
+	lv.ModifyCol(7, 112), lv.ModifyCol(8, 100), lv.ModifyCol(9, 26), lv.ModifyCol(10, 96), lv.ModifyCol(11, 50), lv.ModifyCol(12, 0)
 	;(the spell picked: its picture, and what the bot took it for under it)
-	ogcPictureSpPreview := Dash.Add("Picture", "x632 y190 w140 h233 Hidden vSpPreview")
+	Dash.Add("Picture", "x632 y190 w140 h233 Hidden vSpPreview")
 	Dash.SetFont("s8 w400 cDADADA", "Segoe UI")
-	ogcTextSpPreviewTxt := Dash.Add("Text", "x632 y428 w140 h360 vSpPreviewTxt", "Pick a spell to see it.")
+	Dash.Add("Text", "x632 y428 w140 h360 vSpPreviewTxt", "Pick a spell to see it.")
 	;The Cards tab: your hand - each card as the bot saw it this round, and what it took it for (DashHandSeen) - and the
 	;enemies' spells: what each is likely to cast this round (EnemySpells.ahk EnemyDanger: DashFoesSeen)
-	Tab.UseTab(4)
+	tabs.UseTab(4)
 	;(its row of views: your hand and the enemies, or one of your decks - Decks.ahk; push-like radio buttons: tabs inside a
 	;tab can't be)
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcRadioDeckView0 := Dash.Add("Radio", "x12 y62 w110 h24 +0x1000 Group Checked vDeckView0", "Hand && enemies")
+	Dash.Add("Radio", "x12 y62 w110 h24 +0x1000 Group Checked vDeckView0", "Hand && enemies").OnEvent("Click", DashGLabel.Bind(DeckViewClick, "Normal"))
 	Loop 6
 		{
 		dx := 126 + (A_Index - 1) * 96
-		ogcRadioDeckViewA_Index := Dash.Add("Radio", "x" . dx . " y62 w92 h24 +0x1000 Hidden vDeckView" . A_Index, "Deck " . A_Index)
+		Dash.Add("Radio", "x" dx " y62 w92 h24 +0x1000 Hidden vDeckView" A_Index, "Deck " A_Index).OnEvent("Click", DashGLabel.Bind(DeckViewClick, "Normal"))
 		}
-	ogcButtonDeckAddBtn := Dash.Add("Button", "x704 y62 w72 h24 vDeckAddBtn", "+ Deck")
+	Dash.Add("Button", "x704 y62 w72 h24 vDeckAddBtn", "+ Deck").OnEvent("Click", DashGLabel.Bind(DeckAddClick, "Normal"))
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
-	ogcTextDashHandHead := Dash.Add("Text", "x12 y100 w630 h16 vDashHandHead", "YOUR HAND - nothing read yet (once a round in battle)")
+	Dash.Add("Text", "x12 y100 w630 h16 vDashHandHead", "YOUR HAND - nothing read yet (once a round in battle)")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDashLearnBtn := Dash.Add("Button", "x646 y94 w130 h24 vDashLearnBtn", "Learn every card")
-	ogcButtonDashLearnBtn.OnEvent("Click", DashLearnAll.Bind("Normal"))
+	Dash.Add("Button", "x646 y94 w130 h24 vDashLearnBtn", "Learn every card").OnEvent("Click", DashGLabel.Bind(DashLearnAll, "Normal"))
 	Dash.SetFont("s8 w400 cDADADA", "Segoe UI")
 	Loop 7
 		{
 		cx := 12 + (A_Index - 1) * 72
-		ogcPictureDashCardPicA_Index := Dash.Add("Picture", "x" . cx . " y122 w58 h97 Hidden vDashCardPic" . A_Index)
-		ogcTextDashCardTxtA_Index := Dash.Add("Text", "x" . cx . " y221 w66 h28 Hidden vDashCardTxt" . A_Index)
+		Dash.Add("Picture", "x" cx " y122 w58 h97 Hidden vDashCardPic" A_Index)
+		Dash.Add("Text", "x" cx " y221 w66 h28 Hidden vDashCardTxt" A_Index)
 		}
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
-	ogcTextDashFoeHead := Dash.Add("Text", "x12 y258 w760 h16 vDashFoeHead", "ENEMIES - nothing yet (each battle round, with Settings > Predict the enemies' spells on)")
+	Dash.Add("Text", "x12 y258 w760 h16 vDashFoeHead", "ENEMIES - nothing yet (each battle round, with Settings > Predict the enemies' spells on)")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcDashFoeList := Dash.Add("ListView", "x12 y278 w760 h514 vDashFoeList NoSort -Multi Background111317 cDADADA", ["Enemy", "Spell", "This round", "Pips, what it does", "This battle", "Seen (all battles)"])
-	ogcDashFoeList.ModifyCol(1, 130), ogcDashFoeList.ModifyCol(2, 170), ogcDashFoeList.ModifyCol(3, 76), ogcDashFoeList.ModifyCol(4, 186), ogcDashFoeList.ModifyCol(5, 84), ogcDashFoeList.ModifyCol(6, 96)
+	lv := Dash.Add("ListView", "x12 y278 w760 h514 vDashFoeList NoSort -Multi Background111317 cDADADA", ["Enemy", "Spell", "This round", "Pips, what it does", "This battle", "Seen (all battles)"])
+	lv.ModifyCol(1, 130), lv.ModifyCol(2, 170), lv.ModifyCol(3, 76), lv.ModifyCol(4, 186), lv.ModifyCol(5, 84), lv.ModifyCol(6, 96)
 	;(a deck's view: what it is, what it's for, its damage, and the settings it has of its own - hidden till one's picked)
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDeckFNameT := Dash.Add("Text", "x12 y101 w44 h18 Hidden vDeckFNameT", "Name")
+	Dash.Add("Text", "x12 y101 w44 h18 Hidden vDeckFNameT", "Name")
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditDeckFName := Dash.Add("Edit", "x58 y98 w180 h22 Limit30 Hidden vDeckFName")
+	Dash.Add("Edit", "x58 y98 w180 h22 Limit30 Hidden Background111317 vDeckFName")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDeckFSchoolT := Dash.Add("Text", "x250 y101 w48 h18 Hidden vDeckFSchoolT", "School")
+	Dash.Add("Text", "x250 y101 w48 h18 Hidden vDeckFSchoolT", "School")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcDropDownListDeckFSchool := Dash.Add("DropDownList", "x300 y98 w90 Hidden vDeckFSchool", ["any", "storm", "fire", "myth", "balance", "ice", "life", "death"])
+	Dash.Add("DropDownList", "x300 y98 w90 Hidden Background111317 vDeckFSchool", ["any", "storm", "fire", "myth", "balance", "ice", "life", "death"])
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDeckFSetT := Dash.Add("Text", "x402 y101 w96 h18 Hidden vDeckFSetT", "Equipment Set")
+	Dash.Add("Text", "x402 y101 w96 h18 Hidden vDeckFSetT", "Equipment Set")
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditDeckFSet := Dash.Add("Edit", "x498 y98 w30 h22 Number Limit1 Hidden vDeckFSet")
+	Dash.Add("Edit", "x498 y98 w30 h22 Number Limit1 Hidden Background111317 vDeckFSet")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextDeckFSetN := Dash.Add("Text", "x534 y101 w240 h18 Hidden vDeckFSetN", "(its Ctrl+1-9 puts its in-game deck on; 0: none)")
+	Dash.Add("Text", "x534 y101 w240 h18 Hidden vDeckFSetN", "(its Ctrl+1-9 puts its in-game deck on; 0: none)")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcTextDeckFWhenT := Dash.Add("Text", "x12 y131 w64 h18 Hidden vDeckFWhenT", "Used for")
-	ogcCheckboxDeckFWDefault := Dash.Add("Checkbox", "x78 y130 w104 h20 Hidden vDeckFWDefault", "anything else")
-	ogcCheckboxDeckFWCollect := Dash.Add("Checkbox", "x186 y130 w104 h20 Hidden vDeckFWCollect", "collect goals")
-	ogcCheckboxDeckFWBoss := Dash.Add("Checkbox", "x294 y130 w112 h20 Hidden vDeckFWBoss", "bosses (" HkText("boss") ")")
-	ogcCheckboxDeckFWDungeon := Dash.Add("Checkbox", "x410 y130 w104 h20 Hidden vDeckFWDungeon", "dungeon runs")
-	ogcCheckboxDeckFWFarm := Dash.Add("Checkbox", "x518 y130 w104 h20 Hidden vDeckFWFarm", "farming (loop)")
-	ogcTextDeckFPriT := Dash.Add("Text", "x630 y131 w48 h18 Hidden vDeckFPriT", "Priority")
+	Dash.Add("Text", "x12 y131 w64 h18 Hidden vDeckFWhenT", "Used for")
+	Dash.Add("Checkbox", "x78 y130 w104 h20 Hidden vDeckFWDefault", "anything else")
+	Dash.Add("Checkbox", "x186 y130 w104 h20 Hidden vDeckFWCollect", "collect goals")
+	Dash.Add("Checkbox", "x294 y130 w112 h20 Hidden vDeckFWBoss", "bosses (" HkText("boss") ")")
+	Dash.Add("Checkbox", "x410 y130 w104 h20 Hidden vDeckFWDungeon", "dungeon runs")
+	Dash.Add("Checkbox", "x518 y130 w104 h20 Hidden vDeckFWFarm", "farming (loop)")
+	Dash.Add("Text", "x630 y131 w48 h18 Hidden vDeckFPriT", "Priority")
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditDeckFPri := Dash.Add("Edit", "x680 y128 w40 h22 Number Limit3 Hidden vDeckFPri")
+	Dash.Add("Edit", "x680 y128 w40 h22 Number Limit3 Hidden Background111317 vDeckFPri")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcCheckboxDeckFPin := Dash.Add("Checkbox", "x12 y160 w380 h20 Hidden vDeckFPin", "Use this deck now, whatever's ahead (pinned)")
+	Dash.Add("Checkbox", "x12 y160 w380 h20 Hidden vDeckFPin", "Use this deck now, whatever's ahead (pinned)")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDeckFSave := Dash.Add("Button", "x480 y157 w90 h24 Hidden vDeckFSave", "Save")
-	ogcButtonDeckFCopy := Dash.Add("Button", "x576 y157 w90 h24 Hidden vDeckFCopy", "Copy")
-	ogcButtonDeckFDel := Dash.Add("Button", "x672 y157 w90 h24 Hidden vDeckFDel", "Delete")
+	Dash.Add("Button", "x480 y157 w90 h24 Hidden vDeckFSave", "Save").OnEvent("Click", DashGLabel.Bind(DeckSaveClick, "Normal"))
+	Dash.Add("Button", "x576 y157 w90 h24 Hidden vDeckFCopy", "Copy").OnEvent("Click", DashGLabel.Bind(DeckCopyClick, "Normal"))
+	Dash.Add("Button", "x672 y157 w90 h24 Hidden vDeckFDel", "Delete").OnEvent("Click", DashGLabel.Bind(DeckDelClick, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	ogcTextDeckFDmg := Dash.Add("Text", "x12 y188 w760 h44 Hidden vDeckFDmg")
+	Dash.Add("Text", "x12 y188 w760 h44 Hidden vDeckFDmg")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcDeckFList := Dash.Add("ListView", "x12 y236 w760 h470 Hidden vDeckFList AltSubmit -Multi NoSort Background111317 cDADADA", ["Setting", "This deck", "Everywhere else", "Key"])
-	ogcDeckFList.ModifyCol(1, 360), ogcDeckFList.ModifyCol(2, 170), ogcDeckFList.ModifyCol(3, 200), ogcDeckFList.ModifyCol(4, 0)
-	ogcTextDeckFValT := Dash.Add("Text", "x12 y715 w128 h18 Hidden vDeckFValT", "Value for this deck:")
+	lv := Dash.Add("ListView", "x12 y236 w760 h470 Hidden vDeckFList AltSubmit -Multi NoSort Background111317 cDADADA", ["Setting", "This deck", "Everywhere else", "Key"])
+	lv.OnNotify(-101, DashLvItem.Bind(DeckListEvent))
+	lv.ModifyCol(1, 360), lv.ModifyCol(2, 170), lv.ModifyCol(3, 200), lv.ModifyCol(4, 0)
+	Dash.Add("Text", "x12 y715 w128 h18 Hidden vDeckFValT", "Value for this deck:")
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditDeckFVal := Dash.Add("Edit", "x142 y712 w70 h22 Hidden vDeckFVal")
+	Dash.Add("Edit", "x142 y712 w70 h22 Hidden Background111317 vDeckFVal")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonDeckFValSet := Dash.Add("Button", "x218 y711 w60 h24 Hidden vDeckFValSet", "Set")
-	ogcButtonDeckFValClear := Dash.Add("Button", "x284 y711 w150 h24 Hidden vDeckFValClear", "Not set by this deck")
+	Dash.Add("Button", "x218 y711 w60 h24 Hidden vDeckFValSet", "Set").OnEvent("Click", DashGLabel.Bind(DeckValSet, "Normal"))
+	Dash.Add("Button", "x284 y711 w150 h24 Hidden vDeckFValClear", "Not set by this deck").OnEvent("Click", DashGLabel.Bind(DeckValClear, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Segoe UI")
-	ogcTextDeckFNote := Dash.Add("Text", "x442 y715 w330 h36 Hidden vDeckFNote")
+	Dash.Add("Text", "x442 y715 w330 h36 Hidden vDeckFNote")
 	;The Network tab: every bot on your home network (Network.ahk) - pick one: its log and its game; the buttons send it
 	;a command (with the network PIN)
-	Tab.UseTab(5)
+	tabs.UseTab(5)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x12 y68 w400 h16", "BOTS ON YOUR NETWORK")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextNetHelp := Dash.Add("Text", "x12 y88 w760 h32 vNetHelp", "Every PC on your home network running the bot with Settings > NETWORK > neton. Pick one to see its log and its game. The buttons need the network PIN, the same on both PCs (Settings: netpin); Play for me can only be switched off from here.")
+	Dash.Add("Text", "x12 y88 w760 h32 vNetHelp", "Every PC on your home network running the bot with Settings > NETWORK > neton. Pick one to see its log and its game. The buttons need the network PIN, the same on both PCs (Settings: netpin); Play for me can only be switched off from here.")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonNetOnBtn := Dash.Add("Button", "x12 y124 w80 h26 vNetOnBtn", "Bot on")
-	ogcButtonNetOnBtn.OnEvent("Click", DashNetOn.Bind("Normal"))
-	ogcButtonNetOffBtn := Dash.Add("Button", "x98 y124 w80 h26 vNetOffBtn", "Bot off")
-	ogcButtonNetOffBtn.OnEvent("Click", DashNetOff.Bind("Normal"))
-	ogcButtonNetPfmBtn := Dash.Add("Button", "x184 y124 w120 h26 vNetPfmBtn", "Play for me off")
-	ogcButtonNetPfmBtn.OnEvent("Click", DashNetPfm.Bind("Normal"))
-	ogcButtonNetRestartBtn := Dash.Add("Button", "x310 y124 w80 h26 vNetRestartBtn", "Restart")
-	ogcButtonNetRestartBtn.OnEvent("Click", DashNetRestart.Bind("Normal"))
-	ogcButtonNetRefreshBtn := Dash.Add("Button", "x396 y124 w80 h26 vNetRefreshBtn", "Refresh")
-	ogcButtonNetRefreshBtn.OnEvent("Click", DashNetRefresh.Bind("Normal"))
+	Dash.Add("Button", "x12 y124 w80 h26 vNetOnBtn", "Bot on").OnEvent("Click", DashGLabel.Bind(DashNetOn, "Normal"))
+	Dash.Add("Button", "x98 y124 w80 h26 vNetOffBtn", "Bot off").OnEvent("Click", DashGLabel.Bind(DashNetOff, "Normal"))
+	Dash.Add("Button", "x184 y124 w120 h26 vNetPfmBtn", "Play for me off").OnEvent("Click", DashGLabel.Bind(DashNetPfm, "Normal"))
+	Dash.Add("Button", "x310 y124 w80 h26 vNetRestartBtn", "Restart").OnEvent("Click", DashGLabel.Bind(DashNetRestart, "Normal"))
+	Dash.Add("Button", "x396 y124 w80 h26 vNetRefreshBtn", "Refresh").OnEvent("Click", DashGLabel.Bind(DashNetRefresh, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	ogcTextNetStatus := Dash.Add("Text", "x12 y156 w760 h30 vNetStatus", "Network: off (Settings > NETWORK > neton)")
+	Dash.Add("Text", "x12 y156 w760 h30 vNetStatus", "Network: off (Settings > NETWORK > neton)")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcNetList := Dash.Add("ListView", "x12 y190 w760 h150 vNetList AltSubmit -Multi Background111317 cDADADA", ["PC", "Version", "Wizard", "Zone", "Bot", "Play for me", "Doing", "Health", "Mana", "Deaths", "Seen", "Id"])
-	ogcNetList.OnEvent("DoubleClick", DashNetListEvent.Bind("DoubleClick"))
-	ogcNetList.ModifyCol(1, 110), ogcNetList.ModifyCol(2, 58), ogcNetList.ModifyCol(3, 110), ogcNetList.ModifyCol(4, 130), ogcNetList.ModifyCol(5, 52), ogcNetList.ModifyCol(6, 72)
-	ogcNetList.ModifyCol(7, 96), ogcNetList.ModifyCol(8, 74), ogcNetList.ModifyCol(9, 60), ogcNetList.ModifyCol(10, 54), ogcNetList.ModifyCol(11, 60), ogcNetList.ModifyCol(12, 0)
+	lv := Dash.Add("ListView", "x12 y190 w760 h150 vNetList AltSubmit -Multi Background111317 cDADADA", ["PC", "Version", "Wizard", "Zone", "Bot", "Play for me", "Doing", "Health", "Mana", "Deaths", "Seen", "Id"])
+	lv.OnNotify(-101, DashLvItem.Bind(DashNetListEvent))
+	lv.ModifyCol(1, 110), lv.ModifyCol(2, 58), lv.ModifyCol(3, 110), lv.ModifyCol(4, 130), lv.ModifyCol(5, 52), lv.ModifyCol(6, 72)
+	lv.ModifyCol(7, 96), lv.ModifyCol(8, 74), lv.ModifyCol(9, 60), lv.ModifyCol(10, 54), lv.ModifyCol(11, 60), lv.ModifyCol(12, 0)
 	Dash.SetFont("s8 w400 cDADADA", "Consolas")
-	ogcEditNetLog := Dash.Add("Edit", "x12 y348 w380 h440 ReadOnly -Wrap +HScroll +VScroll vNetLog")
-	ogcPictureNetPic := Dash.Add("Picture", "x400 y348 w372 h210 vNetPic")
+	;(v1: a read-only Edit took the window's colour, not the controls' - measured with both interpreters)
+	Dash.Add("Edit", "x12 y348 w380 h440 ReadOnly -Wrap +HScroll +VScroll Background1B1D22 vNetLog")
+	Dash.Add("Picture", "x400 y348 w372 h210 vNetPic")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextNetPicNote := Dash.Add("Text", "x400 y564 w372 h60 vNetPicNote", "Pick a bot to see its log and its game.")
+	Dash.Add("Text", "x400 y564 w372 h60 vNetPicNote", "Pick a bot to see its log and its game.")
 	;The Keys tab: every action's key - yours to change (Hotkeys.ahk)
-	Tab.UseTab(6)
+	tabs.UseTab(6)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Dash.Add("Text", "x12 y68 w400 h16", "KEYS")
 	Dash.SetFont("s9 w400 c9AA0A6", "Segoe UI")
-	ogcTextKeyHelp := Dash.Add("Text", "x12 y88 w760 h32 vKeyHelp", "Pick an action and click Change (or double-click it), then press the new key - with Ctrl, Alt, Shift or Windows if you like. Keys the bot presses in the game (W A S D, X, Space, Ctrl+O, Ctrl+1-9, F13-F24) and plain letters can't be taken.")
+	Dash.Add("Text", "x12 y88 w760 h32 vKeyHelp", "Pick an action and click Change (or double-click it), then press the new key - with Ctrl, Alt, Shift or Windows if you like. Keys the bot presses in the game (W A S D, X, Space, Ctrl+O, Ctrl+1-9, F13-F24) and plain letters can't be taken.")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonKeyChangeBtn := Dash.Add("Button", "x12 y124 w90 h26 vKeyChangeBtn", "Change...")
-	ogcButtonKeyDefaultBtn := Dash.Add("Button", "x108 y124 w90 h26 vKeyDefaultBtn", "Its default")
-	ogcButtonKeyNoneBtn := Dash.Add("Button", "x204 y124 w90 h26 vKeyNoneBtn", "No key")
-	ogcButtonKeyAllBtn := Dash.Add("Button", "x300 y124 w110 h26 vKeyAllBtn", "All to defaults")
+	Dash.Add("Button", "x12 y124 w90 h26 vKeyChangeBtn", "Change...").OnEvent("Click", DashGLabel.Bind(KeyChangeClick, "Normal"))
+	Dash.Add("Button", "x108 y124 w90 h26 vKeyDefaultBtn", "Its default").OnEvent("Click", DashGLabel.Bind(KeyDefaultClick, "Normal"))
+	Dash.Add("Button", "x204 y124 w90 h26 vKeyNoneBtn", "No key").OnEvent("Click", DashGLabel.Bind(KeyNoneClick, "Normal"))
+	Dash.Add("Button", "x300 y124 w110 h26 vKeyAllBtn", "All to defaults").OnEvent("Click", DashGLabel.Bind(KeyAllClick, "Normal"))
 	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	ogcTextKeyStatus := Dash.Add("Text", "x12 y156 w760 h30 vKeyStatus")
+	Dash.Add("Text", "x12 y156 w760 h30 vKeyStatus")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	ogcKeyList := Dash.Add("ListView", "x12 y190 w760 h598 vKeyList AltSubmit -Multi Background111317 cDADADA", ["Action", "Key", "Default", "Works", "Id"])
-	ogcKeyList.ModifyCol(1, 330), ogcKeyList.ModifyCol(2, 130), ogcKeyList.ModifyCol(3, 150), ogcKeyList.ModifyCol(4, 140), ogcKeyList.ModifyCol(5, 0)
-	Tab.UseTab()
+	lv := Dash.Add("ListView", "x12 y190 w760 h598 vKeyList AltSubmit -Multi Background111317 cDADADA", ["Action", "Key", "Default", "Works", "Id"])
+	lv.OnEvent("DoubleClick", DashGLabel.Bind(KeyListEvent, "DoubleClick"))
+	lv.ModifyCol(1, 330), lv.ModifyCol(2, 130), lv.ModifyCol(3, 150), lv.ModifyCol(4, 140), lv.ModifyCol(5, 0)
+	tabs.UseTab()
 	;The Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
 	;room: every check for you off till you click it again; off at every start. A red bar (green while on: DashPlayShow) -
 	;a Progress control takes a colour - with the clickable words over it
-	ogcProgressDashPlayBg := Dash.Add("Progress", "x668 y37 w108 h24 BackgroundB71C1C Disabled vDashPlayBg")
+	Dash.Add("Progress", "x668 y37 w108 h24 BackgroundB71C1C Disabled vDashPlayBg")
 	Dash.SetFont("s9 w700 cFFFFFF", "Segoe UI")
-	ogcTextDashPlayBtn := Dash.Add("Text", "x668 y37 w108 h24 +Center +0x200 BackgroundTrans vDashPlayBtn", "Play for me")
-	ogcTextDashPlayBtn.OnEvent("Click", DashPlayToggle.Bind("Normal"))
+	play := Dash.Add("Text", "x668 y37 w108 h24 +Center +0x200 BackgroundTrans vDashPlayBtn", "Play for me")
+	play.OnEvent("Click", DashGLabel.Bind(DashPlayToggle, "Normal"))
+	;(v1: a Text's gLabel ran for a double-click too - A_GuiEvent DoubleClick)
+	play.OnEvent("DoubleClick", DashGLabel.Bind(DashPlayToggle, "DoubleClick"))
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
 	;(the log so far: the lines written before the window was made)
-	earlier := FileRead(A_ScriptDir "\debug.log")
+	earlier := V1FileRead(A_ScriptDir "\debug.log")
 	if (earlier != "")
 		DashAppend(earlier)
 	shown := IniRead(A_ScriptDir "\dashboard.ini", "window", "shown", 1)
@@ -314,30 +313,68 @@ DashInit()
 	DgShow()
 	SpInit()
 	;(the Keys tab's list)
-	if (IsFunc("KeyListFill"))
+	if (V1IsFunc("KeyListFill"))
 		KeyListFill.Call()
 	if (shown)
 		DashShow()
-	SetTimer(DashRefresh,1000)
-	OnExit("DashOnExit")
+	SetTimer(DashRefreshTick, 1000)
+	OnExit(DashOnExit)
 	;(the map: back if it was open when the bot stopped)
 	mapShown := IniRead(A_ScriptDir "\dashboard.ini", "map", "shown", 0)
 	if (mapShown = 1)
 		DashMapShow()
 	}
 
+;(v2 port) v1's gLabel: the label ran as a thread of its own (its own ErrorLevel) with A_GuiEvent ("Normal",
+;"DoubleClick", "I"), A_GuiControl (the control's variable, else its text) and A_EventInfo (a ListView's row - for a
+;double-click its focused row), and a ListView item's change ("I": DashLvItem) had ErrorLevel the letters of what
+;changed (el). fn: the label's function - this file's, Dungeons', Spells', Decks' or Hotkeys' - called the converter's
+;way, fn(A_GuiEvent, A_GuiControl, A_EventInfo), or fn() when it takes no parameters
+DashGLabel(fn, guiEvent, ctl, info := "", el := "", *)
+	{
+	global ErrorLevel
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	if (guiEvent = "I")
+		ErrorLevel := el
+	else if (guiEvent = "DoubleClick" && ctl is Gui.ListView)
+		info := ctl.GetNext(0, "F")
+	if (fn.IsVariadic || fn.MaxParams >= 3)
+		fn(guiEvent, V1GuiName(ctl), info)
+	else
+		fn()
+	}
+
+;(v2 port) v1's "I" gLabel event of an AltSubmit ListView: each LVN_ITEMCHANGED (lParam: its NMLISTVIEW) whose state
+;changed - ErrorLevel S / s (selected / deselected), F / f (focused / not), C / c (checked / not), A_EventInfo the row -
+;the script's own Modify too (v2's ItemSelect isn't raised for those; v1's "I" was). Launched as v1 launched it: a
+;thread of its own once the current one can be interrupted (after its Critical), not inside the Modify. Only when the
+;selection changed: every "I" handler of this window (DgListEvent, SpListEvent, DeckListEvent, DashNetListEvent) did
+;nothing in v1 without S or s in ErrorLevel - the other files' v2 handlers no longer look
+DashLvItem(fn, ctl, lParam)
+	{
+	item := NumGet(lParam, 3 * A_PtrSize, "Int"), newState := NumGet(lParam, 3 * A_PtrSize + 8, "UInt")
+	oldState := NumGet(lParam, 3 * A_PtrSize + 12, "UInt"), changed := NumGet(lParam, 3 * A_PtrSize + 16, "UInt")
+	if (!(changed & 0x8))
+		return
+	diff := newState ^ oldState
+	el := (diff & 0x2 ? (newState & 0x2 ? "S" : "s") : "") (diff & 0x1 ? (newState & 0x1 ? "F" : "f") : "")
+		. (diff & 0xF000 ? ((newState & 0xF000) = 0x2000 ? "C" : "c") : "")
+	if (diff & 0x2)
+		SetTimer(DashGLabel.Bind(fn, "I", ctl, item + 1, el), -1)
+	}
+
 ;The "Learn every card" button's label
 DashLearnShow(learnOn)
 	{
 	if (DashHwnd)
-		GuiControl, Dash:, DashLearnBtn, % learnOn ? "Learning... (stop)" : "Learn every card" ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashLearnBtn"].Text := learnOn ? "Learning... (stop)" : "Learn every card"
 	}
 
 ;The bot on/off button's label
 DashBotShow(isOn)
 	{
 	if (DashHwnd)
-		GuiControl, Dash:, DashBotBtn, % "Bot: " (isOn ? "on" : "off") " (" HkText("bot") ")" ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashBotBtn"].Text := "Bot: " (isOn ? "on" : "off") " (" HkText("bot") ")"
 	}
 
 ;The Dungeons tab's help line - with the keys set now (Hotkeys.ahk)
@@ -352,19 +389,19 @@ DashKeysChanged()
 	{
 	if (!DashHwnd)
 		return
-	GuiControl, Dash:, DashBotBtn, % "Bot: " (BotOn ? "on" : "off") " (" HkText("bot") ")" ; V1toV2: Ternary not yet supported (coming soon)
-	ogcButtonDashWalkBtn.Text := "Walking on/off (" HkText("walk") ")"
-	ogcTextDgHelp.Value := DashDgHelpText()
+	Dash["DashBotBtn"].Text := "Bot: " (BotOn ? "on" : "off") " (" HkText("bot") ")"
+	Dash["DashWalkBtn"].Text := "Walking on/off (" HkText("walk") ")"
+	Dash["DgHelp"].Text := DashDgHelpText()
 	;(while a run's being recorded: the key it was begun with - the one that stops it)
-	GuiControl, Dash:, DgRecStopBtn, % "Stop recording (" (DgRecording ? HkName(DgRecKey) : HkText("record")) ")" ; V1toV2: Ternary not yet supported (coming soon)
-	ogcCheckboxDeckFWBoss.Text := "bosses (" HkText("boss") ")"
+	Dash["DgRecStopBtn"].Text := "Stop recording (" (DgRecording ? HkName(DgRecKey) : HkText("record")) ")"
+	Dash["DeckFWBoss"].Text := "bosses (" HkText("boss") ")"
 	}
 
 ;The "Game to front" button's label
 DashFrontShow(frontOn)
 	{
 	if (DashHwnd)
-		GuiControl, Dash:, DashFrontBtn, % "Game to front: " (frontOn ? "on" : "off") ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashFrontBtn"].Text := "Game to front: " (frontOn ? "on" : "off")
 	}
 
 ;The "Play for me" button: red "Play for me" off, green "PLAYING FOR ME" on (you asked, 2026-10-26)
@@ -373,34 +410,35 @@ DashPlayShow(on)
 	if (!DashHwnd)
 		return
 	playCol := on ? "2E7D32" : "B71C1C"
-	ogcProgressDashPlayBg.Opt("+Background" playCol)
-	GuiControl, Dash:, DashPlayBtn, % on ? "PLAYING FOR ME" : "Play for me" ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DashPlayBg"].Opt("+Background" playCol)
+	Dash["DashPlayBtn"].Text := on ? "PLAYING FOR ME" : "Play for me"
 	;(the words drawn again over the bar's new colour)
-	ogcTextDashPlayBtn.Move()
+	Dash["DashPlayBtn"].Redraw()
 	}
 
 ;The "Wait while I play" button's label
 DashHandsShow(waitOn)
 	{
 	if (DashHwnd)
-		GuiControl, Dash:, DashHandsBtn, % "Wait for me: " (waitOn ? "on" : "off") ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashHandsBtn"].Text := "Wait for me: " (waitOn ? "on" : "off")
 	}
 
 ;Simple (true) or advanced: which view of a window (what: "dashboard", "settings") - dashboard.ini [view]. Not set yet:
 ;advanced where the bot ran before (it had a dashboard.ini - nothing that was there goes missing), simple on a new one
+;(v2 port: IniRead's "" default is v1's %A_Space% - a blank; v2 would give the space itself)
 ViewSimple(what)
 	{
 	ini := A_ScriptDir "\dashboard.ini"
-	v := IniRead(ini, "view", what, A_Space)
+	v := IniRead(ini, "view", what, "")
 	if (v = "")
 		{
 		;(both views decided at once - the first one asked mustn't make the file the other takes for "ran before")
 		v := FileExist(ini) ? 0 : 1
 		for each, w in ["dashboard", "settings"]
 			{
-			had := IniRead(ini, "view", w, A_Space)
+			had := IniRead(ini, "view", w, "")
 			if (had = "")
-				IniWrite(v, ini, "view", w)
+				V1Do(IniWrite, v, ini, "view", w)
 			}
 		v := IniRead(ini, "view", what, v)
 		}
@@ -415,53 +453,57 @@ DashApplyView()
 		return
 	act := DashSimple ? "Hide" : "Show"
 	for each, c in ["DashLogHead", "DashConsole", "DashPauseBtn", "DashClearBtn", "DashLogBtn", "DashColBtn"]
-		ogc%c%.%act%() ; V1toV2: SubCommand passed as variable, check variable contents and docs
-	GuiControl, Dash:, DashViewBtn, % DashSimple ? "Advanced view" : "Simple view" ; V1toV2: Ternary not yet supported (coming soon)
-	Gui, % "Dash:+MinSize740x" (DashSimple ? 330 : 640) ; V1toV2: Ternary not yet supported (coming soon)
+		Dash[c].Visible := act = "Show"
+	Dash["DashViewBtn"].Text := DashSimple ? "Advanced view" : "Simple view"
+	Dash.Opt("+MinSize740x" (DashSimple ? 330 : 640))
 	}
 
 ;Shows the window where it was (else on a monitor the game isn't on), without taking the focus - each view its own
 ;place and size ([window]: advanced, [simple])
+;(v2 port: dashboard.ini's numbers as v1 did math with them - V1Add, V1Max...: a blank or text one gave a blank)
 DashShow()
 	{
+	global DashShown ; (v1 globals it sets)
 	section := DashSimple ? "simple" : "window"
-	x := IniRead(A_ScriptDir "\dashboard.ini", section, "x", A_Space)
-	y := IniRead(A_ScriptDir "\dashboard.ini", section, "y", A_Space)
+	x := IniRead(A_ScriptDir "\dashboard.ini", section, "x", "")
+	y := IniRead(A_ScriptDir "\dashboard.ini", section, "y", "")
 	w := IniRead(A_ScriptDir "\dashboard.ini", section, "w", 784)
-	h := IniRead(A_ScriptDir "\dashboard.ini", section, "h", A_Space)
+	h := IniRead(A_ScriptDir "\dashboard.ini", section, "h", "")
 	layout := IniRead(A_ScriptDir "\dashboard.ini", "window", "layout", 1)
 	;(the Hand section came in above the log, then the tabs: a window saved before that is that much taller now)
 	if (DashSimple)
-		h := (h = "") ? 330 : Max(330, h)
+		h := (h = "") ? 330 : V1Max(330, h)
 	else
-		h := (h = "") ? 804 : (layout < 2 ? h + 180 : layout < 3 ? h + 28 : h)
+		h := (h = "") ? 804 : (V1Lt(layout, 2) ? V1Add(h, 180) : V1Lt(layout, 3) ? V1Add(h, 28) : h)
 	;(w and h are at 100% display scaling; Windows' scaling makes the window that much bigger)
 	dpi := A_ScreenDPI / 96
-	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
+	if (x = "" || y = "" || !DashOnScreen(V1Add(x, 40), V1Add(y, 20)))
 		{
 		;(the first monitor that doesn't hold the middle of the game window; else the bottom right)
 		spare := DashSpareMonitor(&mLeft, &mTop, &mRight, &mBottom)
 		;(no bigger than that monitor)
-		w := Min(w, Floor((mRight - mLeft - 40) / dpi) - 16), h := Min(h, Floor((mBottom - mTop - 40) / dpi) - 40)
-		x := spare ? mLeft + 20 : mRight - Round((w + 16) * dpi) - 20
-		y := spare ? mTop + 20 : mBottom - Round((h + 40) * dpi) - 20
+		w := V1Min(w, Floor((mRight - mLeft - 40) / dpi) - 16), h := V1Min(h, Floor((mBottom - mTop - 40) / dpi) - 40)
+		x := spare ? mLeft + 20 : mRight - V1Round(V1Mul(V1Add(w, 16), dpi)) - 20
+		y := spare ? mTop + 20 : mBottom - V1Round(V1Mul(V1Add(h, 40), dpi)) - 20
 		}
 	DashFitHeight(x, y, &h)
-	Dash.Show("x" . x . " y" . y . " w" . w . " h" . h . " NoActivate")
+	Dash.Show("x" x " y" y " w" w " h" h " NoActivate")
 	DashShown := 1
 	DashRefresh()
 	}
 
 ;The work area of the first monitor that doesn't hold the middle of the game window: true; else the main
 ;monitor's and false
+;(v2 port: the game window not found yet - GameLeft... blank - v1's sums were blank, and a blank compared as text: the
+;first monitor counts as spare, as in v1)
 DashSpareMonitor(&mLeft, &mTop, &mRight, &mBottom)
 	{
-	gx := GameLeft + GameW // 2, gy := GameTop + GameH // 2
+	gx := V1Add(GameLeft, V1FloorDiv(GameW, 2)), gy := V1Add(GameTop, V1FloorDiv(GameH, 2))
 	count := MonitorGetCount()
 	Loop count
 		{
 		MonitorGetWorkArea(A_Index, &mLeft, &mTop, &mRight, &mBottom)
-		if (!(gx >= mLeft && gx < mRight && gy >= mTop && gy < mBottom))
+		if (!(V1Ge(gx, mLeft) && V1Lt(gx, mRight) && V1Ge(gy, mTop) && V1Lt(gy, mBottom)))
 			return true
 		}
 	MonitorGetWorkArea(, &mLeft, &mTop, &mRight, &mBottom)
@@ -490,17 +532,18 @@ DashFitHeight(x, y, &h)
 		{
 		MonitorGetWorkArea(A_Index, &mLeft, &mTop, &mRight, &mBottom)
 		if (x + 40 >= mLeft && x + 40 < mRight && y + 20 >= mTop && y + 20 < mBottom)
-			h := Min(h, Floor((mBottom - y - 20) / dpi) - 40)
+			h := V1Min(h, Floor((mBottom - y - 20) / dpi) - 40)
 		}
 	}
 
+;(v2 port: x, y blank when dashboard.ini's place wasn't a number - v1 compared a blank as text: not on a screen)
 DashOnScreen(x, y)
 	{
 	count := MonitorGetCount()
 	Loop count
 		{
 		MonitorGet(A_Index, &mLeft, &mTop, &mRight, &mBottom)
-		if (x >= mLeft && x < mRight && y >= mTop && y < mBottom)
+		if (V1Ge(x, mLeft) && V1Lt(x, mRight) && V1Ge(y, mTop) && V1Lt(y, mBottom))
 			return true
 		}
 	return false
@@ -509,6 +552,7 @@ DashOnScreen(x, y)
 ;Windows+2 / tray menu
 DashToggle()
 	{
+	global DashShown ; (v1 globals it sets)
 	if (!DashHwnd)
 		return
 	if (DashShown)
@@ -519,7 +563,7 @@ DashToggle()
 		}
 	else
 		DashShow()
-	IniWrite(DashShown, A_ScriptDir "\dashboard.ini", "window", "shown")
+	V1Do(IniWrite, DashShown, A_ScriptDir "\dashboard.ini", "window", "shown")
 	}
 
 DashSavePlace()
@@ -529,25 +573,27 @@ DashSavePlace()
 	if (DashSimple)
 		DashSaveWin(DashHwnd, "simple")
 	else if (DashSaveWin(DashHwnd, "window"))
-		IniWrite(3, A_ScriptDir "\dashboard.ini", "window", "layout")
+		V1Do(IniWrite, 3, A_ScriptDir "\dashboard.ini", "window", "layout")
 	}
 
 ;Saves where a window is in dashboard.ini [section]: x, y on the screen, and its inside's width and height at
 ;100% display scaling (as Gui Show takes them). Not while it's minimized or maximized (false)
 DashSaveWin(hwnd, section)
 	{
-	mm := WinGetMinMax("ahk_id " hwnd)
+	;(v1: WinGet MinMax / WinGetPos of a window that isn't there - blank; v2 throws)
+	mm := V1Try(WinGetMinMax, "ahk_id " hwnd)
 	if (mm != 0)
 		return false
-	rc := Buffer(16, 0) ; V1toV2: if 'rc' is a UTF-16 string, use 'VarSetStrCapacity(&rc, 16)' and replace all instances of 'rc.Ptr' with 'StrPtr(rc)'
+	rc := Buffer(16, 0)
 	DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc.Ptr)
-	WinGetPos(&x, &y, , , "ahk_id " hwnd)
+	x := "", y := ""
+	try WinGetPos(&x, &y, , , "ahk_id " hwnd)
 	if (x = "")
 		return false
-	IniWrite(x, A_ScriptDir "\dashboard.ini", section, "x")
-	IniWrite(y, A_ScriptDir "\dashboard.ini", section, "y")
-	IniWrite(Round(NumGet(rc, 8, "Int") * 96 / A_ScreenDPI), A_ScriptDir "\dashboard.ini", section, "w")
-	IniWrite(Round(NumGet(rc, 12, "Int") * 96 / A_ScreenDPI), A_ScriptDir "\dashboard.ini", section, "h")
+	V1Do(IniWrite, x, A_ScriptDir "\dashboard.ini", section, "x")
+	V1Do(IniWrite, y, A_ScriptDir "\dashboard.ini", section, "y")
+	V1Do(IniWrite, Round(NumGet(rc, 8, "Int") * 96 / A_ScreenDPI), A_ScriptDir "\dashboard.ini", section, "w")
+	V1Do(IniWrite, Round(NumGet(rc, 12, "Int") * 96 / A_ScreenDPI), A_ScriptDir "\dashboard.ini", section, "h")
 	return true
 	}
 
@@ -558,7 +604,8 @@ DashNetShown()
 	{
 	if (!DashHwnd || !DashShown)
 		return false
-	netTab := ogcTab3DashTabs.Value
+	;(v1: GuiControlGet of a Tab - its tab's name)
+	netTab := Dash["DashTabs"].Text
 	return netTab = "Network"
 	}
 
@@ -574,57 +621,63 @@ DashNetFill()
 		return
 	wasCrit := A_IsCritical
 	Critical()
-	;Gui, Dash:Default ; V1toV2: removed, but applied
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	;Gui, Dash:ListView, NetList ; V1toV2: removed, but applied
-	V1toV2_LineFill := true ; remove me after inspection
-	ogcNetList.Opt("-Redraw")
-	ogcNetList.Delete()
-	ogcNetList.Add("", A_ComputerName " (this PC)", BotVersion(), OwnName(), WalkZone(), (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
+	;(v1: Gui, Dash:ListView, NetList made it the LV_ functions' list, the one before put back after - v2: the control)
+	lv := Dash["NetList"]
+	lv.Opt("-Redraw")
+	lv.Delete()
+	lv.Add("", A_ComputerName " (this PC)", BotVersion(), OwnName(), WalkZone(), (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
 		, PlayForMe ? "ON" : "off", "-", RegExReplace(IsObject(DashSees) ? DashSees.hp : "", "\s*\(.*"), IsObject(DashSees) ? DashSees.mana : ""
 		, IsObject(DashN) && DashN.deaths ? DashN.deaths : 0, "now", "")
-	for i, p in NetPeers
+	;(v1: for over a blank NetPeers - nothing; a peer's age as the network sent it: V1Gt)
+	for i, p in IsObject(NetPeers) ? NetPeers : []
 		{
-		row := ogcNetList.Add("", p.pc, p.ver, p.wiz (p.school != "" ? " (" p.school ")" : ""), p.zone, p.bot, p.pfm = 1 ? "ON" : "off", p.doing
-, p.hp, p.mana, p.deaths (p.dall != "" ? " / " p.dall : ""), p.age > 15 ? NetAge(p.age) " ago (quiet)" : "now", p.id)
+		row := lv.Add("", p.pc, p.ver, p.wiz (p.school != "" ? " (" p.school ")" : ""), p.zone, p.bot, p.pfm = 1 ? "ON" : "off", p.doing
+			, p.hp, p.mana, p.deaths (p.dall != "" ? " / " p.dall : ""), V1Gt(p.age, 15) ? NetAge(p.age) " ago (quiet)" : "now", p.id)
 		if (p.id = NetSel)
-			ogcNetList.Modify(row, "Select Focus")
+			lv.Modify(row, "Select Focus")
 		}
-	ogcNetList.Opt("+Redraw")
-	if (prevLV != "" && prevLV != "NetList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+	lv.Opt("+Redraw")
 	CfgUncritical(wasCrit, 0)
 	}
 
 ;The picked bot's log and picture onto the tab (NetFetchPicked); pic "" - none, why says why
 DashNetShow(log, pic, why)
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	if (!DashHwnd)
 		return
 	if (log != "")
 		{
-		ogcEditNetLog.Value := log
+		Dash["NetLog"].Value := log
 		;(the log's end in view)
-		netLogHwnd := ogcEditNetLog.Hwnd
-		ErrorLevel := SendMessage(0x115, 7, 0, , "ahk_id " netLogHwnd)
+		netLogHwnd := Dash["NetLog"].Hwnd
+		;(v1: SendMessage's answer in ErrorLevel, FAIL when it couldn't be sent - v2 throws)
+		try
+			ErrorLevel := SendMessage(0x115, 7, 0, , "ahk_id " netLogHwnd)
+		catch
+			ErrorLevel := "FAIL"
 		}
 	if (pic != "")
 		{
-		ogcPictureNetPic.Value := "*w372 *h-1 " pic
-		ogcPictureNetPic.Visible := true
-		GuiControl, Dash:, NetPicNote, % "Its game, " A_Hour ":" A_Min ":" A_Sec (why != "" ? " - " why : "") ; V1toV2: Ternary not yet supported (coming soon)
+		;(v1: a picture that couldn't be loaded - ErrorLevel, nothing thrown, the control left blank and 0 x 0; v2 throws
+		;and keeps the old picture: blanked as v1 did)
+		try Dash["NetPic"].Value := "*w372 *h-1 " pic
+		catch
+			try Dash["NetPic"].Value := ""
+		Dash["NetPic"].Visible := true
+		Dash["NetPicNote"].Text := "Its game, " A_Hour ":" A_Min ":" A_Sec (why != "" ? " - " why : "")
 		}
 	else
 		{
 		;(no picture this time: the last one isn't left up under it)
-		ogcPictureNetPic.Visible := false
-		GuiControl, Dash:, NetPicNote, % why != "" ? why : "No picture" ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["NetPic"].Visible := false
+		Dash["NetPicNote"].Text := why != "" ? why : "No picture"
 		}
 	}
 
-DashOnExit(reason, code)
+DashOnExit(reason := "", code := "", *)
 	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	DashSavePlace()
 	if (DashMapShown && DashMapHwnd)
 		DashSaveWin(DashMapHwnd, "map")
@@ -635,6 +688,7 @@ DashOnExit(reason, code)
 ;Every DebugLog line (with its time): onto the log, and into the counts
 DashLog(line)
 	{
+	global NetLastLine, DashHeld ; (v1 globals it sets)
 	;(the last line written - the Network tab's "last" for the other bots, Network.ahk)
 	NetLastLine := line
 	if (!DashHwnd)
@@ -692,7 +746,7 @@ DashLogColors(reload := false)
 	static colours := ""
 	if (IsObject(colours) && !reload)
 		return colours
-	colours := {}
+	colours := V1Obj()
 	for each, k in DashLogKinds()
 		{
 		c := IniRead(A_ScriptDir "\dashboard.ini", "logcolors", k[1], k[3])
@@ -706,14 +760,14 @@ DashBGR(rgb)
 	{
 	;(a standalone += - "0x" rgb + 0 inside an expression comes out blank)
 	v := "0x" rgb
-	v += 0
+	v := V1N(v) + 0
 	return ((v & 0xFF) << 16) | (v & 0xFF00) | ((v >> 16) & 0xFF)
 	}
 
 ;The text that follows in the log box: in this colour (CHARFORMAT2W on the selection - the end, where it's added)
 DashLogColour(rgb)
 	{
-	cf := Buffer(116, 0) ; V1toV2: if 'cf' is a UTF-16 string, use 'VarSetStrCapacity(&cf, 116)' and replace all instances of 'cf.Ptr' with 'StrPtr(cf)'
+	cf := Buffer(116, 0)
 	NumPut("UInt", 116, cf, 0), NumPut("UInt", 0x40000000, cf, 4), NumPut("UInt", DashBGR(rgb), cf, 20)    ; CFM_COLOR, crTextColor
 	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x444, "Ptr", 1, "Ptr", cf.Ptr)    ; EM_SETCHARFORMAT, SCF_SELECTION
 	}
@@ -721,7 +775,7 @@ DashLogColour(rgb)
 ;The log box's length in its own characters (a line break counts 1 - as EM_SETSEL counts)
 DashLogLen()
 	{
-	gtl := Buffer(8, 0), NumPut("UInt", 10, gtl, 0), NumPut("UInt", 1200, gtl, 4)       ; GTL_PRECISE|GTL_NUMCHARS, UTF-16 ; V1toV2: if 'gtl' is a UTF-16 string, use 'VarSetStrCapacity(&gtl, 8)' and replace all instances of 'gtl.Ptr' with 'StrPtr(gtl)'
+	gtl := Buffer(8, 0), NumPut("UInt", 10, gtl, 0), NumPut("UInt", 1200, gtl, 4)       ; GTL_PRECISE|GTL_NUMCHARS, UTF-16
 	return DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x45F, "Ptr", gtl.Ptr, "Ptr", 0, "Ptr")  ; EM_GETTEXTLENGTHEX
 	}
 
@@ -729,7 +783,7 @@ DashLogLen()
 DashLogInit()
 	{
 	DllCall("SendMessage", "Ptr", DashCon, "UInt", 0x443, "Ptr", 0, "Ptr", DashBGR("111317"))   ; EM_SETBKGNDCOLOR
-	cf := Buffer(116, 0) ; V1toV2: if 'cf' is a UTF-16 string, use 'VarSetStrCapacity(&cf, 116)' and replace all instances of 'cf.Ptr' with 'StrPtr(cf)'
+	cf := Buffer(116, 0)
 	NumPut("UInt", 116, cf, 0), NumPut("UInt", 0xE0000000, cf, 4)      ; CFM_SIZE | CFM_COLOR | CFM_FACE
 	NumPut("Int", 180, cf, 12), NumPut("UInt", DashBGR("DADADA"), cf, 20)
 	StrPut("Consolas", cf.Ptr + 26, 32, "UTF-16")
@@ -786,7 +840,10 @@ DashLogColorsWindow()
 	{
 	global
 	local kinds, colours, i, k, y, col
-	LogCol := Gui("+OwnerDash +ToolWindow", "Log colours"), LogColHwnd := LogCol.Hwnd
+	;(v1: Gui, LogCol:New - the one that was there destroyed first)
+	if (IsSet(LogCol) && IsObject(LogCol))
+		try LogCol.Destroy()
+	LogCol := Gui("+Owner" Dash.Hwnd " +ToolWindow", "Log colours"), LogColHwnd := LogCol.Hwnd
 	LogCol.OnEvent("Close", LogColGuiClose)
 	LogCol.OnEvent("Escape", LogColGuiEscape)
 	LogCol.BackColor := "1B1D22"
@@ -795,19 +852,16 @@ DashLogColorsWindow()
 	for i, k in kinds
 		{
 		y := 10 + (i - 1) * 28, col := colours[k[1]]
-		ogcProgressLogColSwi := LogCol.Add("Progress", "x10 y" . y . " w22 h18 Background" . col . " Disabled vLogColSw" . i)
-		LogCol.Add("Text", "x40 y" . y . " w270 h18 +0x200", k[2])
+		LogCol.Add("Progress", "x10 y" y " w22 h18 Background" col " Disabled vLogColSw" i)
+		LogCol.Add("Text", "x40 y" y " w270 h18 +0x200", k[2])
 		LogCol.SetFont("s9 w400 c000000", "Segoe UI")
-		ogcButtonLogColBtni := LogCol.Add("Button", "x316 y" . y . " w76 h20 vLogColBtn" . i, "Change...")
-		ogcButtonLogColBtni.OnEvent("Click", DashLogColorPick.Bind("Normal"))
+		LogCol.Add("Button", "x316 y" y " w76 h20 vLogColBtn" i, "Change...").OnEvent("Click", DashGLabel.Bind(DashLogColorPick, "Normal"))
 		LogCol.SetFont("s9 w400 cF2F2F2", "Segoe UI")
 		}
 	y := 16 + kinds.Length * 28
 	LogCol.SetFont("s9 w400 c000000", "Segoe UI")
-	ogcButtonResetall := LogCol.Add("Button", "x10 y" . y . " w110 h24", "Reset all")
-	ogcButtonResetall.OnEvent("Click", DashLogColorReset.Bind("Normal"))
-	ogcButtonClose := LogCol.Add("Button", "x292 y" . y . " w100 h24", "Close")
-	ogcButtonClose.OnEvent("Click", DashLogColorClose.Bind("Normal"))
+	LogCol.Add("Button", "x10 y" y " w110 h24", "Reset all").OnEvent("Click", DashGLabel.Bind(DashLogColorReset, "Normal"))
+	LogCol.Add("Button", "x292 y" y " w100 h24", "Close").OnEvent("Click", DashGLabel.Bind(DashLogColorClose, "Normal"))
 	LogCol.Show("AutoSize")
 	}
 
@@ -815,11 +869,11 @@ DashLogColorsWindow()
 DashPickColour(rgb, owner)
 	{
 	;(its 16 custom colours kept between opens - made once: the buffer read as text is "" whenever slot 1 is black)
-	static cust, custMade := 0
+	static cust := "", custMade := 0
 	if (!custMade)
-		cust := Buffer(64, 0), custMade := 1 ; V1toV2: if 'cust' is a UTF-16 string, use 'VarSetStrCapacity(&cust, 64)' and replace all instances of 'cust.Ptr' with 'StrPtr(cust)'
+		cust := Buffer(64, 0), custMade := 1
 	size := A_PtrSize = 8 ? 72 : 36
-	cc := Buffer(size, 0) ; V1toV2: if 'cc' is a UTF-16 string, use 'VarSetStrCapacity(&cc, size)' and replace all instances of 'cc.Ptr' with 'StrPtr(cc)'
+	cc := Buffer(size, 0)
 	NumPut("UInt", size, cc, 0)
 	NumPut("Ptr", owner, cc, A_PtrSize)                         ; hwndOwner
 	NumPut("UInt", DashBGR(rgb), cc, 3 * A_PtrSize)             ; rgbResult
@@ -834,8 +888,9 @@ DashPickColour(rgb, owner)
 ;The log box coloured afresh - its lines put back in, each in its kind's colour now
 DashLogRecolour()
 	{
-	lrAll := ogcCustomDashConsole.Value
-	ogcCustomDashConsole.Value := ""
+	;(v1: GuiControl / GuiControlGet of a Custom control - its window text)
+	lrAll := Dash["DashConsole"].Text
+	Dash["DashConsole"].Text := ""
 	if (lrAll != "")
 		DashAppend(lrAll)
 	}
@@ -853,7 +908,7 @@ DashParse(line)
 	else if (RegExMatch(msg, "^  saving pips for (\w+) \((\d+) pips, you have (\d+)\).*up to (\d+) round", &m))
 		DashAdd("pipsaves"), DashSees.plan := "saving pips for " DashShortName(m[1]) " (" m[3] "/" m[2] " pips)"
 	else if (RegExMatch(msg, "^  (not saving pips|saved pips) .*", &m))
-		DashSees.plan := Trim((m&&m[0]))
+		DashSees.plan := Trim(m[0])
 	else if (RegExMatch(msg, "^  Click pass: found=1"))
 		DashAdd("passes")
 	else if (InStr(msg, "  Discarded ") = 1)
@@ -870,8 +925,9 @@ DashParse(line)
 		}
 	else if (RegExMatch(msg, "^  pips=(-?\d+)", &m))
 		DashSees.pips := (m[1] < 0 ? "?" : m[1])
+	;(v1: a max health of 0 - a division by zero - gave a blank, rounded to 0)
 	else if (RegExMatch(msg, "^  own health: (\d+)/(\d+)", &m))
-		DashSees.hp := m[1] "/" m[2] " (" Round(100 * m[1] / m[2]) "%, name plate)"
+		DashSees.hp := m[1] "/" m[2] " (" V1Round(V1Div(100 * m[1], m[2])) "%, name plate)"
 	else if (RegExMatch(msg, "school=(\w*) \| hitter=(\w*)", &m))
 		DashSees.school := m[1], DashSees.hitter := m[2]
 	else if (RegExMatch(msg, "^  learned a new card: (.*?)( \(picture:|$)", &m))
@@ -896,7 +952,7 @@ DashParse(line)
 DashAdd(key, n := 1)
 	{
 	if (IsObject(DashN))
-		DashN[key] := (DashN.Has(key) ? DashN[key] : 0) + n ;  V1toV2: Invalid Index errors?, try 'DashN.Push(<val>)'
+		DashN[key] := (DashN.Has(key) ? DashN[key] : 0) + n
 	}
 
 ;A card went down (CastResult saw it cast)
@@ -904,7 +960,7 @@ DashCast(title)
 	{
 	if (!IsObject(DashCasts))
 		return
-	DashCasts[title] := (DashCasts.Has(title) ? DashCasts[title] : 0) + 1 ;  V1toV2: Invalid Index errors?, try 'DashCasts.Push(<val>)'
+	DashCasts[title] := (DashCasts.Has(title) ? DashCasts[title] : 0) + 1
 	DashAdd("casts")
 	DashSees.lastCast := DashCardName(title) " at " A_Hour ":" A_Min ":" A_Sec
 	}
@@ -913,7 +969,7 @@ DashCast(title)
 DashSee(key, text)
 	{
 	if (IsObject(DashSees))
-		DashSees[key] := text ;  V1toV2: Invalid Index errors?, try 'DashSees.Push(<val>)'
+		DashSees[key] := text
 	}
 
 ;The hand as the vision helper read it (/hand's answer, CardLearn.ahk): each card's name, ?<type> for one
@@ -935,7 +991,7 @@ DashHandSeen(answer)
 			continue
 			}
 		known := f[6]
-		name := known = "" ? "?" (f[9] = "" ? "card" : f[9]) : InStr(known, "learned/") = 1 ? DashLearnedName(SubStr(known, 9)) : DashShortName(SubStr(known, (InStr(known, "/") + 1)<1 ? (InStr(known, "/") + 1)-1 : (InStr(known, "/") + 1)), SubStr(known, 1, InStr(known, "/") - 1))
+		name := known = "" ? "?" (f[9] = "" ? "card" : f[9]) : InStr(known, "learned/") = 1 ? DashLearnedName(SubStr(known, 9)) : DashShortName(SubStr(known, InStr(known, "/") + 1), SubStr(known, 1, InStr(known, "/") - 1))
 		text .= (text = "" ? "" : ", ") name (f[8] = 1 ? "*" : "")
 		n += 1
 		if (n <= 7)
@@ -948,7 +1004,9 @@ DashHandSeen(answer)
 		DashCardShow(slot, 0, 0)
 		}
 	now := FormatTime(, "HH:mm:ss")
-	GuiControl, Dash:, DashHandHead, % "YOUR HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast" ; V1toV2: Ternary not yet supported (coming soon)
+	;(v1: GuiControl on a window not made yet did nothing)
+	if (DashHwnd)
+		Dash["DashHandHead"].Text := "YOUR HAND " now " (" n " card" (n = 1 ? "" : "s") (notCards ? ", " notCards " not a card" : "") ")   white known   yellow new to it   grey can't cast"
 	DashSee("hand", text)
 	}
 
@@ -959,13 +1017,13 @@ DashKnownPips(known)
 	{
 	if (known = "")
 		return ""
-	dir := SubStr(known, 1, InStr(known, "/") - 1), title := SubStr(known, (InStr(known, "/") + 1)<1 ? (InStr(known, "/") + 1)-1 : (InStr(known, "/") + 1))
+	dir := SubStr(known, 1, InStr(known, "/") - 1), title := SubStr(known, InStr(known, "/") + 1)
 	if (dir = "resources" && RegExMatch(title, "i)^(sharpen|potent|epic|colossal|gargantuan|monstrous|giant|strong)$"))
 		return 0
 	if (dir = "life" && title = "enchant")
 		return 0
 	;(0 there is an X-pip spell's - all your pips - not a free one: left as not known)
-	if (IsObject(Stats) && Stats.Has(dir "." title "pips") && Stats[dir "." title "pips"] > 0)
+	if (IsObject(Stats) && Stats.Has(dir "." title "pips") && V1Gt(Stats[dir "." title "pips"], 0))
 		return Stats[dir "." title "pips"]
 	return ""
 	}
@@ -973,8 +1031,8 @@ DashKnownPips(known)
 ;A learned card's name in the hand: the one you gave it on the Spells tab, else "learned"
 DashLearnedName(id)
 	{
-	c := IsFunc("LearnCardOf") ? LearnCardOf.Call(id) : ""
-	return (IsObject(c) && c.name != "") ? c.name : "learned"
+	c := V1IsFunc("LearnCardOf") ? LearnCardOf.Call(id) : ""
+	return (IsObject(c) && V1At(c, "name") != "") ? c.name : "learned"
 	}
 
 ;One card of the Hand section (n: its place there): its picture as the bot saw it (generated\hand\hand<box>.png,
@@ -988,14 +1046,18 @@ DashHandCard(n, name, known, grey, pips, box := "")
 	if (FileExist(pic))
 		{
 		;(the picture control is sized for 100% display scaling; the picture is loaded at its real size)
-		ogcDashCardPic%n%.Value := "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
+		;(v1: a picture that couldn't be loaded - ErrorLevel, nothing thrown, the control left blank and 0 x 0; v2 throws
+		;and keeps the old picture: blanked as v1 did)
+		try Dash["DashCardPic" n].Value := "*w" Round(58 * A_ScreenDPI / 96) " *h" Round(97 * A_ScreenDPI / 96) " " pic
+		catch
+			try Dash["DashCardPic" n].Value := ""
 		DashCardShow(n, 1, "")
 		}
 	else
 		DashCardShow(n, 0, "")
 	colour := grey ? "8A8A8A" : known = "" ? "F2C14E" : "E8E8E8"
-	ogcDashCardTxt%n%.Opt("+c" colour)
-	GuiControl, Dash:, DashCardTxt%n%, % SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "") ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DashCardTxt" n].SetFont("c" colour)
+	Dash["DashCardTxt" n].Text := SubStr(name, 1, 12) "`n" (pips = "" ? "? pips" : pips " pip" (pips = 1 ? "" : "s")) (grey ? " - grey" : "")
 	DashCardShow(n, "", 1)
 	}
 
@@ -1003,18 +1065,20 @@ DashHandCard(n, name, known, grey, pips, box := "")
 ;only while it's the one up (a deck's view over it: Decks.ahk DeckViewShow puts them back)
 DashCardShow(n, pic, txt)
 	{
+	global DashCardWant ; (v1 globals it sets)
 	if (!IsObject(DashCardWant))
-		DashCardWant := {}
+		DashCardWant := V1Obj()
 	if (pic != "")
-		DashCardWant["p" n] := pic ;  V1toV2: Invalid Index errors?, try 'DashCardWant.Push(<val>)'
+		DashCardWant["p" n] := pic
 	if (txt != "")
-		DashCardWant["t" n] := txt ;  V1toV2: Invalid Index errors?, try 'DashCardWant.Push(<val>)'
-	if (DeckView)
+		DashCardWant["t" n] := txt
+	;(v1: GuiControl on a window not made yet did nothing)
+	if (DeckView || !DashHwnd)
 		return
 	if (pic != "")
-		GuiControl, % "Dash:" (pic ? "Show" : "Hide"), DashCardPic%n% ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashCardPic" n].Visible := pic ? true : false
 	if (txt != "")
-		GuiControl, % "Dash:" (txt ? "Show" : "Hide"), DashCardTxt%n% ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DashCardTxt" n].Visible := txt ? true : false
 	}
 
 ;The Cards tab's enemies (EnemySpells.ahk EnemyDanger, each round): each one - its school, rank and health off the wiki,
@@ -1022,20 +1086,18 @@ DashCardShow(n, pic, txt)
 ;round, its pips and damage, the rounds it cast it this battle, how often it was seen casting it (all battles, weighed).
 ;answer: /enemies'; lethal: the chance their hits kill you this round ("" not known); health: yours as read ("" not
 ;read); rnd: the round
+;(v2 port: a field the line hasn't - V1At - was blank in v1, and v1 did math with a blank or text one: V1Round, V1Mul;
+;v1's Round of one to 1 place was "0.0": Round(V1N(x), 1))
 DashFoesSeen(answer, lethal, health, rnd)
 	{
 	if (!DashHwnd)
 		return
 	wasCrit := A_IsCritical
 	Critical()
-	;(the window has three ListViews: this one for the LV_ functions, the one before put back after)
-	;Gui, Dash:Default ; V1toV2: removed, but applied
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	;Gui, Dash:ListView, DashFoeList ; V1toV2: removed, but applied
-	V1toV2_LineFill := true ; remove me after inspection
-	ogcDashFoeList.Opt("-Redraw")
-	ogcDashFoeList.Delete()
+	;(the window has three ListViews: this one for the LV_ functions, the one before put back after - v2: the control)
+	lv := Dash["DashFoeList"]
+	lv.Opt("-Redraw")
+	lv.Delete()
 	foes := 0
 	Loop Parse, answer, "`n", "`r"
 		{
@@ -1044,31 +1106,29 @@ DashFoesSeen(answer, lethal, health, rnd)
 			continue
 		foes += 1
 		if (foes > 1)
-			ogcDashFoeList.Add("", "")
-		if (f[4] != "ok")
-			ogcDashFoeList.Add("", f[3], f[4] = "pending" ? "looking it up on the wiki" : "not on the wiki - its spells not known")
+			lv.Add("", "")
+		if (V1At(f, 4) != "ok")
+			lv.Add("", V1At(f, 3), V1At(f, 4) = "pending" ? "looking it up on the wiki" : "not on the wiki - its spells not known")
 		else
 			{
-			about := (f[9] != "" ? f[9] : "") (f[10] != "" ? ", rank " f[10] : "") (f[11] != "" ? ", " f[11] " health" : "")
-			ogcDashFoeList.Add("", f[3], about = "" ? "" : "(" LTrim(about, ", ") ")", "hits you " Round(f[6] * 100) "%"
-				, "~" Round(f[5], 1) " pips now" (f[7] > 0 ? ", biggest hit " f[7] : ""))
+			about := (V1At(f, 9) != "" ? f[9] : "") (V1At(f, 10) != "" ? ", rank " f[10] : "") (V1At(f, 11) != "" ? ", " f[11] " health" : "")
+			lv.Add("", f[3], about = "" ? "" : "(" LTrim(about, ", ") ")", "hits you " V1Round(V1Mul(V1At(f, 6), 100)) "%"
+				, "~" Round(V1N(V1At(f, 5)), 1) " pips now" (V1Gt(V1At(f, 7), 0) ? ", biggest hit " f[7] : ""))
 			}
 		;(spell:chance:pips and damage:seen before:rounds cast this battle)
-		for each, card in StrSplit(f[12], ";")
+		for each, card in StrSplit(V1At(f, 12), ";")
 			{
 			p := StrSplit(card, ":")
 			if (p[1] = "")
 				continue
-			ogcDashFoeList.Add("", "", "   " p[1], Round(p[2] * 100) "%", p[3], p[5] = "" ? "" : "round " StrReplace(p[5], "/", ", ")
-, p[4] > 0 ? RegExReplace(Round(p[4], 1), "\.0$") : "")
+			lv.Add("", "", "   " p[1], V1Round(V1Mul(V1At(p, 2), 100)) "%", V1At(p, 3), V1At(p, 5) = "" ? "" : "round " StrReplace(p[5], "/", ", ")
+				, V1Gt(V1At(p, 4), 0) ? RegExReplace(V1Round(p[4], 1), "\.0$") : "")
 			}
 		}
-	ogcDashFoeList.Opt("+Redraw")
-	if (prevLV != "" && prevLV != "DashFoeList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+	lv.Opt("+Redraw")
 	now := FormatTime(, "HH:mm:ss")
-	ogcTextDashFoeHead.Value := "ENEMIES " now ", round " rnd " - " (foes = 0 ? "none named in the game's log"
-		: lethal = "" ? "your health not read: the chance they kill you not known" : Round(lethal * 100) "% chance their hits kill you this round (your health " health ")")
+	Dash["DashFoeHead"].Text := "ENEMIES " now ", round " rnd " - " (foes = 0 ? "none named in the game's log"
+		: lethal = "" ? "your health not read: the chance they kill you not known" : V1Round(V1Mul(lethal, 100)) "% chance their hits kill you this round (your health " health ")")
 	if (!wasCrit)
 		Critical("Off")
 	}
@@ -1083,9 +1143,10 @@ DashShortName(title, dir := "")
 ;A card's name for a slot (e.g. hit1 -> "Scarab"), from its comment in PlayerStats.txt; else the slot
 DashCardName(title, dir := "")
 	{
+	global DashNames ; (v1 globals it sets)
 	if (!IsObject(DashNames) || A_TickCount - DashNames._at > 60000)
 		{
-		DashNames := {_at: A_TickCount}
+		DashNames := V1Obj({_at: A_TickCount})
 		prevKey := ""
 		Loop Read, A_ScriptDir "\PlayerStats.txt"
 			{
@@ -1102,7 +1163,11 @@ DashCardName(title, dir := "")
 			prevKey := RegExMatch(line, "^\s*([\w.]+)\s*:", &k) ? k[1] : ""
 			comment := RegExReplace(comment, "i)^learned \d+:\s*")
 			if (RegExMatch(comment, "^([A-Z][A-Za-z']*(?: [A-Z][A-Za-z']*)*)", &n) && !DashNames.Has(key))
-				DashNames[key] := n[1] ;  V1toV2: Invalid Index errors?, try 'DashNames.Push(<val>)'
+				DashNames[key] := n[1]
+			}
+		;(v1: no PlayerStats.txt - no lines read, nothing thrown)
+		else
+			{
 			}
 		}
 	key := Format("{:L}", (dir != "" && dir != "resources" ? dir : hitschool) "." title)
@@ -1114,8 +1179,17 @@ DashCardName(title, dir := "")
 
 ;---- Showing it ----
 
+;(v2 port) v1's timer label DashRefresh: - DashRefresh() on a thread of its own (with its own ErrorLevel)
+DashRefreshTick()
+	{
+	local v1Own := V1Thread()  ; (v1: the timer's label ran as its own thread, with its own ErrorLevel)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	DashRefresh()
+	}
+
 DashRefresh()
 	{
+	global DashUpdBusy ; (v1 globals it sets)
 	;(a dungeon run or recording: its line on the Dungeons tab)
 	if (IsObject(DgRun) || DgRecording)
 		DgShow()
@@ -1132,12 +1206,13 @@ DashRefresh()
 	else if (PotionRecording)
 		doing := "Recording potion buying"
 	else if (LearnAll)
-		doing := "Learning every card (" (IsObject(LearnedCards) ? LearnedCards.Length - LearnAllFrom : 0) " new so far)"
+		doing := "Learning every card (" (IsObject(LearnedCards) ? V1Sub(LearnedCards.Length, LearnAllFrom) : 0) " new so far)"
 	else if (WkNoteKind != "")
 		doing := "Needs you: " WkNoteTitle
 	else if (PlayerActive)
 		doing := "You're playing - the bot waits"
-	else if (DashSees.mode = "battle" && A_TickCount - DashSees.roundAt < 120000)
+	;(v1: a round never started - roundAt blank - counted as just now: "" < 120000 as text)
+	else if (DashSees.mode = "battle" && V1Lt(V1Ago(DashSees.roundAt), 120000))
 		doing := "In battle (round " DashN.rounds ")"
 	else if (!Walking)
 		doing := "Walking off (" HkText("walk") ")"
@@ -1161,7 +1236,7 @@ DashRefresh()
 	if (DashUpdBusy && A_TickCount - DashUpdBusy > 10000)
 		{
 		DashUpdBusy := 0
-		ogcButtonDashUpdBtn.Enabled := true
+		Dash["DashUpdBtn"].Enabled := true
 		}
 	DashSet("DashUpdBtn", DashUpdBusy ? "Checking..." : upd.newer ? "Update to " upd.latest : (upd.err = "" && upd.latest != "") ? "Up to date" : "Check for updates")
 	;Statistics
@@ -1186,7 +1261,7 @@ DashRefresh()
 	DashSet("DashUsageText", DashUsage())
 	;What it sees
 	see := DashSees
-	zone := IsFunc("WalkZone") ? WalkZone.Call() : ""
+	zone := V1IsFunc("WalkZone") ? WalkZone.Call() : ""
 	t := "You          " (see.hp != "" ? see.hp : "?") (see.mana != "" ? ", mana " see.mana : "") ", pips " (see.pips != "" ? see.pips : "?") "`n"
 		. "School       " (see.school != "" ? see.school : "?") "  (hitting with " (see.hitter != "" ? see.hitter : "?") ")`n"
 		. "Hand         " DashCut(see.hand != "" ? see.hand : "-") "`n"
@@ -1200,7 +1275,7 @@ DashRefresh()
 		. (see.party != "" ? "Party        " DashCut(see.party) "`n" : "")
 		. "Pictures     " DashCut(see.pictures != "" ? RegExReplace(see.pictures, " - card area.*") : "?") "`n"
 		. "Last learned " DashCut(see.lastLearned != "" ? see.lastLearned : "-")
-		. (see.reconnect != "" && A_TickCount - see.reconnectAt < 600000 ? "`nReconnect    " DashCut(see.reconnect) : "")
+		. (see.reconnect != "" && V1Lt(V1Ago(see.reconnectAt), 600000) ? "`nReconnect    " DashCut(see.reconnect) : "")
 	DashSet("DashSeeText", t)
 	}
 
@@ -1208,7 +1283,7 @@ DashRefresh()
 ;about 7 px a letter - the width is in 100%-scaling pixels too)
 DashCut(text)
 	{
-	ogcDashSeeText.GetPos(&posX, &posY, &posW, &posH)
+	Dash["DashSeeText"].GetPos(, , &posW)
 	fit := Max(20, Floor(posW / 7) - 14)
 	return StrLen(text) > fit ? SubStr(text, 1, fit - 1) "~" : text
 	}
@@ -1226,7 +1301,7 @@ DashDeathsAll(add := 0)
 	if (add)
 		{
 		total += add
-		IniWrite(total, A_ScriptDir "\dashboard.ini", "stats", "deaths")
+		V1Do(IniWrite, total, A_ScriptDir "\dashboard.ini", "stats", "deaths")
 		}
 	return total
 	}
@@ -1237,13 +1312,15 @@ DashNum(v)
 	}
 
 ;Sets a control's text only when it changed (no flicker)
+;(v2 port: the controls it's given are Text and Button ones - their text; v1's GuiControl did nothing without the window)
 DashSet(control, text)
 	{
-	static last := {}
+	static last := V1Obj()
 	if (last[control] == text)
 		return
-	last[control] := text ;  V1toV2: Invalid Index errors?, try 'last.Push(<val>)'
-	ogc%control%.Value := text
+	last[control] := text
+	if (DashHwnd)
+		Dash[control].Text := text
 	}
 
 ;---- The map ----
@@ -1254,6 +1331,7 @@ DashSet(control, text)
 ;the helper (read-only). A new picture once a second while it's shown; closing it only hides it (and stops
 ;asking). Its requests don't wait for the answer - the next tick (every 250 ms) picks it up - so the bot never
 ;waits for the map. It never takes the focus by itself. Its place is kept in dashboard.ini [map].
+;(v2 port: the window is the Gui object MapGui - v1's GUI Map; Map is v2's class)
 
 ;The Map button / tray menu: shows or hides it
 DashMapToggle()
@@ -1262,62 +1340,64 @@ DashMapToggle()
 		DashMapHide()
 	else
 		DashMapShow()
-	IniWrite(DashMapShown ? 1 : 0, A_ScriptDir "\dashboard.ini", "map", "shown")
+	V1Do(IniWrite, DashMapShown ? 1 : 0, A_ScriptDir "\dashboard.ini", "map", "shown")
 	}
 
 ;Makes the window (hidden), the first time it's shown
 DashMapMake()
 	{
+	global DashMapShown, DashMapReq, DashMapKind, DashMapAt, DashMapW, DashMapH, DashMapNote, DashMapNav, DashMapPicAt ; (v1 globals it sets)
+	global DashMapFile, MapGui, DashMapHwnd, DashMapPicH ; (v1 globals it sets)
 	DashMapShown := 0, DashMapReq := "", DashMapKind := "", DashMapAt := 0, DashMapW := 0, DashMapH := 0
 	DashMapNote := "", DashMapNav := "", DashMapPicAt := ""
 	;(in the temp folder: it's rewritten every second, which OneDrive would keep uploading)
 	DashMapFile := A_Temp "\Wizard101 bot map\navmap.png"
-	DirCreate(A_Temp "\Wizard101 bot map")
-	DirCreate(A_ScriptDir "\generated")
-	Map := Gui()
-	Map.OnEvent("Close", MapGuiClose)
-	Map.OnEvent("Size", MapGuiSize)
-	Map.Opt("+Resize +MinSize320x240"), DashMapHwnd := Map.Hwnd
-	Map.BackColor := "1B1D22"
-	Map.MarginX := 8, Map.MarginY := 8
-	ogcPictureDashMapPic := Map.Add("Picture", "x8 y8 w624 h460 vDashMapPic"), DashMapPicH := ogcPictureDashMapPic.hwnd
-	Map.SetFont("s9 w400 cDADADA", "Consolas")
+	V1Do(DirCreate, A_Temp "\Wizard101 bot map")
+	V1Do(DirCreate, A_ScriptDir "\generated")
+	MapGui := Gui("+Resize +MinSize320x240"), DashMapHwnd := MapGui.Hwnd
+	MapGui.OnEvent("Close", MapGuiClose)
+	MapGui.OnEvent("Size", MapGuiSize)
+	MapGui.BackColor := "1B1D22"
+	MapGui.MarginX := 8, MapGui.MarginY := 8
+	DashMapPicH := MapGui.Add("Picture", "x8 y8 w624 h460 vDashMapPic").Hwnd
+	MapGui.SetFont("s9 w400 cDADADA", "Consolas")
 	;(one line: cut with "..." when it's longer than the window is wide, not wrapped)
-	ogcDashMapText := Map.Add("Text", "x8 y474 w624 h18 +0x400C vDashMapText", "Asking the vision helper for the map...")
+	MapGui.Add("Text", "x8 y474 w624 h18 +0x400C vDashMapText", "Asking the vision helper for the map...")
 	}
 
 ;Shows it where it was (else beside the dashboard), without taking the focus, and starts asking
+;(v2 port: IniRead's "" default is v1's %A_Space% - a blank; dashboard.ini's numbers as v1 did math with them)
 DashMapShow()
 	{
+	global DashMapShown, DashMapAt ; (v1 globals it sets)
 	if (!DashMapHwnd)
 		DashMapMake()
-	x := IniRead(A_ScriptDir "\dashboard.ini", "map", "x", A_Space)
-	y := IniRead(A_ScriptDir "\dashboard.ini", "map", "y", A_Space)
+	x := IniRead(A_ScriptDir "\dashboard.ini", "map", "x", "")
+	y := IniRead(A_ScriptDir "\dashboard.ini", "map", "y", "")
 	w := IniRead(A_ScriptDir "\dashboard.ini", "map", "w", 640)
 	h := IniRead(A_ScriptDir "\dashboard.ini", "map", "h", 500)
-	if (x = "" || y = "" || !DashOnScreen(x + 40, y + 20))
+	if (x = "" || y = "" || !DashOnScreen(V1Add(x, 40), V1Add(y, 20)))
 		DashMapPlace(&x, &y, w, h)
 	DashFitHeight(x, y, &h)
-	Map.Title := "Wizard101 bot " BotVersion() " - map"
-	Map.Show("x" . x . " y" . y . " w" . w . " h" . h . " NoActivate")
+	MapGui.Title := "Wizard101 bot " BotVersion() " - map"
+	MapGui.Show("x" x " y" y " w" w " h" h " NoActivate")
 	DashMapShown := 1, DashMapAt := 0
-	SetTimer(DashMapTick,250)
+	SetTimer(DashMapTick, 250)
 	}
 
 ;Hides it (keeping its place) and stops asking
 DashMapHide()
 	{
+	global DashMapShown, DashMapReq ; (v1 globals it sets)
 	if (!DashMapHwnd)
 		return
 	if (DashMapShown)
 		DashSaveWin(DashMapHwnd, "map")
-	Map.Hide()
+	MapGui.Hide()
 	DashMapShown := 0
-	SetTimer(DashMapTick,0)
+	SetTimer(DashMapTick, 0)
 	if (IsObject(DashMapReq))
-				{
-try DashMapReq.Abort()
-		}
+		try DashMapReq.Abort()
 	DashMapReq := ""
 	}
 
@@ -1327,7 +1407,7 @@ try DashMapReq.Abort()
 DashMapPlace(&x, &y, w, h)
 	{
 	dpi := A_ScreenDPI / 96
-	ow := Round(w * dpi) + 16, oh := Round(h * dpi) + 40
+	ow := V1Round(V1Mul(w, dpi)) + 16, oh := V1Round(V1Mul(h, dpi)) + 40
 	if (DashShown && DashHwnd)
 		{
 		WinGetPos(&dx, &dy, &dw, &dh, "ahk_id " DashHwnd)
@@ -1348,9 +1428,10 @@ DashMapPlace(&x, &y, w, h)
 ;second (at once when the window's size changed)
 DashMapTick()
 	{
+	global DashMapAt, DashMapW, DashMapH ; (v1 globals it sets)
 	if (!DashMapShown)
 		{
-		SetTimer(DashMapTick,0)
+		SetTimer(DashMapTick, 0)
 		return
 		}
 	if (IsObject(DashMapReq))
@@ -1359,7 +1440,7 @@ DashMapTick()
 	if (DllCall("IsIconic", "Ptr", DashMapHwnd))
 		return
 	;(the picture is asked for at the size it's shown at, in screen pixels: shown as it is, not stretched)
-	rc := Buffer(16, 0) ; V1toV2: if 'rc' is a UTF-16 string, use 'VarSetStrCapacity(&rc, 16)' and replace all instances of 'rc.Ptr' with 'StrPtr(rc)'
+	rc := Buffer(16, 0)
 	DllCall("GetClientRect", "Ptr", DashMapPicH, "Ptr", rc.Ptr)
 	pw := NumGet(rc, 8, "Int"), ph := NumGet(rc, 12, "Int")
 	if (pw < 16 || ph < 16)
@@ -1378,6 +1459,7 @@ DashMapTick()
 ;VisionGet: that waits, and its failures count towards turning the card vision off - the map's mustn't
 DashMapAsk(kind, path)
 	{
+	global DashMapReq, DashMapKind, DashMapReqAt ; (v1 globals it sets)
 	DashMapReq := "", DashMapKind := kind, DashMapReqAt := A_TickCount
 	try
 		{
@@ -1386,17 +1468,18 @@ DashMapAsk(kind, path)
 		req.Send()
 		DashMapReq := req
 		}
-	Catch
+	catch
 		DashMapGot(kind, "", false)
 	}
 
 ;The answer to the request sent, once it's there (after 4 s it's given up)
 DashMapCheck()
 	{
+	global DashMapReq ; (v1 globals it sets)
 	req := DashMapReq, done := 0
 	try
 		done := req.WaitForResponse(0)
-	Catch
+	catch
 		{
 		;(nothing answering on the port: the helper isn't running)
 		DashMapReq := ""
@@ -1406,9 +1489,7 @@ DashMapCheck()
 		{
 		if (A_TickCount - DashMapReqAt > 4000)
 			{
-						{
-try req.Abort()
-			}
+			try req.Abort()
 			DashMapReq := ""
 			DashMapGot(DashMapKind, "ERR the vision helper didn't answer in 4 s", false)
 			}
@@ -1426,6 +1507,7 @@ try req.Abort()
 ;An answer ("" = the helper couldn't be asked; answered: it did answer): the picture, then the line under it
 DashMapGot(kind, text, answered)
 	{
+	global DashMapNote, DashMapPicAt, DashMapNav ; (v1 globals it sets)
 	if (kind = "map")
 		{
 		f := SubStr(text, 4)
@@ -1436,7 +1518,11 @@ DashMapGot(kind, text, answered)
 		else
 			{
 			;(no *w *h: fitted to the control - the size it was asked for)
-			ogcPictureDashMapPic.Value := f
+			;(v1: a picture that couldn't be loaded - ErrorLevel, nothing thrown, the control left blank and 0 x 0 - what
+			;DashMapTick's refit is for; v2 throws and keeps the old picture: blanked as v1 did)
+			try MapGui["DashMapPic"].Value := f
+			catch
+				try MapGui["DashMapPic"].Value := ""
 			DashMapPicAt := A_Hour ":" A_Min ":" A_Sec, DashMapNote := ""
 			}
 		if (DashMapNote != "" && DashMapPicAt != "")
@@ -1477,16 +1563,17 @@ DashMapLine()
 	if (line == last)
 		return
 	last := line
-	ogcDashMapText.Value := line
+	MapGui["DashMapText"].Text := line
 	}
 
 ;/nav's answer as "zone | at x, y, z | goal in this zone | arrow 1520" (? for what it couldn't read; arrow = how
 ;far the on-screen arrow's point is, along the game's path)
+;(v2 port: a field a line hasn't - V1At - was blank in v1)
 DashMapNavLine(answer)
 	{
 	if (answer = "")
 		return ""
-	f := {}
+	f := V1Obj()
 	Loop Parse, answer, "`n", "`r"
 		{
 		p := StrSplit(A_LoopField, "|")
@@ -1494,19 +1581,20 @@ DashMapNavLine(answer)
 		}
 	if (!IsObject(f.ok))
 		return "an odd /nav answer: " SubStr(answer, 1, 60)
-	zone := IsObject(f.zone) && f.zone[2] != "" ? f.zone[2] : "zone ?"
-	pos := IsObject(f.pos) ? "at " DashMapNum(f.pos[2]) ", " DashMapNum(f.pos[3]) ", " DashMapNum(f.pos[4]) : "at ?"
-	hops := IsObject(f.goal) ? f.goal[5] : ""
+	zone := IsObject(f.zone) && V1At(f.zone, 2) != "" ? f.zone[2] : "zone ?"
+	pos := IsObject(f.pos) ? "at " DashMapNum(V1At(f.pos, 2)) ", " DashMapNum(V1At(f.pos, 3)) ", " DashMapNum(V1At(f.pos, 4)) : "at ?"
+	hops := IsObject(f.goal) ? V1At(f.goal, 5) : ""
 	goal := hops = "" ? "goal ?" : hops = 0 ? "goal in this zone" : "goal " hops " zone" (hops = 1 ? "" : "s") " away"
-	if (IsObject(f.quest) && f.quest[2] = "0")
+	if (IsObject(f.quest) && V1At(f.quest, 2) = "0")
 		goal := "no quest goal (the quest helper is off)"
-	arrow := IsObject(f.dist) && f.dist[2] != "" ? " | arrow " DashMapNum(f.dist[2]) : ""
+	arrow := IsObject(f.dist) && V1At(f.dist, 2) != "" ? " | arrow " DashMapNum(f.dist[2]) : ""
 	return zone " | " pos " | " goal arrow
 	}
 
+;(v2 port: v1's Round of text - 0)
 DashMapNum(v)
 	{
-	return v = "" ? "?" : Round(v)
+	return v = "" ? "?" : V1Round(v)
 	}
 
 ;Fits the picture and the line to the window (gw, gh: its inside at 100% display scaling, as GuiSize gives
@@ -1515,19 +1603,19 @@ DashMapFit(gw := "", gh := "")
 	{
 	if (gw = "")
 		{
-		rc := Buffer(16, 0) ; V1toV2: if 'rc' is a UTF-16 string, use 'VarSetStrCapacity(&rc, 16)' and replace all instances of 'rc.Ptr' with 'StrPtr(rc)'
+		rc := Buffer(16, 0)
 		DllCall("GetClientRect", "Ptr", DashMapHwnd, "Ptr", rc.Ptr)
 		gw := Round(NumGet(rc, 8, "Int") * 96 / A_ScreenDPI), gh := Round(NumGet(rc, 12, "Int") * 96 / A_ScreenDPI)
 		}
-	ogcPictureDashMapPic.Move(, , Max(16, gw - 16), Max(16, gh - 40))
-	ogcDashMapText.Move(, gh - 26, Max(16, gw - 16))
+	MapGui["DashMapPic"].Move(, , Max(16, gw - 16), Max(16, gh - 40))
+	MapGui["DashMapText"].Move(, gh - 26, Max(16, gw - 16))
 	}
 
 ;Text for a URL: UTF-8, everything but letters, digits and - . _ ~ %-escaped
 DashMapUri(s)
 	{
-	buf := Buffer(StrPut(s, "UTF-8"), 0) ; V1toV2: if 'buf' is a UTF-16 string, use 'VarSetStrCapacity(&buf, StrPut(s, "UTF-8"))' and replace all instances of 'buf.Ptr' with 'StrPtr(buf)'
-	n := StrPut(s, buf.Ptr, "UTF-8") - 1
+	buf := Buffer(StrPut(s, "UTF-8"), 0)
+	n := StrPut(s, buf, "UTF-8") - 1
 	out := ""
 	Loop n
 		{
@@ -1630,14 +1718,15 @@ DashFolder()
 ;shows, about). Read-only process queries - nothing is changed
 DashUsage()
 	{
-	static last := {}, procs := {}
+	static last := V1Obj(), procs := V1Obj()
 	cores := EnvGet("NUMBER_OF_PROCESSORS")
-	cores := cores > 0 ? cores : 1
+	cores := V1Gt(cores, 0) ? cores : 1
 	now := A_TickCount
 	gamePid := 0
-	gamePid := WinGetPID("ahk_class " GameClass " ahk_exe " GameExe)
-	who := map("bot", [DllCall("GetCurrentProcessId"), VisionPid], game: [gamePid]}
-	out := {}
+	;(v1: WinGet PID with no game window - blank; v2 throws)
+	gamePid := V1Try(WinGetPID, "ahk_class " GameClass " ahk_exe " GameExe)
+	who := V1Obj({bot: [DllCall("GetCurrentProcessId"), VisionPid], game: [gamePid]})
+	out := V1Obj()
 	for name, pids in who
 		{
 		cpu := 0, ram := 0, seen := 0
@@ -1646,11 +1735,11 @@ DashUsage()
 			if (!pid)
 				continue
 			if (!procs.Has(pid))
-				procs[pid] := DllCall("OpenProcess", "UInt", 0x1000, "Int", 0, "UInt", pid, "Ptr") ;  V1toV2: Invalid Index errors?, try 'procs.Push(<val>)'
+				procs[pid] := DllCall("OpenProcess", "UInt", 0x1000, "Int", 0, "UInt", pid, "Ptr")
 			h := procs[pid]
 			if (!h)
 				continue
-			ft := Buffer(32, 0) ; V1toV2: if 'ft' is a UTF-16 string, use 'VarSetStrCapacity(&ft, 32)' and replace all instances of 'ft.Ptr' with 'StrPtr(ft)'
+			ft := Buffer(32, 0)
 			if (!DllCall("GetProcessTimes", "Ptr", h, "Ptr", ft.Ptr, "Ptr", ft.Ptr + 8, "Ptr", ft.Ptr + 16, "Ptr", ft.Ptr + 24))
 				{
 				DllCall("CloseHandle", "Ptr", h), procs.Delete(pid)
@@ -1659,26 +1748,26 @@ DashUsage()
 			used := NumGet(ft, 16, "Int64") + NumGet(ft, 24, "Int64")
 			if (last.Has(pid) && now > last[pid].at)
 				cpu += (used - last[pid].used) / 10000 / (now - last[pid].at) / cores * 100
-			last[pid] := {used: used, at: now} ;  V1toV2: Invalid Index errors?, try 'last.Push(<val>)'
+			last[pid] := V1Obj({used: used, at: now})
 			cb := 8 + 8 * A_PtrSize
-			pmc := Buffer(cb, 0), NumPut("UInt", cb, pmc, 0) ; V1toV2: if 'pmc' is a UTF-16 string, use 'VarSetStrCapacity(&pmc, cb)' and replace all instances of 'pmc.Ptr' with 'StrPtr(pmc)'
+			pmc := Buffer(cb, 0), NumPut("UInt", cb, pmc, 0)
 			if (DllCall("K32GetProcessMemoryInfo", "Ptr", h, "Ptr", pmc.Ptr, "UInt", cb))
 				ram += NumGet(pmc, 8 + A_PtrSize, "UPtr")
 			seen += 1
 			}
-		out[name] := seen ? DashUsageNum(cpu) "%" Chr(183) DashBytes(ram) : "-" ;  V1toV2: Invalid Index errors?, try 'out.Push(<val>)'
+		out[name] := seen ? DashUsageNum(cpu) "%" Chr(183) DashBytes(ram) : "-"
 		}
 	;the whole PC: busy share of all cores since the last look, and RAM in use
-	st := Buffer(24, 0) ; V1toV2: if 'st' is a UTF-16 string, use 'VarSetStrCapacity(&st, 24)' and replace all instances of 'st.Ptr' with 'StrPtr(st)'
+	st := Buffer(24, 0)
 	pcCpu := "?"
 	if (DllCall("GetSystemTimes", "Ptr", st.Ptr, "Ptr", st.Ptr + 8, "Ptr", st.Ptr + 16))
 		{
 		idle := NumGet(st, 0, "Int64"), total := NumGet(st, 8, "Int64") + NumGet(st, 16, "Int64")
 		if (last.Has("pc") && total > last.pc.total)
 			pcCpu := DashUsageNum(100 * (1 - (idle - last.pc.idle) / (total - last.pc.total)))
-		last.pc := {idle: idle, total: total}
+		last.pc := V1Obj({idle: idle, total: total})
 		}
-	ms := Buffer(64, 0), NumPut("UInt", 64, ms, 0) ; V1toV2: if 'ms' is a UTF-16 string, use 'VarSetStrCapacity(&ms, 64)' and replace all instances of 'ms.Ptr' with 'StrPtr(ms)'
+	ms := Buffer(64, 0), NumPut("UInt", 64, ms, 0)
 	pcRam := DllCall("GlobalMemoryStatusEx", "Ptr", ms.Ptr) ? NumGet(ms, 4, "UInt") "%" : "?"
 	return "CPU" Chr(183) "RAM   bot " out.bot "   game " out.game "   PC " pcCpu "%" Chr(183) pcRam
 	}
@@ -1747,344 +1836,331 @@ DashGuiSize:
 DashGuiSize()
 	return
 
-;###############  V1toV2 FUNCS  ###############
-DashMapButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	DashMapToggle()
-	return
-}
-;##############################################
-DashMapTick() { ; V1toV2: Lbl->Func
-	global
-	DashMapTick()
-	return
-}
-;##############################################
-MapGuiClose(*) { ; V1toV2: Lbl->Func
+;###############  v1's labels, as functions  ###############
+;(v2 port: each v1 label as a function - called through DashGLabel for a control, so A_GuiControl is the control's v1
+;name; the window events with v2's own parameters)
+DashMapButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DashMapToggle()
 	return
 }
 ;##############################################
-MapGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; V1toV2: Lbl->Func
+MapGuiClose(*) { ; (v1: a label - its code ran in the global scope)
 	global
-	if (A_EventInfo != 1)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	local v1Own := V1Thread()  ; (v1: the close ran as a thread of its own - DashMapToggle's IniWrite set its ErrorLevel only)
+	DashMapToggle()
+	return
+}
+;##############################################
+;(v1: A_EventInfo 1 - minimized; v2's MinMax -1)
+MapGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; (v1: a label - its code ran in the global scope)
+	global
+	if (MinMax != -1)
 		DashMapFit(A_GuiWidth, A_GuiHeight)
 	return
 }
 ;##############################################
-DashRefresh() { ; V1toV2: Lbl->Func
+DashPauseLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	DashRefresh()
-	return
-}
-;##############################################
-DashPauseLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	DashPaused := !DashPaused
-	GuiControl, Dash:, DashPauseBtn, % DashPaused ? "Resume log" : "Pause log" ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DashPauseBtn"].Text := DashPaused ? "Resume log" : "Pause log"
 	if (!DashPaused && DashHeld != "")
 		DashAppend(DashHeld), DashHeld := ""
 	return
 }
 ;##############################################
-DashClearLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashClearLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	ogcCustomDashConsole.Value := ""
+	;(v1: GuiControl of a Custom control - its window text)
+	Dash["DashConsole"].Text := ""
 	return
 }
 ;##############################################
-DashNetListEvent(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+;(v1: A_GuiEvent "I" with ErrorLevel S / s / F / f - DashLvItem gives them; LV_GetText of a row that isn't there -
+;blank)
+DashNetListEvent(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
 		{
-		;Gui, Dash:ListView, NetList ; V1toV2: removed, but applied
-		V1toV2_LineFill := true ; remove me after inspection
-		DashNetId := ogcNetList.GetText(Info)
+		DashNetId := ""
+		try DashNetId := Dash["NetList"].GetText(Info, 12)
 		if (DashNetId != NetSel)
 			{
 			;(kept by its PC: a bot started again has a new id)
 			NetSelPc := ""
 			if (DashNetId != "")
-				NetSelPc := ogcNetList.GetText(Info)
+				try NetSelPc := Dash["NetList"].GetText(Info, 1)
 			NetSel := DashNetId, NetLogAt := 0, NetSnapAt := "", NetRefresh := 1
-			ogcEditNetLog.Value := ""
-			ogcPictureNetPic.Visible := false
-			GuiControl, Dash:, NetPicNote, % NetSel = "" ? "This PC - its log is the Bot tab's." : "Fetching its log and game..." ; V1toV2: Ternary not yet supported (coming soon)
+			Dash["NetLog"].Value := ""
+			Dash["NetPic"].Visible := false
+			Dash["NetPicNote"].Text := NetSel = "" ? "This PC - its log is the Bot tab's." : "Fetching its log and game..."
 			}
 		}
 	return
 }
 ;##############################################
-DashNetOn(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-global
-A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-DashNetRestart()
-}
-;##############################################
-DashNetOff(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-global
-A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-DashNetRestart()
-}
-;##############################################
-DashNetPfm(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-global
-A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-DashNetRestart()
-}
-;##############################################
-DashNetRestart(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+;(v1: the labels DashNetOn, DashNetOff, DashNetPfm and DashNetRestart over one body - A_ThisLabel picked the
+;command: DashNetCommand, given the label's name)
+DashNetOn(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	DashNetCmd := {DashNetOn: "on", DashNetOff: "off", DashNetPfm: "pfmoff", DashNetRestart: "restart"}[A_ThisLabel]
-	DashSet("NetStatus", "Network: " NetSend(DashNetCmd))
-	NetLogAt := A_TickCount - 4000
+	DashNetCommand(A_ThisFunc)
 	return
 }
 ;##############################################
-DashNetRefresh(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashNetOff(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
+	DashNetCommand(A_ThisFunc)
+	return
+}
+;##############################################
+DashNetPfm(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
+	global
+	DashNetCommand(A_ThisFunc)
+	return
+}
+;##############################################
+DashNetRestart(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
+	global
+	DashNetCommand(A_ThisFunc)
+	return
+}
+;##############################################
+DashNetCommand(label)
+	{
+	global DashNetCmd, NetLogAt ; (v1 globals it sets)
+	DashNetCmd := V1Obj({DashNetOn: "on", DashNetOff: "off", DashNetPfm: "pfmoff", DashNetRestart: "restart"})[label]
+	DashSet("NetStatus", "Network: " NetSend(DashNetCmd))
+	NetLogAt := A_TickCount - 4000
+	}
+;##############################################
+DashNetRefresh(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
+	global
 	NetRefresh := 1
 	return
 }
 ;##############################################
-DashLogColorsBtn(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashLogColorsBtn(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	DashLogColorsWindow()
 	return
 }
 ;##############################################
-DashLogColorPick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashLogColorPick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
+	A_GuiControl := V1GuiName(A_GuiControl)  ; (v1: the control's v-name, else its text)
 	lcI := RegExReplace(A_GuiControl, "\D")
-	lcKinds := DashLogKinds(), lcK := lcKinds[lcI], lcCols := DashLogColors()
+	lcKinds := DashLogKinds(), lcK := lcKinds[Integer(lcI)], lcCols := DashLogColors()
 	lcNew := DashPickColour(lcCols[lcK[1]], LogColHwnd)
 	if (lcNew != "")
 		{
-		IniWrite(lcNew, A_ScriptDir "\dashboard.ini", "logcolors", lcK[1])
+		V1Do(IniWrite, lcNew, A_ScriptDir "\dashboard.ini", "logcolors", lcK[1])
 		DashLogColors(true)
-		ogcLogColSw%lcI%.Opt("+Background" lcNew)
+		;(v1: GuiControl on a window or control that isn't there did nothing)
+		try LogCol["LogColSw" lcI].Opt("+Background" lcNew)
 		DashLogRecolour()
 		}
 	return
 }
 ;##############################################
-DashLogColorReset(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashLogColorReset(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	IniDelete(A_ScriptDir "\dashboard.ini", "logcolors")
+	V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "logcolors")
 	lcCols := DashLogColors(true), lcKinds := DashLogKinds()
 	for lcI, lcK in lcKinds
 		{
 		lcCol := lcCols[lcK[1]]
-		ogcLogColSw%lcI%.Opt("+Background" lcCol)
+		;(v1: GuiControl on a window or control that isn't there did nothing)
+		try LogCol["LogColSw" lcI].Opt("+Background" lcCol)
 		}
 	DashLogRecolour()
 	return
 }
 ;##############################################
-DashLogColorClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
-global
-A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-LogColGuiEscape()
+;(v1: DashLogColorClose, LogColGuiClose and LogColGuiEscape over one body)
+DashLogColorClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
+	global
+	LogColGuiEscape()
 }
 ;##############################################
-LogColGuiClose(*) { ; V1toV2: Lbl->Func
-global
-LogColGuiEscape()
+LogColGuiClose(*) { ; (v1: a label - its code ran in the global scope)
+	global
+	LogColGuiEscape()
 }
 ;##############################################
-LogColGuiEscape(*) { ; V1toV2: Lbl->Func
+LogColGuiEscape(*) { ; (v1: a label - its code ran in the global scope)
 	global
 	Try LogCol.Destroy()
 	return
 }
 ;##############################################
-DashOpenLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashOpenLog(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	Run("notepad.exe `"" A_ScriptDir "\debug.log`"")
 	return
 }
 ;##############################################
-DashWalkToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashWalkToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("WalkToggle"))
+	if (V1IsFunc("WalkToggle"))
 		WalkToggle.Call()
 	return
 }
 ;##############################################
-DashFolder(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashFolder(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	Run(A_ScriptDir)
 	return
 }
 ;##############################################
-DashUpdButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashUpdButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	;The Updates button: the usual check - a newer version offered (its notes), installed if you say so, the bot then
 	;started again as it is now - or "you're up to date" (UpdCheckNow, as the tray menu's Check for updates).
 	;"Checking..." and not clickable for 10 s
 	if (UpdCheckNow())
 		{
 		DashUpdBusy := A_TickCount
-		ogcButtonDashUpdBtn.Enabled := false
+		Dash["DashUpdBtn"].Enabled := false
 		DashRefresh()
 		}
 	return
 }
 ;##############################################
-DashBugButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashBugButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("BugShow"))
+	if (V1IsFunc("BugShow"))
 		BugShow.Call()
 	return
 }
 ;##############################################
-DashSettingsButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashSettingsButton(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("CfgShow"))
+	if (V1IsFunc("CfgShow"))
 		CfgShow.Call()
 	return
 }
 ;##############################################
-DashLearnAll(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashLearnAll(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("LearnAllToggle"))
+	if (V1IsFunc("LearnAllToggle"))
 		LearnAllToggle.Call()
 	return
 }
 ;##############################################
-DashBotToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashBotToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("BotToggle"))
+	if (V1IsFunc("BotToggle"))
 		BotToggle.Call()
 	return
 }
 ;##############################################
-DashViewToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashViewToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
 	DashSavePlace()
 	DashSimple := !DashSimple
-	IniWrite(DashSimple ? 1 : 0, A_ScriptDir "\dashboard.ini", "view", "dashboard")
+	V1Do(IniWrite, DashSimple ? 1 : 0, A_ScriptDir "\dashboard.ini", "view", "dashboard")
 	DashApplyView()
 	DashShow()
 	return
 }
 ;##############################################
-DashFrontToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashFrontToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("GameFrontToggle"))
+	if (V1IsFunc("GameFrontToggle"))
 		GameFrontToggle.Call()
 	return
 }
 ;##############################################
-DashPlayToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashPlayToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("PlayForMeToggle"))
+	if (V1IsFunc("PlayForMeToggle"))
 		PlayForMeToggle.Call()
 	return
 }
 ;##############################################
-DashHandsToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+DashHandsToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	A_GuiControl := (A_GuiControl.Name) ? A_GuiControl.Name : (HasProp(A_GuiControl, "Text") ? A_GuiControl.Text : A_GuiControl)
-	if (IsFunc("HandsOffToggle"))
+	if (V1IsFunc("HandsOffToggle"))
 		HandsOffToggle.Call()
 	return
 }
 ;##############################################
-DashGuiClose(*) { ; V1toV2: Lbl->Func
+DashGuiClose(*) { ; (v1: a label - its code ran in the global scope)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	DebugLog("Dashboard closed - the bot stops")
 	ExitApp()
 }
 ;##############################################
-DashGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; V1toV2: Lbl->Func
+;(v1: A_EventInfo 1 - minimized; v2's MinMax -1)
+DashGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; (v1: a label - its code ran in the global scope)
 	global
-	if (A_EventInfo = 1)
+	if (MinMax = -1)
 		return
 	;(GuiControl Move places a tab's controls from the tabs' inside, not the window's: where that starts, measured
 	;once the window's up - a control moved to 0,0 there and where it lands read)
 	if (DashTabOX = "")
 		{
-		ogcButtonDashPauseBtn.Move(0, 0)
-		ogcButtonDashPauseBtn.GetPos(&DashTabOX, &DashTabOY, &DashTabOW, &DashTabOH)
+		Dash["DashPauseBtn"].Move(0, 0)
+		Dash["DashPauseBtn"].GetPos(&DashTabOX, &DashTabOY, &DashTabOW, &DashTabOH)
 		}
-	ogcTextDashHead.Move(, , A_GuiWidth - 258)
-	ogcProgressDashPlayBg.Move(A_GuiWidth - 116)
-	ogcTextDashPlayBtn.Move(A_GuiWidth - 116)
-	ogcButtonDashBugBtn.Move(A_GuiWidth - 240)
-	ogcButtonDashUpdBtn.Move(A_GuiWidth - 144)
-	ogcButtonDashMapBtn.Move(A_GuiWidth - 84 - DashTabOX)
-	ogcButtonDashCfgBtn.Move(A_GuiWidth - 166 - DashTabOX)
-	ogcDashSeeText.Move(, , A_GuiWidth - 384)
-	ogcCustomDashConsole.Move(, , A_GuiWidth - 24, Max(40, A_GuiHeight - 352))
-	ogcButtonDashColBtn.Move(A_GuiWidth - 90 - DashTabOX)
+	Dash["DashHead"].Move(, , A_GuiWidth - 258)
+	Dash["DashPlayBg"].Move(A_GuiWidth - 116)
+	Dash["DashPlayBtn"].Move(A_GuiWidth - 116)
+	Dash["DashBugBtn"].Move(A_GuiWidth - 240)
+	Dash["DashUpdBtn"].Move(A_GuiWidth - 144)
+	Dash["DashMapBtn"].Move(A_GuiWidth - 84 - DashTabOX)
+	Dash["DashCfgBtn"].Move(A_GuiWidth - 166 - DashTabOX)
+	Dash["DashSeeText"].Move(, , A_GuiWidth - 384)
+	Dash["DashConsole"].Move(, , A_GuiWidth - 24, Max(40, A_GuiHeight - 352))
+	Dash["DashColBtn"].Move(A_GuiWidth - 90 - DashTabOX)
 	;(the Cards tab: the Learn button at the right end of the hand's row, its heading up to it; the enemies' list takes
 	;what's left)
-	ogcButtonDashLearnBtn.Move(A_GuiWidth - 138 - DashTabOX)
-	ogcTextDashHandHead.Move(, , A_GuiWidth - 154)
-	ogcTextDashFoeHead.Move(, , A_GuiWidth - 24)
-	ogcDashFoeList.Move(, , A_GuiWidth - 24, Max(40, A_GuiHeight - 290))
+	Dash["DashLearnBtn"].Move(A_GuiWidth - 138 - DashTabOX)
+	Dash["DashHandHead"].Move(, , A_GuiWidth - 154)
+	Dash["DashFoeHead"].Move(, , A_GuiWidth - 24)
+	Dash["DashFoeList"].Move(, , A_GuiWidth - 24, Max(40, A_GuiHeight - 290))
 	;(a deck's view: its settings list takes what's left, the value's row under it; the right end's buttons at the right
 	;end - the window can be narrower than they were placed for)
-	ogcTextDeckFDmg.Move(, , A_GuiWidth - 24)
-	ogcDeckFList.Move(, , A_GuiWidth - 24, Max(60, A_GuiHeight - 330))
+	Dash["DeckFDmg"].Move(, , A_GuiWidth - 24)
+	Dash["DeckFList"].Move(, , A_GuiWidth - 24, Max(60, A_GuiHeight - 330))
 	DashDeckRowY := Max(236 + 60 + 6, A_GuiHeight - 88) - DashTabOY
-	ogcTextDeckFValT.Move(, DashDeckRowY + 4)
-	ogcEditDeckFVal.Move(, DashDeckRowY + 1)
-	ogcButtonDeckFValSet.Move(, DashDeckRowY)
-	ogcButtonDeckFValClear.Move(, DashDeckRowY)
-	ogcTextDeckFNote.Move(, DashDeckRowY + 4, Max(120, A_GuiWidth - 454))
-	ogcButtonDeckAddBtn.Move(A_GuiWidth - 80 - DashTabOX)
-	ogcButtonDeckFSave.Move(A_GuiWidth - 304 - DashTabOX)
-	ogcButtonDeckFCopy.Move(A_GuiWidth - 208 - DashTabOX)
-	ogcButtonDeckFDel.Move(A_GuiWidth - 112 - DashTabOX)
-	ogcTextDeckFPriT.Move(A_GuiWidth - 154 - DashTabOX)
-	ogcEditDeckFPri.Move(A_GuiWidth - 104 - DashTabOX)
-	ogcTextDeckFSetN.Move(, , Max(80, A_GuiWidth - 544))
-	ogcDropDownListDgDeck.Move(, , Min(260, Max(100, A_GuiWidth - 594)))
+	Dash["DeckFValT"].Move(, DashDeckRowY + 4)
+	Dash["DeckFVal"].Move(, DashDeckRowY + 1)
+	Dash["DeckFValSet"].Move(, DashDeckRowY)
+	Dash["DeckFValClear"].Move(, DashDeckRowY)
+	Dash["DeckFNote"].Move(, DashDeckRowY + 4, Max(120, A_GuiWidth - 454))
+	Dash["DeckAddBtn"].Move(A_GuiWidth - 80 - DashTabOX)
+	Dash["DeckFSave"].Move(A_GuiWidth - 304 - DashTabOX)
+	Dash["DeckFCopy"].Move(A_GuiWidth - 208 - DashTabOX)
+	Dash["DeckFDel"].Move(A_GuiWidth - 112 - DashTabOX)
+	Dash["DeckFPriT"].Move(A_GuiWidth - 154 - DashTabOX)
+	Dash["DeckFPri"].Move(A_GuiWidth - 104 - DashTabOX)
+	Dash["DeckFSetN"].Move(, , Max(80, A_GuiWidth - 544))
+	Dash["DgDeck"].Move(, , Min(260, Max(100, A_GuiWidth - 594)))
 	;(the Network tab: the list across, the log under it on the left, the game's picture on the right)
-	ogcTextNetHelp.Move(, , A_GuiWidth - 24)
-	ogcTextNetStatus.Move(, , A_GuiWidth - 24)
-	ogcNetList.Move(, , A_GuiWidth - 24)
-	ogcEditNetLog.Move(, , Max(200, A_GuiWidth - 404), Max(40, A_GuiHeight - 360))
-	ogcPictureNetPic.Move(A_GuiWidth - 384 - DashTabOX)
-	ogcTextNetPicNote.Move(A_GuiWidth - 384 - DashTabOX)
+	Dash["NetHelp"].Move(, , A_GuiWidth - 24)
+	Dash["NetStatus"].Move(, , A_GuiWidth - 24)
+	Dash["NetList"].Move(, , A_GuiWidth - 24)
+	Dash["NetLog"].Move(, , Max(200, A_GuiWidth - 404), Max(40, A_GuiHeight - 360))
+	Dash["NetPic"].Move(A_GuiWidth - 384 - DashTabOX)
+	Dash["NetPicNote"].Move(A_GuiWidth - 384 - DashTabOX)
 	;(the tabs fill the window under the heading; the Dungeons tab's list takes what's left)
-	ogcTab3DashTabs.Move(, , A_GuiWidth - 12, A_GuiHeight - 42)
-	ogcTextDgHelp.Move(, , A_GuiWidth - 24)
-	ogcTextDgStatus.Move(, , A_GuiWidth - 24)
-	ogcDgList.Move(, , A_GuiWidth - 24, A_GuiHeight - 274)
+	Dash["DashTabs"].Move(, , A_GuiWidth - 12, A_GuiHeight - 42)
+	Dash["DgHelp"].Move(, , A_GuiWidth - 24)
+	Dash["DgStatus"].Move(, , A_GuiWidth - 24)
+	Dash["DgList"].Move(, , A_GuiWidth - 24, A_GuiHeight - 274)
 	;(the Keys tab: its list takes what's left)
-	ogcTextKeyHelp.Move(, , A_GuiWidth - 24)
-	ogcTextKeyStatus.Move(, , A_GuiWidth - 24)
-	ogcKeyList.Move(, , A_GuiWidth - 24, Max(60, A_GuiHeight - 202))
+	Dash["KeyHelp"].Move(, , A_GuiWidth - 24)
+	Dash["KeyStatus"].Move(, , A_GuiWidth - 24)
+	Dash["KeyList"].Move(, , A_GuiWidth - 24, Max(60, A_GuiHeight - 202))
 	;(the Spells tab: its list takes what's left of the picture on its right)
-	ogcTextSpHelp.Move(, , A_GuiWidth - 24)
-	ogcTextSpStatus.Move(, , A_GuiWidth - 24)
-	ogcSpList.Move(, , A_GuiWidth - 172, A_GuiHeight - 202)
-	ogcPictureSpPreview.Move(A_GuiWidth - 152 - DashTabOX)
-	ogcTextSpPreviewTxt.Move(A_GuiWidth - 152 - DashTabOX, , , Max(40, A_GuiHeight - 440))
+	Dash["SpHelp"].Move(, , A_GuiWidth - 24)
+	Dash["SpStatus"].Move(, , A_GuiWidth - 24)
+	Dash["SpList"].Move(, , A_GuiWidth - 172, A_GuiHeight - 202)
+	Dash["SpPreview"].Move(A_GuiWidth - 152 - DashTabOX)
+	Dash["SpPreviewTxt"].Move(A_GuiWidth - 152 - DashTabOX, , , Max(40, A_GuiHeight - 440))
 	;(the bottom row shares the width, each button in proportion to the width it was made with, so all fit at any
 	;size - 620 at the least; the simple view: without the log's three)
 	;(a label runs in the global scope: Dash-named variables only)
@@ -2098,10 +2174,27 @@ DashGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; V1toV2
 	for DashRowI, DashRowB in DashRowList
 		{
 		DashRowW := Floor(DashRowRoom * DashRowB[2] / DashRowSum)
-		ogc% DashRowB[1].Move(DashRowX - DashTabOX, A_GuiHeight - 36 - DashTabOY, DashRowW)
+		Dash[DashRowB[1]].Move(DashRowX - DashTabOX, A_GuiHeight - 36 - DashTabOY, DashRowW)
 		DashRowX += DashRowW + 6
 		}
 	return
 }
 
 ;(Windows+2 is in Autofarmer.ahk: it shows the dev-mode info box in dev mode)
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+DashboardBlank()
+	{
+	global DashHwnd := "", DashCon := "", DashShown := "", DashPaused := "", DashHeld := "", DashStart := "", DashN := "", DashCasts := ""
+	global DashSees := "", DashNames := "", DashHead := "", DashStatText := "", DashSeeText := "", DashConsole := "", DashPauseBtn := ""
+	global DashHandsBtn := "", DashUsageText := "", DashCfgBtn := "", DashSimple := "", DashViewBtn := "", DashLogHead := "", DashColBtn := ""
+	global LogColHwnd := "", DashFrontBtn := "", DashUpdBtn := "", DashUpdBusy := "", DashBugBtn := "", DashPlayBtn := "", DashPlayBg := ""
+	global DashTabOX := "", DashTabOY := "", DashTabOW := "", DashTabOH := "", DashClearBtn := "", DashLogBtn := "", DashWalkBtn := ""
+	global DashFolderBtn := "", DashBotBtn := "", DashFoeHead := "", DashFoeList := "", DashLearnBtn := "", DashHandHead := "", DashCardPic1 := ""
+	global DashCardPic2 := "", DashCardPic3 := "", DashCardPic4 := "", DashCardPic5 := "", DashCardPic6 := "", DashCardPic7 := "", DashCardTxt1 := ""
+	global DashCardTxt2 := "", DashCardTxt3 := "", DashCardTxt4 := "", DashCardTxt5 := "", DashCardTxt6 := "", DashCardTxt7 := "", DashMapBtn := ""
+	global DashMapHwnd := "", DashMapPic := "", DashMapPicH := "", DashMapText := "", DashMapShown := "", DashMapReq := "", DashMapKind := ""
+	global DashMapReqAt := "", DashMapAt := "", DashMapW := "", DashMapH := "", DashMapFile := "", DashMapNote := "", DashMapNav := ""
+	global DashMapPicAt := "", NetSel := ""
+	}

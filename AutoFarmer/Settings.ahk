@@ -29,148 +29,148 @@ CfgList()
 	if (IsObject(list))
 		return list
 	list := []
-	list.Push({key: "-", label: "THE MOUSE AND WAITS"})
-	list.Push({key: "handsoffon", label: "Wait for me while I play", kind: "check", def: 1
-		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.) On again, with 3 seconds, every time the bot starts - it never takes the mouse from you as it starts."})
-	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 3
-		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."})
-	list.Push({key: "mouselock", label: "Lock my mouse while the bot uses it", kind: "check", def: 1
-		, help: "While the bot has the mouse - a battle round, a click, a mouse turn while walking, a potion, login or quick sell click - your mouse can't move the pointer, and over Wizard101 its buttons and wheel do nothing (what you do with it then doesn't count as you playing). The keyboard always stays free: {key:bot} stops the bot and frees the mouse, and with Wait for me on any key leaves the round to you. Freed at once when Wizard101 isn't the window in front (Alt+Tab), and if nothing's renewed it for 15 s. Off: your mouse always works - moving it makes the bot wait for you, as Wait for me says."})
-	list.Push({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
-		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."})
-	list.Push({key: "hungload", label: "Restart Wizard101 stuck on a loading screen (minutes, 0 = never)", kind: "num", lo: 0, hi: 120, def: 5
-		, help: "A zone change that never finishes - the game's log says it began this long ago and has written nothing but its memory notes for 3 minutes, and neither the spellbook nor a battle round has shown since: asks (yes in 60 s if nobody answers), closes Wizard101 and starts it again, logging in with the saved login (tray menu: Set Wizard101 login...). Needs Auto-reconnect on. 2026-10-23: a defeat's trip back hung 69 minutes."})
-	list.Push({key: "mousereturn", label: "Put the mouse back afterwards", kind: "check", def: 1
-		, help: "When the bot takes the mouse - a battle round, a click out of battle - it goes back to where it was once the bot's done (not if you've used the mouse or keys meanwhile). Off: it's left in the middle of the game."})
-	list.Push({key: "mousespeed", label: "Mouse speed (0 = jump there)", kind: "num", lo: 0, hi: 100, def: 1
-		, help: "How the mouse moves to what it clicks: 0 jumps straight there, 1 is the fastest glide, higher numbers glide slower (100 is the slowest)."})
-	list.Push({key: "clickwait", label: "Wait before each click (ms)", kind: "num", lo: 0, hi: 5000, def: 40
-		, help: "Between the mouse getting there and the click. Raise it if the game misses clicks."})
-	list.Push({key: "clickrandom", label: "...plus a random wait up to (ms)", kind: "num", lo: 0, hi: 5000, def: 0
-		, help: "A random 0 to this many ms more before each click, so the clicks aren't evenly timed. 0 = none."})
-	list.Push({key: "clickafter", label: "Wait after clicks (% of the usual)", kind: "num", lo: 0, hi: 1000, def: 50
-		, help: "The wait after a card and after its target (300 ms at 100). Lower is faster - raise it if a target click gets missed after a card."})
-	list.Push({key: "roundwait", label: "Wait before playing a round (ms)", kind: "num", lo: 0, hi: 30000, def: 0
-		, help: "From a round showing up (its Pass button) to the bot's first look at the hand. 0 = at once."})
-	list.Push({key: "discardafter", label: "Wait after each discard (ms)", kind: "num", lo: 250, hi: 5000, def: 400
-		, help: "After each right-click that discards a card from the hand, while the rest slide together (250 at the least)."})
-	list.Push({key: "discardlook", label: "Wait before looking at the hand again (ms)", kind: "num", lo: 0, hi: 5000, def: 700
-		, help: "After discarding, while the hand slides together, before the cards are looked at again."})
-	list.Push({key: "-", label: "HEALTH"})
-	list.Push({key: "healat", label: "Heal under this % of health (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
-		, help: "In battle: a healing card (the heal1 / heal2 pictures) on yourself when your health is under this %. 0 = never."})
-	list.Push({key: "enemyspells", label: "Predict the enemies' spells", kind: "check", def: 1
-		, help: "Each round: what each enemy will most likely cast - its spells off the Wizard101 wiki (Fandom), looked up once and kept; its pips guessed from the round; what it was seen casting (the game's own log) - and the chance their hits kill you this round. In debug.log ('enemy spells:') and on the dashboard (Threat; each enemy's every spell on its Cards tab). Needs the vision helper."})
-	list.Push({key: "defendat", label: "...defend first at this % chance to die (0 = never)", kind: "num", lo: 0, hi: 100, def: 30
-		, help: "When the chance this round's enemy hits kill you is this % or more and no hit in hand ends the battle: a heal on yourself (heal1 / heal2), else Tower Shield, before anything else. 0 = only show the odds."})
-	list.Push({key: "potionat", label: "Drink a potion under this % (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
-		, help: "Out of battle: a potion (Ctrl+O) when your health is under this % - out of potions, the bot buys more with gold. 0 = never."})
-	list.Push({key: "potionwalk", label: "Walk to the potion seller by the map", kind: "check", def: 1
-		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
-	list.Push({key: "fleeon", label: "Flee when out of cards", kind: "check", def: 1
-		, help: "Completely out of cards (none in hand, two rounds running): flee and try again with a full deck. Never for no hit in hand or out of mana."})
-	list.Push({key: "-", label: "THE BACKPACK"})
-	list.Push({key: "quicksell", label: "Quick sell the backpack when it's full", kind: "check", def: 0
-		, help: "After a battle, when the game shows the backpack full (Prospector Zeke's alert on the right - the game's memory, never a picture; the game's own N/M has to read full): B, Quick Sell, each gear group (hats, robes, shoes, weapons, athames, amulets, rings, decks) and the pets' with ALL - No to Crowns Items - and SELL, for gold. Never in a dungeon run or a dungeon zone, and not after one unless ticked below - a dungeon you walked into yourself isn't known as one: switch quick sell off there. A group an Equipment Set's item is in is left out. Locked items are never sold: lock gear you want to keep. Tray menu: Quick sell the backpack now, and a rehearsal that stops at the confirmation (quicksell:2 in PlayerStats.txt does that after battles, at most once an hour)."})
-	list.Push({key: "quicksellpets", label: "...pets too", kind: "check", def: 1
-		, help: "On: the Pet group is sold too (each pet in the backpack that isn't locked or in an Equipment Set - Yes to the game's pets box only when its count is the confirmation's). Off: pets are kept."})
-	list.Push({key: "quicksellafterdungeon", label: "...even with a dungeon's drops in it", kind: "check", def: 0
-		, help: "Off: after a dungeon (a dungeon run, or a zone entered through a sigil) the next full backpack is not sold - you're told, so you can look through it first; it's sold again once 10 items have gone from it, or you ask from the tray. On: sold like any other. Inside a dungeon it's never sold (a dungeon run, one the bot went into through its sigil and its deeper zones - not one you walked into yourself)."})
-	list.Push({key: "-", label: "WALKING"})
-	list.Push({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
-		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."})
-	list.Push({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
-		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, {key:bot}, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."})
-	list.Push({key: "speedfactor", label: "...the speed its walking key sets (2 = twice as fast)", kind: "num", lo: 1, hi: 50, def: 2
-		, help: "The speed you gave Cheat Engine's walking key: the bot's turn and wait times are divided by it. 2-5 work best; above 5 turns are made at normal speed."})
-	list.Push({key: "speedkeyfast", label: "...Cheat Engine's walking key", kind: "pick", def: 2, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
-		, help: "The key you set in Cheat Engine for the walking speed."})
-	list.Push({key: "speedkeynormal", label: "...Cheat Engine's 1x key", kind: "pick", def: 1, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
-		, help: "The key you set in Cheat Engine for normal speed (1)."})
-	list.Push({key: "mousesteer", label: "Turn with the mouse while walking", kind: "check", def: 1
-		, help: "Walking, the wizard is turned with the mouse (the right button held, the mouse slid) - at once, so it doesn't stop at corners - when you've left the keyboard and mouse alone 3 s, out of battle, by the game's memory, no window open over the game. The mouse goes back where it was. Turns on the spot stay A/D. Off: A/D only, as before."})
-	list.Push({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
-		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."})
-	list.Push({key: "mobshape", label: "...what they see", kind: "pick", def: 2, picks: ["A circle all round", "A semi-circle in front", "A cone in front"]
-		, help: "The shape round each mob the route keeps out of - a mob notices you there. In front: which way it faces is read from the game (unknown: the whole circle), and a little room is kept all round its body. The dashboard's Map draws it."})
-	list.Push({key: "mobradius", label: "...how far they notice you (game units)", kind: "num", lo: 100, hi: 3000, def: 300
-		, help: "How far the shape reaches from a mob. More: safer, but narrow streets may leave no way round (then it waits for the mob to turn or move)."})
-	list.Push({key: "mobcone", label: "...the cone's width (degrees; a cone only)", kind: "num", lo: 5, hi: 180, def: 60
-		, help: "With 'A cone in front': how wide the cone is. Players say 50 to 120."})
-	list.Push({key: "mobbody", label: "...their reach all round (semi-circle / cone)", kind: "num", lo: 60, hi: 1500, def: 120
-		, help: "With a semi-circle or cone in front: how far round the rest of each mob the route keeps away too - a mob notices you beside or behind it from nearer than in front."})
-	list.Push({key: "mobgrow", label: "...more after each battle a mob not the quest's starts", kind: "check", def: 1
-		, help: "Caught by a mob the quest doesn't need (not collecting, not one in the goal line, not right after X at the goal): the reach is raised to where it caught you from, and a bit - its front's (how far they notice you) when it caught you in front, its reach all round when from the side or behind. 1500 at most; set them back in Settings any time."})
-	list.Push({key: "mobshrink", label: "...less after 10 minutes walking without one", kind: "check", def: 1
-		, help: "Every 10 minutes of walking without a mob the quest doesn't need catching the wizard, both reaches are made a tenth smaller - never below what you set yourself here (else 300 and 120) - so the routes don't go the long way round for nothing. A catch raises them again (the setting above)."})
-	list.Push({key: "|"})
-	list.Push({key: "-", label: "HOW IT PLAYS ITS CARDS"})
-	list.Push({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]
-		, help: "Boost first: traps on the boss, blades, the bubble and aura, then the biggest hit it can cast. Hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick on weak mobs). Boss/mobs: boost first once you've picked a boss ({key:boss}), else hit first."})
-	list.Push({key: "boostmax", label: "Boosts before each hit (0 = all it has)", kind: "num", lo: 0, hi: 20, def: 0
-		, help: "Boosting first: at most this many boost cards (blades, traps, bubble, aura) go before a hit it can cast. 0 = every one it has."})
-	list.Push({key: "healthocr", label: "Kill check: hit at once if that kills", kind: "check", def: 1
-		, help: "Reads every enemy's health off the nameplates, and if a hit in hand already kills them all it's cast at once instead of more boosts. (Options > 2D Combat Display must be on.)"})
-	list.Push({key: "killmargin", label: "Kill check margin (%)", kind: "num", lo: 0, hi: 200, def: 15
-		, help: "A hit only counts as a kill when its least damage is this % more than the health left (covers shields and misreads)."})
-	list.Push({key: "useblades", label: "Use blades (and Sharpen)", kind: "check", def: 1
-		, help: "Off: blades and Sharpen aren't played (with Discard cards it never plays on, they're discarded)."})
-	list.Push({key: "usetraps", label: "Use traps and Feint on the boss (and Potent)", kind: "check", def: 1
-		, help: "Off: traps, Feint and Potent aren't played (with Discard cards it never plays on, they're discarded). Traps only ever go on a boss you picked ({key:boss})."})
-	list.Push({key: "usebubble", label: "Use the bubble (global)", kind: "check", def: 1
-		, help: "Off: your school's bubble isn't played (with Discard cards it never plays on, it's discarded)."})
-	list.Push({key: "useaura", label: "Use the aura", kind: "check", def: 1
-		, help: "Off: your school's aura isn't played (with Discard cards it never plays on, it's discarded)."})
-	list.Push({key: "usewand", label: "Use the wand's hit", kind: "check", def: 1
-		, help: "Off: the wand's own card (e.g. Minor Clash) isn't played - and isn't counted as a hit without mana when fleeing."})
-	list.Push({key: "usetower", label: "Use Tower Shield", kind: "check", def: 1
-		, help: "Off: Tower Shield isn't played (with Discard cards it never plays on, it's discarded)."})
-	list.Push({key: "usereshuffle", label: "Use Reshuffle", kind: "check", def: 1
-		, help: "Off: Reshuffle isn't played (with Discard cards it never plays on, it's discarded)."})
-	list.Push({key: "drawenchant", label: "Draw treasure cards for an enchant that kills", kind: "check", def: 0
-		, help: "No hit in hand ends the battle, but one would with an enchant on it (any - Strong's +100 counted) and there's none in hand: Draw from your treasure-card deck till one comes. Draw is greyed out with 7 cards, so one card is discarded first - never a treasure card, the hit, or an enchant. Then the kill check again: the hit goes enchanted if it kills; else the enchant's kept. At most 3 draws a round, 6 a battle."})
-	list.Push({key: "reboost", label: "Boost again after each hit", kind: "check", def: 0
-		, help: "After each hit its blades and traps may be cast again for the next one. Off: each is cast once a battle."})
-	list.Push({key: "solotraps", label: "I fight alone (count my traps)", kind: "check", def: 0
-		, help: "Your traps and Feint go on the boss you picked (Alt+1), else - every battle - on the enemy with the most health. On: the kill check counts them on that enemy. Leave it off when others fight with you: their hits use your traps up without the bot seeing it."})
-	list.Push({key: "pipsave", label: "Save pips for a finishing hit (rounds)", kind: "num", lo: 0, hi: 20, def: 3
-		, help: "Up to this many rounds, pips are saved for a hit in hand that ends the battle once it's affordable. 0 = never."})
-	list.Push({key: "discardunused", label: "Discard cards it never plays", kind: "check", def: 1
-		, help: "Every round, cards in hand the bot doesn't play (and kinds switched off above) are discarded with a right-click so it draws ones it can use. Not treasure cards it learned (discarding one uses it up), nor spells set to Never discard on the dashboard's Spells tab."})
-	list.Push({key: "discardmax", label: "...at most this many a round", kind: "num", lo: 0, hi: 7, def: 3
-		, help: "The most cards it never plays that are discarded in one round."})
-	list.Push({key: "discardunaffordable", label: "Discard hits it can't cast yet", kind: "check", def: 0
-		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."})
-	list.Push({key: "learnupgrade", label: "Make room for stronger learned hits", kind: "check", def: 1
-		, help: "A learned hit 15% or more stronger than your weakest in hit1-3 takes its place, out of battle; hit1-3 stay weakest to strongest (the cheapest, your only all-enemies hit, X-pip and hitNkeep:1 slots stay put). Undo: Forget it or change its kind on the Spells tab. One school off: <school>.learnupgrade:0."})
-	list.Push({key: "-", label: "NETWORK (THE DASHBOARD'S NETWORK TAB)"})
-	list.Push({key: "neton", label: "Show this bot to the others on your home network", kind: "check", def: 0
-		, help: "Its state (PC, version, wizard, zone, on/off, Play for me, what it's doing, health, mana, deaths, last log line) goes to every bot on your home network with this on, and theirs shows on the dashboard's Network tab - with their log and game when you pick one. Windows asks once to let Python through its firewall: allow it on Private networks (your network has to be set to Private). Off: nothing sent or listened for."})
-	list.Push({key: "netport", label: "...on the port", kind: "num", lo: 1024, hi: 65535, def: 47150
-		, help: "The same on every PC. UDP for finding each other, TCP for the log, the picture and commands."})
-	list.Push({key: "netpin", label: "...network PIN for commands (0 = none)", kind: "num", lo: 0, hi: 99999999, def: 0
-		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on only at that PC (its dashboard's button or tray menu)."})
-	list.Push({key: "-", label: "UPDATES"})
-	list.Push({key: "autoupdate", label: "Update by itself: look every (minutes, 0 = never)", kind: "num", lo: 0, hi: 1440, def: 10
-		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking ({key:walk}), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."})
-	list.Push({key: "-", label: "ALERTS"})
-	list.Push({key: "logmirror", label: "Copy the log to OneDrive (help from another PC)", kind: "check", def: 0
-		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."})
-	list.Push({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
-		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."})
-	list.Push({key: "-", label: "PARTY (ONE WIZARD PER PC, SAME HOME NETWORK)"})
-	list.Push({key: "partyrole", label: "This wizard in the party", kind: "pick", def: 1, picks: ["Off", "Leader - quests, the others follow", "Follower - goes where the leader goes"]
-		, help: "Leader: quests as now, and waits while a follower is far, in another zone or not ready. Follower: goes where the leader goes instead of its own quest - to it, through the door it took, into its battles. Set this wizard's party name, and on a follower the leader PC's address, with the tray menu's Party.... The leader's PC asks once (Windows) to let Python through its firewall - allow it on Private networks."})
-	list.Push({key: "partyport", label: "...the party's port", kind: "num", lo: 1024, hi: 65535, def: 47140
-		, help: "The leader's bot listens for its followers on this port of your home network; the same on every PC in the party."})
-	list.Push({key: "partynear", label: "...a follower stays this near the leader", kind: "num", lo: 80, hi: 2000, def: 250
-		, help: "A follower walks to within this many game units of the leader, and walks again once the leader is twice as far."})
-	list.Push({key: "partywaitdist", label: "...the leader waits for one farther than", kind: "num", lo: 300, hi: 10000, def: 800
-		, help: "The leader stops while a follower is farther than this (game units), in another zone, loading or not ready."})
-	list.Push({key: "partywaitmax", label: "...but for at most (s, 0 = no waiting)", kind: "num", lo: 0, hi: 900, def: 60
-		, help: "How long the leader waits for one follower; after that it walks on without it till it's been near again."})
-	list.Push({key: "partybattle", label: "...in a party battle this wizard is the", kind: "pick", def: 1, picks: ["Hitter - plays as now", "Blader - boosts the party's hitter", "Healer - heals the party, else boosts"]
-		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. {key:boost} on a plate: the boosts go there (a friend without the bot)."})
+	list.Push(V1Obj({key: "-", label: "THE MOUSE AND WAITS"}))
+	list.Push(V1Obj({key: "handsoffon", label: "Wait for me while I play", kind: "check", def: 1
+		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.) On again, with 3 seconds, every time the bot starts - it never takes the mouse from you as it starts."}))
+	list.Push(V1Obj({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 3
+		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."}))
+	list.Push(V1Obj({key: "mouselock", label: "Lock my mouse while the bot uses it", kind: "check", def: 1
+		, help: "While the bot has the mouse - a battle round, a click, a mouse turn while walking, a potion, login or quick sell click - your mouse can't move the pointer, and over Wizard101 its buttons and wheel do nothing (what you do with it then doesn't count as you playing). The keyboard always stays free: {key:bot} stops the bot and frees the mouse, and with Wait for me on any key leaves the round to you. Freed at once when Wizard101 isn't the window in front (Alt+Tab), and if nothing's renewed it for 15 s. Off: your mouse always works - moving it makes the bot wait for you, as Wait for me says."}))
+	list.Push(V1Obj({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
+		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."}))
+	list.Push(V1Obj({key: "hungload", label: "Restart Wizard101 stuck on a loading screen (minutes, 0 = never)", kind: "num", lo: 0, hi: 120, def: 5
+		, help: "A zone change that never finishes - the game's log says it began this long ago and has written nothing but its memory notes for 3 minutes, and neither the spellbook nor a battle round has shown since: asks (yes in 60 s if nobody answers), closes Wizard101 and starts it again, logging in with the saved login (tray menu: Set Wizard101 login...). Needs Auto-reconnect on. 2026-10-23: a defeat's trip back hung 69 minutes."}))
+	list.Push(V1Obj({key: "mousereturn", label: "Put the mouse back afterwards", kind: "check", def: 1
+		, help: "When the bot takes the mouse - a battle round, a click out of battle - it goes back to where it was once the bot's done (not if you've used the mouse or keys meanwhile). Off: it's left in the middle of the game."}))
+	list.Push(V1Obj({key: "mousespeed", label: "Mouse speed (0 = jump there)", kind: "num", lo: 0, hi: 100, def: 1
+		, help: "How the mouse moves to what it clicks: 0 jumps straight there, 1 is the fastest glide, higher numbers glide slower (100 is the slowest)."}))
+	list.Push(V1Obj({key: "clickwait", label: "Wait before each click (ms)", kind: "num", lo: 0, hi: 5000, def: 40
+		, help: "Between the mouse getting there and the click. Raise it if the game misses clicks."}))
+	list.Push(V1Obj({key: "clickrandom", label: "...plus a random wait up to (ms)", kind: "num", lo: 0, hi: 5000, def: 0
+		, help: "A random 0 to this many ms more before each click, so the clicks aren't evenly timed. 0 = none."}))
+	list.Push(V1Obj({key: "clickafter", label: "Wait after clicks (% of the usual)", kind: "num", lo: 0, hi: 1000, def: 50
+		, help: "The wait after a card and after its target (300 ms at 100). Lower is faster - raise it if a target click gets missed after a card."}))
+	list.Push(V1Obj({key: "roundwait", label: "Wait before playing a round (ms)", kind: "num", lo: 0, hi: 30000, def: 0
+		, help: "From a round showing up (its Pass button) to the bot's first look at the hand. 0 = at once."}))
+	list.Push(V1Obj({key: "discardafter", label: "Wait after each discard (ms)", kind: "num", lo: 250, hi: 5000, def: 400
+		, help: "After each right-click that discards a card from the hand, while the rest slide together (250 at the least)."}))
+	list.Push(V1Obj({key: "discardlook", label: "Wait before looking at the hand again (ms)", kind: "num", lo: 0, hi: 5000, def: 700
+		, help: "After discarding, while the hand slides together, before the cards are looked at again."}))
+	list.Push(V1Obj({key: "-", label: "HEALTH"}))
+	list.Push(V1Obj({key: "healat", label: "Heal under this % of health (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
+		, help: "In battle: a healing card (the heal1 / heal2 pictures) on yourself when your health is under this %. 0 = never."}))
+	list.Push(V1Obj({key: "enemyspells", label: "Predict the enemies' spells", kind: "check", def: 1
+		, help: "Each round: what each enemy will most likely cast - its spells off the Wizard101 wiki (Fandom), looked up once and kept; its pips guessed from the round; what it was seen casting (the game's own log) - and the chance their hits kill you this round. In debug.log ('enemy spells:') and on the dashboard (Threat; each enemy's every spell on its Cards tab). Needs the vision helper."}))
+	list.Push(V1Obj({key: "defendat", label: "...defend first at this % chance to die (0 = never)", kind: "num", lo: 0, hi: 100, def: 30
+		, help: "When the chance this round's enemy hits kill you is this % or more and no hit in hand ends the battle: a heal on yourself (heal1 / heal2), else Tower Shield, before anything else. 0 = only show the odds."}))
+	list.Push(V1Obj({key: "potionat", label: "Drink a potion under this % (0 = never)", kind: "num", lo: 0, hi: 100, def: 40
+		, help: "Out of battle: a potion (Ctrl+O) when your health is under this % - out of potions, the bot buys more with gold. 0 = never."}))
+	list.Push(V1Obj({key: "potionwalk", label: "Walk to the potion seller by the map", kind: "check", def: 1
+		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."}))
+	list.Push(V1Obj({key: "fleeon", label: "Flee when out of cards", kind: "check", def: 1
+		, help: "Completely out of cards (none in hand, two rounds running): flee and try again with a full deck. Never for no hit in hand or out of mana."}))
+	list.Push(V1Obj({key: "-", label: "THE BACKPACK"}))
+	list.Push(V1Obj({key: "quicksell", label: "Quick sell the backpack when it's full", kind: "check", def: 0
+		, help: "After a battle, when the game shows the backpack full (Prospector Zeke's alert on the right - the game's memory, never a picture; the game's own N/M has to read full): B, Quick Sell, each gear group (hats, robes, shoes, weapons, athames, amulets, rings, decks) and the pets' with ALL - No to Crowns Items - and SELL, for gold. Never in a dungeon run or a dungeon zone, and not after one unless ticked below - a dungeon you walked into yourself isn't known as one: switch quick sell off there. A group an Equipment Set's item is in is left out. Locked items are never sold: lock gear you want to keep. Tray menu: Quick sell the backpack now, and a rehearsal that stops at the confirmation (quicksell:2 in PlayerStats.txt does that after battles, at most once an hour)."}))
+	list.Push(V1Obj({key: "quicksellpets", label: "...pets too", kind: "check", def: 1
+		, help: "On: the Pet group is sold too (each pet in the backpack that isn't locked or in an Equipment Set - Yes to the game's pets box only when its count is the confirmation's). Off: pets are kept."}))
+	list.Push(V1Obj({key: "quicksellafterdungeon", label: "...even with a dungeon's drops in it", kind: "check", def: 0
+		, help: "Off: after a dungeon (a dungeon run, or a zone entered through a sigil) the next full backpack is not sold - you're told, so you can look through it first; it's sold again once 10 items have gone from it, or you ask from the tray. On: sold like any other. Inside a dungeon it's never sold (a dungeon run, one the bot went into through its sigil and its deeper zones - not one you walked into yourself)."}))
+	list.Push(V1Obj({key: "-", label: "WALKING"}))
+	list.Push(V1Obj({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
+		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."}))
+	list.Push(V1Obj({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
+		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, {key:bot}, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."}))
+	list.Push(V1Obj({key: "speedfactor", label: "...the speed its walking key sets (2 = twice as fast)", kind: "num", lo: 1, hi: 50, def: 2
+		, help: "The speed you gave Cheat Engine's walking key: the bot's turn and wait times are divided by it. 2-5 work best; above 5 turns are made at normal speed."}))
+	list.Push(V1Obj({key: "speedkeyfast", label: "...Cheat Engine's walking key", kind: "pick", def: 2, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
+		, help: "The key you set in Cheat Engine for the walking speed."}))
+	list.Push(V1Obj({key: "speedkeynormal", label: "...Cheat Engine's 1x key", kind: "pick", def: 1, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
+		, help: "The key you set in Cheat Engine for normal speed (1)."}))
+	list.Push(V1Obj({key: "mousesteer", label: "Turn with the mouse while walking", kind: "check", def: 1
+		, help: "Walking, the wizard is turned with the mouse (the right button held, the mouse slid) - at once, so it doesn't stop at corners - when you've left the keyboard and mouse alone 3 s, out of battle, by the game's memory, no window open over the game. The mouse goes back where it was. Turns on the spot stay A/D. Off: A/D only, as before."}))
+	list.Push(V1Obj({key: "mobavoid", label: "Keep away from mobs (not the quest's)", kind: "check", def: 1
+		, help: "Walking (quests, the potion seller): the route goes round the zone's mobs - read from the game's memory, read-only - so no battle starts on the way. Not the mobs the quest is about (named in its goal, or standing at it), and not while collecting. With no way round, it waits for the mob to move off (25 s at most). The dashboard's Map shows them: red dots."}))
+	list.Push(V1Obj({key: "mobshape", label: "...what they see", kind: "pick", def: 2, picks: ["A circle all round", "A semi-circle in front", "A cone in front"]
+		, help: "The shape round each mob the route keeps out of - a mob notices you there. In front: which way it faces is read from the game (unknown: the whole circle), and a little room is kept all round its body. The dashboard's Map draws it."}))
+	list.Push(V1Obj({key: "mobradius", label: "...how far they notice you (game units)", kind: "num", lo: 100, hi: 3000, def: 300
+		, help: "How far the shape reaches from a mob. More: safer, but narrow streets may leave no way round (then it waits for the mob to turn or move)."}))
+	list.Push(V1Obj({key: "mobcone", label: "...the cone's width (degrees; a cone only)", kind: "num", lo: 5, hi: 180, def: 60
+		, help: "With 'A cone in front': how wide the cone is. Players say 50 to 120."}))
+	list.Push(V1Obj({key: "mobbody", label: "...their reach all round (semi-circle / cone)", kind: "num", lo: 60, hi: 1500, def: 120
+		, help: "With a semi-circle or cone in front: how far round the rest of each mob the route keeps away too - a mob notices you beside or behind it from nearer than in front."}))
+	list.Push(V1Obj({key: "mobgrow", label: "...more after each battle a mob not the quest's starts", kind: "check", def: 1
+		, help: "Caught by a mob the quest doesn't need (not collecting, not one in the goal line, not right after X at the goal): the reach is raised to where it caught you from, and a bit - its front's (how far they notice you) when it caught you in front, its reach all round when from the side or behind. 1500 at most; set them back in Settings any time."}))
+	list.Push(V1Obj({key: "mobshrink", label: "...less after 10 minutes walking without one", kind: "check", def: 1
+		, help: "Every 10 minutes of walking without a mob the quest doesn't need catching the wizard, both reaches are made a tenth smaller - never below what you set yourself here (else 300 and 120) - so the routes don't go the long way round for nothing. A catch raises them again (the setting above)."}))
+	list.Push(V1Obj({key: "|"}))
+	list.Push(V1Obj({key: "-", label: "HOW IT PLAYS ITS CARDS"}))
+	list.Push(V1Obj({key: "cardlogic", label: "Card logic", kind: "pick", def: 1, picks: ["Boost first, then hit", "Hit first (fast)", "Boss: boost first - mobs: hit first"]
+		, help: "Boost first: traps on the boss, blades, the bubble and aura, then the biggest hit it can cast. Hit first: the biggest hit it can cast as soon as it has one, boosting only in rounds it has none (quick on weak mobs). Boss/mobs: boost first once you've picked a boss ({key:boss}), else hit first."}))
+	list.Push(V1Obj({key: "boostmax", label: "Boosts before each hit (0 = all it has)", kind: "num", lo: 0, hi: 20, def: 0
+		, help: "Boosting first: at most this many boost cards (blades, traps, bubble, aura) go before a hit it can cast. 0 = every one it has."}))
+	list.Push(V1Obj({key: "healthocr", label: "Kill check: hit at once if that kills", kind: "check", def: 1
+		, help: "Reads every enemy's health off the nameplates, and if a hit in hand already kills them all it's cast at once instead of more boosts. (Options > 2D Combat Display must be on.)"}))
+	list.Push(V1Obj({key: "killmargin", label: "Kill check margin (%)", kind: "num", lo: 0, hi: 200, def: 15
+		, help: "A hit only counts as a kill when its least damage is this % more than the health left (covers shields and misreads)."}))
+	list.Push(V1Obj({key: "useblades", label: "Use blades (and Sharpen)", kind: "check", def: 1
+		, help: "Off: blades and Sharpen aren't played (with Discard cards it never plays on, they're discarded)."}))
+	list.Push(V1Obj({key: "usetraps", label: "Use traps and Feint on the boss (and Potent)", kind: "check", def: 1
+		, help: "Off: traps, Feint and Potent aren't played (with Discard cards it never plays on, they're discarded). Traps only ever go on a boss you picked ({key:boss})."}))
+	list.Push(V1Obj({key: "usebubble", label: "Use the bubble (global)", kind: "check", def: 1
+		, help: "Off: your school's bubble isn't played (with Discard cards it never plays on, it's discarded)."}))
+	list.Push(V1Obj({key: "useaura", label: "Use the aura", kind: "check", def: 1
+		, help: "Off: your school's aura isn't played (with Discard cards it never plays on, it's discarded)."}))
+	list.Push(V1Obj({key: "usewand", label: "Use the wand's hit", kind: "check", def: 1
+		, help: "Off: the wand's own card (e.g. Minor Clash) isn't played - and isn't counted as a hit without mana when fleeing."}))
+	list.Push(V1Obj({key: "usetower", label: "Use Tower Shield", kind: "check", def: 1
+		, help: "Off: Tower Shield isn't played (with Discard cards it never plays on, it's discarded)."}))
+	list.Push(V1Obj({key: "usereshuffle", label: "Use Reshuffle", kind: "check", def: 1
+		, help: "Off: Reshuffle isn't played (with Discard cards it never plays on, it's discarded)."}))
+	list.Push(V1Obj({key: "drawenchant", label: "Draw treasure cards for an enchant that kills", kind: "check", def: 0
+		, help: "No hit in hand ends the battle, but one would with an enchant on it (any - Strong's +100 counted) and there's none in hand: Draw from your treasure-card deck till one comes. Draw is greyed out with 7 cards, so one card is discarded first - never a treasure card, the hit, or an enchant. Then the kill check again: the hit goes enchanted if it kills; else the enchant's kept. At most 3 draws a round, 6 a battle."}))
+	list.Push(V1Obj({key: "reboost", label: "Boost again after each hit", kind: "check", def: 0
+		, help: "After each hit its blades and traps may be cast again for the next one. Off: each is cast once a battle."}))
+	list.Push(V1Obj({key: "solotraps", label: "I fight alone (count my traps)", kind: "check", def: 0
+		, help: "Your traps and Feint go on the boss you picked (Alt+1), else - every battle - on the enemy with the most health. On: the kill check counts them on that enemy. Leave it off when others fight with you: their hits use your traps up without the bot seeing it."}))
+	list.Push(V1Obj({key: "pipsave", label: "Save pips for a finishing hit (rounds)", kind: "num", lo: 0, hi: 20, def: 3
+		, help: "Up to this many rounds, pips are saved for a hit in hand that ends the battle once it's affordable. 0 = never."}))
+	list.Push(V1Obj({key: "discardunused", label: "Discard cards it never plays", kind: "check", def: 1
+		, help: "Every round, cards in hand the bot doesn't play (and kinds switched off above) are discarded with a right-click so it draws ones it can use. Not treasure cards it learned (discarding one uses it up), nor spells set to Never discard on the dashboard's Spells tab."}))
+	list.Push(V1Obj({key: "discardmax", label: "...at most this many a round", kind: "num", lo: 0, hi: 7, def: 3
+		, help: "The most cards it never plays that are discarded in one round."}))
+	list.Push(V1Obj({key: "discardunaffordable", label: "Discard hits it can't cast yet", kind: "check", def: 0
+		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."}))
+	list.Push(V1Obj({key: "learnupgrade", label: "Make room for stronger learned hits", kind: "check", def: 1
+		, help: "A learned hit 15% or more stronger than your weakest in hit1-3 takes its place, out of battle; hit1-3 stay weakest to strongest (the cheapest, your only all-enemies hit, X-pip and hitNkeep:1 slots stay put). Undo: Forget it or change its kind on the Spells tab. One school off: <school>.learnupgrade:0."}))
+	list.Push(V1Obj({key: "-", label: "NETWORK (THE DASHBOARD'S NETWORK TAB)"}))
+	list.Push(V1Obj({key: "neton", label: "Show this bot to the others on your home network", kind: "check", def: 0
+		, help: "Its state (PC, version, wizard, zone, on/off, Play for me, what it's doing, health, mana, deaths, last log line) goes to every bot on your home network with this on, and theirs shows on the dashboard's Network tab - with their log and game when you pick one. Windows asks once to let Python through its firewall: allow it on Private networks (your network has to be set to Private). Off: nothing sent or listened for."}))
+	list.Push(V1Obj({key: "netport", label: "...on the port", kind: "num", lo: 1024, hi: 65535, def: 47150
+		, help: "The same on every PC. UDP for finding each other, TCP for the log, the picture and commands."}))
+	list.Push(V1Obj({key: "netpin", label: "...network PIN for commands (0 = none)", kind: "num", lo: 0, hi: 99999999, def: 0
+		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on only at that PC (its dashboard's button or tray menu)."}))
+	list.Push(V1Obj({key: "-", label: "UPDATES"}))
+	list.Push(V1Obj({key: "autoupdate", label: "Update by itself: look every (minutes, 0 = never)", kind: "num", lo: 0, hi: 1440, def: 10
+		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking ({key:walk}), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."}))
+	list.Push(V1Obj({key: "-", label: "ALERTS"}))
+	list.Push(V1Obj({key: "logmirror", label: "Copy the log to OneDrive (help from another PC)", kind: "check", def: 0
+		, help: "debug.log is also written to your OneDrive folder (Wiz-Maxxing logs\<this PC's name>), with a picture of the game every 2 minutes and at each alert (the newest 15) - OneDrive syncs it to your other PCs, so the bot can be followed from there. Nothing else is sent anywhere."}))
+	list.Push(V1Obj({key: "alertson", label: "Discord alerts when the wizard needs you", kind: "check", def: 1
+		, help: "Stuck, out of potions or mana, logged out, a quest that needs you...: a message to your Discord channel - once its webhook is set (tray menu: Discord alerts...). The same alert at most once in 10 minutes."}))
+	list.Push(V1Obj({key: "-", label: "PARTY (ONE WIZARD PER PC, SAME HOME NETWORK)"}))
+	list.Push(V1Obj({key: "partyrole", label: "This wizard in the party", kind: "pick", def: 1, picks: ["Off", "Leader - quests, the others follow", "Follower - goes where the leader goes"]
+		, help: "Leader: quests as now, and waits while a follower is far, in another zone or not ready. Follower: goes where the leader goes instead of its own quest - to it, through the door it took, into its battles. Set this wizard's party name, and on a follower the leader PC's address, with the tray menu's Party.... The leader's PC asks once (Windows) to let Python through its firewall - allow it on Private networks."}))
+	list.Push(V1Obj({key: "partyport", label: "...the party's port", kind: "num", lo: 1024, hi: 65535, def: 47140
+		, help: "The leader's bot listens for its followers on this port of your home network; the same on every PC in the party."}))
+	list.Push(V1Obj({key: "partynear", label: "...a follower stays this near the leader", kind: "num", lo: 80, hi: 2000, def: 250
+		, help: "A follower walks to within this many game units of the leader, and walks again once the leader is twice as far."}))
+	list.Push(V1Obj({key: "partywaitdist", label: "...the leader waits for one farther than", kind: "num", lo: 300, hi: 10000, def: 800
+		, help: "The leader stops while a follower is farther than this (game units), in another zone, loading or not ready."}))
+	list.Push(V1Obj({key: "partywaitmax", label: "...but for at most (s, 0 = no waiting)", kind: "num", lo: 0, hi: 900, def: 60
+		, help: "How long the leader waits for one follower; after that it walks on without it till it's been near again."}))
+	list.Push(V1Obj({key: "partybattle", label: "...in a party battle this wizard is the", kind: "pick", def: 1, picks: ["Hitter - plays as now", "Blader - boosts the party's hitter", "Healer - heals the party, else boosts"]
+		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. {key:boost} on a plate: the boosts go there (a friend without the bot)."}))
 	return list
 	}
 
@@ -180,10 +180,10 @@ CfgSimpleKeys()
 	static keys := ""
 	if (!IsObject(keys))
 		{
-		keys := {}
+		keys := V1Obj()
 		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
-			keys[k] := 1 ;  V1toV2: Invalid Index errors?, try 'keys.Push(<val>)'
+			keys[k] := 1
 		}
 	return keys
 	}
@@ -214,7 +214,7 @@ CfgViewList()
 CfgKeyWords(text)
 	{
 	while (RegExMatch(text, "\{key:(\w+)\}", &m))
-		text := StrReplace(text, (m&&m[0]), HkText(m[1]))
+		text := StrReplace(text, m[0], HkText(m[1]))
 	return text
 	}
 
@@ -222,6 +222,7 @@ CfgKeyWords(text)
 CfgShow()
 	{
 	static hooked := 0
+	global CfgCtls, CfgShownVals, CfgHelps, CfgHelpShown, CfgSimple, Cfg, CfgHwnd, CfgReopenX, CfgPending ; (v1 globals it sets)
 	if (CfgHwnd && WinExist("ahk_id " CfgHwnd))
 		{
 		WinActivate("ahk_id " CfgHwnd)
@@ -230,11 +231,15 @@ CfgShow()
 	;(the help line follows the mouse: WM_MOUSEMOVE)
 	if (!hooked)
 		OnMessage(0x200, CfgHover), hooked := 1
-	CfgCtls := {}, CfgShownVals := {}, CfgHelps := {}, CfgHelpShown := ""
+	CfgCtls := V1Obj(), CfgShownVals := V1Obj(), CfgHelps := V1Obj(), CfgHelpShown := ""
 	CfgSimple := ViewSimple("settings")
+	;(v1: Gui, Cfg:New destroyed a Cfg window still there)
+	try Cfg.Destroy()
 	Cfg := Gui("-MaximizeBox", "Wizard101 bot " BotVersion() " - settings"), CfgHwnd := Cfg.Hwnd
 	Cfg.OnEvent("Close", CfgGuiClose)
 	Cfg.OnEvent("Escape", CfgGuiEscape)
+	;(v1: Gui, Cfg:Color, 1B1D22, 111317 - the window's colour, and 111317 behind every Edit and DropDownList: v2 gives
+	;each of those its own Background111317 below)
 	Cfg.BackColor := "1B1D22"
 	Cfg.MarginX := 12, Cfg.MarginY := 10
 	;(next to the dashboard when it's up, else in the middle of the main monitor - all of it on that monitor: the
@@ -252,7 +257,7 @@ CfgShow()
 	;(the view switched: where the window was)
 	if (CfgReopenX != "")
 		cfgPos := "x" CfgReopenX " y" CfgReopenY " ", cfgAtX := CfgReopenX, cfgAtY := CfgReopenY, CfgReopenX := ""
-	DashMonitorAt(cfgAtX, cfgAtY, cfgML, cfgMT, cfgMR, cfgMB)
+	DashMonitorAt(cfgAtX, cfgAtY, &cfgML, &cfgMT, &cfgMR, &cfgMB)
 	cfgMaxY := Max(300, Floor((cfgMB - cfgMT) * 96 / A_ScreenDPI) - 140)
 	;(column n's right edge: 434 + 432 (n - 1), and the window's frame)
 	cfgMaxCols := Max(1, (Floor((cfgMR - cfgML) * 96 / A_ScreenDPI) - 24 - 434) // 432 + 1)
@@ -275,7 +280,7 @@ CfgShow()
 			cfgTop := cfgNeed
 			}
 		Cfg.SetFont("s9 w600 cF2F2F2", "Segoe UI")
-		Tab := Cfg.Add("Tab3", "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", StrSplit(cfgTabNames, "|")) ; V1toV2: Ensure Tab3 has correct choose value
+		Tab := Cfg.Add("Tab3", "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", StrSplit(cfgTabNames, "|"))
 		}
 	cfgTab := 0
 	for each, cfgAt in cfgPlan.items
@@ -302,33 +307,34 @@ CfgShow()
 		;(a label the mouse can be over - SS_NOTIFY - and its control right of it)
 		cfgW := (cfgS.kind = "pick") ? 90 : 300
 		Cfg.SetFont("s9 w400 cDADADA", "Segoe UI")
-		ogccfgSlabelcfgL := Cfg.Add("Text", "x" cfgX " y" cfgY + 3 " w" cfgW " h18 +0x100", cfgS.label), cfgL := ogccfgSlabelcfgL.hwnd
+		cfgL := Cfg.Add("Text", "x" cfgX " y" cfgY + 3 " w" cfgW " h18 +0x100", cfgS.label).Hwnd
 		cfgCx := cfgX + cfgW + 8
 		;(a change not saved before the view was switched: shown, still to be saved - cfgV stays what's in use)
 		cfgNew := (IsObject(CfgPending) && CfgPending.Has(cfgS.key)) ? CfgPending[cfgS.key] : ""
 		if (cfgS.kind = "check")
 			{
 			cfgV := cfgV ? 1 : 0
-			Gui, Cfg:Add, Checkbox, % "x" cfgCx " y" cfgY + 3 " w18 h18 HwndcfgC Checked" (cfgNew != "" ? cfgNew : cfgV) ; V1toV2: Ternary not yet supported (coming soon)
+			cfgC := Cfg.Add("Checkbox", "x" cfgCx " y" cfgY + 3 " w18 h18 Checked" (cfgNew != "" ? cfgNew : cfgV)).Hwnd
 			}
 		else if (cfgS.kind = "pick")
 			{
 			cfgV := Max(1, Min(cfgS.picks.Length, Round(cfgV)))
-			cfgList := ""
+			;(v1's cfgList - cfgListVar: v2 has the function CfgList by that name)
+			cfgListVar := ""
 			for each, cfgP in cfgS.picks
-				cfgList .= (cfgList = "" ? "" : "|") cfgP
-			Gui, Cfg:Add, DropDownList, % "x" cfgCx " y" cfgY " w312 AltSubmit HwndcfgC Choose" (cfgNew != "" ? cfgNew : cfgV), %cfgList% ; V1toV2: Ternary not yet supported (coming soon)
+				cfgListVar .= (cfgListVar = "" ? "" : "|") cfgP
+			cfgC := Cfg.Add("DropDownList", "x" cfgCx " y" cfgY " w312 AltSubmit Background111317 Choose" (cfgNew != "" ? cfgNew : cfgV), StrSplit(cfgListVar, "|")).Hwnd
 			}
 		else
 			{
 			cfgV := Round(cfgV)
-			Gui, Cfg:Add, Edit, % "x" cfgCx " y" cfgY " w70 h22 Number Right HwndcfgC", % cfgNew != "" ? cfgNew : cfgV ; V1toV2: Ternary not yet supported (coming soon)
+			cfgC := Cfg.Add("Edit", "x" cfgCx " y" cfgY " w70 h22 Number Right Background111317", cfgNew != "" ? cfgNew : cfgV).Hwnd
 			;(0x80: no thousands commas)
-			Gui, Cfg:Add, UpDown, % "Range" cfgS.lo "-" cfgS.hi " 0x80 HwndcfgU", % cfgNew != "" ? cfgNew : cfgV ; V1toV2: Ternary not yet supported (coming soon)
-			CfgHelps[cfgU + 0] := cfgHelp ;  V1toV2: Invalid Index errors?, try 'CfgHelps.Push(<val>)'
+			cfgU := Cfg.Add("UpDown", "Range" cfgS.lo "-" cfgS.hi " 0x80", cfgNew != "" ? cfgNew : cfgV).Hwnd
+			CfgHelps[cfgU + 0] := cfgHelp
 			}
-		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV ;  V1toV2: Invalid Index errors?, try 'CfgCtls.Push(<val>)'
-		CfgHelps[cfgL + 0] := cfgHelp, CfgHelps[cfgC + 0] := cfgHelp ;  V1toV2: Invalid Index errors?, try 'CfgHelps.Push(<val>)'
+		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV
+		CfgHelps[cfgL + 0] := cfgHelp, CfgHelps[cfgC + 0] := cfgHelp
 		}
 	if (cfgTab)
 		Tab.UseTab()
@@ -336,7 +342,7 @@ CfgShow()
 	Cfg.SetFont("s9 w400 c9AA0A6", "Segoe UI")
 	cfgHelpW := 432 * cfgPlan.cols - 32
 	CfgPending := ""
-	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, % "Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart." (CfgSimple ? " These are the most used ones - All settings shows the rest." : "") ; V1toV2: Ternary not yet supported (coming soon)
+	Cfg.Add("Text", "x12 y" cfgY " w" cfgHelpW " h36 vCfgHelpText", "Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart." (CfgSimple ? " These are the most used ones - All settings shows the rest." : ""))
 	cfgY += 44
 	Cfg.SetFont("s9 w400 c000000", "Segoe UI")
 	ogcButtonSave := Cfg.Add("Button", "x12 y" . cfgY . " w90 h26 Default", "Save")
@@ -347,7 +353,7 @@ CfgShow()
 	ogcButtonOpenPlayerStatstxt.OnEvent("Click", CfgOpenFile.Bind("Normal"))
 	ogcButtonClose := Cfg.Add("Button", "x+8 yp w90 h26", "Close")
 	ogcButtonClose.OnEvent("Click", CfgGuiClose.Bind("Normal"))
-	Gui, Cfg:Add, Button, x+8 yp w110 h26 gCfgViewToggle, % CfgSimple ? "All settings" : "Fewer settings" ; V1toV2: Ternary not yet supported (coming soon)
+	Cfg.Add("Button", "x+8 yp w110 h26", CfgSimple ? "All settings" : "Fewer settings").OnEvent("Click", CfgViewToggle.Bind("Normal"))
 	Cfg.SetFont("s9 w400 cB9E2B9", "Segoe UI")
 	ogcTextCfgNote := Cfg.Add("Text", "x+14 yp+5 w370 h18 vCfgNote")
 	Cfg.Title := "Wizard101 bot " BotVersion() " - settings"
@@ -370,7 +376,7 @@ CfgShow()
 CfgPlace(maxY, tabbed, top := "")
 	{
 	top := top != "" ? top : tabbed ? 44 : 12
-	plan := {items: [], cols: 1, bottom: top, tabs: []}
+	plan := V1Obj({items: [], cols: 1, bottom: top, tabs: []})
 	x := 12, y := top, col := 1
 	for each, s in CfgViewList()
 		{
@@ -392,7 +398,7 @@ CfgPlace(maxY, tabbed, top := "")
 		;(a gap above a heading that isn't the first)
 		if (s.key = "-" && y > top)
 			y += 8
-		plan.items.Push({s: s, x: x, y: y, tab: plan.tabs.Length})
+		plan.items.Push(V1Obj({s: s, x: x, y: y, tab: plan.tabs.Length}))
 		y += (s.key = "-") ? 26 : 28
 		plan.bottom := Max(plan.bottom, y), plan.cols := Max(plan.cols, col)
 		}
@@ -403,19 +409,19 @@ CfgPlace(maxY, tabbed, top := "")
 ;width w with those names, its buttons' rows measured - they wrap when the names don't fit one row. 44 for one row
 CfgTabsTop(w, names)
 	{
-	CfgM := Gui()
-	CfgM.SetFont("s9 w600", "Segoe UI")
-	Tab := ogcnamesctTab := CfgM.Add("Tab3", "x6 y8 w" w " h200 +Buttons -Theme", StrSplit(names, "|")) ; V1toV2: Ensure Tab3 has correct choose value
-	ctTab := ogcnamesctTab.hwnd
+	global CfgMGui ; (v1 globals it sets)
+	;(v1's GUI CfgM - CfgMGui here: a v2 variable cfgM would be CfgWrite's match too, names being case-insensitive)
+	CfgMGui := Gui()
+	CfgMGui.SetFont("s9 w600", "Segoe UI")
+	ctTab := CfgMGui.Add("Tab3", "x6 y8 w" w " h200 +Buttons -Theme", StrSplit(names, "|")).Hwnd
 	;(TCM_GETITEMCOUNT, then each button's rect - TCM_GETITEMRECT - in the control's own pixels)
 	ctN := DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x1304, "Ptr", 0, "Ptr", 0, "Ptr"), ctBottom := 0
-	ctRect := Buffer(16, 0) ; V1toV2: if 'ctRect' is a UTF-16 string, use 'VarSetStrCapacity(&ctRect, 16)' and replace all instances of 'ctRect.Ptr' with 'StrPtr(ctRect)'
+	ctRect := Buffer(16, 0)
 	Loop ctN
 		if (DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x130A, "Ptr", A_Index - 1, "Ptr", ctRect.Ptr, "Ptr"))
 			ctBottom := Max(ctBottom, NumGet(ctRect, 12, "Int"))
-	Try CfgM.Destroy()
-	;Gui, Cfg:Default ; V1toV2: removed, but applied
-	V1toV2_LineFill := true ; remove me after inspection
+	CfgMGui.Destroy()
+	;(v1: Gui, Cfg:Default after - v2 names the Gui each call works on)
 	;(pixels to the window's units - 96 a inch, as Gui positions are given)
 	return Max(44, 8 + Ceil(ctBottom * 96 / A_ScreenDPI) + 8)
 	}
@@ -423,13 +429,16 @@ CfgTabsTop(w, names)
 ;The help for what the mouse is over: a label (SS_NOTIFY) or a control in the window
 CfgHover(wParam, lParam, msg, hwnd)
 	{
-	if (A_Gui != "Cfg" || !IsObject(CfgHelps))
+	global CfgHelpShown ; (v1 globals it sets)
+	;(v1: A_Gui != "Cfg" - the message wasn't for the Settings window or one of its controls)
+	cfgG := GuiFromHwnd(hwnd, true)
+	if (!cfgG || cfgG.Hwnd != CfgHwnd || !IsObject(CfgHelps))
 		return
 	cfgT := CfgHelps.Has(hwnd + 0) ? CfgHelps[hwnd + 0] : ""
 	if (cfgT = "" || cfgT == CfgHelpShown)
 		return
 	CfgHelpShown := cfgT
-	ogcCfgHelpText.Value := cfgT
+	Cfg["CfgHelpText"].Value := cfgT
 	}
 
 ;Writes the settings changed in the window to PlayerStats.txt and reads them all again (used from now on).
@@ -442,30 +451,31 @@ CfgSaveNow()
 		if (!CfgCtls.Has(cfgS.key))
 			continue
 		cfgC := CfgCtls[cfgS.key]
-		cfgV := ogc%cfgC%.Value
+		;(v1: GuiControlGet by the control's hwnd - an Edit's text, a checkbox's 0 / 1, an AltSubmit list's position)
+		cfgV := GuiCtrlFromHwnd(cfgC).Value
 		if (cfgS.kind = "num")
 			{
 			cfgV := Trim(cfgV)
-			if !isInteger(cfgV)
+			if !IsInteger(cfgV)
 				{
 				cfgFixed .= ", " cfgS.key " (not a number - left as it was)"
-				ogc%cfgC%.Value := CfgShownVals[cfgS.key]
+				GuiCtrlFromHwnd(cfgC).Value := CfgShownVals[cfgS.key]
 				continue
 				}
 			if (cfgV < cfgS.lo || cfgV > cfgS.hi)
 				{
 				cfgV := Max(cfgS.lo, Min(cfgS.hi, cfgV))
 				cfgFixed .= ", " cfgS.key " (" cfgS.lo " to " cfgS.hi ": " cfgV ")"
-				ogc%cfgC%.Value := cfgV
+				GuiCtrlFromHwnd(cfgC).Value := cfgV
 				}
 			}
-		cfgV += 0
+		cfgV := V1N(cfgV) + 0
 		if (cfgV != CfgShownVals[cfgS.key])
 			cfgPairs.Push([cfgS.key, cfgV]), cfgSaid .= ", " cfgS.key " " CfgShownVals[cfgS.key] " -> " cfgV
 		}
 	if (!cfgPairs.Length)
 		{
-		GuiControl, Cfg:, CfgNote, % "Nothing changed" (cfgFixed = "" ? "" : " - " SubStr(cfgFixed, 3)) ; V1toV2: Ternary not yet supported (coming soon)
+		Cfg["CfgNote"].Value := "Nothing changed" (cfgFixed = "" ? "" : " - " SubStr(cfgFixed, 3))
 		return
 		}
 	;(the mobs' reach you set yourself: the least the shrink after quiet walking comes back down to - Vision.ahk
@@ -475,7 +485,7 @@ CfgSaveNow()
 			cfgPairs.Push([cfgKv[1] "floor", cfgKv[2]])
 	if (!CfgWrite(cfgPairs))
 		{
-		ogcTextCfgNote.Value := "Couldn't write PlayerStats.txt - nothing was saved"
+		Cfg["CfgNote"].Value := "Couldn't write PlayerStats.txt - nothing was saved"
 		DebugLog("Settings: couldn't write PlayerStats.txt - nothing was saved")
 		return
 		}
@@ -484,7 +494,7 @@ CfgSaveNow()
 	;(the tray menu's tick and the dashboard's Wait for me button)
 	HandsOffShow()
 	DebugLog("Settings saved (used from now on): " SubStr(cfgSaid, 3) (cfgFixed = "" ? "" : " | " SubStr(cfgFixed, 3)))
-	GuiControl, Cfg:, CfgNote, % "Saved " cfgPairs.Length() " change" (cfgPairs.Length() = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")") ; V1toV2: Ternary not yet supported (coming soon)
+	Cfg["CfgNote"].Value := "Saved " cfgPairs.Length " change" (cfgPairs.Length = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")")
 	}
 
 ;Every setting's default in the window (saved only with Save)
@@ -496,11 +506,11 @@ CfgFillDefaults()
 			continue
 		cfgC := CfgCtls[cfgS.key]
 		if (cfgS.kind = "pick")
-			ogc%cfgC%.Choose(% cfgS.def)
+			GuiCtrlFromHwnd(cfgC).Choose(cfgS.def)
 		else
-			ogc%cfgC%.Value := cfgS.def
+			GuiCtrlFromHwnd(cfgC).Value := cfgS.def
 		}
-	ogcTextCfgNote.Value := "Defaults filled in - Save to use them"
+	Cfg["CfgNote"].Value := "Defaults filled in - Save to use them"
 	}
 
 ;Sets key:value lines in PlayerStats.txt - in their own lines (every one, if a key is in more than one), their
@@ -514,7 +524,7 @@ CfgWrite(pairs)
 	cfgText := ""
 	if (FileExist(cfgPath))
 		{
-		cfgText := FileRead(cfgPath)
+		cfgText := V1FileRead(cfgPath)
 		if (ErrorLevel)
 			return CfgUncritical(cfgWas, false)
 		}
@@ -527,7 +537,7 @@ CfgWrite(pairs)
 		cfgFound := false
 		for cfgI, cfgLn in cfgLines
 			if (RegExMatch(cfgLn, "i)^(\s*\Q" cfgKv[1] "\E\s*:\s*)[^;\s]*(.*)$", &cfgM))
-				cfgLines[cfgI] := cfgM[1] cfgKv[2] cfgM[2], cfgFound := true ;  V1toV2: Invalid Index errors?, try 'cfgLines.Push(<val>)'
+				cfgLines[cfgI] := cfgM[1] cfgKv[2] cfgM[2], cfgFound := true
 		if (cfgFound)
 			continue
 		cfgHas := false
@@ -541,16 +551,11 @@ CfgWrite(pairs)
 	cfgOut := ""
 	for cfgI, cfgLn in cfgLines
 		cfgOut .= cfgLn "`r`n"
-	Try FileDelete(cfgPath ".tmp")
-	FileAppend(cfgOut, cfgPath ".tmp")
+	V1Do(FileDelete, cfgPath ".tmp")
+	V1Do(FileAppend, cfgOut, cfgPath ".tmp")
 	if (ErrorLevel)
 		return CfgUncritical(cfgWas, false)
-	Try {
-		FileMove(cfgPath ".tmp", cfgPath, 1)
-		ErrorLevel := 0
-	} Catch as Err {
-		ErrorLevel := Err.Extra
-	}
+	V1Do(FileMove, cfgPath ".tmp", cfgPath, 1)
 	if (ErrorLevel)
 		return CfgUncritical(cfgWas, false)
 	LoadStats(true)
@@ -572,6 +577,7 @@ CfgUncritical(wasOn, result)
 ;mousereturn:0 (the Settings window's "Put the mouse back afterwards")
 MouseGrab()
 	{
+	global MouseHomeX, MouseHomeY, MouseHomeSet, MouseHomeAt ; (v1 globals it sets)
 	;(one taken over 10 minutes ago and never given back is stale: taken afresh)
 	if ((MouseHomeSet && A_TickCount - MouseHomeAt < 600000) || !Stat("mousereturn"))
 		return false
@@ -585,6 +591,7 @@ MouseGrab()
 ;mousereturn:0)
 MouseLetGo()
 	{
+	global MouseHomeSet ; (v1 globals it sets)
 	if (!MouseHomeSet)
 		return 0
 	MouseHomeSet := 0
@@ -608,7 +615,8 @@ MouseLetGo()
 ;Whether screen point x, y is on the game's picture (GameLeft.. - its client area)
 MouseOnGame(x, y)
 	{
-	return x >= GameLeft && x < GameLeft + GameW && y >= GameTop && y < GameTop + GameH
+	;(v1: the game's place still blank - not found yet - compared as text, its sums blank: never on the game)
+	return V1Ge(x, GameLeft) && V1Lt(x, V1Add(GameLeft, GameW)) && V1Ge(y, GameTop) && V1Lt(y, V1Add(GameTop, GameH))
 	}
 
 ;---- Your mouse locked while the bot uses it ----
@@ -640,13 +648,16 @@ global MouseLockOwnAt, MouseLockOwnTtl, MouseLockRenewAt
 ;(once, at the first lock: the failsafes for closing and errors)
 MouseLockInit()
 	{
+	global MouseLockReady, MouseLockOwners, MouseLockAt, MouseLockTtl, MouseLocked, MouseLockClicks, MouseLockFrom, MouseLockTo ; (v1 globals it sets)
+	global MouseLockPre, MouseLockSpan, MouseLockHold, MouseLockSaid, MouseLockWhy, MouseLockOnAt, MouseLockTicking ; (v1 globals it sets)
+	global MouseLockOwnAt, MouseLockOwnTtl, MouseLockRenewAt ; (v1 globals it sets)
 	if (MouseLockReady)
 		return
 	MouseLockReady := 1
-	MouseLockOwners := {}, MouseLockAt := 0, MouseLockTtl := 15000, MouseLocked := 0, MouseLockClicks := 0
-	MouseLockFrom := 0, MouseLockTo := 0, MouseLockPre := 0, MouseLockSpan := 0, MouseLockHold := 0, MouseLockSaid := {}
-	MouseLockWhy := "", MouseLockOnAt := 0, MouseLockTicking := 0, MouseLockOwnAt := {}, MouseLockOwnTtl := {}, MouseLockRenewAt := 0
-	OnExit("MouseLockOnExit", -1)
+	MouseLockOwners := V1Obj(), MouseLockAt := 0, MouseLockTtl := 15000, MouseLocked := 0, MouseLockClicks := 0
+	MouseLockFrom := 0, MouseLockTo := 0, MouseLockPre := 0, MouseLockSpan := 0, MouseLockHold := 0, MouseLockSaid := V1Obj()
+	MouseLockWhy := "", MouseLockOnAt := 0, MouseLockTicking := 0, MouseLockOwnAt := V1Obj(), MouseLockOwnTtl := V1Obj(), MouseLockRenewAt := 0
+	OnExit(MouseLockOnExit, -1)
 	OnError(MouseLockOnError, -1)
 	}
 
@@ -654,12 +665,13 @@ MouseLockInit()
 ;Nested: each MouseLockOff(why) gives back one. ttl: how long it may go unrenewed (ms) before the watchdog lets go
 MouseLockOn(why := "bot", ttl := 15000)
 	{
+	global MouseLockAt, MouseLockTtl, MouseLockWhy, MouseLockTicking ; (v1 globals it sets)
 	MouseLockInit()
 	;(its own hold's taking and ttl too - the watchdog lets go of it alone if it isn't renewed, whoever else takes the
 	;mouse; counted on the same line as its times are set, so the watchdog's tick never sees it counted with old ones)
 	mlHeld := MouseLockOwners.Has(why) ? MouseLockOwners[why] : 0
 	mlTtl := mlHeld > 0 && MouseLockOwnTtl.Has(why) ? Max(MouseLockOwnTtl[why], ttl) : ttl
-	MouseLockOwnTtl[why] := mlTtl, MouseLockOwnAt[why] := A_TickCount, MouseLockAt := A_TickCount, MouseLockTtl := Max(MouseLockTtl, ttl), MouseLockOwners[why] := mlHeld + 1 ;  V1toV2: Invalid Index errors?, try 'MouseLockOwnTtl.Push(<val>)'
+	MouseLockOwnTtl[why] := mlTtl, MouseLockOwnAt[why] := A_TickCount, MouseLockAt := A_TickCount, MouseLockTtl := Max(MouseLockTtl, ttl), MouseLockOwners[why] := mlHeld + 1
 	if (MouseLockWhy = "")
 		MouseLockWhy := why
 	;(started once - SetTimer again would start its countdown over, and clicks a moment apart would keep it from ever
@@ -675,6 +687,7 @@ MouseLockOn(why := "bot", ttl := 15000)
 ;Gives back one MouseLockOn(why) - none held by why (let go already: a failsafe, the watchdog): nothing
 MouseLockOff(why := "bot")
 	{
+	global MouseLockTtl, MouseLockWhy ; (v1 globals it sets)
 	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Has(why))
 		return
 	MouseLockOwners[why] -= 1
@@ -698,9 +711,10 @@ MouseLockOff(why := "bot")
 ;Every hold let go at once (the failsafes) - because: for debug.log (only said when it was locked)
 MouseLockRelease(because)
 	{
+	global MouseLockOwners, MouseLockTtl, MouseLockHold, MouseLockWhy ; (v1 globals it sets)
 	if (!IsObject(MouseLockOwners))
 		return
-	MouseLockOwners := {}, MouseLockTtl := 15000, MouseLockHold := 0
+	MouseLockOwners := V1Obj(), MouseLockTtl := 15000, MouseLockHold := 0
 	MouseLockApply("", because)
 	MouseLockWhy := ""
 	}
@@ -710,6 +724,7 @@ MouseLockRelease(because)
 ;swallowed (MouseLockMoved)
 MouseLockRenew()
 	{
+	global MouseLockAt, MouseLockRenewAt ; (v1 globals it sets)
 	if (IsObject(MouseLockOwners) && MouseLockOwners.Count)
 		MouseLockAt := A_TickCount, MouseLockRenewAt := A_TickCount
 	MouseLockMoved()
@@ -728,6 +743,7 @@ MouseLockMoved()
 ;it still is. Your click for it isn't you playing (the span stays open)
 MouseLockPause(pause)
 	{
+	global MouseLockHold ; (v1 globals it sets)
 	MouseLockInit()
 	MouseLockHold := pause ? MouseLockHold + 1 : Max(0, MouseLockHold - 1)
 	MouseLockApply("", pause ? "your pick (" HkText("boss") "...)" : "")
@@ -758,8 +774,10 @@ MouseLockWanted(&whyNot)
 ;gave it back; because: why it's let go (a failsafe)
 MouseLockApply(why := "", because := "")
 	{
-	;(not interrupted half done - by the watchdog's tick, F6; Critical's SetBatchLines -1 put back after)
-	mlCrit := A_IsCritical, mlBatch := -1
+	global MouseLockPre, MouseLockFrom, MouseLockSpan, MouseLockClicks, MouseLocked, MouseLockOnAt, MouseLockTo ; (v1 globals it sets)
+	;(not interrupted half done - by the watchdog's tick, F6; Critical's SetBatchLines -1 put back after - v2 has no
+	;SetBatchLines: it always runs at full speed)
+	mlCrit := A_IsCritical
 	Critical()
 	MouseLockInit()
 	mlWant := MouseLockWanted(&mlNot)
@@ -803,13 +821,14 @@ MouseLockApply(why := "", because := "")
 		MouseLockSpan := 0, MouseLockTo := A_TickCount
 	if (!mlCrit)
 		Critical("Off")
-; V1toV2: Removed 	SetBatchLines, %mlBatch%
 	}
 
 ;Four times a second while anyone has it: Wizard101 still in front, the pointer still over it, the watchdog. Stops itself
 ;once nobody has it
 MouseLockTick()
 	{
+	global MouseLockTicking ; (v1 globals it sets)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count)
 		{
 		SetTimer(MouseLockTick,0)
@@ -843,7 +862,7 @@ MouseLockTick()
 			}
 		DebugLog("Mouse lock: " mlMsg " - the others still hold it")
 		for mlI, mlWho in mlStale
-			MouseLockOwners[mlWho] := 1, MouseLockOff(mlWho) ;  V1toV2: Invalid Index errors?, try 'MouseLockOwners.Push(<val>)'
+			MouseLockOwners[mlWho] := 1, MouseLockOff(mlWho)
 		}
 	MouseLockApply()
 	}
@@ -860,10 +879,13 @@ MouseLockBlock(on)
 ;Your mouse's buttons and wheel swallowed while Wizard101 is in front (on) - hook hotkeys (the hook decides, not the busy
 ;script) made the first time - or let through again. (A wheel spun hard is many hotkeys a second: the "hotkeys received"
 ;warning box only past 1000 in 2 s)
-A_MaxHotkeysPerInterval := 1000
+;(v1: #MaxHotkeysPerInterval 1000, a directive - in force from the start. v2's A_MaxHotkeysPerInterval := 1000 here, after
+;the auto-execute section, would never run: set in MouseLockKeys, before any of its hotkeys is made; v1's from-the-start
+;is the entry script's to set, at its start)
 MouseLockKeys(on)
 	{
 	static made := 0, failSaid := 0
+	A_MaxHotkeysPerInterval := 1000
 	if (!on && !made)
 		return
 	HotIfWinActive("ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe")
@@ -871,13 +893,14 @@ MouseLockKeys(on)
 		{
 		if (on)
 			{
-			Hotkey(mlKey, MouseLockSwallow, "On") ; V1toV2: Removed UseErrorLevel
+			;(v1: Hotkey, ..., On UseErrorLevel - HkTry, Hotkeys.ahk: ErrorLevel v1's number, no throw)
+			HkTry(mlKey, MouseLockSwallow, "On")
 			;(one the Hotkey command won't make: said once a run - that button isn't swallowed, the rest are)
 			if (ErrorLevel && !failSaid)
 				failSaid := 1, DebugLog("Mouse lock: " mlKey " couldn't be made a hotkey (ErrorLevel " ErrorLevel ") - that button isn't held off")
 			}
 		else
-			Hotkey(mlKey, "Off") ; V1toV2: Removed UseErrorLevel
+			HkTry(mlKey, "Off")
 		}
 	HotIfWinActive()
 	made := 1
@@ -894,8 +917,8 @@ MouseLockIsKey(hk)
 	return RegExMatch(hk, "i)^~?\*(LButton|RButton|MButton|XButton1|XButton2|WheelUp|WheelDown|WheelLeft|WheelRight)$")
 	}
 
-;(a click or wheel turn of yours while it's locked: nothing done - swallowed)
-MouseLockSwallow()
+;(a click or wheel turn of yours while it's locked: nothing done - swallowed. *: v2 passes the hotkey's name)
+MouseLockSwallow(*)
 	{
 	}
 
@@ -931,9 +954,9 @@ MouseLockIdle()
 ;Who has it, in words (debug.log)
 MouseLockWhat(why)
 	{
-	mlNames := {round: "a battle round", click: "a click", turn: "a mouse turn while walking", route: "the potion route's click"
+	mlNames := V1Obj({round: "a battle round", click: "a click", turn: "a mouse turn while walking", route: "the potion route's click"
 		, login: "a login click", walker: "a walker click", stats: "a click in the spellbook", lore: "lore farming"
-		, dev: "dev mode's loop", quicksell: "quick selling the backpack"}
+		, dev: "dev mode's loop", quicksell: "quick selling the backpack"})
 	return mlNames.Has(why) ? mlNames[why] : why
 	}
 
@@ -942,26 +965,30 @@ MouseLockSay(kind, msg, every := 0)
 	{
 	if (every && MouseLockSaid.Has(kind) && A_TickCount - MouseLockSaid[kind] < every)
 		return
-	MouseLockSaid[kind] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'MouseLockSaid.Push(<val>)'
+	MouseLockSaid[kind] := A_TickCount
 	DebugLog(msg (every ? " (said once a minute)" : ""))
 	}
 
 ;The bot closing (OnExit): your mouse let go first
 MouseLockOnExit(reason, code)
 	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	if (MouseLocked)
 		MouseLockRelease("the bot is closing")
 	BlockInput("MouseMoveOff")
 	BlockInput("Off")
 	}
 
-;An error the script didn't expect (OnError): your mouse let go before its box shows (and the bot's thread stops)
-MouseLockOnError(e)
+;An error the script didn't expect (OnError): your mouse let go before its box shows (and the bot's thread stops).
+;(*: v2 passes the error's Mode too)
+MouseLockOnError(e, *)
 	{
+	global MouseLockOwners, MouseLockHold, MouseLockClicks ; (v1 globals it sets)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	if (MouseLocked)
 		MouseLockRelease("an error in the script (" (IsObject(e) ? e.Message " at line " e.Line : e) ")")
 	else if (IsObject(MouseLockOwners))
-		MouseLockOwners := {}, MouseLockHold := 0
+		MouseLockOwners := V1Obj(), MouseLockHold := 0
 	BlockInput("MouseMoveOff")
 	BlockInput("Off")
 	if (MouseLockClicks)
@@ -983,7 +1010,7 @@ CardHitFirst()
 CardBoostOk()
 	{
 	cardMax := Stat("boostmax")
-	if (cardMax <= 0 || BoostRun < cardMax || !CardHitReady())
+	if (cardMax <= 0 || V1Lt(BoostRun, cardMax) || !CardHitReady()) ; (v1: BoostRun blank till the first look out of battle - a bot started in a battle - compared as text: "" < 2 true)
 		return true
 	DebugLog("  " BoostRun " boost" (BoostRun = 1 ? "" : "s") " since the last hit (boostmax " cardMax "): hitting now")
 	return false
@@ -1010,18 +1037,20 @@ CardHitCanGo(name)
 CastBestHit()
 	{
 	global
-	local cbhP
+	;(_title: the temporary a literal goes to UseHit's ByRef in - v1's was no variable at all, not a global)
+	local cbhP, _title
 	cbhP := PlanHit
 	if (BoostMemOk && RegExMatch(cbhP, "^hit[1-4]$") && (cbhP != "hit4" || BossChoosen = 1))
-		if (%cbhP% == 1 && UseHit(cbhP, %cbhP%, hitschool))
+		;(&%cbhP%: v1 passed the slot's own variable - hit1..hit4 - to UseHit's ByRef, not a copy)
+		if (%cbhP% == 1 && UseHit(&cbhP, &%cbhP%, &hitschool))
 			{
 			BoostRun := 0
 			return true
 			}
-	if ((hit4 == 1) && (BossChoosen = 1) && UseHit("hit4", hit4, hitschool))
-		|| ((hit3 == 1) && UseHit("hit3", hit3, hitschool))
-		|| ((hit2 == 1) && UseHit("hit2", hit2, hitschool))
-		|| ((hit1 == 1) && UseHit("hit1", hit1, hitschool))
+	if ((hit4 == 1) && (BossChoosen = 1) && UseHit(&_title := "hit4", &hit4, &hitschool))
+		|| ((hit3 == 1) && UseHit(&_title := "hit3", &hit3, &hitschool))
+		|| ((hit2 == 1) && UseHit(&_title := "hit2", &hit2, &hitschool))
+		|| ((hit1 == 1) && UseHit(&_title := "hit1", &hit1, &hitschool))
 		|| CastLearnedHit()
 		{
 		BoostRun := 0
@@ -1037,7 +1066,8 @@ DiscardSwitchedOff()
 	{
 	global
 	local did := 0, dsoK
-	if (Stat("discardunused") != 1 || DiscardOffCount >= Stat("discardmax") || PlayerActing())
+	;(V1Ge: DiscardOffCount is blank till the first round's start sets it - v1 compared that as text: not >= )
+	if (Stat("discardunused") != 1 || V1Ge(DiscardOffCount, Stat("discardmax")) || PlayerActing())
 		return 0
 	;(each school's blades and traps found, the group's - KillCalc.ahk BoostSearch: SbFound, GbFound)
 	if (!Stat("useblades"))
@@ -1071,9 +1101,9 @@ DiscardSwitchedOff()
 			did += DiscardOffOne("potent", "resources")
 		}
 	if (!Stat("usebubble") && bubble == 1)
-		did := DateAdd((did != "" ? did : A_Now), DiscardOffOne("bubble", 'hitschool'))
+		did += DiscardOffOne("bubble", hitschool)
 	if (!Stat("useaura") && aura == 1)
-		did := DateAdd((did != "" ? did : A_Now), DiscardOffOne("aura", 'hitschool'))
+		did += DiscardOffOne("aura", hitschool)
 	if (!Stat("usetower") && tower == 1)
 		did += DiscardOffOne("tower", "resources")
 	if (!Stat("usereshuffle") && reshuffle == 1)
@@ -1086,10 +1116,12 @@ DiscardSwitchedOff()
 ;One card of a kind switched off discarded, while the round's discardmax allows (DiscardOffCount)
 DiscardOffOne(title, dir)
 	{
-	if (DiscardOffCount >= Stat("discardmax"))
+	global DiscardOffCount ; (v1 globals it sets)
+	if (V1Ge(DiscardOffCount, Stat("discardmax")))
 		return 0
 	n := DiscardCard(title, dir)
-	DiscardOffCount += n
+	;(v1's DiscardOffCount += n on a line of its own: a blank counted as 0)
+	DiscardOffCount := V1N(DiscardOffCount) + V1N(n)
 	return n
 	}
 
@@ -1121,6 +1153,7 @@ CfgGuiEscape()
 ;###############  V1toV2 FUNCS  ###############
 CfgSave(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	;(not halfway through while the bot writes PlayerStats.txt itself: StatsSet is Critical too)
 	Critical()
 	CfgSaveNow()
@@ -1139,14 +1172,17 @@ CfgOpenFile(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	return
 }
 ;##############################################
-CfgViewToggle() { ; V1toV2: Lbl->Func
+CfgViewToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
-	CfgPending := map()
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	local v1Own := V1Thread()  ; (v1: a button's thread had its own ErrorLevel - V1Do's IniWrite, CfgShow set it)
+	CfgPending := V1Obj()
 	for CfgVKey, CfgVC in CfgCtls
 		{
-		CfgVVal := ogc%CfgVC%.Value
+		;(v1: GuiControlGet by the control's hwnd)
+		CfgVVal := GuiCtrlFromHwnd(CfgVC).Value
 		if (CfgVVal != CfgShownVals[CfgVKey])
-			CfgPending[CfgVKey] := CfgVVal ;  V1toV2: Invalid Index errors?, try 'CfgPending.Push(<val>)'
+			CfgPending[CfgVKey] := CfgVVal
 		}
 	;(to the simple view with changes to settings it doesn't show: saved or undone first - they'd be lost)
 	CfgVHid := 0
@@ -1155,18 +1191,18 @@ CfgViewToggle() { ; V1toV2: Lbl->Func
 			CfgVHid += CfgSimpleKeys().HasKey(CfgVKey) ? 0 : 1
 	if (CfgVHid)
 		{
-		ogcTextCfgNote.Value := "Save first - " CfgVHid " change(s) to settings the simple view doesn't show"
+		Cfg["CfgNote"].Value := "Save first - " CfgVHid " change(s) to settings the simple view doesn't show"
 		CfgPending := ""
 		return
 		}
 	CfgVCount := CfgPending.Count
 	WinGetPos(&CfgReopenX, &CfgReopenY, , , "ahk_id " CfgHwnd)
-	IniWrite(CfgSimple ? 0 : 1, A_ScriptDir "\dashboard.ini", "view", "settings")
+	V1Do(IniWrite, CfgSimple ? 0 : 1, A_ScriptDir "\dashboard.ini", "view", "settings")
 	Try Cfg.Destroy()
 	CfgHwnd := 0
 	CfgShow()
 	if (CfgVCount)
-		ogcTextCfgNote.Value := CfgVCount " change(s) not saved yet - Save to use them"
+		Cfg["CfgNote"].Value := CfgVCount " change(s) not saved yet - Save to use them"
 	return
 }
 ;##############################################
@@ -1181,3 +1217,17 @@ CfgGuiEscape(*) { ; V1toV2: Lbl->Func
 	CfgHwnd := 0
 	return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+SettingsBlank()
+	{
+	global CfgHwnd := "", CfgHelpText := "", CfgNote := "", CfgCtls := "", CfgShownVals := "", CfgHelps := "", CfgHelpShown := "", CfgSimple := ""
+	global CfgPending := "", CfgReopenX := "", CfgReopenY := "", MouseHomeX := "", MouseHomeY := "", MouseHomeSet := "", MouseHomeAt := ""
+	global DiscardOffCount := "", MouseLockOwners := "", MouseLockAt := "", MouseLockTtl := "", MouseLocked := "", MouseLockClicks := ""
+	global MouseLockFrom := "", MouseLockTo := "", MouseLockPre := "", MouseLockSpan := "", MouseLockHold := "", MouseLockSaid := ""
+	global MouseLockWhy := "", MouseLockReady := "", MouseLockOnAt := "", MouseLockTicking := "", MouseLockOwnAt := "", MouseLockOwnTtl := ""
+	global MouseLockRenewAt := "", PlanHit := "", BoostMemOk := "", BossChoosen := "", hit4 := "", hit3 := "", hit2 := "", hit1 := "", SbFound := ""
+	global GbFound := "", blade3 := "", blade4 := "", sharpen := "", trap3 := "", feint := "", potent := "", bubble := "", hitschool := "", aura := ""
+	global tower := "", reshuffle := ""
+	}

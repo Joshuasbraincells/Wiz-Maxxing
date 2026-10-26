@@ -4,7 +4,8 @@
 # ..\AutoQuester\resources\ from there.
 # Easiest: double-click build.cmd (it runs this with PowerShell's script blocking turned off for this run).
 # Or:      powershell -ExecutionPolicy Bypass -File build.ps1
-# Needs AutoHotkey v1.1 with its compiler (the scripts are v1.1; https://www.autohotkey.com/download/1.1/).
+# Needs AutoHotkey v2 and its compiler, Ahk2Exe (the scripts are v2 - ported from v1.1; https://www.autohotkey.com/).
+# Ahk2Exe isn't in the v2 installer: open AutoHotkey's Dash once and pick 'Compile' to get it.
 $ErrorActionPreference = 'Stop'
 
 # ---- where AutoHotkey is: the registry's install folder, then the usual places
@@ -15,27 +16,25 @@ foreach ($key in 'HKLM:\SOFTWARE\AutoHotkey', 'HKLM:\SOFTWARE\WOW6432Node\AutoHo
 $roots += "$env:ProgramFiles\AutoHotkey", "${env:ProgramFiles(x86)}\AutoHotkey", "$env:LOCALAPPDATA\Programs\AutoHotkey"
 $roots = $roots | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
 if (-not $roots) {
-    throw "AutoHotkey isn't installed. Install AutoHotkey v1.1 (it includes the compiler): https://www.autohotkey.com/download/1.1/ - or skip building: the ready-built exes are on the GitHub Releases page."
+    throw "AutoHotkey isn't installed. Install AutoHotkey v2 (https://www.autohotkey.com/), then open its Dash and pick 'Compile' once to get the compiler - or skip building: the ready-built exes are on the GitHub Releases page."
 }
 
 # ---- the compiler
 $compiler = $roots | ForEach-Object { Join-Path $_ 'Compiler\Ahk2Exe.exe' } | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $compiler) {
-    throw "AutoHotkey is installed ($($roots -join ', ')) but not its compiler (Compiler\Ahk2Exe.exe). Install AutoHotkey v1.1 from https://www.autohotkey.com/download/1.1/ (the compiler comes with it), or with AutoHotkey v2 open its Dash and pick 'Compile' once to get the compiler."
+    throw "AutoHotkey is installed ($($roots -join ', ')) but not its compiler (Compiler\Ahk2Exe.exe). Open AutoHotkey v2's Dash and pick 'Compile' once to get the compiler."
 }
 
-# ---- a v1.1 base to build on: the v1 installer's .bin, else a v1.1 AutoHotkeyU64.exe (the v2 installer puts
-# v1.1 in a v1.1.x.x folder). Not v2's AutoHotkey64.exe: these scripts are v1.1
+# ---- a v2 base to build on: AutoHotkey64.exe 2.x (the v2 installer puts it in v2\ - a v2.x.y folder when
+# several are installed). Not v1.1's AutoHotkeyU64.exe / Unicode 64-bit.bin: these scripts are v2
 $base = $null
 foreach ($r in $roots) {
-    $bin = Join-Path $r 'Compiler\Unicode 64-bit.bin'
-    if (Test-Path $bin) { $base = $bin; break }
-    $v1 = Get-ChildItem -Path $r -Filter 'AutoHotkeyU64.exe' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
-        Where-Object { $_.VersionInfo.FileVersion -like '1.1*' } | Sort-Object { [version]($_.VersionInfo.FileVersion -replace '[^\d.]', '') } -Descending | Select-Object -First 1
-    if ($v1) { $base = $v1.FullName; break }
+    $v2 = Get-ChildItem -Path $r -Filter 'AutoHotkey64.exe' -Recurse -Depth 1 -ErrorAction SilentlyContinue |
+        Where-Object { $_.VersionInfo.FileVersion -like '2.*' } | Sort-Object { [version]($_.VersionInfo.FileVersion -replace '[^\d.]', '') } -Descending | Select-Object -First 1
+    if ($v2) { $base = $v2.FullName; break }
 }
 if (-not $base) {
-    throw "Only AutoHotkey v2 is installed - these scripts are AutoHotkey v1.1. Install v1.1 too (https://www.autohotkey.com/download/1.1/; it sits alongside v2), then run this again."
+    throw "Only AutoHotkey v1.1 is installed - these scripts are AutoHotkey v2. Install v2 too (https://www.autohotkey.com/; it sits alongside v1.1), then run this again."
 }
 "Compiler: $compiler"
 "Base:     $base"

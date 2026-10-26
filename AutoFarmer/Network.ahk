@@ -32,14 +32,16 @@ return
 NetTick()
 	{
 	static wasOn := 0, schoolAt := 0, school := "", busy := 0
-	if (busy || !VisionOn || !IsFunc("VisionGet"))
+	global NetState, NetWhy, NetPeers, NetStartAt, NetRefresh, NetSel ; (v1 globals it sets)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	if (busy || !VisionOn || !V1IsFunc("VisionGet"))
 		return
 	netOn := Stat("neton") ? 1 : 0
 	;(never on: the helper isn't asked at all - no sockets, no firewall question)
 	if (!netOn && !wasOn)
 		{
 		NetState := "off", NetWhy := "Settings > NETWORK > neton", NetPeers := []
-		if (IsFunc("DashNetFill"))
+		if (V1IsFunc("DashNetFill"))
 			DashNetFill.Call()
 		return
 		}
@@ -52,14 +54,15 @@ NetTick()
 	bot := (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
 	doing := !BotOn ? "off" : inbattle = 1 ? "in a battle" : WkLoading ? "loading" : PlayerActive ? "you're playing"
 		: !Walking ? "walking off (" HkText("walk") ")" : WkArrived = 7 ? "collecting" : "walking"
-	see := IsObject(DashSees) ? DashSees : {}
+	see := IsObject(DashSees) ? DashSees : V1Obj()
 	hp := RegExReplace(see.hp, "\s*\(.*")
 	;(the bot picked - fetched by the helper's own thread only while the Network tab's up)
-	shown := IsFunc("DashNetShown") && DashNetShown.Call()
-	q := "/net?on=" netOn "&sel=" (shown ? NetSel : "") "&refresh=" (NetRefresh ? 1 : 0) "&port=" Round(Stat("netport")) "&pin=" Round(Stat("netpin")) "&pc=" NavUri(A_ComputerName)
+	shown := V1IsFunc("DashNetShown") && DashNetShown.Call()
+	;(v1: Round of a setting that isn't a number - 0)
+	q := "/net?on=" netOn "&sel=" (shown ? NetSel : "") "&refresh=" (NetRefresh ? 1 : 0) "&port=" V1Round(Stat("netport")) "&pin=" V1Round(Stat("netpin")) "&pc=" NavUri(A_ComputerName)
 		. "&ver=" NavUri(BotVersion()) "&wiz=" NavUri(OwnName()) "&school=" school "&zone=" NavUri(WalkZone())
 		. "&bot=" bot "&pfm=" (PlayForMe ? 1 : 0) "&doing=" NavUri(doing) "&hp=" NavUri(hp) "&mana=" NavUri(see.mana)
-		. "&deaths=" (IsObject(DashN) && DashN.deaths ? DashN.deaths : 0) "&dall=" (IsFunc("DashDeathsAll") ? DashDeathsAll.Call() : 0)
+		. "&deaths=" (IsObject(DashN) && DashN.deaths ? DashN.deaths : 0) "&dall=" (V1IsFunc("DashDeathsAll") ? DashDeathsAll.Call() : 0)
 		. "&up=" Round((A_TickCount - NetStartAt) / 1000) "&status=" NavUri(SubStr(StatusText, 1, 120)) "&last=" NavUri(SubStr(NetLastLine, 1, 160))
 		. "&front=" (GameActive() ? 1 : 0) "&gx=" GameLeft "&gy=" GameTop "&gw=" GameW "&gh=" GameH
 	NetRefresh := 0
@@ -70,20 +73,21 @@ NetTick()
 		return
 		}
 	peers := []
+	;(v2 port: a field the line hasn't - V1At - was blank in v1)
 	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f[1] = "net")
 			{
-			if (NetState != f[2] || NetWhy != f[3])
-				DebugLog("Network: " f[2] (f[3] != "" ? " - " f[3] : ""))
-			NetState := f[2], NetWhy := f[3]
+			if (NetState != V1At(f, 2) || NetWhy != V1At(f, 3))
+				DebugLog("Network: " V1At(f, 2) (V1At(f, 3) != "" ? " - " f[3] : ""))
+			NetState := V1At(f, 2), NetWhy := V1At(f, 3)
 			}
 		else if (f[1] = "peer" && f.Length >= 19)
-			peers.Push({id: f[2], ip: f[3], age: f[4], pc: f[5], ver: f[6], wiz: f[7], school: f[8], zone: f[9], bot: f[10]
-				, pfm: f[11], doing: f[12], hp: f[13], mana: f[14], deaths: f[15], dall: f[16], up: f[17], status: f[18], last: f[19]})
+			peers.Push(V1Obj({id: f[2], ip: f[3], age: f[4], pc: f[5], ver: f[6], wiz: f[7], school: f[8], zone: f[9], bot: f[10]
+				, pfm: f[11], doing: f[12], hp: f[13], mana: f[14], deaths: f[15], dall: f[16], up: f[17], status: f[18], last: f[19]}))
 		else if (f[1] = "cmd")
-			NetDo(f[2], f[3])
+			NetDo(V1At(f, 2), V1At(f, 3))
 		}
 	NetPeers := peers
 	;(the pick by its PC: a bot started again has a new id)
@@ -94,7 +98,7 @@ NetTick()
 			if (p.pc = NetSelPc)
 				NetSel := p.id
 		}
-	if (IsFunc("DashNetFill"))
+	if (V1IsFunc("DashNetFill"))
 		DashNetFill.Call()
 	;(the bot picked on the Network tab: its log and picture as the helper's fetched them - nothing waited for here)
 	if (NetSel != "" && shown)
@@ -115,7 +119,7 @@ NetFetchPicked()
 	if (ans = "")
 		{
 		why := RegExReplace(VisionErr, "^ERR\s*")
-		if (IsFunc("DashNetShow"))
+		if (V1IsFunc("DashNetShow"))
 			DashNetShow.Call("", "", why != "" ? why : "The vision helper didn't answer")
 		return
 		}
@@ -134,13 +138,14 @@ NetFetchPicked()
 	;(the same picture as before: not loaded again)
 	if (at != "" && at = NetSnapAt && text = "")
 		return
-	if (IsFunc("DashNetShow"))
+	if (V1IsFunc("DashNetShow"))
 		DashNetShow.Call(text, pic != "" && FileExist(pic) ? pic : "", why)
 	}
 
 ;A command from another bot on the network (netmon.py checked its PIN): done here, and said in the log
 NetDo(c, from)
 	{
+	global PlayForMe ; (v1 globals it sets)
 	who := from != "" ? from : "another PC"
 	if (c = "on" && !BotOn)
 		DebugLog("Network: " who " turned the bot on"), BotToggle()
@@ -174,21 +179,26 @@ NetSend(c)
 	}
 
 ;Seconds as "3 h 20 m" / "4 m" / "12 s"
+;(v2 port: a peer's age as the network sent it - v1's Round of a blank or text: 0)
 NetAge(s)
 	{
-	s := Round(s)
+	s := V1Round(s)
 	return s >= 3600 ? (s // 3600) " h " Mod(s // 60, 60) " m" : s >= 60 ? (s // 60) " m" : s " s"
 	}
 
-;###############  V1toV2 FUNCS  ###############
-NetTick() { ; V1toV2: Lbl->Func
+;###############  v1's labels, as functions  ###############
+NetRestartNow() { ; (v1: a label - its code ran in the global scope)
 global
-NetTick()
-return
-}
-;##############################################
-NetRestartNow() { ; V1toV2: Lbl->Func
-global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 BotRestart()
 return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+NetworkBlank()
+	{
+	global NetPeers := "", NetState := "", NetWhy := "", NetLastLine := "", NetSel := "", NetLogAt := "", NetSnapAt := "", NetStartAt := ""
+	global NetSelPc := "", NetRefresh := "", NetHelp := "", NetOnBtn := "", NetOffBtn := "", NetPfmBtn := "", NetRestartBtn := "", NetRefreshBtn := ""
+	global NetStatus := "", NetList := "", NetLog := "", NetPic := "", NetPicNote := "", DashNetId := "", DashNetCmd := ""
+	}

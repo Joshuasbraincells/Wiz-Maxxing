@@ -1,7 +1,18 @@
 #Warn Unreachable, Off
-#Requires Autohotkey v2.0
+#Requires AutoHotkey v2.0
+V1Start(), AutofarmerBlank(), KillCalcBlank(), ReconnectBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+PicScaleBlank(), StatsReadBlank(), VisionBlank(), CardLearnBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+PotionsBlank(), FleeBlank(), DrawBlank(), EnemySpellsBlank(), PartyBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+SettingsBlank(), AlertsBlank(), DashboardBlank(), BugReportBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+DungeonsBlank(), CollectBlank(), NetworkBlank(), DecksBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+QuickSellBlank(), HotkeysBlank(), SpellsBlank(), WalkerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+MouseSteerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
+;(v1: Settings.ahk's #MaxHotkeysPerInterval 1000 - a directive, in force from the start; v2's default is 70 in 2 s.
+;v1's other defaults - SendMode Event, SetTitleMatchMode 1, CoordMode Window: V1Start)
+A_MaxHotkeysPerInterval := 1000
 #SingleInstance force
 
 ;All the pictures are found relative to this folder, however the script was started (shortcut, editor, ...)
@@ -26,10 +37,10 @@ CoordMode("ToolTip", "Screen")
 ;(the keys out of the box - yours to change on the dashboard's Keys tab: Hotkeys.ahk makes them, these labels run)
 ;Disconnected: it clicks the game's RECONNECT, and if the game closes it can start it and log back in
 ;(Reconnect.ahk). Tray menu: "Auto-reconnect on/off" and "Set Wizard101 login..." (the login it uses then)
-OnExit("WalkerQuit")
+OnExit(WalkerQuit)
 ;No standard tray menu: its "Pause Script" would freeze the walker with a key held down
 Tray := A_TrayMenu
-Tray.Delete() ; V1toV2: not 100% replacement of NoStandard, Only if NoStandard is used at the beginning
+Tray.Delete() ; (v1: Menu, Tray, NoStandard - only the standard items are there yet)
 ;(the version, on top - not a command)
 Tray.Add("Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion()), MenuNothing)
 Tray.Disable("Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion()))
@@ -197,25 +208,6 @@ StartBot:
 StartBot()
 return
 
-;Checks if in battle
-TestRound:
-TestRound()
-return
-
-RoundStart:
-RoundStart()
-return
-
-;Checks who's hammer
-TestHammer:
-TestHammer()
-return
-FindCards:
-FindCards()
-return
-EndRound:
-EndRound()
-Return
 	
 ;Functions
 ;You're playing: a key, a click or a mouse move of yours (not the bot's own, nor what the mouse lock swallowed: UserIdle
@@ -224,6 +216,7 @@ Return
 PlayerActing()
 	{
 	static logged := 0
+	global PlayerActive ; (v1 globals it sets)
 	secs := Stats.Has("handsoff") ? Stats["handsoff"] : 3
 	acting := (HandsOffOn() && secs > 0 && UserIdle() < secs * 1000)
 	;(the bot's own hotkeys aren't you playing: the key itself, and for Alt+1 / Alt+2 / Windows+3 the click
@@ -234,7 +227,7 @@ PlayerActing()
 		;own is the one before it. Your last input as UserIdle has it: what the lock swallowed isn't you)
 		hkNow := A_ThisHotkey, keyAt := A_TickCount - A_TimeSinceThisHotkey
 		if (MouseLockIsKey(hkNow))
-			hkNow := A_PriorHotkey, keyAt := A_TickCount - A_TimeSincePriorHotkey
+			hkNow := A_PriorHotkey, keyAt := A_TickCount - (A_TimeSincePriorHotkey = "" ? -1 : A_TimeSincePriorHotkey)  ; (v1: -1 with no prior hotkey - v2: blank)
 		lastInput := A_TickCount - UserIdle()
 		if (hkNow != "" && lastInput >= keyAt - 50 && lastInput <= keyAt + (HkIsAny(hkNow, "boss,boost,player") ? 11000 : 600))
 			acting := false
@@ -250,9 +243,9 @@ PlayerActing()
 		logged := 0
 		;(the walker starts its watch afresh: you may have moved, and the time you played isn't it being stuck - a sigil's
 		;wait goes on: WalkResume)
-		if (IsFunc("WalkResume"))
+		if (V1IsFunc("WalkResume"))
 			WalkResume.Call()
-		else if (IsFunc("WalkReset"))
+		else if (V1IsFunc("WalkReset"))
 			WalkReset.Call()
 		}
 	PlayerActive := acting
@@ -262,6 +255,7 @@ PlayerActing()
 ;The bot on / off (F6, the tray menu, the dashboard's button): off, the main loop does nothing; keys held let go
 BotToggle()
 	{
+	global BotOn, BotEverOn, PlayerTookRound, BossChoosen, DeckBoss ; (v1 globals it sets)
 	BotOn := !BotOn
 	if (BotOn)
 		{
@@ -271,10 +265,10 @@ BotToggle()
 		if (inbattle == 1)
 			PlayerTookRound := 1, BossChoosen := 0, DebugLog("  (turned on in a battle: no kill check till it ends - " HkText("boss") " the boss again to put traps on it, else they go on the enemy with the most health)")
 		;(the walker starts afresh: the wizard may have moved meanwhile)
-		if (IsFunc("WalkReset"))
+		if (V1IsFunc("WalkReset"))
 			WalkReset.Call()
 		DebugLog("Bot on (" HkText("bot") ") - battles, quest walking and potions")
-		TrayTip("Wizard101 bot", "On - battles, "4, 1")
+		TrayTip("On - battles, quest walking and potions. " HkText("bot") " pauses it.", "Wizard101 bot", 1)
 		}
 	else
 		{
@@ -286,7 +280,7 @@ BotToggle()
 			DebugLog("Deck: no boss ahead now - " DeckBoss.name " (the bot's off)"), DeckBoss := ""
 		DebugLog("Bot off (" HkText("bot") ") - it does nothing till " HkText("bot") " again")
 		SpeedSet(0, "bot off", true)
-		TrayTip("Wizard101 bot", "Off - the bot does nothing till you press " HkText("bot") " again.", 1)
+		TrayTip("Off - the bot does nothing till you press " HkText("bot") " again.", "Wizard101 bot", 1)
 		}
 	BotOnShow()
 	}
@@ -294,24 +288,18 @@ BotToggle()
 ;A restart (Windows+1, Alt+Esc, the tray menu) that keeps the bot off or in standby - Reload drops the arguments
 BotRestart()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	arg := (BotStandby && !BotEverOn) ? "/standby" : (!BotOn ? "/off" : "")
 	if (arg = "")
 		{
 		Reload()
 		return
 		}
+	;(v1: Run, ..., UseErrorLevel - ErrorLevel "ERROR" when it couldn't start it)
 	if (A_IsCompiled)
-	{
-		{   ErrorLevel := "ERROR"
-		   Try ErrorLevel := Run("`"" A_ScriptFullPath "`" /restart " arg, A_ScriptDir, "", )
-		}
-	}
+		ErrorLevel := V1Run("`"" A_ScriptFullPath "`" /restart " arg, A_ScriptDir)
 	else
-	{
-		{   ErrorLevel := "ERROR"
-		   Try ErrorLevel := Run("`"" A_AhkPath "`" /restart `"" A_ScriptFullPath "`" " arg, A_ScriptDir, "", )
-		}
-	}
+		ErrorLevel := V1Run("`"" A_AhkPath "`" /restart `"" A_ScriptFullPath "`" " arg, A_ScriptDir)
 	}
 
 ;Walker.ahk's check before it presses a key or clicks for the game's menu: the bot on (F6) - or a potion run you
@@ -328,7 +316,7 @@ BotOnShow()
 		Tray.Check(HkMenu("bot"))
 	else
 		Tray.Uncheck(HkMenu("bot"))
-	if (IsFunc("DashBotShow"))
+	if (V1IsFunc("DashBotShow"))
 		DashBotShow.Call(BotOn)
 	}
 
@@ -345,12 +333,13 @@ WatchShow()
 ;battle round's Pass; look: if not, looked for on screen now too (the main loop's own look can be a while ago)
 BotWorldSeenSince(since, look := false)
 	{
+	global BookSeenAt ; (v1 globals it sets)
 	if (BookSeenAt > since || PassSeenAt > since)
 		return true
 	if (!look)
 		return false
 	UpdateGameRect()
-	ErrorLevel := !ImageSearch(&bwX, &bwY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
+	V1ImageSearch(&bwX, &bwY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
 	if (ErrorLevel = 0)
 		{
 		BookSeenAt := A_TickCount
@@ -384,10 +373,10 @@ GameFrontToggle()
 	;(the setting itself switched - not what Play for me makes of it)
 	frontOn := !(Stats.Has("gamefront") && Stats["gamefront"] = 1)
 	if (!StatsSet([["gamefront", frontOn ? 1 : 0]]))
-		Stats["gamefront"] := frontOn ? 1 : 0 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats["gamefront"] := frontOn ? 1 : 0
 	GameFrontShow()
 	DebugLog("Bring Wizard101 to the front: " (frontOn ? "on - when the quest arrow shows or a battle round is up, and you've left the keyboard and mouse alone 3 s" : "off"))
-	TrayTip("Wizard101 bot", "Bring Wizard101 to the front: " (frontOn ? "ON - when there's something to do (the quest arrow, a battle round)." : "OFF - click into Wizard101 yourself."), 1)
+	TrayTip("Bring Wizard101 to the front: " (frontOn ? "ON - when there's something to do (the quest arrow, a battle round)." : "OFF - click into Wizard101 yourself."), "Wizard101 bot", 1)
 	}
 
 ;The tray menu's tick and the dashboard button's label
@@ -398,7 +387,7 @@ GameFrontShow()
 		Tray.Check("Bring Wizard101 to the front")
 	else
 		Tray.Uncheck("Bring Wizard101 to the front")
-	if (IsFunc("DashFrontShow"))
+	if (V1IsFunc("DashFrontShow"))
 		DashFrontShow.Call(frontOn)
 	}
 
@@ -409,11 +398,13 @@ GameFrontShow()
 GameToFront(why, idle := true, force := false)
 	{
 	static saidAt := 0
+	global ErrorLevel ; (v1 globals it sets)
 	if ((!GameFrontOn() && !force) || GameActive())
 		return GameActive()
 	if (idle && UserIdle() < 3000)
 		return false
-	WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+	;(v1: nothing when the game isn't there - v2 throws)
+	V1Try(WinActivate, "ahk_class " GameClass " ahk_exe " GameExe)
 	ErrorLevel := !WinWaitActive("ahk_class " GameClass " ahk_exe " GameExe, , 1)
 	front := GameActive()
 	if (A_TickCount - saidAt > 30000)
@@ -432,10 +423,10 @@ HandsOffToggle()
 	{
 	waitOn := !HandsOffOn()
 	if (!StatsSet([["handsoffon", waitOn ? 1 : 0]]))
-		Stats["handsoffon"] := waitOn ? 1 : 0 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats["handsoffon"] := waitOn ? 1 : 0
 	HandsOffShow()
 	DebugLog("Wait while I play: " (waitOn ? "on - the bot waits while you use the keyboard or mouse" : "off - the bot carries on while you play"))
-	TrayTip("Wizard101 bot", "Wait while I play: " (waitOn ? "ON - the bot waits while you use the keyboard or mouse." : "OFF - the bot carries on even while you play."), 1)
+	TrayTip("Wait while I play: " (waitOn ? "ON - the bot waits while you use the keyboard or mouse." : "OFF - the bot carries on even while you play."), "Wizard101 bot", 1)
 	}
 
 ;The tray menu's tick and the dashboard button's label
@@ -445,10 +436,11 @@ HandsOffToggle()
 ;kept: off at every start
 PlayForMeToggle()
 	{
+	global PlayForMe ; (v1 globals it sets)
 	PlayForMe := !PlayForMe
 	PlayForMeShow()
 	DebugLog("Play for me: " (PlayForMe ? "ON - every check for you is off: the bot takes the mouse and the game's window whenever it needs them (" HkText("bot") " stops it)" : "off - the bot waits for you and keeps its hands off while you play, as set"))
-	TrayTip("Wizard101 bot", PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. " HkText("bot") " stops it." : "Play for me is off: the bot waits for you again.", "PlayForMe ? 2 : 1")
+	TrayTip(PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. " HkText("bot") " stops it." : "Play for me is off: the bot waits for you again.", "Wizard101 bot", PlayForMe ? 2 : 1)
 	}
 
 ;The tray menu's tick and the dashboard's button (green while it's on)
@@ -458,7 +450,7 @@ PlayForMeShow()
 		Tray.Check("Play for me (leave it alone for days)")
 	else
 		Tray.Uncheck("Play for me (leave it alone for days)")
-	if (IsFunc("DashPlayShow"))
+	if (V1IsFunc("DashPlayShow"))
 		DashPlayShow.Call(PlayForMe)
 	;(Game to front's label too: Play for me brings the game up whatever it's set to)
 	GameFrontShow()
@@ -471,7 +463,7 @@ HandsOffShow()
 		Tray.Check("Wait while I play")
 	else
 		Tray.Uncheck("Wait while I play")
-	if (IsFunc("DashHandsShow"))
+	if (V1IsFunc("DashHandsShow"))
 		DashHandsShow.Call(waitOn)
 	}
 
@@ -517,6 +509,19 @@ MoveToCard(x, y)
 	;clicks swallowed now the pointer's on the game - MouseLockMoved)
 	MouseLockRenew()
 	top := ScreenY - Px(90), bottom := ScreenY + Px(80), above := ScreenY - Px(150)
+	;(v1: a spot not found is blank - MouseMove kept the mouse's own place for a blank coordinate, and a blank y, "less"
+	;than every number as text, went straight there)
+	if (x = "" || y = "")
+		{
+		MouseGetPos(&bx, &by)
+		if (y = "")
+			{
+			MouseMove(x = "" ? bx : x, by, MouseSpeedNow())
+			MouseLockMoved()
+			return
+			}
+		x := bx
+		}
 	if (y < top || y > bottom)
 		{
 		MouseMove(x, y, MouseSpeedNow())
@@ -555,7 +560,7 @@ BotVersion()
 	static v := "-"
 	if (v = "-")
 		{
-		v := FileRead(A_ScriptDir "\..\version.txt")
+		v := V1FileRead(A_ScriptDir "\..\version.txt")
 		v := Trim(v, " `t`r`n")
 		}
 	return v
@@ -568,7 +573,7 @@ UpdCheckNow()
 	updArg := UpdBotArgs(), updArg := updArg = "" ? "" : " " updArg
 	if (BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/check" updArg, A_ScriptDir "\.."))
 		return true
-	TrayTip("Wizard101 bot", "Couldn't start Wiz-Maxxing for the update check (error " A_LastError ").", 2)
+	TrayTip("Couldn't start Wiz-Maxxing for the update check (error " A_LastError ").", "Wizard101 bot", 2)
 	return false
 	}
 
@@ -602,7 +607,7 @@ UpdAuto()
 			}
 		;(the Updates button clicked meanwhile: closed for it as soon as it's out of battle - you asked)
 		nowAsked := IniRead(ini, "auto", "now", 0)
-		if (!UpdSafe(nowAsked := 1))
+		if (!UpdSafe(nowAsked = 1))
 			{
 			if (waitTag != ready)
 				DebugLog("Updates: " ready " is downloaded - the bot closes for it once out of battle, nothing's loading and you've left the keys and mouse alone a minute")
@@ -615,8 +620,8 @@ UpdAuto()
 			return
 			}
 		hand := UpdBotArgs()
-		IniWrite(hand, ini, "auto", "args")
-		IniWrite(1, ini, "auto", "handover")
+		V1Do(IniWrite, hand, ini, "auto", "args")
+		V1Do(IniWrite, 1, ini, "auto", "handover")
 		DebugLog("Updates: closing for " ready " - Wiz-Maxxing installs it and starts the bot again as it is now" (hand = "" ? "" : " (" hand ")"))
 		ExitApp()
 		}
@@ -627,8 +632,9 @@ UpdAuto()
 	tries := IniRead(ini, "auto", "tries", 0)
 	triedAt := IniRead(ini, "auto", "at", A_Space)
 	age := A_Now
-	age := DateDiff((age != "" ? age : A_Now), (triedAt != "" ? triedAt : A_Now), "Hours")
-	if (triedTag = upd.latest && age != "" && age < 6 && tries >= 3)
+	;(v1 EnvSub: a time that isn't one made age blank - v2's DateDiff throws)
+	age := V1Try(DateDiff, (age != "" ? age : A_Now), (triedAt != "" ? triedAt : A_Now), "Hours")
+	if (triedTag = upd.latest && age != "" && age < 6 && V1Ge(tries, 3))
 		{
 		if (gaveUpTag != upd.latest)
 			DebugLog("Updates: " upd.latest " didn't install by itself in 3 tries (updater.log) - left to the Updates button")
@@ -654,13 +660,14 @@ UpdReadyAlive(ini)
 	readyPid := IniRead(ini, "auto", "readypid", 0)
 	readyAt := IniRead(ini, "auto", "readyat", A_Space)
 	age := A_Now
-	age := DateDiff((age != "" ? age : A_Now), (readyAt != "" ? readyAt : A_Now), "Minutes")
+	;(v1 EnvSub: a time that isn't one made age blank - v2's DateDiff throws)
+	age := V1Try(DateDiff, (age != "" ? age : A_Now), (readyAt != "" ? readyAt : A_Now), "Minutes")
 	if (RegExMatch(readyPid, "^\d+$") && age != "" && age < 58)
 		for p in ComObjGet("winmgmts:").ExecQuery("SELECT CommandLine FROM Win32_Process WHERE ProcessId=" readyPid)
 			if (InStr(p.CommandLine, "/auto"))
 				return true
 	for i, k in ["ready", "readypid", "readyat", "now"]
-		IniDelete(ini, "auto", k)
+		V1Do(IniDelete, ini, "auto", k)
 	return false
 	}
 
@@ -716,7 +723,7 @@ UpdState()
 		ini := A_ScriptDir "\..\updater.ini"
 		latest := IniRead(ini, "latest", "tag", A_Space)
 		err := IniRead(ini, "latest", "err", A_Space)
-		state := {latest: Trim(latest), err: Trim(err), newer: Trim(latest) != "" && VersionCompare(Trim(latest), BotVersion()) > 0}
+		state := V1Obj({latest: Trim(latest), err: Trim(err), newer: Trim(latest) != "" && VersionCompare(Trim(latest), BotVersion()) > 0})
 		}
 	return state
 	}
@@ -731,7 +738,7 @@ Px(n)
 ;one if that set has no picture of its own for it (logged once)
 PicPath(rel)
 	{
-	static missing := {}
+	static missing := V1Obj()
 	if (PicDir != A_WorkingDir)
 		{
 		;(a made set: the picture made at its size, see PicMake)
@@ -741,13 +748,13 @@ PicPath(rel)
 		;A cut set without this picture: one made at its size from the other sets
 		if (!PicSets[PicSet].gen)
 			{
-			p := PicMake(rel, {dir: GenRoot "\ui" Round(UiScale, 3), scale: UiScale})
+			p := PicMake(rel, V1Obj({dir: GenRoot "\ui" Round(UiScale, 3), scale: UiScale}))
 			if (p != "" && FileExist(p))
 				return p
 			}
 		if (!missing.Has(PicDir "|" rel))
 			{
-			missing[PicDir "|" rel] := 1 ;  V1toV2: Invalid Index errors?, try 'missing.Push(<val>)'
+			missing[PicDir "|" rel] := 1
 			DebugLog("  (no " rel " at UI size " Round(UiScale, 3) " and none to make it from - using the main picture, which won't match at this size)")
 			}
 		}
@@ -759,6 +766,7 @@ PicPath(rel)
 UsePicSet(i, why := "")
 	{
 	static upsUsed := 0
+	global PicSet, PicDir, UiScale, HandHalf, HalfPitch ; (v1 globals it sets)
 	upsWas := upsUsed ? PicSet : "", upsUsed := 1
 	PicSet := i, PicDir := PicSets[i].dir, UiScale := PicSets[i].scale
 	HandHalf := Px(400), HalfPitch := Px(41)
@@ -769,14 +777,16 @@ UsePicSet(i, why := "")
 ;Finds the Wizard101 client area on screen so searches follow the window when it's moved or resized
 UpdateGameRect()
 	{
-	hwnd := WinGetID("A")
-	proc := WinGetProcessName("ahk_id " hwnd)
-	cls := WinGetClass("ahk_id " hwnd)
+	global GameLeft, GameTop, GameW, GameH, GameRight, GameBottom, ScreenX, ScreenY ; (v1 globals it sets)
+	;(v1: no such window - blank; v2 throws)
+	hwnd := V1Try(WinGetID, "A")
+	proc := V1Try(WinGetProcessName, "ahk_id " hwnd)
+	cls := V1Try(WinGetClass, "ahk_id " hwnd)
 	if (proc != GameExe) || (cls != GameClass)
 		{
 		;Active window isn't the game (e.g. one of our popups, or the game's short-lived D3DProxyWindow),
 		;use the top-most real Wizard101 window instead
-		gameHwnd := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
+		gameHwnd := V1Try(WinGetID, "ahk_class " GameClass " ahk_exe " GameExe)
 		if (!gameHwnd)
 			{
 			;Game not open: keep the last known position rather than measuring some other window
@@ -788,8 +798,8 @@ UpdateGameRect()
 		{
 		return
 		}
-	rect := Buffer(16, 0) ; V1toV2: if 'rect' is a UTF-16 string, use 'VarSetStrCapacity(&rect, 16)' and replace all instances of 'rect.Ptr' with 'StrPtr(rect)'
-	pt := Buffer(8, 0) ; V1toV2: if 'pt' is a UTF-16 string, use 'VarSetStrCapacity(&pt, 8)' and replace all instances of 'pt.Ptr' with 'StrPtr(pt)'
+	rect := Buffer(16, 0)
+	pt := Buffer(8, 0)
 	DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rect.Ptr)
 	DllCall("ClientToScreen", "Ptr", hwnd, "Ptr", pt.Ptr)
 	w := NumGet(rect, 8, "Int")
@@ -811,7 +821,8 @@ UpdateGameRect()
 
 TestSchool(class)
 	{
-	ErrorLevel := !ImageSearch(&schoolX, &schoolY, playerX - Px(100), playerY - Px(100), playerX + Px(250), playerY + Px(250), PicOpt(class "\" class ".png"))
+	global schoolX, schoolY, school ; (v1 globals it sets)
+	V1ImageSearch(&schoolX, &schoolY, V1Sub(playerX, Px(100)), V1Sub(playerY, Px(100)), V1Add(playerX, Px(250)), V1Add(playerY, Px(250)), PicOpt(class "\" class ".png"))
 	if (Errorlevel = 0)
 		{
 		school := class
@@ -824,10 +835,13 @@ TestSchool(class)
 Tri(type1, type2) 
 	{
 	global
-	visionHit := VisionFind("resources", type1 type2, typeX, typeY)
+	;(v2: the names %type2%2X / %type2%type make, and the card variables &%bladetype% / &%traptype% name - UseBlade,
+	;UseTrap - must exist: v1 made them by their names; PlanGroups' groups are elemental and spirit)
+	global blade2X, blade2Y, trap2X, trap2Y, elementalblade, spiritblade, elementaltrap, spirittrap
+	visionHit := VisionFind("resources", type1 type2, &typeX, &typeY)
 	if (visionHit = -1)
 		{
-		ErrorLevel := !ImageSearch(&typeX, &typeY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), PicOpt("resources\" type1 type2 ".png", CardTol))
+		V1ImageSearch(&typeX, &typeY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), PicOpt("resources\" type1 type2 ".png", CardTol))
 		visionHit := (ErrorLevel = 0)
 		}
 	if (visionHit = 1)
@@ -837,6 +851,9 @@ Tri(type1, type2)
 		;(the blade found names the blade kind, the trap found the trap kind - each by itself: an Elemental Blade in hand no
 		;longer stands for an Elemental Trap)
 		%type2%type := type1 type2
+		;(the card variable that names - blank till UseBlade / UseTrap set it, as v1's)
+		if (!IsSet(%type1 type2%))
+			%type1 type2% := ""
 		return true
 		} else 
 			{
@@ -846,6 +863,11 @@ Tri(type1, type2)
 
 ErrorBox(&funcN, &dir, &title)
 	{
+	;(v1: Log, Join and the Command* checks pass a dir and title nothing set - blank)
+	if (!IsSet(dir))
+		dir := ""
+	if (!IsSet(title))
+		title := ""
 	if (devmode == 1)
 		{
 		n1 := "Error in " . funcN . " Function"
@@ -869,14 +891,20 @@ ErrorBox(&funcN, &dir, &title)
 Find(title, &card, &X, &Y, &dir)
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	;(the vision helper, if it's running: 1 found, 0 not in hand)
-	visionHit := VisionFind(dir, title, X, Y)
+	visionHit := VisionFind(dir, title, &X, &Y)
 	if (visionHit >= 0)
 		{
 		card := visionHit
+		;(v1: X, Y as they were - not set yet: blank)
+		if (!IsSet(X))
+			X := ""
+		if (!IsSet(Y))
+			Y := ""
 		return
 		}
-	ErrorLevel := !ImageSearch(&X, &Y, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(150), PicOpt(dir "\" title ".png", CardTol))
+	V1ImageSearch(&X, &Y, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(150), PicOpt(dir "\" title ".png", CardTol))
 	if (Errorlevel == 0)	
 		{
 		card := 1
@@ -885,15 +913,15 @@ Find(title, &card, &X, &Y, &dir)
 			card := 0
 			} else if (Errorlevel == 2)
 				{
-				ErrorBox(&"Find", &dir, &title)
+				ErrorBox(&_funcn := "Find", &dir, &title)
 				}
 	}
 	
-Click(&title, &click, &dir)
+FindAndClick(&title, &click, &dir) ; (v1: Click - renamed: a v2 script function named Click would take over every file's mouse clicks)
 	{
 	global
 	Find(title, &click, &clickX, &clickY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" click " at " clickX - GameLeft "," clickY - GameTop)
+	DebugLog("  Click " title ": found=" click " at " V1Sub(clickX, GameLeft) "," V1Sub(clickY, GameTop))  ; (v1: A_ThisFunc - the function was Click)
 	if (click == 1)
 		{
 		ClickAt(clickX + Px(5), clickY + Px(5), 100)
@@ -915,6 +943,7 @@ Click(&title, &click, &dir)
 ClickBubble()
 	{
 	global
+	local _title ; (v1 passed these literals as temporaries: locals here, not globals)
 	local cbKey, cbAt, cbName, cbSlot
 	cbKey := BoostKey("bubble", hitschool)
 	if (IsObject(BoostMemOnly) && BoostMemOnly.Has(cbKey))
@@ -941,14 +970,14 @@ ClickBubble()
 	if (BubbleUp != "" && cbSlot = BubbleUp)
 		{
 		if (IsObject(BoostSaid) && !BoostSaid.Has("up|" BubbleUp))
-			BoostSaid["up|" BubbleUp] := 1, DebugLog("  " cbKey ": its picture is " cbSlot "'s, the global the bot put up this battle - not cast again") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			BoostSaid["up|" BubbleUp] := 1, DebugLog("  " cbKey ": its picture is " cbSlot "'s, the global the bot put up this battle - not cast again")
 		bubble := 0
 		return false
 		}
 	;(the game's name of the global the picture is on - the one every global in hand has, else the slot's learned card's
 	;(KillCalc.ahk BubbleHandName) - before the hand changes; not known: the global known up stays known, never blanked)
 	cbName := BubbleHandName()
-	if (!Click(&"bubble", &bubble, &hitschool))
+	if (!FindAndClick(&_title := "bubble", &bubble, &hitschool))
 		return false
 	if (cbName != "")
 		BubbleUp := cbName
@@ -963,8 +992,9 @@ ClickBubble()
 ClickPass()
 	{
 	global
+	local _title, _dir ; (v1 passed these literals as temporaries: locals here, not globals)
 	local cpX, cpY
-	if (Click(&"pass", &pass, &"resources"))
+	if (FindAndClick(&_title := "pass", &pass, &_dir := "resources"))
 		return true
 	if (PassButtonAt(&cpX, &cpY) != 0)
 		return false
@@ -979,7 +1009,7 @@ UseOnSelf(&title, &card, &dir)
 	{
 	global
 	Find(title, &card, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" card " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 	;(no picture found it, the game's hand has it - Tower Shield: at its card box - UseMemAt)
 	UseMemAt(title, dir, &card, &foundX, &foundY)
 
@@ -997,7 +1027,7 @@ UseOnHammer(&title, &card, &dir, tx := "", ty := "")
 	{
 	global
 	Find(title, &card, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" card " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 	;(no picture found it, the game's hand has it: at its card box - UseMemAt)
 	UseMemAt(title, dir, &card, &foundX, &foundY)
 
@@ -1042,7 +1072,7 @@ AbsorbFiller()
 	if (absorb != 1 || !AbsorbFreeOk || !AbsorbOn())
 		return false
 	AbsorbOnlyFree := 1
-	afGo := UseOnSelf(&"absorb", &absorb, &"resources")
+	afGo := UseOnSelf(&_title := "absorb", &absorb, &_dir := "resources")
 	AbsorbOnlyFree := 0
 	return afGo
 	}
@@ -1058,20 +1088,20 @@ UseNegAura()
 	global negaura, roundnumber, GameLeft, GameTop, BoostSaid
 	if (negaura != 1 || !Stat("usetraps"))
 		return false
-	unHand := IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
-	if (!IsObject(unHand) || !NegAuraMatches(unHand.cards).Length())
+	unHand := V1IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
+	if (!IsObject(unHand) || !NegAuraMatches(unHand.cards).Length)
 		{
 		if (IsObject(BoostSaid) && !BoostSaid.Has("negaura|nofit"))
-			BoostSaid["negaura|nofit"] := 1, DebugLog("  negaura: none in hand adds to the planned hit's schools - not cast") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			BoostSaid["negaura|nofit"] := 1, DebugLog("  negaura: none in hand adds to the planned hit's schools - not cast")
 		return false
 		}
-	if (!NegAuraWhere(unX, unY, unKey, unWho))
+	if (!NegAuraWhere(&unX, &unY, &unKey, &unWho))
 		{
 		DebugLog("  negaura: no enemy's plate found to put it on - not cast")
 		return false
 		}
 	unWhen := NegAuraWhen(unKey)
-	if (unWhen != "" && roundnumber - unWhen < 4)
+	if (unWhen != "" && V1Lt(V1Sub(roundnumber, unWhen), 4))  ; (v1: a blank round - dual mode - counted as within 4)
 		{
 		DebugLog("  negaura: " unWho " has one from round " unWhen " (4 rounds) - not cast again yet")
 		return false
@@ -1092,12 +1122,13 @@ UseNegAura()
 UseBlade(&title, &blade, &Use1, &Use2, &dir)
 	{
 	global
+	local _dir, _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved, ubMem, ubAt, ubEnch
 	Find(title, &blade, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" blade " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" blade " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
-	Find("sharpen", &sharpen, &SharpX, &SharpY, &"resources")
+	Find("sharpen", &sharpen, &SharpX, &SharpY, &_dir := "resources")
 	;(the game's hand read this look - KillCalc.ahk BoostSearch: which copy of the card this is. A pet's or gear's - an item
 	;card - is never sharpened: it can't be enchanted. A treasure or item card's copy stacks with the deck's - the user,
 	;2026-10-24 - so it goes once a battle besides the deck's casts; a copy that can't go swapped for one that can)
@@ -1106,7 +1137,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 	;hand's boxes laid on the game's cards - only while they line up for sure; that copy's own kind - KillCalc.ahk BoostMemBox)
 	if (blade != 1 && IsObject(BoostMemOnly) && BoostMemOnly.Has(ubKey))
 		{
-		ubAt := BoostMemBox(ubKey, sharpen :== 1, Use1, Use2)
+		ubAt := BoostMemBox(ubKey, sharpen == 1, Use1, Use2)
 		if (ubAt.x = "")
 			{
 			DebugLog("  " ubKey ": in hand (the game), no picture found it - not cast: " ubAt.why)
@@ -1118,7 +1149,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 		}
 	else if (blade == 1 && IsObject(BoostHand) && BoostHand.Has(ubKey))
 		{
-		ubCp := BoostCopyPick(ubKey, foundX, foundY, sharpen :== 1, Use1, Use2)
+		ubCp := BoostCopyPick(ubKey, &foundX, &foundY, sharpen == 1, Use1, Use2)
 		if (!IsObject(ubCp))
 			{
 			DebugLog("  " ubKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Sharpen it can't get)")
@@ -1148,7 +1179,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 			BoostSettle(n, &foundX, &foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
-			ErrorBox(&"UseBlade", &dir, &title)
+			ErrorBox(&_funcn := "UseBlade", &dir, &title)
 			}
 			ClickAt(foundX, foundY, 150)
 		if (title != "blade4")
@@ -1159,7 +1190,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 		if (ubSrc = "")
 			Use1 := 1
 		else
-			BoostSrcUsed[ubKey "@" ubSrc] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostSrcUsed.Push(<val>)'
+			BoostSrcUsed[ubKey "@" ubSrc] := 1
 		if BladeOnUs(title)
 			{
 			AddBoost(AppliedBlades, ubKey, Stat("sharpen"), ubSrc)
@@ -1176,12 +1207,12 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 			;cast by the game's hand - its box: no picture finds it, and one that doesn't fit might match elsewhere)
 			keepX := foundX, keepY := foundY
 			if (!ubMoved && !ubMem)
-				ErrorLevel := !ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
+				V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
 			if (ErrorLevel || ubMoved || ubMem)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
-				ErrorBox(&"UseBlade", &dir, &title)
+				ErrorBox(&_funcn := "UseBlade", &dir, &title)
 				}
 				ClickAt(foundX, foundY, 150)
 			if (title != "blade4")
@@ -1191,7 +1222,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 			boosts++
 			;(an enchanted copy takes the sharpened cast's flag while it's free)
 			if (ubSrc != "")
-				BoostSrcUsed[ubKey "@" ubSrc] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostSrcUsed.Push(<val>)'
+				BoostSrcUsed[ubKey "@" ubSrc] := 1
 			else if (ubEnch && Use1 != 1)
 				Use1 := 1
 			else
@@ -1213,19 +1244,20 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 UseTrap(&title, &trap, &Use1, &Use2, &dir)
 	{
 	global
+	local _dir, _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved, utMem, utAt, utEnch
 	Find(title, &trap, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" trap " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" trap " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
-	Find("potent", &potent, &PotentX, &PotentY, &"resources")
+	Find("potent", &potent, &PotentX, &PotentY, &_dir := "resources")
 	;(which copy of the card this is, as UseBlade: an item card's never made potent; a treasure or item card's goes once a
 	;battle besides the deck's)
 	utKey := BoostKey(title, dir), utSrc := "", utItem := 0, utMoved := 0, utMem := 0, utEnch := 0
 	;(no picture found it but the game's hand has it: cast at its card box, as UseBlade's)
 	if (TrapOn == 1 && trap != 1 && IsObject(BoostMemOnly) && BoostMemOnly.Has(utKey))
 		{
-		utAt := BoostMemBox(utKey, potent :== 1, Use1, Use2)
+		utAt := BoostMemBox(utKey, potent == 1, Use1, Use2)
 		if (utAt.x = "")
 			{
 			DebugLog("  " utKey ": in hand (the game), no picture found it - not cast: " utAt.why)
@@ -1241,7 +1273,7 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 		}
 	else if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.Has(utKey))
 		{
-		utCp := BoostCopyPick(utKey, foundX, foundY, potent :== 1, Use1, Use2)
+		utCp := BoostCopyPick(utKey, &foundX, &foundY, potent == 1, Use1, Use2)
 		if (!IsObject(utCp))
 			{
 			DebugLog("  " utKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Potent it can't get)")
@@ -1275,7 +1307,7 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 			BoostSettle(n, &foundX, &foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
-			ErrorBox(&"UseTrap", &dir, &title)
+			ErrorBox(&_funcn := "UseTrap", &dir, &title)
 			}
 		ClickAt(foundX, foundY, 150)
 		ClickAt(TrapAtX, TrapAtY, 200)
@@ -1283,7 +1315,7 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 		if (utSrc = "")
 			Use1 := 1
 		else
-			BoostSrcUsed[utKey "@" utSrc] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostSrcUsed.Push(<val>)'
+			BoostSrcUsed[utKey "@" utSrc] := 1
 		;(the kill check counts them on the enemy they went on - the boss's, the one with the most health: KillCalc.ahk
 		;TrapPut; a party support's aren't)
 		if (BossChoosen == 1 || TrapMine)
@@ -1296,18 +1328,18 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 			;cast by the game's hand)
 			keepX := foundX, keepY := foundY
 			if (!utMoved && !utMem)
-				ErrorLevel := !ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
+				V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
 			if (ErrorLevel || utMoved || utMem)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
-				ErrorBox(&"UseTrap", &dir, &title)
+				ErrorBox(&_funcn := "UseTrap", &dir, &title)
 				}
 			ClickAt(foundX, foundY, 150)
 			ClickAt(TrapAtX, TrapAtY, 200)
 			boosts++
 			if (utSrc != "")
-				BoostSrcUsed[utKey "@" utSrc] := 1 ;  V1toV2: Invalid Index errors?, try 'BoostSrcUsed.Push(<val>)'
+				BoostSrcUsed[utKey "@" utSrc] := 1
 			else if (utEnch && Use1 != 1)
 				Use1 := 1
 			else
@@ -1328,19 +1360,20 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 UseHeldBack(kind, title)
 	{
 	global
+	local _title, _dir ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (kind = "blade")
 		{
-		if (title != "blade" && blade == 1 && UseBlade(&"blade", &blade, &used%BladeU1%, &used%BladeU2%, &BladeDir))
+		if (title != "blade" && blade == 1 && UseBlade(&_title := "blade", &blade, &used%BladeU1%, &used%BladeU2%, &BladeDir))
 			return true
-		if ((title = "blade3" || title = "blade4") && blade2 == 1 && UseBlade(&bladetype, &%bladetype%, &used%Blade2U1%, &used%Blade2U2%, &"resources"))
+		if ((title = "blade3" || title = "blade4") && blade2 == 1 && UseBlade(&bladetype, &%bladetype%, &used%Blade2U1%, &used%Blade2U2%, &_dir := "resources"))
 			return true
-		if (title = "blade4" && blade3 == 1 && UseBlade(&"blade3", &blade3, &used15, &used16, &"resources"))
+		if (title = "blade4" && blade3 == 1 && UseBlade(&_title := "blade3", &blade3, &used15, &used16, &_dir := "resources"))
 			return true
 		return false
 		}
-	if (title != "trap" && trap == 1 && UseTrap(&"trap", &trap, &used%TrapU1%, &used%TrapU2%, &TrapDir))
+	if (title != "trap" && trap == 1 && UseTrap(&_title := "trap", &trap, &used%TrapU1%, &used%TrapU2%, &TrapDir))
 		return true
-	if (title = "trap3" && trap2 == 1 && UseTrap(&traptype, &%traptype%, &used%Trap2U1%, &used%Trap2U2%, &"resources"))
+	if (title = "trap3" && trap2 == 1 && UseTrap(&traptype, &%traptype%, &used%Trap2U1%, &used%Trap2U2%, &_dir := "resources"))
 		return true
 	return false
 	}
@@ -1355,19 +1388,20 @@ UseConvert(&title, &convert, &dir)
 	global
 	CenterMouse()
 	Find(title, &convert, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" convert " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" convert " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 	UseMemAt(title, dir, &convert, &foundX, &foundY)
 	if (convert != 1)
 		return false
 	ClickAt(foundX, foundY, 150)
 	ClickAt(bossX, bossY, 200)
-	ConvertOn := {hits: PartyHits ? PartyHits : 0, round: roundnumber}
+	ConvertOn := V1Obj({hits: PartyHits ? PartyHits : 0, round: roundnumber})
 	return true
 	}
 	
 UseHit(&title, &hit, &dir, useEnchant := 1)
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	;Saving pips for a hit that ends the battle (PlanPips): no other hit spends them. The wand's card is free,
 	;but it uses up blades, traps and an enchant: only when the saved hit kills without them, unenchanted
 	if (PipSaveFor != "" && title != PipSaveFor && (title != "wand" || !PipSaveBare))
@@ -1382,7 +1416,7 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 	if (useEnchant && (title = "wand" || HitHeads(title).item))
 		useEnchant := 0
 	Find(title, &hit, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" hit " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" hit " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 
 	;Can you pay for it yet? If not, keep it for a later round (no click, no enchant used on it)
 	if (hit == 1) && !Affordable(title)
@@ -1396,7 +1430,7 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 		FindEnchant()
 	if (useEnchant) && (enchant >= 1) && (hit == 1) && !EnchantedHits[title]
 		{
-		EnchantedHits[title] := enchant ;  V1toV2: Invalid Index errors?, try 'EnchantedHits.Push(<val>)'
+		EnchantedHits[title] := enchant
 		boostX := enchantX
 		ClickAt(enchantX, enchantY, 150)
 		ClickAt(foundX, foundY, 150)
@@ -1408,25 +1442,25 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 		FindEnchant()
 		if ((Errorlevel == 2) && (devmode == 1))
 			{
-			ErrorBox(&"UseHit", &dir, &title)
+			ErrorBox(&_funcn := "UseHit", &dir, &title)
 			}
 		ClickAt(foundX, foundY)
-		HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen :== 1))
+		HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen == 1))
 		return CastResult(title, &hit, dir, 1)
 		} else if (hit == 1)
 			{
 			n := PicPath(dir "\" title ".png")
 			;If the card can't be found again, click where it was
 			keepX := foundX, keepY := foundY
-			ErrorLevel := !ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
+			V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
 			if (ErrorLevel)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
-				ErrorBox(&"UseHit", &dir, &title)
+				ErrorBox(&_funcn := "UseHit", &dir, &title)
 				}
 			ClickAt(foundX, foundY)
-			HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen :== 1))
+			HitTarget(title, dir, 0, HitDamage(title, false, BossChoosen == 1))
 			return CastResult(title, &hit, dir, 0)
 			} else
 				{
@@ -1442,34 +1476,35 @@ PlateHealth(nx, ny)
 	local x, y, w, h, t, a, key, n, best, bestN, zoom, gl, votes, phLines, phW, vp
 	;(2026-10-23, 1440p: OCR read 2,848/3,153 at 1 of its 8 tries - none of the round's 4 reads of yours came out)
 	;(the box ends above the pips - a Balance pip's red joins the digits: from ny + Px(50))
-	vp := VisionPlate(nx - Px(22), ny + Px(10), nx + Px(165), ny + Px(43))
+	;(v1: your plate not found - nx, ny blank: blank arithmetic, passed on)
+	vp := VisionPlate(V1Sub(nx, Px(22)), V1Add(ny, Px(10)), V1Add(nx, Px(165)), V1Add(ny, Px(43)))
 	if (IsObject(vp))
-		return (AHKv1v2_Temp := {cur: vp.cur, max: vp.max, votes: vp.worst < 0.2 ? 3 : 2}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({cur: vp.cur, max: vp.max, votes: V1Lt(vp.worst, 0.2) ? 3 : 2})
 	;(110 wide first; not read: 150 - a four-figure health, 1,772/3,153, runs past 110 and its last figure is cut, never
 	;read: 2026-10-23 - the wider box takes in more of what's round it, so it's only the second try)
 	for each, phW in [110, 150]
 		{
-		x := nx - Px(8), y := ny + Px(20), w := Px(phW), h := Px(24)
+		x := V1Sub(nx, Px(8)), y := V1Add(ny, Px(20)), w := Px(phW), h := Px(24)
 		;(its 3s, 5s and 8s told by their shape - the OCR reads 1,234 as 1,254: KillCalc.ahk HealthGlyphs)
-		gl := HealthGlyphs(x - Px(20), y, w + Px(40), h)
+		gl := HealthGlyphs(V1Sub(x, Px(20)), y, w + Px(40), h)
 		;(the game's digits fool OCR now and then - B for 8, a 3 for an 8 - so it reads at four sizes and
 		;takes what at least two of them read)
-		votes := {}, best := "", bestN := 0
+		votes := V1Obj(), best := "", bestN := 0
 		for each2, zoom in [2, 3, 4, 5]
 			{
-			t := OcrRect(x, y, w, h, "en", zoom, phLines, 1)
+			t := OcrRect(x, y, w, h, "en", zoom, &phLines, 1)
 			if (ErrorLevel)
 				continue
 			t := StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(t, "B", "8"), "O", "0"), "o", "0"), "S", "5"), "l", "1"), "I", "1")
 			a := ParseHealth(HealthDigits(t, gl))
 			if (!IsObject(a) || a.Length != 1)
 				continue
-			key := a[1].cur "/" a[1].max, n := votes.Has(key) ? votes[key] + 1 : 1, votes[key] := n ;  V1toV2: Invalid Index errors?, try 'votes.Push(<val>)'
+			key := a[1].cur "/" a[1].max, n := votes.Has(key) ? votes[key] + 1 : 1, votes[key] := n
 			if (n > bestN)
 				best := a, bestN := n
 			}
 		if (bestN >= 2 && best[1].max > 0)
-			return {cur: best[1].cur, max: best[1].max, votes: bestN}
+			return V1Obj({cur: best[1].cur, max: best[1].max, votes: bestN})
 		}
 	return ""
 	}
@@ -1483,11 +1518,10 @@ OwnHealthLow(quiet := false)
 	global
 	local pct, limit, bestN, cur, most, r
 	limit := StatOr("healat", 40)
-	if (OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 15000 && OwnHpWin = WinExist("A"))
+	if (OwnHpCur != "" && OwnHpRound = roundnumber && V1Lt(V1Ago(OwnHpAt), 15000) && OwnHpWin = WinExist("A"))
 		{
 		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
 		Goto("OwnHealthLowRead")
-		Return ; V1toV2: post-return for Goto
 		}
 	r := PlateHealth(playerX, playerY)
 	if (!IsObject(r))
@@ -1500,7 +1534,8 @@ OwnHealthLow(quiet := false)
 	PotionNoteMax(most)
 	OwnHpCur := cur, OwnHpMax := most, OwnHpAt := A_TickCount, OwnHpVotes := bestN, OwnHpWin := WinExist("A")
 OwnHealthLowRead:
-	pct := Round(100 * cur / most)
+	;(v1: blank or 0 health read - blank arithmetic, Round of it 0)
+	pct := V1Round(V1Div(V1Mul(100, cur), most))
 	;(for saving pips: not while your health is low)
 	OwnHpPct := pct, OwnHpRound := roundnumber
 	if (quiet)
@@ -1529,7 +1564,7 @@ UseHeal(title, &card, dir, tx := "", ty := "")
 	global
 	local lc, allOf
 	Find(title, &card, &foundX, &foundY, &dir)
-	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
+	DebugLog("  " A_ThisFunc " " title ": found=" card " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
 	if (card != 1)
 		return false
 	if !Affordable(title)
@@ -1544,7 +1579,7 @@ UseHeal(title, &card, dir, tx := "", ty := "")
 		DebugLog("  " title " heals all of you - the ally too")
 	else if (!TargetPending())
 		{
-		lc := IsFunc("LearnCardInSlot") ? LearnCardInSlot.Call(dir "\" title) : ""
+		lc := V1IsFunc("LearnCardInSlot") ? LearnCardInSlot.Call(dir "\" title) : ""
 		allOf := IsObject(lc) && RegExMatch(lc.text, "i)\ba[l1][l1]\b")
 		StatsSet([[dir "." title "target", allOf ? 2 : 0]])
 		DebugLog("  " title " went out without asking who - " (allOf ? "it heals all of you: still used on an ally (" dir "." title "target:2)" : "it heals only you: not used on an ally again (" dir "." title "target:0)"))
@@ -1573,7 +1608,7 @@ HitTarget(title, dir, force := 0, dmg := "")
 		return
 	;(the plates as they are now - not as they were when last read: the kill check's off for a battle you played a
 	;round in, and an enemy gone since leaves its place behind)
-	if (BossChoosen != 1 && A_TickCount - EnemyPlatesAt > 8000)
+	if (BossChoosen != 1 && V1Gt(V1Ago(EnemyPlatesAt), 8000))
 		ReadEnemyHealth()
 	if (BossChoosen == 1)
 		tx := BossX, ty := BossY, pick := "the boss"
@@ -1581,10 +1616,10 @@ HitTarget(title, dir, force := 0, dmg := "")
 		{
 		;(the enemy the hit does the most to - HitPick)
 		pick := HitPick(dmg), why := ""
-		if (dmg > 0 && IsObject(EnemyHP) && EnemyHP.Length > 1 && EnemyHP.Length = EnemyPlates.Length)
+		if (V1Gt(dmg, 0) && IsObject(EnemyHP) && EnemyHP.Length > 1 && EnemyHP.Length = EnemyPlates.Length)
 			why := ", " Min(dmg, EnemyHP[pick].cur) " of its " dmg " damage on it" (dmg >= EnemyHP[pick].cur ? " - kills it" : "")
 		tx := EnemyPlates[pick].x, ty := EnemyPlates[pick].y
-		pick := "enemy " pick " of " EnemyPlates.Length (IsObject(EnemyHP) ? " (" EnemyHP[pick].cur " health" why ")" : "")
+		pick := "enemy " pick " of " EnemyPlates.Length (IsObject(EnemyHP) ? " (" V1At(V1At(EnemyHP, pick), "cur") " health" why ")" : "")  ; (v1: an enemy with no health read - blank)
 		}
 	else
 		{
@@ -1619,7 +1654,7 @@ HitPick(dmg, among := "")
 			{
 			if (IsObject(among) && !among.Has(hpI))
 				continue
-			hpEff := (dmg > 0) ? Min(dmg, hpE.cur) : -hpE.cur
+			hpEff := V1Gt(dmg, 0) ? Min(dmg, hpE.cur) : -hpE.cur  ; (v1: damage not known - blank - is not > 0)
 			if (hpBest = "" || hpEff > hpBest || (hpEff = hpBest && hpE.cur < EnemyHP[hpPick].cur))
 				hpPick := hpI, hpBest := hpEff
 			}
@@ -1658,16 +1693,17 @@ TargetClick(x, y)
 ;PassHover 1 when it was the hovered one
 PassButtonAt(&x, &y)
 	{
-	ErrorLevel := !ImageSearch(&x, &y, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
+	global PassHover, ErrorLevel ; (v1 globals it sets)
+	V1ImageSearch(&x, &y, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
 	pbErr := ErrorLevel, PassHover := 0
 	if (pbErr = 1)
 		{
 		;(the main set - UI 1 - has none of its own: one made from the 1.144 cut, in a folder that isn't a picture set)
 		hp := (PicDir = A_WorkingDir && !FileExist(A_WorkingDir "\resources\roundstart_hover.png"))
-			? PicMake("resources\roundstart_hover.png", {dir: GenRoot "\main", scale: 1.0}) : PicPath("resources\roundstart_hover.png")
+			? PicMake("resources\roundstart_hover.png", V1Obj({dir: GenRoot "\main", scale: 1.0})) : PicPath("resources\roundstart_hover.png")
 		if (hp != "")
 			{
-			ErrorLevel := !ImageSearch(&x, &y, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(hp))
+			V1ImageSearch(&x, &y, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(hp))
 			if (ErrorLevel = 0)
 				pbErr := 0, PassHover := 1
 			}
@@ -1690,7 +1726,8 @@ TargetPending()
 	return true
 	}
 
-Switch()
+;(v1: Switch - a v2 keyword: a line starting Switch() is a switch statement)
+SwitchWindow()
 	{
 	if (dualmode == 1)
 		{
@@ -1731,13 +1768,33 @@ ResetUsed()
 	;blade and trap, the spirit ones - KillCalc.ahk KeyFlags); and the treasure / item copies cast (BoostSrcUsed), the
 	;blades cast on you that weren't seen there (BoostUnrec: UseBlade)
 	global
+	;(v2: a name used%n% makes must exist - each flag declared here, v1 made them by their names)
+	global used0, used1, used2, used3, used4, used5, used6, used7, used8, used9, used10, used11, used12, used13, used14
+	global used15, used16, used17, used18, used19, used20, used21, used22, used23, used24, used25, used26, used27, used28
+	global used29, used30, used31, used32, used33, used34, used35, used36, used37, used38, used39, used40, used41, used42
+	global used43, used44, used45, used46, used47, used48, used49, used50, used51, used52
 	local n := 0
 	while (n <= 52)
 		{
 		used%n% := 0
 		n++
 		}
-	BoostSrcUsed := {}, BoostUnrec := []
+	BoostSrcUsed := V1Obj(), BoostUnrec := []
+	}
+
+;(v2 port: v1 started every variable blank - used0..used52, made by name (used%n%), and bladetype / traptype, set by
+;name in KillCalc.ahk BoostSearch, are in no <File>Blank(): blank here at the start, as v1's were till the first round's
+;ResetUsed / BoostSearch - HkDev's box (dev mode) reads them before that)
+UsedBlank()
+	{
+	global
+	local n := 0
+	while (n <= 52)
+		{
+		used%n% := ""
+		n++
+		}
+	bladetype := "", traptype := ""
 	}
 	
 ResetVariables() 
@@ -1769,12 +1826,12 @@ ResetVariables()
 	hit2 := 0
 	hit3 := 0
 	hit4 := 0
-	EnchantedHits := {}
+	EnchantedHits := V1Obj()
 	PipSaveFor := "", PipSaveRounds := 0, PipSaveGaveUp := 0, PipSaveTarget := "", PipSaveStall := 0, PipSaveLastPips := -1
 	PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
 	;(the no-hits flee counts afresh - Flee.ahk; treasure cards drawn for an enchant too - Draw.ahk)
 	FleeNoHits := 0, FleeHitsRound := ""
-	DrawsBattle := 0, DrawOff := "", LearnHitFails := {}
+	DrawsBattle := 0, DrawOff := "", LearnHitFails := V1Obj()
 	OwnHpPct := 0, OwnHpRound := -1
 	tower := 0  
 	hitter := 0
@@ -1792,20 +1849,20 @@ ResetVariables()
 	BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := 0, HammerGroup := "", SidePlatesKey := "", MySlot := 0
 	PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyLowKey := "", PartyLowX := "", PartyLowY := "", TrapOn := 0
 	TrapMine := 0, TrapAtMax := "", TrapPick := 0, TrapWhy := "", TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
-	PartyFlagDuel := "", PartyFlagRound := {}, PartyCastRound := ""
+	PartyFlagDuel := "", PartyFlagRound := V1Obj(), PartyCastRound := ""
 	Manual := 0, ManualSchool := ""
 	bossX := 0
 	bossY := 0
-	AppliedBlades := {}
-	BossTraps := {}
+	AppliedBlades := V1Obj()
+	BossTraps := V1Obj()
 	AuraRounds := 0
 	;(blades and traps by damage school - KillCalc.ahk; SlotGame is kept: the slots' cards don't change with the battle)
-	HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := "", PlanList := ""
+	HeadsMemo := V1Obj(), BoostPctMem := V1Obj(), AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := "", PlanList := ""
 	BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
-	SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
-	BoostUnrec := [], BoostOneOfOff := {}, BoostMemOnly := {}, BubbleUp := ""
+	SbFound := V1Obj(), GbFound := V1Obj(), BoostHand := V1Obj(), BoostSrcUsed := V1Obj(), BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := V1Obj(), BoostMisfitDone := 0
+	BoostUnrec := [], BoostOneOfOff := V1Obj(), BoostMemOnly := V1Obj(), BubbleUp := ""
 	;(the negative auras put up this battle, an absorb or one in hand, your prism on the boss - 2026-10-26)
-	NegAuraOn := {}, absorb := 0, AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, ConvertOn := ""
+	NegAuraOn := V1Obj(), absorb := 0, AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, ConvertOn := ""
 	EnemyHP := ""
 	BossSlot := 0
 	BossMax := 0
@@ -1822,19 +1879,19 @@ ResetVariables()
 NeedsConvert()
 	{
 	global BossChoosen, hitschool, BoostSaid, ConvertOn
-	if (BossChoosen != 1 || !IsFunc("ConvertNeedMem"))
+	if (BossChoosen != 1 || !V1IsFunc("ConvertNeedMem"))
 		return false
-	if (IsFunc("ConvertUp") && ConvertUp.Call())
+	if (V1IsFunc("ConvertUp") && ConvertUp.Call())
 		{
-		if (IsObject(BoostSaid) && !BoostSaid.Has("convert|up" ConvertOn.round))
-			BoostSaid["convert|up" ConvertOn.round] := 1, DebugLog("  convert: your prism went on the boss in round " ConvertOn.round " and no hit of yours has gone out since - not a second one") ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+		if (IsObject(BoostSaid) && !BoostSaid.Has("convert|up" V1At(ConvertOn, "round")))
+			BoostSaid["convert|up" V1At(ConvertOn, "round")] := 1, DebugLog("  convert: your prism went on the boss in round " V1At(ConvertOn, "round") " and no hit of yours has gone out since - not a second one")
 		return false
 		}
 	ncMem := ConvertNeedMem.Call()
 	ncSay := "convert|" (ncMem = "" ? "unknown" : ncMem)
 	if (IsObject(BoostSaid) && !BoostSaid.Has(ncSay))
 		BoostSaid[ncSay] := 1, DebugLog("  convert: the boss " (ncMem = 1 ? "is " hitschool " (the game's memory) - it resists your hits: your prism first"
-			: ncMem = 0 ? "isn't " hitschool " (the game's memory) - no prism" : "- its school not read from the game's memory (" NavBattleWhy "): no prism")) ;  V1toV2: Invalid Index errors?, try 'BoostSaid.Push(<val>)'
+			: ncMem = 0 ? "isn't " hitschool " (the game's memory) - no prism" : "- its school not read from the game's memory (" NavBattleWhy "): no prism"))
 	return (ncMem = 1)
 	}
 	
@@ -1854,13 +1911,13 @@ Log()
 	Send("{Esc}")
 	s(1000)
 	UpdateGameRect()
-	ErrorLevel := !ImageSearch(&logX, &logY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\log.png"))
+	V1ImageSearch(&logX, &logY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\log.png"))
 	if (Errorlevel == 0)
 		{
 		ClickAt(logX, logY)
 		} else if (Errorlevel == 2)
 			{
-			ErrorBox(&"Log", &dir, &title)
+			ErrorBox(&_funcn := "Log", &dir, &title)
 			}
 	s(5000)
 	}
@@ -1868,13 +1925,13 @@ Log()
 Join()
 	{
 	UpdateGameRect()
-	ErrorLevel := !ImageSearch(&joinX, &joinY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\join.png"))
+	V1ImageSearch(&joinX, &joinY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\join.png"))
 	if (Errorlevel == 0)
 		{
 		ClickAt(joinX, joinY)
 		} else if (Errorlevel == 2)
 			{
-			ErrorBox(&"Join", &dir, &title)
+			ErrorBox(&_funcn := "Join", &dir, &title)
 			}
 	s(5000)
 	}
@@ -1882,19 +1939,20 @@ Join()
 UsePotion()
 	{
 	UpdateGameRect()
-	ErrorLevel := !ImageSearch(&potionX, &potionY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\potion.png"))
+	V1ImageSearch(&potionX, &potionY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\potion.png"))
 	ClickAt(potionX, potionY)
 	}
 
 CheckAfk()
 	{
-	if (afk == 1)
+	global ErrorLevel, AfkRetries, FleeWhy, afkVar, AfkWhy ; (v1 globals it sets)
+	if (afkVar == 1)
 		{
 		;Waits for you to press w/a/s/d, checking for a disconnect every second meanwhile - held for mana: every
 		;30 s the mana globe looked at, and on by itself once there's enough for the cheapest hit (at least 3), or
 		;once the 10 minutes after a failed run to buy potions are up (checkmana tries another)
 		;(3 tries at most a hold - each a run and its alert; on again by itself once there's mana, or by your keys)
-		waitRun := (AfkWhy = "mana" && Stat("fleeon") && A_TickCount < PotionFailUntil && AfkRetries < 3)
+		waitRun := (AfkWhy = "mana" && Stat("fleeon") && V1Lt(A_TickCount, PotionFailUntil) && AfkRetries < 3)  ; (v1: no run failed - blank - compared as text: false)
 		Loop
 			{
 			ihOutputVar := InputHook("T1","{w} {a} {s} {d}","w, a, s, d"), ihOutputVar.Start(), ErrorLevel := ihOutputVar.Wait(), OutputVar := ihOutputVar.Input
@@ -1906,33 +1964,34 @@ CheckAfk()
 			ReconnectCheck()
 			if (AfkWhy = "mana" && VisionOn && Mod(A_Index, 30) = 0 && GameActive())
 				{
-				afkMana := PotionGlobes().mana
-				if (afkMana != "" && afkMana + 0 >= Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit()))
+				afkMana := V1At(PotionGlobes(), "mana")
+				if (afkMana != "" && V1Ge(V1Add(afkMana, 0), Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit())))  ; (v1: a reading that isn't a number - blank - compared as text)
 					{
 					DebugLog("no mana: the mana globe reads " afkMana " now - carrying on")
 					AfkRetries := 0
 					break
 					}
 				;(FleeAfter, right after this, tries: a potion, else a run - whether the mana picture matches or not)
-				if (waitRun && A_TickCount >= PotionFailUntil)
+				if (waitRun && V1Ge(A_TickCount, PotionFailUntil))
 					{
-					AfkRetries += 1, FleeWhy := "mana"
+					AfkRetries := V1Add(AfkRetries, 1), FleeWhy := "mana"
 					DebugLog("no mana: 10 minutes since the run to buy potions failed - trying again (" AfkRetries " of 3)")
 					break
 					}
 				}
 			}
-		afk := 0, AfkWhy := ""
+		afkVar := 0, AfkWhy := ""
 		}
 	}
 return
 
 Afk(why := "")
 	{
-	if (afk == 0)
+	global afkVar, AfkWhy ; (v1 globals it sets)
+	if (afkVar == 0)
 		{
-		LockMove(&"a")
-		afk := 1, AfkWhy := why
+		LockMove(&_direction := "a")
+		afkVar := 1, AfkWhy := why
 		}
 	}
 
@@ -1940,15 +1999,15 @@ checkmana()
 	{
 	;(when the picture was last found with mana in the globe - logged at most every 5 minutes)
 	static wrongSaid := 0
-	if (afk == 0)
+	if (afkVar == 0)
 		{
-		ErrorLevel := !ImageSearch(&manaX, &manaY, GameLeft, ScreenY, GameLeft + GameW / 4, GameBottom, PicOpt("resources\manaempty.png"))
+		V1ImageSearch(&manaX, &manaY, GameLeft, ScreenY, GameLeft + GameW / 4, GameBottom, PicOpt("resources\manaempty.png"))
 		if (Errorlevel == 0)
 			{
 			;(the picture is small and, made for other UI sizes, mostly see-through: it can match the energy globe
 			;beside the mana globe, clear when it's low. The mana globe's number, read by the helper, has the last
 			;word: enough for the cheapest hit - at least 3 - is mana)
-			manaNow := VisionOn ? PotionGlobes().mana : ""
+			manaNow := VisionOn ? V1At(PotionGlobes(), "mana") : ""
 			manaNeed := Max(3, FleeCheapestHit() = "" ? 0 : FleeCheapestHit())
 			;(the helper running but the number not read - the wrong picture set, a window over it: not on the
 			;picture alone)
@@ -1959,7 +2018,7 @@ checkmana()
 				wrongSaid := A_TickCount
 				return
 				}
-			if (manaNow != "" && manaNow + 0 >= manaNeed)
+			if (manaNow != "" && V1Ge(V1Add(manaNow, 0), manaNeed))  ; (v1: a reading that isn't a number - blank - compared as text)
 				{
 				if (!wrongSaid || A_TickCount - wrongSaid > 300000)
 					DebugLog("no mana? The mana-empty picture matched at " manaX - GameLeft "," manaY - GameTop " (the energy globe beside it?), but the mana globe reads " manaNow " - carrying on")
@@ -1987,9 +2046,14 @@ return
 
 NewStaticGui(&Text, &x, &y, &w, &h) 
 	{
+	global myGui ; (v1 globals it sets)
 	box := " x" . x . " y" . y . " w" . w . " h" . h 
-	myGui := Gui()
-	myGui.OnEvent("Close", GuiClose)
+	;(v1's GUI 1: made by its first Add, a later Add put into the same window till it's destroyed)
+	if (!IsSet(myGui) || !IsObject(myGui))
+		{
+		myGui := Gui()
+		myGui.OnEvent("Close", GuiClose)
+		}
 	myGui.Add("Text", box, Text)
 	myGui.Title := "AutoFarmer"
 	myGui.Show("AutoSize Center")
@@ -1997,12 +2061,28 @@ NewStaticGui(&Text, &x, &y, &w, &h)
 
 NewTempGui(&timeout, &Text, &x, &y, &w, &h) 
 	{
+	global myGui ; (v1 globals it sets)
 	box := " x" . x . " y" . y . " w" . w . " h" . h 
+	;(v1's GUI 1, as NewStaticGui)
+	if (!IsSet(myGui) || !IsObject(myGui))
+		{
+		myGui := Gui()
+		myGui.OnEvent("Close", GuiClose)
+		}
 	myGui.Add("Text", box, Text)
 	myGui.Title := "AutoFarmer"
 	myGui.Show("AutoSize Center")
 	Sleep(timeout)
-	Try myGui.Destroy()
+	Gui1Destroy()
+	}
+
+;v1's Gui, 1:Destroy: GUI 1 gone (none there: nothing happens) - the next Add makes a new one
+Gui1Destroy()
+	{
+	global myGui
+	if (IsSet(myGui) && IsObject(myGui))
+		myGui.Destroy()
+	myGui := ""
 	}
 	
 ModeBox(&mode, &name, &x, &y, &w, &h)
@@ -2010,18 +2090,18 @@ ModeBox(&mode, &name, &x, &y, &w, &h)
 	
 	if ((inbattle == 1) && (mode != 1))
 		{
-		NewTempGui(1500, &"Please Don't turn modes on while in combat", 10, 10, 210, 30)
+		NewTempGui(&_timeout := 1500, &_text := "Please Don't turn modes on while in combat", &_x := 10, &_y := 10, &_w := 210, &_h := 30)
 		}	
 	
 	if (mode == 0) && (inbattle == 0)
 		{
 		gui := "Turning On " . name . " Mode."
-		NewTempGui(1000, &gui, &x, &y, &w, &h)
+		NewTempGui(&_timeout := 1000, &gui, &x, &y, &w, &h)
 		mode := 1
 		} else if (mode == 1)
 			{
 			gui := "Turning Off " . name . " Mode."
-			NewTempGui(1000, &gui, &x, &y, &w, &h)
+			NewTempGui(&_timeout := 1000, &gui, &x, &y, &w, &h)
 			mode := 0
 			}
 	}
@@ -2079,16 +2159,17 @@ return
 CommandOff()
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if ((devmode == 1) && (commandmode == 1)) 
 		{
-		ErrorLevel := !ImageSearch(&offX, &offY, GameLeft, GameBottom - Px(25), GameLeft + GameW / 4 + Px(20), GameBottom, PicOpt("resources\off.png", 120))
+		V1ImageSearch(&offX, &offY, GameLeft, GameBottom - Px(25), GameLeft + GameW / 4 + Px(20), GameBottom, PicOpt("resources\off.png", 120))
 		if (ErrorLevel == 0) 
 			{			
 			Respond("Shutting Down.")
 			ExitApp()
 			} else if (Errorlevel == 2)
 				{
-				ErrorBox(&"CommandOff", &dir, &title)
+				ErrorBox(&_funcn := "CommandOff", &dir, &title)
 				}
 		}
 	}
@@ -2096,17 +2177,18 @@ CommandOff()
 CommandReload()
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if ((devmode == 1) && (commandmode == 1)) 
 		{
 		;Requires devmode to be on to reloaded script manually
-		ErrorLevel := !ImageSearch(&relX, &relY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\rel.png", 120))
+		V1ImageSearch(&relX, &relY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\rel.png", 120))
 		if (ErrorLevel == 0) 
 			{
 			Respond("Reloading Script.")
 			BotRestart()
 			} else if (Errorlevel == 2)
 				{
-				ErrorBox(&"CommandReload", &dir, &title)
+				ErrorBox(&_funcn := "CommandReload", &dir, &title)
 				}
 		}
 	}
@@ -2114,9 +2196,10 @@ CommandReload()
 CommandHit()
 	{
 	global
+	local _title, _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&X, &Y, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\PlayerHit.png", 120))
+		V1ImageSearch(&X, &Y, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\PlayerHit.png", 120))
 		if (Errorlevel == 0)
 			{
 			Respond("Okay, Ill OverRide The Automatic Battle Sequence.")
@@ -2124,16 +2207,16 @@ CommandHit()
 				{
 				if (hit4 == 1) && (BossChoosen = 1)
 					{
-					UseHit(&"hit4", &hit4, &hitschool)
+					UseHit(&_title := "hit4", &hit4, &hitschool)
 					} else if (hit3 == 1)
 						{
-						UseHit(&"hit3", &hit3, &hitschool)
+						UseHit(&_title := "hit3", &hit3, &hitschool)
 						} else if (hit2 == 1)
 							{
-							UseHit(&"hit2", &hit2, &hitschool)
+							UseHit(&_title := "hit2", &hit2, &hitschool)
 							} else if (hit1 == 1)
 								{
-								UseHit(&"hit1", &hit1, &hitschool)
+								UseHit(&_title := "hit1", &hit1, &hitschool)
 								} else 
 									{
 									Respond("It Seems There Are No Hits In Hand, I'll Pass Instead.")
@@ -2145,7 +2228,7 @@ CommandHit()
 				return false
 				} else if (ErrorLevel == 2)
 					{
-					ErrorBox(&"CommandHit", &dir, &title)
+					ErrorBox(&_funcn := "CommandHit", &dir, &title)
 					}
 		}
 	}
@@ -2153,9 +2236,10 @@ CommandHit()
 CommandPass()
 	{	
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&PlayerPassX, &PlayerPassY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\PlayerPass.png", 120))
+		V1ImageSearch(&PlayerPassX, &PlayerPassY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\PlayerPass.png", 120))
 		if (ErrorLevel == 0)
 			{
 			Respond("Alright, Ill Pass Instead.")
@@ -2166,7 +2250,7 @@ CommandPass()
 				return false
 				} else if (ErrorLevel == 2)
 					{
-					ErrorBox(&"CommandPass", &dir, &title)
+					ErrorBox(&_funcn := "CommandPass", &dir, &title)
 					return false
 					} 
 		}
@@ -2175,9 +2259,10 @@ CommandPass()
 CommandWalk()
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&walkX, &walkY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\walk.png", 120))
+		V1ImageSearch(&walkX, &walkY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\walk.png", 120))
 		if (ErrorLevel == 0) 
 			{
 			Respond("I'm Not A Dog, But Ill Do It Anyways")
@@ -2191,7 +2276,7 @@ CommandWalk()
 				return false
 				} else if (ErrorLevel == 2)
 					{
-					ErrorBox(&"CommandWalk", &dir, &title)
+					ErrorBox(&_funcn := "CommandWalk", &dir, &title)
 					return false
 					}
 		}
@@ -2200,9 +2285,10 @@ CommandWalk()
 CommandEnter()
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&enterX, &enterY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\enter.png", 120))
+		V1ImageSearch(&enterX, &enterY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\enter.png", 120))
 		if (ErrorLevel == 0) 
 			{
 			Respond("Entering Sigil. Make Sure You Have The Right Deck On.")
@@ -2217,7 +2303,7 @@ CommandEnter()
 				return false
 				} else if (ErrorLevel == 2)
 					{
-					ErrorBox(&"CommandEnter", &dir, &title)
+					ErrorBox(&_funcn := "CommandEnter", &dir, &title)
 					return false
 					}
 		} 
@@ -2226,9 +2312,10 @@ CommandEnter()
 CommandAfk()
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&afkX, &afkY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\afk.png", 120))
+		V1ImageSearch(&afkX, &afkY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\afk.png", 120))
 		if (ErrorLevel == 0)
 			{
 			Respond("Okay, I'll Prevent Time Out Until Further Notice.")
@@ -2239,7 +2326,7 @@ CommandAfk()
 				return false
 				} else if (ErrorLevel == 2)
 					{
-					ErrorBox(&"CommandAfk", &dir, &title)
+					ErrorBox(&_funcn := "CommandAfk", &dir, &title)
 					return false
 					}
 		}
@@ -2248,9 +2335,10 @@ CommandAfk()
 CommandPort() 
 	{
 	global
+	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
 	if (commandmode == 1)
 		{
-		ErrorLevel := !ImageSearch(&wordportX, &wordportY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\wordport.png", 120))
+		V1ImageSearch(&wordportX, &wordportY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\wordport.png", 120))
 		if (ErrorLevel == 0)
 			{
 		
@@ -2261,23 +2349,23 @@ CommandPort()
 			Send("{Enter}")
 			Sleep(Half)
 			
-			ErrorLevel := !ImageSearch(&checkX, &checkY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\check.png"))
+			V1ImageSearch(&checkX, &checkY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\check.png"))
 			if (Errorlevel == 0) 
 				{
 				Sleep(Half)
-				ErrorLevel := !ImageSearch(&nameX, &nameY, GameLeft, checkY - Px(20), checkX, checkY + Px(20), PicOpt("resources\name.png"))
+				V1ImageSearch(&nameX, &nameY, GameLeft, checkY - Px(20), checkX, checkY + Px(20), PicOpt("resources\name.png"))
 				if (ErrorLevel == 0) 
 					{		
 					ClickAt(nameX + Px(30), nameY)
 					
 					s(2000)		
-					ErrorLevel := !ImageSearch(&portX, &portY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\port.png"))
+					V1ImageSearch(&portX, &portY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\port.png"))
 					if (Errorlevel == 0) 
 						{
 						ClickAt(portX, portY)
 						Sleep(Half)
 						
-						ErrorLevel := !ImageSearch(&yesX, &yesY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\yes.png"))
+						V1ImageSearch(&yesX, &yesY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\yes.png"))
 						if (Errorlevel == 0) 
 							{
 							ClickAt(yesX, yesY)
@@ -2285,7 +2373,7 @@ CommandPort()
 							
 							Respond("Initiating Teleportation Sequence.")
 								
-							ErrorLevel := !ImageSearch(&okX, &okY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\ok.png"))
+							V1ImageSearch(&okX, &okY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\ok.png"))
 							if (Errorlevel == 0) 
 								{
 								ClickAt(okX, okY)
@@ -2316,7 +2404,7 @@ CommandPort()
 				return false
 				} else if (Errorlevel == 2)
 					{
-					ErrorBox(&"CommandPort", &dir, &title)
+					ErrorBox(&_funcn := "CommandPort", &dir, &title)
 					return false
 					}
 		}
@@ -2348,7 +2436,7 @@ return
 BestBadge(x1, y1, x2, y2, &bx, &by, nearX := 0, nearY := 0)
 	{
 	;(the vision helper, if it's running; with several plates, the one nearest nearX, nearY)
-	sch := VisionBadge(x1, y1, x2, y2, bx, by, nearX, nearY)
+	sch := VisionBadge(x1, y1, x2, y2, &bx, &by, nearX, nearY)
 	if (sch != -1)
 		return sch
 	best := "", bestTol := 99, bx := 0, by := 0
@@ -2358,14 +2446,14 @@ BestBadge(x1, y1, x2, y2, &bx, &by, nearX := 0, nearY := 0)
 		;(the main set's 2018 badge, which doesn't match at another size)
 		if (UiScale != 1 && p = A_WorkingDir "\" rel)
 			continue
-		ErrorLevel := !ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" GenTol " *TransFF00FF " p)
+		V1ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" GenTol " *TransFF00FF " p)
 		if (ErrorLevel)
 			continue
 		for each2, tol in [0, 3, 6, 10, 14, GenTol]
 			{
 			if (tol >= bestTol)
 				break
-			ErrorLevel := !ImageSearch(&gx, &gy, fx - 3, fy - 3, fx + Px(40), fy + Px(40), "*" tol " *TransFF00FF " p)
+			V1ImageSearch(&gx, &gy, fx - 3, fy - 3, fx + Px(40), fy + Px(40), "*" tol " *TransFF00FF " p)
 			if (ErrorLevel = 0)
 				{
 				best := sch, bestTol := tol, bx := gx, by := gy
@@ -2428,7 +2516,7 @@ CastLearnedHit()
 	{
 	global
 	local ans, list, c, enchanted
-	if (!Stat("learnedhits") || !VisionOn || hitschool = "" || PipSaveFor != "" || !IsFunc("LearnHitCards"))
+	if (!Stat("learnedhits") || !VisionOn || hitschool = "" || PipSaveFor != "" || !V1IsFunc("LearnHitCards"))
 		return false
 	if (!LearnHitReady())
 		return false
@@ -2469,7 +2557,7 @@ CastLearnedHit()
 			DashCast("learned/" c.id)
 			return true
 			}
-		LearnHitFails[c.id] := PipsNow ;  V1toV2: Invalid Index errors?, try 'LearnHitFails.Push(<val>)'
+		LearnHitFails[c.id] := PipsNow
 		DebugLog("  learned hit " c.id " didn't cast (not enough pips?) - not tried again this battle with " PipsNow " pips or fewer")
 		CenterMouse()
 		VisionForget()
@@ -2505,7 +2593,7 @@ FindEnchant()
 		{
 		if (ench[1] = 4 && hitter = 0)
 			continue
-		r := VisionOn ? VisionFind(ench[2], ench[3], enchantX, enchantY) : -1
+		r := VisionOn ? VisionFind(ench[2], ench[3], &enchantX, &enchantY) : -1
 		if (r = 1)
 			{
 			enchant := ench[1]
@@ -2516,7 +2604,7 @@ FindEnchant()
 		}
 	for each, ench in unsure
 		{
-		ErrorLevel := !ImageSearch(&enchantX, &enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), PicOpt(ench[2] "\" ench[3] ".png", CardTol))
+		V1ImageSearch(&enchantX, &enchantY, ScreenX - HandHalf, ScreenY - Px(75), ScreenX + HandHalf, ScreenY + Px(75), PicOpt(ench[2] "\" ench[3] ".png", CardTol))
 		if (ErrorLevel = 0)
 			{
 			enchant := ench[1]
@@ -2544,7 +2632,7 @@ PlayerPlates2()
 		{
 		if (!FileExist(A_ScriptDir "\resources\" pic))
 			continue
-		ErrorLevel := !ImageSearch(&px, &py, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\" pic))
+		V1ImageSearch(&px, &py, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\" pic))
 		if (ErrorLevel = 0)
 			n += 1
 		}
@@ -2634,14 +2722,14 @@ DiscardCard(title, dir)
 	if (card != 1)
 		return 0
 	;(never a treasure card - discarding one uses it up: one drawn for an enchant (Draw.ahk) looks like the deck's)
-	if (IsFunc("DiscardIsTc") && DiscardIsTc(cardX + Px(5)))
+	if (V1IsFunc("DiscardIsTc") && DiscardIsTc(cardX + Px(5)))
 		{
 		DebugLog("  " title " not discarded: it's a treasure card")
 		return 0
 		}
 	MoveToCard(cardX + Px(5), cardY + Px(5))
 	s(Stats.Has("clickwait") ? Stats["clickwait"] : 40)
-	Click(&"right")
+	Click("right")
 	;(the hand has changed: a fresh look next time, not the vision helper's picture of it from before)
 	VisionForget()
 	s(Stat("discardafter"))
@@ -2660,7 +2748,7 @@ BoostSettle(n, &fx, &fy, boostX)
 	Sleep(250)
 	while (A_TickCount - t0 < 1500)
 		{
-		ErrorLevel := !ImageSearch(&nx, &ny, expX - Px(30), fy - Px(25), expX + Px(50), fy + Px(40), PicOptFile(n, CardTol))
+		V1ImageSearch(&nx, &ny, expX - Px(30), fy - Px(25), expX + Px(50), fy + Px(40), PicOptFile(n, CardTol))
 		if (ErrorLevel = 0)
 			{
 			if (nx = lastX && ny = lastY)
@@ -2684,7 +2772,7 @@ RefindAfterBoost(n, &fx, &fy, boostX)
 	global
 	local expX, nx, ny
 	expX := fx + (fx < boostX ? HalfPitch : -HalfPitch)
-	ErrorLevel := !ImageSearch(&nx, &ny, expX - Px(30), fy - Px(25), expX + Px(50), fy + Px(40), PicOptFile(n, CardTol))
+	V1ImageSearch(&nx, &ny, expX - Px(30), fy - Px(25), expX + Px(50), fy + Px(40), PicOptFile(n, CardTol))
 	if (ErrorLevel = 0)
 		{
 		DebugLog("    card moved from " fx - GameLeft "," fy - GameTop " to " nx - GameLeft "," ny - GameTop)
@@ -2731,11 +2819,12 @@ BoostSettleMem(key, &fx, &fy, boostX)
 ;touched the mouse or keyboard for 5 s, since it clicks through the book
 StatsAuto()
 	{
-	static triedAt := {}
+	static triedAt := V1Obj()
+	global StatsWanted, SrHandsOff ; (v1 globals it sets)
 	;(cheap checks first: this runs on every pass out of battle)
 	if (!StatsWanted && SrBattleSchool = "")
 		return
-	if (UserIdle() < 5000 || afk || loopmode || loremode || !WinActive("ahk_class " GameClass " ahk_exe " GameExe))
+	if (UserIdle() < 5000 || afkVar || loopmode || loremode || !WinActive("ahk_class " GameClass " ahk_exe " GameExe))
 		return
 	;The school of the wizard logged in now: the last battle's if that was this character (it may have
 	;switched since), else the one noted for it before
@@ -2749,26 +2838,27 @@ StatsAuto()
 		return
 	if (KeysDown || HeldW)
 		ReleaseKeys()
-	triedAt[tryKey] := A_TickCount, StatsWanted := 0 ;  V1toV2: Invalid Index errors?, try 'triedAt.Push(<val>)'
+	triedAt[tryKey] := A_TickCount, StatsWanted := 0
 	;(it stops if you touch the mouse or keyboard while it reads)
 	SrHandsOff := 1
 	DebugLog("Stats: reading the " (statsFor = "" ? "wizard's" : statsFor " wizard's") " stats off the Spellbook (character " (charNow = "" ? "?" : charNow) ", UI scale " Round(UiScale, 3) ")")
-	err := StatsRead(statsFor, statsGot)
+	err := StatsRead(&statsFor, &statsGot)
 	if (err != "")
 		{
 		DebugLog("Stats: " err)
-		TrayTip("Wizard101 bot", "Couldn't read your stats: " err, 2)
+		TrayTip("Couldn't read your stats: " err, "Wizard101 bot", 2)
 		return
 		}
 	msg := StatsWrite(statsGot, statsFor, charNow)
 	LoadStats(true)
 	DebugLog("Stats: " StrReplace(msg, "`n", " "))
-	TrayTip("Wizard101 bot", msg, 1)
+	TrayTip(msg, "Wizard101 bot", 1)
 	}
 
 ;On exit: stop the vision helper too (it would stop by itself within 5 s anyway)
 VisionOnExit(reason, code)
 	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	VisionStop()
 	}
 
@@ -2776,8 +2866,9 @@ VisionOnExit(reason, code)
 ;clicking at once)
 StatsAsked(wParam, lParam, msg, hwnd)
 	{
+	global StatsWanted ; (v1 globals it sets)
 	StatsWanted := 1
-	TrayTip("Wizard101 bot", "Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s).", 1)
+	TrayTip("Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s).", "Wizard101 bot", 1)
 	return 1
 	}
 
@@ -2786,19 +2877,20 @@ StatsAsked(wParam, lParam, msg, hwnd)
 SaveRoundPicture()
 	{
 	dir := A_Temp "\Wizard101 bot rounds"
-	DirCreate(dir)
+	V1Do(DirCreate, dir)
 	files := ""
 	Loop Files, dir "\round_*.bmp"
 		files .= A_LoopFileName "`n"
 	files := Sort(files)
 	list := StrSplit(Trim(files, "`n"), "`n")
 	while (list.Length >= 25)
-		Try FileDelete(dir "\" list.RemoveAt(1))
-	if (!ArrowCapture(GameLeft, GameTop, GameW, GameH, pix))
+		V1Do(FileDelete, dir "\" list.RemoveAt(1))
+	if (!ArrowCapture(GameLeft, GameTop, GameW, GameH, &pix))
 		return ""
 	stamp := FormatTime(, "yyyyMMdd_HHmmss")
 	path := dir "\round_" stamp ".bmp"
-	bmp := FileOpen(path, "w")
+	;(v1: FileOpen gave no object when it couldn't - v2 throws)
+	bmp := V1Try(FileOpen, path, "w")
 	if (!IsObject(bmp))
 		return ""
 	bmp.WriteUShort(0x4D42), bmp.WriteUInt(54 + GameW * GameH * 4), bmp.WriteUInt(0), bmp.WriteUInt(54)
@@ -2812,11 +2904,14 @@ SaveRoundPicture()
 ;Appends a timestamped line to debug.log next to this script (and to its copy on OneDrive: LogMirrorDir)
 DebugLog(msg)
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	now := FormatTime(, "HH:mm:ss")
-	FileAppend(now " " msg "`r`n", A_ScriptDir "\debug.log")
+	;(v1's FileAppend set ErrorLevel - 0, or 1 when the line couldn't be written, e.g. the log held open by another
+	;program: a log line resets it - the main loop's startErr; v2's throws instead)
+	ErrorLevel := V1Do(FileAppend, now " " msg "`r`n", A_ScriptDir "\debug.log")
 	lmTo := LogMirrorDir(&lmFresh)
 	if (lmTo != "" && !lmFresh)
-		FileAppend(now " " msg "`r`n", lmTo "\debug.log")
+		V1Do(FileAppend, now " " msg "`r`n", lmTo "\debug.log")
 	;(and onto the dashboard's log)
 	if (DashHwnd)
 		DashLog(now " " msg)
@@ -2830,7 +2925,7 @@ LogMirrorDir(&fresh := 0)
 	{
 	static lmDir := "", lmOn := 0
 	fresh := 0
-	if (!(Stats.Has("logmirror") && Stats["logmirror"]))
+	if (!(IsObject(Stats) && Stats.Has("logmirror") && Stats["logmirror"]))  ; (v1: Stats not made yet - HkApply's log line - .HasKey of a blank: blank)
 		{
 		lmOn := 0
 		return ""
@@ -2846,24 +2941,14 @@ LogMirrorDir(&fresh := 0)
 		if (od != "" && InStr(FileExist(od), "D"))
 			{
 			lmDir := od "\Wiz-Maxxing logs\" A_ComputerName
-			DirCreate(lmDir)
-			FileAppend(now " Log copy: on - " lmDir "`r`n", A_ScriptDir "\debug.log")
-			Try {
-				FileCopy(A_ScriptDir "\debug.previous.log", lmDir "\debug.previous.log", 1)
-				ErrorLevel := 0
-			} Catch as Err {
-				ErrorLevel := Err.Extra
-			}
-			Try {
-				FileCopy(A_ScriptDir "\debug.log", lmDir "\debug.log", 1)
-				ErrorLevel := 0
-			} Catch as Err {
-				ErrorLevel := Err.Extra
-			}
+			V1Do(DirCreate, lmDir)
+			V1Do(FileAppend, now " Log copy: on - " lmDir "`r`n", A_ScriptDir "\debug.log")
+			V1Do(FileCopy, A_ScriptDir "\debug.previous.log", lmDir "\debug.previous.log", 1)
+			V1Do(FileCopy, A_ScriptDir "\debug.log", lmDir "\debug.log", 1)
 			fresh := 1
 			}
 		else
-			FileAppend(now " Log copy: no OneDrive folder on this PC - not copied`r`n", A_ScriptDir "\debug.log")
+			V1Do(FileAppend, now " Log copy: no OneDrive folder on this PC - not copied`r`n", A_ScriptDir "\debug.log")
 		}
 	return lmDir
 	}
@@ -2883,10 +2968,10 @@ LogMirrorSnap(every := 0, kind := "")
 	lmTo := LogMirrorDir()
 	if (lmTo = "" || !VisionOn || !LogMirrorGameShown())
 		return
-	ErrorLevel := !ImageSearch(&lmX, &lmY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
+	V1ImageSearch(&lmX, &lmY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
 	if (ErrorLevel)
 		{
-		ErrorLevel := !ImageSearch(&lmX, &lmY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
+		V1ImageSearch(&lmX, &lmY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
 		if (ErrorLevel)
 			return
 		}
@@ -2899,7 +2984,8 @@ LogMirrorSnap(every := 0, kind := "")
 ;there is the game's (or one of the bot's own - its notices, the dashboard)
 LogMirrorGameShown()
 	{
-	g := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
+	;(v1: no such window - blank; v2 throws)
+	g := V1Try(WinGetID, "ahk_class " GameClass " ahk_exe " GameExe)
 	if (!g || DllCall("IsIconic", "Ptr", g) || GameW <= 0 || GameH <= 0)
 		return false
 	me := DllCall("GetCurrentProcessId")
@@ -2910,7 +2996,7 @@ LogMirrorGameShown()
 		top := w ? DllCall("GetAncestor", "Ptr", w, "UInt", 2, "Ptr") : 0
 		if (top = g)
 			continue
-		pid := WinGetPID("ahk_id " top)
+		pid := V1Try(WinGetPID, "ahk_id " top)
 		if (!top || pid != me)
 			return false
 		}
@@ -2943,136 +3029,162 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\..\AutoQuester\Walker.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\ArrowReader.ahk"
 #Include "%A_ScriptDir%\..\Watch.ahk"
+#Include "%A_ScriptDir%\..\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
-;###############  V1toV2 FUNCS  ###############
-MenuBotToggle(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+;###############  (v1: the labels, as functions)  ###############
+MenuBotToggle(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 BotToggle()
 return
 }
 ;##############################################
-MenuWalk(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuWalk(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 WalkToggle()
 return
 }
 ;##############################################
-MenuWatch(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuWatch(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 SplitPath(A_ScriptDir, , &watchRoot)
 watchOn := !WatchIsOn()
 if (WatchSet(watchRoot, watchOn))
-	TrayTip("Wizard101 bot", watchOn ? "The bot now opens by itself when Wizard101 starts - in standby: " HkText("bot") " starts it." : "The bot won't open by itself with Wizard101 any more.", 1)
+	TrayTip(watchOn ? "The bot now opens by itself when Wizard101 starts - in standby: " HkText("bot") " starts it." : "The bot won't open by itself with Wizard101 any more.", "Wizard101 bot", 1)
 else
-	TrayTip("Wizard101 bot", "Couldn't change `"Open with Wizard101`" (the Startup folder's shortcut).", 2)
+	TrayTip("Couldn't change `"Open with Wizard101`" (the Startup folder's shortcut).", "Wizard101 bot", 2)
 WatchShow()
 return
 }
 ;##############################################
-MenuReconnect(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuReconnect(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
 ReconnectToggle()
 return
 }
 ;##############################################
-MenuHandsOff(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuHandsOff(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 HandsOffToggle()
 return
 }
 ;##############################################
-MenuPlayForMe(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuPlayForMe(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 PlayForMeToggle()
 return
 }
 ;##############################################
-MenuGameFront(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuGameFront(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 GameFrontToggle()
 return
 }
 ;##############################################
-MenuLearnAll(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuLearnAll(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 LearnAllToggle()
 return
 }
 ;##############################################
-MenuStats(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuStats(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 StatsWanted := 1
-TrayTip("Wizard101 bot", "Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s).", 1)
+TrayTip("Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s).", "Wizard101 bot", 1)
 return
 }
 ;##############################################
-MenuDash(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuDash(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 DashToggle()
 return
 }
 ;##############################################
-MenuSpells(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuSpells(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 SpShowTab()
 return
 }
 ;##############################################
-MenuSettings(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuSettings(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
 CfgShow()
 return
 }
 ;##############################################
-MenuSpeedKeyFast(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuSpeedKeyFast(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label - it fell into MenuSpeedKeyNormal's lines)
 global
-MenuSpeedKeyNormal()
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+MenuSpeedKey(true)
 }
 ;##############################################
-MenuSpeedKeyNormal(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuSpeedKeyNormal(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
-speedKeyName := SpeedKey(A_ThisLabel := "MenuSpeedKeyFast")
-TrayTip("Wizard101 bot", "Click into Cheat Engine's hotkey box now - " speedKeyName " is pressed in 3 seconds.", 1)
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+MenuSpeedKey(false)
+}
+;(v1: the lines of the labels MenuSpeedKeyFast / MenuSpeedKeyNormal, told apart by A_ThisLabel = "MenuSpeedKeyFast" - fast)
+MenuSpeedKey(fast) {
+global
+speedKeyName := SpeedKey(fast)
+TrayTip("Click into Cheat Engine's hotkey box now - " speedKeyName " is pressed in 3 seconds.", "Wizard101 bot", 1)
 Sleep(3000)
 Send("{" speedKeyName " down}")
 Sleep(250)
 Send("{" speedKeyName " up}")
 ;(if Cheat Engine already has it: the game's at that speed now)
-SpeedNow := (A_ThisLabel = "MenuSpeedKeyFast") ? SpeedFactor() : 1, SpeedSentAt := A_TickCount
+SpeedNow := fast ? SpeedFactor() : 1, SpeedSentAt := A_TickCount
 DebugLog("Speedhack: " speedKeyName " pressed (for Cheat Engine's hotkey box)")
 return
 }
 ;##############################################
-MenuMap(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuMap(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
 DashMapToggle()
 return
 }
 ;##############################################
-MenuUpdates(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuUpdates(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 UpdCheckNow()
 return
 }
 ;##############################################
-MenuBug(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuBug(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 BugShow()
 return
 }
 ;##############################################
-MenuNothing(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuNothing(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 return
 }
 ;##############################################
-UpdPeekNow() { ; V1toV2: Lbl->Func
+UpdPeekNow() { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 ;(only with a program that can run it: Wiz-Maxxing.exe - or, run as a script, Wiz-Maxxing.ahk by this AutoHotkey)
 if (!A_IsCompiled || FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
 	BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/latest", A_ScriptDir "\..")
 else
-	IniWrite("Wiz-Maxxing.exe is missing", A_ScriptDir "\..\updater.ini", "latest", "err")
+	V1Do(IniWrite, "Wiz-Maxxing.exe is missing", A_ScriptDir "\..\updater.ini", "latest", "err")
 ;(updating by itself - Settings: autoupdate: every that many minutes, 5 at least. Wiz-Maxxing.exe not found: again in a
 ;minute - 2026-10-23 23:22 it wasn't for a moment while Windows Security restarted, and the look-up waited 10 minutes)
 updEvery := Stat("autoupdate") > 0 ? Max(5, Stat("autoupdate")) : 120
@@ -3082,15 +3194,18 @@ SetTimer(UpdPeekNow,-60000 * updEvery)
 return
 }
 ;##############################################
-MenuPotionRoute(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuPotionRoute(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 PotionRecordStart()
 return
 }
 ;##############################################
-MenuPotionRun(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuPotionRun(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
-WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+;(v1: nothing when the game isn't there - v2 throws)
+V1Try(WinActivate, "ahk_class " GameClass " ahk_exe " GameExe)
 Sleep(500)
 ;(the mouse back where it was afterwards - mousereturn)
 mouseOwn := MouseGrab()
@@ -3102,49 +3217,56 @@ if (mouseOwn)
 return
 }
 ;##############################################
-MenuQuickSell(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuQuickSell(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 QsMenuNow(false)
 return
 }
 ;##############################################
-MenuQuickSellRehearse(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuQuickSellRehearse(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 QsMenuNow(true)
 return
 }
 ;##############################################
-MenuLogin(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuLogin(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 ReconnectSetLogin()
 return
 }
 ;##############################################
-MenuParty(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuParty(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 PartySetup()
 return
 }
 ;##############################################
-MenuAlerts(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuAlerts(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 AlertSetup()
 return
 }
 ;##############################################
-MenuRestart(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuRestart(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 BotRestart()
 return
 }
 ;##############################################
-MenuExit(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+MenuExit(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 ExitApp()
 }
 ;##############################################
-StartBot() { ; V1toV2: Lbl->Func
+StartBot() { ; (v1: a label)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 global on := 1
 ;(the keys - yours from the Keys tab, else F6, F8, Alt+1...: Hotkeys.ahk)
 HkApply()
@@ -3159,21 +3281,21 @@ for each, botArg in A_Args
 	else if (botArg = "/off")
 		BotOn := 0
 if (BotOn)
-	TrayTip("Wizard101 bot", "Running: battles and quest walking. " HkText("bot") " pauses it, 4)
+	TrayTip("Running: battles and quest walking. " HkText("bot") " pauses it, " HkText("walk") " turns walking on/off - " HkText("quit") " quits.", "Wizard101 bot")
 else
-	TrayTip("Wizard101 bot", "Ready - Wizard101 started. Press " HkText("bot") " to start the bot (battles, quest walking, potions).")
+	TrayTip("Ready - Wizard101 started. Press " HkText("bot") " to start the bot (battles, quest walking, potions).", "Wizard101 bot")
 
 ;Kill calculator (KillCalc.ahk): settings from PlayerStats.txt, enemy health read off the screen,
 ;and the blades/traps/aura/bubble we've put up this battle
-global Stats := {}
+global Stats := V1Obj()
 global EnemyHP := ""
 global BossSlot := 0
 global HealthStatus := ""
-global AppliedBlades := {}
-global BossTraps := {}
+global AppliedBlades := V1Obj()
+global BossTraps := V1Obj()
 global AuraRounds := 0
 ;Hits we put an enchant on that haven't been cast yet (they keep the enchant): title -> enchant level
-global EnchantedHits := {}
+global EnchantedHits := V1Obj()
 ;Saving pips for a hit that ends the battle (KillCalc.ahk PlanPips): the hit ("" none), rounds saved so far,
 ;given up this battle; and your health % off your name plate, and the round it was read in
 ;(PipSaveBare: the wand's free hit is fine meanwhile; PipSaveTarget/LastPips/Stall: counting the rounds
@@ -3216,7 +3338,7 @@ global DualBattle := 0
 global BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := 0, ManualSchool := "", HammerGroup := ""
 ;Your side's name plates this round ({slot: {name, x, y, me}} - EnemySpells.ahk ReadSidePlates, once a round: the round
 ;it was read for) and your slot; the healer's ally lowest on health (its plate, %, name; the round read)
-global SidePlates := {}, SidePlatesKey := "", MySlot := 0
+global SidePlates := V1Obj(), SidePlatesKey := "", MySlot := 0
 global PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := "", PartyLowKey := ""
 ;Your hits (shared: a support's blades on you are spent when it goes up) and the log's round of the last; the hitter's
 ;as last seen, in which battle, and the round its new hit goes out in (blades cast again once it's resolved: Party.ahk
@@ -3225,7 +3347,7 @@ global PartyHits := 0, PartyHitR := 0, PartyHitsSeen := "", PartyHitsDuel := "",
 ;A support's boosts: the round (the log's) each used flag's cast went out in ({n: round}), the battle that's for, the
 ;round this round's cast goes out in, the round each treasure / item copy's cast went out in ({"storm/blade@tc": round} -
 ;KillCalc.ahk BoostSrcUsed) (Party.ahk PartyNoteBoosts)
-global PartyFlagRound := {}, PartyFlagDuel := "", PartyCastRound := "", PartySrcRound := {}
+global PartyFlagRound := V1Obj(), PartyFlagDuel := "", PartyCastRound := "", PartySrcRound := V1Obj()
 ;Where traps go this round: on (the boss picked with Alt+1, a party support's pick, else the enemy with the most health -
 ;KillCalc.ahk TrapTarget) and where; TrapMine: noted for the kill check (BossTraps - not a party support's), the picked
 ;enemy's most health and slot (TrapPick), why it was picked (the log)
@@ -3243,16 +3365,16 @@ global TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot
 ;read this look, what's been said once a battle, a support's misfit blades thrown away this round; the blades cast on you
 ;that weren't seen there (UseBlade - reboost:1 casts them again after a hit they fit: ConsumeBoosts), the flags BoostOneOf
 ;held back this round ({blade: [...], trap: [...]})
-global SlotGame := {}, HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := ""
+global SlotGame := V1Obj(), HeadsMemo := V1Obj(), BoostPctMem := V1Obj(), AuraSch := "", PartyLastSch := ""
 global PlanHit := "", PlanHeads := "", PlanList := ""
 global BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
 ;(the game's hand's hit the boosts go for while it waits for its pips - KillCalc.ahk BoostPick)
 global PlanWait := ""
-global SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
-global BoostUnrec := [], BoostOneOfOff := {}
+global SbFound := V1Obj(), GbFound := V1Obj(), BoostHand := V1Obj(), BoostSrcUsed := V1Obj(), BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := V1Obj(), BoostMisfitDone := 0
+global BoostUnrec := [], BoostOneOfOff := V1Obj()
 ;(the boosts this look found by the game's hand alone - no picture found them: cast at their card box - KillCalc.ahk
 ;BoostSearch, BoostMemBox)
-global BoostMemOnly := {}
+global BoostMemOnly := V1Obj()
 ;(the game's name of the global - bubble - the bot put up this battle: the same isn't cast again - KillCalc.ahk BubbleMem,
 ;ClickBubble; ResetVariables empties it)
 global BubbleUp := ""
@@ -3262,14 +3384,14 @@ global BubbleUp := ""
 ;battle - {each of its identities - KillCalc.ahk NegAuraKey: the round} - once in 4 rounds an enemy: UseNegAura; your
 ;prism on the boss this battle - {hits: your hits counted then (PartyHits), round} - once till a hit of yours goes out:
 ;UseConvert, KillCalc.ahk ConvertUp; ResetVariables empties them)
-global absorb := 0, absorbX := "", absorbY := "", AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, NegAuraOn := {}, ConvertOn := ""
+global absorb := 0, absorbX := "", absorbY := "", AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, NegAuraOn := V1Obj(), ConvertOn := ""
 LoadStats()
 ;"Wait while I play" on, 3 s, at every start - the bot never takes the mouse from you as it starts (you asked,
 ;2026-10-23); the tray menu, the dashboard and Settings change it for the run
 if (!HandsOffOn() || !Stats.Has("handsoff") || Stats["handsoff"] != 3)
 	{
 	if (!StatsSet([["handsoffon", 1], ["handsoff", 3]], "Wait while I play: on and 3 s at every start"))
-		Stats["handsoffon"] := 1, Stats["handsoff"] := 3 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
+		Stats["handsoffon"] := 1, Stats["handsoff"] := 3
 	}
 
 ;Misc Initilization
@@ -3285,10 +3407,10 @@ global EnemyPlates := []
 ;(when they were last read - ReadEnemyHealth)
 global EnemyPlatesAt := 0
 global boosts := 0
-global afk := 0
+global afkVar := 0
 global bossX := 0
 global bossY := 0
-global afk := 0
+global afkVar := 0
 
 ;Screen variable initilization
 ;Game* is the Wizard101 client area in screen coordinates, ScreenX/ScreenY is its center
@@ -3328,12 +3450,7 @@ UpdateGameRect()
 
 ;debug.log: what the script sees and decides each round (starts fresh every start / restart; the last
 ;run's is kept as debug.previous.log - e.g. to see why a wizard died before you restarted)
-Try {
-	FileMove(A_ScriptDir "\debug.log", A_ScriptDir "\debug.previous.log", 1)
-	ErrorLevel := 0
-} Catch as Err {
-	ErrorLevel := Err.Extra
-}
+V1Do(FileMove, A_ScriptDir "\debug.log", A_ScriptDir "\debug.previous.log", 1)
 ;The dashboard: statistics, what the bot sees, the log as it's written (Dashboard.ahk; Windows+2)
 DashInit()
 SetTimer(UpdPeekNow,-45000)
@@ -3378,7 +3495,7 @@ for each, botArg in A_Args
 		Tray.Uncheck("Auto-reconnect on/off")
 		DebugLog("Auto-reconnect off: it was off before the update")
 		}
-	else if (botArg = "/learnall" && !LearnAll && IsFunc("LearnAllToggle"))
+	else if (botArg = "/learnall" && !LearnAll && V1IsFunc("LearnAllToggle"))
 		LearnAllToggle.Call()
 
 ;Stats (StatsRead.ahk): read by itself out of battle when the school it fights with has none yet, or
@@ -3393,7 +3510,7 @@ VisionStart()
 SetTimer(PartyTimer,500)
 ;(the Network tab - Network.ahk: this bot's state to the others on your home network, theirs and commands back)
 SetTimer(NetTick,2000)
-OnExit("VisionOnExit")
+OnExit(VisionOnExit)
 
 ;Initializes modes
 global commandmode := 0
@@ -3412,7 +3529,7 @@ global Tick := 100
 global AfkWhy := "", AfkRetries := 0
 ;When the picture set in use last matched (the spellbook or a round's Pass button), and at what game size
 global PicSetOkAt := 0, PicSetOkSize := ""
-global Buffer := 300
+global BufferVar := 300
 global Half := 600
 global Second := 1100
 global Five := 5000
@@ -3420,11 +3537,18 @@ global Ten := 10000
 global Loading := 15000 
 
 ResetUsed()	
-TestRound()
+;(v1: on into the label TestRound - the battle loop, for good)
+BattleLoop()
 }
 ;##############################################
-TestRound() { ; V1toV2: Lbl->Func
+;The battle loop (v1: the labels TestRound, RoundStart, TestHammer, FindCards and EndRound in the auto-execute section,
+;Goto between them - StartBot's thread fell into TestRound and ran them for good, never returning). v2: one function,
+;the labels inside it and the Gotos as they were (CONVENTIONS.md 9 - a call each round would grow the stack till it crashed)
+BattleLoop() {
 global
+local _dir, _title ; (v1 passed these literals as temporaries: locals here, not globals)
+;Checks if in battle
+TestRound:
 Loop
 {
 	;(no round being played here: a battle round's hold on your mouse let go, however the round was left - Settings.ahk
@@ -3468,11 +3592,12 @@ Loop
 		LastBeat := A_TickCount
 		;(another program's window: only its program's name - its title can be anything of yours, and the log goes to the
 		;OneDrive copy, bug reports and the Network tab)
-		activeTitle := WinGetTitle("A")
-		activePid := WinGetPID("A")
+		;(v1: no window active - blank; v2 throws)
+		activeTitle := V1Try(WinGetTitle, "A")
+		activePid := V1Try(WinGetPID, "A")
 		if (!GameActive() && activePid != DllCall("GetCurrentProcessId"))
 			{
-			activeExe := WinGetProcessName("A")
+			activeExe := V1Try(WinGetProcessName, "A")
 			activeTitle := "another program (" (activeExe != "" ? activeExe : "?") ")"
 			}
 		DebugLog("Watching for a round. Active window: " activeTitle " | game area " GameLeft "," GameTop " " GameW "x" GameH)
@@ -3491,7 +3616,7 @@ Loop
 		;read here too: 2026-10-23 its list stayed on the last round the bot played. Your plate as found in another battle
 		;isn't read for your health - an ally's can be there now)
 		BattleLogRead()
-		if (IsFunc("BattleLogInBattle") && BattleLogInBattle() && BlPhase = "kPhase_Planning" && BlPhaseAt != EnemyPhaseDone && A_TickCount - BlPhaseAt > 1500)
+		if (V1IsFunc("BattleLogInBattle") && BattleLogInBattle() && BlPhase = "kPhase_Planning" && BlPhaseAt != EnemyPhaseDone && V1Gt(V1Ago(BlPhaseAt), 1500))  ; (v1: no phase seen - blank - is not > 1500)
 			{
 			if (PlateDuel != BlDuel)
 				playerX := 0, playerY := 0
@@ -3518,7 +3643,7 @@ Loop
 		Sleep(300)
 		continue
 		}
-	ErrorLevel := !ImageSearch(&roundX, &roundY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
+	V1ImageSearch(&roundX, &roundY, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
 	bookSeen := (ErrorLevel = 0)
 	;(the spellbook only proves the set right when its picture isn't too see-through to tell sizes apart)
 	if (bookSeen)
@@ -3544,7 +3669,7 @@ Loop
 		MouseGrab()
 		;(the mob loop, lore farming, afk: they move the wizard themselves - the walker's keys let go and the game at 1x
 		;first, not after their first steps)
-		if ((afk || loopmode || loremode) && (KeysDown || HeldW || SpeedNow > 1))
+		if ((afkVar || loopmode || loremode) && (KeysDown || HeldW || V1Gt(SpeedNow, 1)))
 			ReleaseKeys()
 		checkafk()
 		;Fled a battle out of mana or cards (Flee.ahk): a potion first (or a run to buy some), then on as usual
@@ -3560,7 +3685,7 @@ Loop
 		ResetUsed()	
 		;(the card learner's work out of battle: its catalog checked once a run, stray copies of a learned picture put
 		;right, a stronger learned hit arranged into hit1-3 - CardLearn.ahk)
-		if (IsFunc("LearnOutOfBattle"))
+		if (V1IsFunc("LearnOutOfBattle"))
 			LearnOutOfBattle.Call()
 		StatsAuto()
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
@@ -3571,8 +3696,8 @@ Loop
 		MouseLetGo()
 		;(the log's OneDrive copy, when it's on: a picture of the game every 2 minutes - LogMirrorSnap)
 		LogMirrorSnap(120000)
-		mobloop() ; V1toV2: Gosub
-		LoreLoop() ; V1toV2: Gosub
+		mobloop() ; (v1: Gosub)
+		LoreLoop() ; (v1: Gosub)
 		}
 	;(the Pass button, or as it's drawn with the mouse on it - PassButtonAt)
 	PassButtonAt(&startX, &startY)
@@ -3610,9 +3735,9 @@ Loop
 				{
 				if (PicMeasureSize != pmSize)
 					PicMeasureSize := pmSize, PicMeasureTries := 0
-				if (PicMeasureTries < 3)
+				if (V1Lt(PicMeasureTries, 3))
 					{
-					PicMeasureTries += 1, pmWas := PicSet, PicMeasureWhy := ""
+					PicMeasureTries := V1Add(PicMeasureTries, 1), pmWas := PicSet, PicMeasureWhy := ""
 					;(another set: the round start looked for again with it)
 					if (DetectUiScale())
 						{
@@ -3637,8 +3762,7 @@ Loop
 			{
 			;(the round the bot left to you, still up: not a new round)
 			DebugLog("Round start again (the round left to you is still up): Pass button at " startX - GameLeft "," startY - GameTop)
-			RoundStart() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
+			Goto("RoundStart")
 			}
 		DebugLog("Round start: Pass button at " startX - GameLeft "," startY - GameTop)
 		;(a battle's first round: which mob started it, from how far and how far off its facing - Vision.ahk)
@@ -3648,14 +3772,15 @@ Loop
 		SeenOut := 0
 		if (dualmode == 1)
 			{
-			roundnumber++
-			roundnumber := %roundnumber% / 2
+			;(v1: blank counted as 0; "%roundnumber% / 2" read the variable named by the number - a command-line parameter,
+			;never a number - so the round number was blank in dual mode)
+			roundnumber := V1N(roundnumber) + 1
+			roundnumber := ""
 			} else
 				{
-				roundnumber++
+				roundnumber := V1N(roundnumber) + 1
 				}
-		RoundStart() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("RoundStart")
 		}
 	;Neither the spellbook nor the Pass button: maybe the game's UI is another size now (the window
 	;or the display scaling changed), so every few seconds look with the other picture sets - and if
@@ -3679,15 +3804,15 @@ Loop
 	if (!bookSeen && ((inbattle = 1 && PassSeenAt && A_TickCount - PassSeenAt > 15000) || passLog) && A_TickCount - PassNudgeAt > 15000
 		&& GameActive() && UserIdle() > 5000)
 		{
-		PassNudgeAt := A_TickCount, PassNudges += 1
+		PassNudgeAt := A_TickCount, PassNudges := V1Add(PassNudges, 1)
 		MouseMove(ScreenX, GameTop + Round(GameH * 0.4), 0)
 		if (A_TickCount - PassNudgeSaidAt > 300000)
-			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen " (passLog ? "though the game's log says one is up (" Round((A_TickCount - BlPhaseAt) / 1000) " s)" : "for " Round((A_TickCount - PassSeenAt) / 1000) " s") " - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
+			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen " (passLog ? "though the game's log says one is up (" V1Round(V1Div(V1Ago(BlPhaseAt), 1000)) " s)" : "for " Round((A_TickCount - PassSeenAt) / 1000) " s") " - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
 		}
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).
 	;Not while afk, mob-loop or lore farming: those move the wizard themselves
-	if (afk || loopmode || loremode)
+	if (afkVar || loopmode || loremode)
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
@@ -3708,11 +3833,8 @@ Loop
 	else
 		WalkStep()
 }
-RoundStart()
-}
-;##############################################
-RoundStart() { ; V1toV2: Lbl->Func
-global
+
+RoundStart:
 
 ;A wait before playing a new round (roundwait, the Settings window) - then, as the round's look began: you may
 ;have started playing meanwhile (the round's yours - nothing's been taken yet), or the round may be over
@@ -3726,13 +3848,11 @@ if (!RoundAgain && Stat("roundwait") > 0)
 		RoundLeft := 1
 		if (!PlayerTookRound)
 			PlayerTookRound := 1
-		TestRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("TestRound")
 		}
 	if (PassButtonAt(&rwX, &rwY))
 	{
-		TestRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("TestRound")
 	}
 	}
 ;(a walker notice mustn't cover what the battle reads)
@@ -3776,27 +3896,26 @@ global player := 1
 BattleLogRead(true)
 ;(more than one of your wizards in the battle - a party: your plate by your name, EnemySpells.ahk PlayerPlateByName)
 global PlateByName := 0
-if (PlayerPlateByName(pbnX, pbnY))
+if (PlayerPlateByName(&pbnX, &pbnY))
 	{
 	playerX := pbnX, playerY := pbnY, PlateByName := 1, player := 1
 	}
 else
 	{
-	ErrorLevel := !ImageSearch(&playerX, &playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\player.png"))
+	V1ImageSearch(&playerX, &playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\player.png"))
 	if (ErrorLevel = 0)
 		{
 		player := 1
 		} else if (ErrorLevel = 1)
 			{
-			ErrorLevel := !ImageSearch(&playerX, &playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\player2.png"))
+			V1ImageSearch(&playerX, &playerY, GameLeft, GameTop + GameH / 4, GameRight, GameBottom, PicOpt("resources\player2.png"))
 			if (Errorlevel = 0)
 				{
 				player := 1
 				}
 			} else 
 				{
-				TestHammer() ; V1toV2: Goto->FuncCall
-				Return ; V1toV2: post-return for Goto
+				Goto("TestHammer")
 				}
 	}
 		
@@ -3811,13 +3930,12 @@ global schoolX := 0
 global schoolY := 0
 
 ;(the badge nearest your plate - it's left of your name: a party battle's next plate is ~300 px on, past the box)
+;(v1: your plate not found - playerX blank: blank arithmetic)
 if (player == 1)
-	school := BestBadge(playerX - Px(100), playerY - Px(100), playerX + Px(250), playerY + Px(250), &schoolX, &schoolY, playerX - Px(45), playerY + Px(15))
-TestHammer()
-}
-;##############################################
-TestHammer() { ; V1toV2: Lbl->Func
-global
+	school := BestBadge(V1Sub(playerX, Px(100)), V1Sub(playerY, Px(100)), V1Add(playerX, Px(250)), V1Add(playerY, Px(250)), &schoolX, &schoolY, V1Sub(playerX, Px(45)), V1Add(playerY, Px(15)))
+
+;Checks who's hammer
+TestHammer:
 
 global hitter := 0
 global hitschool := ""
@@ -3850,7 +3968,7 @@ if (hitter = 0) && (player == 1)
 	if (BadgeNumber(knownSchool))
 		{
 		hitschool := knownSchool, hitter := BadgeNumber(knownSchool)
-		hammerX := playerX + Px(25), hammerY := playerY + Px(8)
+		hammerX := V1Add(playerX, Px(25)), hammerY := V1Add(playerY, Px(8))
 		if (school = "")
 			school := knownSchool
 		DebugLog("  no school badge found on the name plates - this character fought as " knownSchool " before: using that, with your own plate as the hitter's")
@@ -3871,7 +3989,7 @@ if (hitter = 0)
 	;(the mouse back once the picture's taken)
 	MouseLetGo()
 	DebugLog("  no school icon the bot knows - leaving this round to you" (savedTo = "" ? "" : " (picture of it: " savedTo ")"))
-	TrayTip("Wizard101 bot", "The bot doesn't know this wizard's school yet - play this round yourself.", 1)
+	TrayTip("The bot doesn't know this wizard's school yet - play this round yourself.", "Wizard101 bot", 1)
 	AlertSend("school", "a wizard it doesn't know", "No school icon the bot knows on the name plates - the round is left to you (a new wizard? its pictures get cut from the round pictures it saves).")
 	;Wait for the round to be played (the Pass button goes), then watch for the next one
 	unknownFrom := A_TickCount
@@ -3882,8 +4000,7 @@ if (hitter = 0)
 		if (PassButtonAt(&unknownX, &unknownY) != 0 || A_TickCount - unknownFrom > 180000)
 			break
 		}
-	TestRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("TestRound")
 	}
 
 ;Who the boosts go to: you - as found above -, the plate picked with Alt+2, or a party battle's hitter (Party.ahk
@@ -3899,51 +4016,47 @@ HammerGroup := SchoolGroup(HammerSchool)
 ;Looks at the hand (and again after discarding, since the cards shift)
 if (!RoundAgain)
 	Discards := 0
-FindCards()
-}
-;##############################################
-FindCards() { ; V1toV2: Lbl->Func
-global
+FindCards:
 
 ;Enchants (and a fresh look at the hand for the vision helper; each hit's heads looked at afresh - KillCalc.ahk HitHeads)
 VisionForget()
-HeadsMemo := {}
+HeadsMemo := V1Obj()
 FindEnchant()
 
 ;Finds cards avaliable
 
 global sharpen := 0
-Find("sharpen", &sharpen, &SharpX, &SharpY, &"resources") 
+Find("sharpen", &sharpen, &SharpX, &SharpY, &_dir := "resources") 
  
 global potent := 0
-Find("potent", &potent, &PotentX, &PotentY, &"resources") 
+Find("potent", &potent, &PotentX, &PotentY, &_dir := "resources") 
 
 ;(the school blades and traps - yours and those of every school the hits need: KillCalc.ahk BoostSearch, once the pips
 ;are read)
 global blade := 0
 
 global blade3 := 0
-Find("blade3", &blade3, &Blade3X, &Blade3Y, &"resources")
+Find("blade3", &blade3, &Blade3X, &Blade3Y, &_dir := "resources")
  
 global blade4 := 0
-Find("blade4", &blade4, &Blade4X, &Blade4Y, &"resources")
+Find("blade4", &blade4, &Blade4X, &Blade4Y, &_dir := "resources")
 
 global trap := 0
 
 global trap3 := 0
-Find("trap3", &trap3, &trap3X, &trap3Y, &"resources")
+Find("trap3", &trap3, &trap3X, &trap3Y, &_dir := "resources")
 
 global aura := 0
 Find("aura", &aura, &auraX, &auraY, &hitschool)
 
 global tower := 0
-Find("tower", &tower, &towerX, &towerY, &"resources")
+Find("tower", &tower, &towerX, &towerY, &_dir := "resources")
 
 global reshuffle := 0
-Find("reshuffle", &reshuffle, &reshuffleX, &reshuffleY, &"resources")
+Find("reshuffle", &reshuffle, &reshuffleX, &reshuffleY, &_dir := "resources")
 
 global feint := 0
-Find("feint", &feint, &feintX, &feintY, &"resources")
+Find("feint", &feint, &feintX, &feintY, &_dir := "resources")
 
 global bubble := 0
 Find("bubble", &bubble, &bubbleX, &bubbleY, &hitschool)
@@ -3959,7 +4072,7 @@ global absorb := 0
 absorbX := "", absorbY := "", AbsorbFreeOk := 0, negaura := 0
 if (AbsorbPicThere())
 	{
-	Find("absorb", &absorb, &absorbX, &absorbY, &"resources")
+	Find("absorb", &absorb, &absorbX, &absorbY, &_dir := "resources")
 	AbsorbFreeOk := (absorb == 1) ? AbsorbSlotFree() : 0
 	}
 
@@ -4003,7 +4116,7 @@ if (PartySupport())
 ;off the pip row under your name (KillCalc.ahk PipsRead)
 PipsNow := PipsRead()
 DebugLog("  pips=" PipsNow PipsNote)
-DebugLog("  player=" player " at " playerX - GameLeft "," playerY - GameTop " school=" school " | hitter=" hitschool " at " hammerX - GameLeft "," hammerY - GameTop " | enchant=" enchant
+DebugLog("  player=" player " at " V1Sub(playerX, GameLeft) "," V1Sub(playerY, GameTop) " school=" school " | hitter=" hitschool " at " V1Sub(hammerX, GameLeft) "," V1Sub(hammerY, GameTop) " | enchant=" enchant
 	. (PartySupport() ? " | " BattleRole ": the boosts to " HammerName " (" (HammerSchool = "" ? "school not known" : HammerSchool) ")" : ""))
 ;The blades and traps of every school the hits need - a Balance Hydra's fire, ice and storm (KillCalc.ahk BoostSearch: the
 ;game's memory, read-only, says what's in hand; without it, your school's as before)
@@ -4026,8 +4139,7 @@ if (Manual != 1) && (!LearnedThisRound)
 	LearnedThisRound := 1
 	if (LearnCards())
 	{
-		FindCards() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("FindCards")
 	}
 	}
 
@@ -4035,12 +4147,11 @@ if (Manual != 1) && (!LearnedThisRound)
 ;every card: that discards everything it knows): first, once a round, the cards it never plays (learned, in no
 ;slot - CardLearn.ahk DiscardUnused, off the hand as the helper read it), then spare blades and Sharpen
 ;(and cards of kinds switched off in the Settings window: Settings.ahk DiscardSwitchedOff)
-if (!LearnAll) && (Discards < 3) && (DiscardUnused() + DiscardSpare() + DiscardSwitchedOff())
+if (!LearnAll) && V1Lt(Discards, 3) && V1Add(V1Add(DiscardUnused(), DiscardSpare()), DiscardSwitchedOff())  ; (v1: a blank count made the sum blank)
 	{
-	Discards++
+	Discards := V1N(Discards) + 1  ; (v1: never set yet - the first round left to you in roundwait, then up again - blank: "" < 3 true, ++ from 0)
 	s(Stat("discardlook"))
-	FindCards() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("FindCards")
 	}
 
 CenterMouse()
@@ -4058,8 +4169,7 @@ if (!BotOn)
 	RoundLeft := 1
 	MouseLetGo()
 	MouseLockOff("round")
-	TestRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("TestRound")
 	}
 
 ;You started playing while the bot looked at the hand: the round is yours
@@ -4069,15 +4179,13 @@ if (PlayerActing())
 	RoundLeft := 1
 	if (!PlayerTookRound)
 		PlayerTookRound := 1, DebugLog("  (no kill check till this battle ends - the bot can't know which blades and traps you use)")
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("EndRound")
 	}
 
 ;Out of mana or cards - it could only pass for the rest of the battle: flee, and try again (Flee.ahk)
 if FleeCheck()
 {
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("EndRound")
 }
 
 ;Learning every card (dashboard button / tray menu): no casting but a heal when low - learn, discard what
@@ -4088,19 +4196,16 @@ if (LearnAll)
 		{
 		if (heal1 == 1) && UseHeal("heal1", &heal1, hitschool)
 		{
-			EndRound() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
+			Goto("EndRound")
 		}
 		if (heal2 == 1) && UseHeal("heal2", &heal2, hitschool)
 		{
-			EndRound() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
+			Goto("EndRound")
 		}
 		}
 	LearnAllRound()
 	ClickPass()
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("EndRound")
 	}
 
 ;Kill check: read every enemy's health and, if a hit in hand already kills them all, cast it now instead of boosting more
@@ -4114,10 +4219,10 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 		;(nothing ends it now: one would with an enchant on it and there's none in hand - drawenchant: treasure cards
 		;drawn for one, then looked at again - Draw.ahk; still nothing: is a hit worth saving pips for? KillCalc.ahk
 		;PlanPips)
-		if (!FindLethalHit(KillHit, KillEnchant))
+		if (!FindLethalHit(&KillHit, &KillEnchant))
 			{
 			if (DrawWouldKill() && DrawForKill())
-				FindLethalHit(KillHit, KillEnchant)
+				FindLethalHit(&KillHit, &KillEnchant)
 			;(a blader's or healer's pips are for its boosts: no saving them for a hit)
 			if (KillHit = "" && !PartySupport())
 				PlanPips()
@@ -4136,8 +4241,7 @@ if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr"
 			{
 			;(a saved-for hit went out: the next save counts afresh)
 			PipSaveRounds := 0, PipSaveTarget := "", PipSaveStall := 0, BoostRun := 0
-			EndRound() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
+			Goto("EndRound")
 			}
 		}
 	}
@@ -4152,16 +4256,14 @@ if (hitter != 0) && (playerX != "")
 	EnemyPhaseDone := BlPhaseAt
 	if (EnemyDanger() && !PlayerTookRound && EnemyDefend())
 	{
-		EndRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("EndRound")
 	}
 	}
 
 ;A party battle's healer (Party.ahk): the ally lowest on health - under healat % and lower than you - healed first
 if (BattleRole = "healer") && ((heal1 == 1) || (heal2 == 1)) && PartyHealAlly()
 {
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("EndRound")
 }
 
 ;Low on health (under healat % of it, PlayerStats.txt): a healing card on yourself before anything else
@@ -4169,21 +4271,18 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 	{
 	if (heal1 == 1) && UseHeal("heal1", &heal1, hitschool)
 	{
-		EndRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("EndRound")
 	}
 	if (heal2 == 1) && UseHeal("heal2", &heal2, hitschool)
 	{
-		EndRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("EndRound")
 	}
 	}
 
 ;(the healer: Tower Shield on the ally that's low, else on the hitter - Party.ahk PartyShield)
 if (BattleRole = "healer") && PartyShield()
 {
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("EndRound")
 }
 
 ;How it plays its cards (the Settings window: cardlogic, boostmax, use...): hit first - before any boost - when
@@ -4196,8 +4295,7 @@ if (!BotOn)
 	RoundLeft := 1
 	MouseLetGo()
 	MouseLockOff("round")
-	TestRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
+	Goto("TestRound")
 	}
 ;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
 ;PartyTrapTarget); else, in every battle (the user, 2026-10-24: "the enemy with the highest health always"), the enemy
@@ -4217,73 +4315,61 @@ if (!PartySupport()) && CardHitFirst()
 	HitsTried := 1
 	if CastBestHit()
 	{
-		EndRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("EndRound")
 	}
 	}
 BoostOk := PartySupport() ? 1 : CardBoostOk()
 
 ;Automatic Battle code
 ;(each school's blade and trap with its own used flags - KillCalc.ahk KeyFlags: BoostPick names them)
-if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"feint", &feint, &Used1, &Used2, &"resources")
+if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&_title := "feint", &feint, &Used1, &Used2, &_dir := "resources")
 	{
 	BoostRun++
-	EndRound() ; V1toV2: Goto->FuncCall
-	Return ; V1toV2: post-return for Goto
-	} else if (convert == 1) && (BossChoosen == 1) && BoostOk && NeedsConvert() && UseConvert(&"convert", &convert, &hitschool)
+	Goto("EndRound")
+	} else if (convert == 1) && (BossChoosen == 1) && BoostOk && NeedsConvert() && UseConvert(&_title := "convert", &convert, &hitschool)
 		{
 		;(a boost - boostmax counts it -, once till a hit of yours goes out: NeedsConvert, KillCalc.ahk ConvertUp - the
 		;review, 2026-10-26)
 		BoostRun++
-		EndRound() ; V1toV2: Goto->FuncCall
-		Return ; V1toV2: post-return for Goto
+		Goto("EndRound")
 		;(a negative aura - an Attenuate: +N% damage taken on the trap rule's enemy for 4 rounds, before the traps and blades;
 		;once in 4 rounds an enemy, only one that adds to the planned hit - UseNegAura, KillCalc.ahk NegAuraMem)
 		} else if (negaura == 1) && BoostOk && Stat("usetraps") && UseNegAura()
 			{
 			BoostRun++
-			EndRound() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
-			} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"trap", &trap, &used%TrapU1%, &used%TrapU2%, &TrapDir)
+			Goto("EndRound")
+			} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&_title := "trap", &trap, &used%TrapU1%, &used%TrapU2%, &TrapDir)
 			{
 			BoostRun++
-			EndRound() ; V1toV2: Goto->FuncCall
-			Return ; V1toV2: post-return for Goto
-			} else if (trap2 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&traptype, &%traptype%, &used%Trap2U1%, &used%Trap2U2%, &"resources")
+			Goto("EndRound")
+			} else if (trap2 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&traptype, &%traptype%, &used%Trap2U1%, &used%Trap2U2%, &_dir := "resources")
 				{
 				BoostRun++
-				EndRound() ; V1toV2: Goto->FuncCall
-				Return ; V1toV2: post-return for Goto
-				} else if (trap3 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"trap3", &trap3, &used7, &used8, &"resources")
+				Goto("EndRound")
+				} else if (trap3 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&_title := "trap3", &trap3, &used7, &used8, &_dir := "resources")
 					{
 					BoostRun++
-					EndRound() ; V1toV2: Goto->FuncCall
-					Return ; V1toV2: post-return for Goto
-					} else if (trap4 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"trap4", &trap4, &used9, &used10, &"resources")
+					Goto("EndRound")
+					} else if (trap4 == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&_title := "trap4", &trap4, &used9, &used10, &_dir := "resources")
 						{
 						BoostRun++
-						EndRound() ; V1toV2: Goto->FuncCall
-						Return ; V1toV2: post-return for Goto
-						} else if (blade == 1) && BoostOk && Stat("useblades") && UseBlade(&"blade", &blade, &used%BladeU1%, &used%BladeU2%, &BladeDir)
+						Goto("EndRound")
+						} else if (blade == 1) && BoostOk && Stat("useblades") && UseBlade(&_title := "blade", &blade, &used%BladeU1%, &used%BladeU2%, &BladeDir)
 							{
 							BoostRun++
-							EndRound() ; V1toV2: Goto->FuncCall
-							Return ; V1toV2: post-return for Goto
-							} else if (blade2 == 1) && BoostOk && Stat("useblades") && UseBlade(&bladetype, &%bladetype%, &used%Blade2U1%, &used%Blade2U2%, &"resources")
+							Goto("EndRound")
+							} else if (blade2 == 1) && BoostOk && Stat("useblades") && UseBlade(&bladetype, &%bladetype%, &used%Blade2U1%, &used%Blade2U2%, &_dir := "resources")
 								{
 								BoostRun++
-								EndRound() ; V1toV2: Goto->FuncCall
-								Return ; V1toV2: post-return for Goto
-								} else if (blade3 == 1) && BoostOk && Stat("useblades") && UseBlade(&"blade3", &blade3, &used15, &used16, &"resources")
+								Goto("EndRound")
+								} else if (blade3 == 1) && BoostOk && Stat("useblades") && UseBlade(&_title := "blade3", &blade3, &used15, &used16, &_dir := "resources")
 									{
 									BoostRun++
-									EndRound() ; V1toV2: Goto->FuncCall
-									Return ; V1toV2: post-return for Goto
-									}  else if (blade4 == 1) && BoostOk && Stat("useblades") && UseBlade(&"blade4", &blade4, &used17, &used18, &"resources")
+									Goto("EndRound")
+									}  else if (blade4 == 1) && BoostOk && Stat("useblades") && UseBlade(&_title := "blade4", &blade4, &used17, &used18, &_dir := "resources")
 										{
 										BoostRun++
-										EndRound() ; V1toV2: Goto->FuncCall
-										Return ; V1toV2: post-return for Goto
+										Goto("EndRound")
 										} else if (bubble == 1) && BoostOk && Stat("usebubble") && ClickBubble()
 											{
 											;(by its picture, else at the game's card's box - ClickBubble; not clicked: on
@@ -4291,7 +4377,7 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"fei
 											BoostRun++
 											} else if (aura == 1) && BoostOk && Stat("useaura") && (AuraRounds <= 0)
 												{
-												if Click(&"aura", &aura, &hitschool)
+												if FindAndClick(&_title := "aura", &aura, &hitschool)
 													{
 													AuraRounds := 4
 													;(the schools it boosts: its card's in the game's hand, else yours)
@@ -4300,18 +4386,15 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"fei
 													}
 												} else if (BattleRole = "blader") && PartyShield()
 													{
-													EndRound() ; V1toV2: Goto->FuncCall
-													Return ; V1toV2: post-return for Goto
+													Goto("EndRound")
 													} else if (!HitsTried) && CastBestHit()
 													{
-													EndRound() ; V1toV2: Goto->FuncCall
-													Return ; V1toV2: post-return for Goto
-													} else if (wand == 1) && Stat("usewand") && !WandWastes() && UseHit(&"wand", &wand, &hitschool)
+													Goto("EndRound")
+													} else if (wand == 1) && Stat("usewand") && !WandWastes() && UseHit(&_title := "wand", &wand, &hitschool)
 														{
 														BoostRun := 0
-														EndRound() ; V1toV2: Goto->FuncCall
-														Return ; V1toV2: post-return for Goto
-														} else if (tower == 1) && Stat("usetower") && UseOnSelf(&"tower", &tower, &"resources") || AbsorbFiller()
+														Goto("EndRound")
+														} else if (tower == 1) && Stat("usetower") && UseOnSelf(&_title := "tower", &tower, &_dir := "resources") || AbsorbFiller()
 															{
 															;(it has to go out, as when defending - CastWentOut; the card didn't go: passed,
 															;not left to the round's timer. Not clicked at all - the game's Tower Shield's box
@@ -4324,22 +4407,17 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&"fei
 																;(a party battle's blader or healer: on itself - hammerX/Y is the hitter's
 																;plate; its boosts on the hitter are cast again by Party.ahk, not here)
 																if (PartySupport())
-																	UseOnSelf(&"reshuffle", &reshuffle, &"resources")
+																	UseOnSelf(&_title := "reshuffle", &reshuffle, &_dir := "resources")
 																else
 																	{
-																	UseOnHammer(&"reshuffle", &reshuffle, &"resources")
+																	UseOnHammer(&_title := "reshuffle", &reshuffle, &_dir := "resources")
 																	ResetUsed()
 																	}
 																} else if ClickPass()
 																	{
-																	EndRound() ; V1toV2: Goto->FuncCall
-																	Return ; V1toV2: post-return for Goto
+																	Goto("EndRound")
 																	}
-EndRound()
-}
-;##############################################
-EndRound() { ; V1toV2: Lbl->Func
-global
+EndRound:
 DebugLog("Round done")
 ;The mouse back where it was when the round began (mousereturn, the Settings window), else off the cards - not
 ;if you've used the mouse or keys meanwhile (MouseLetGo -1: it's yours)
@@ -4348,13 +4426,12 @@ if (MouseLetGo() = 0)
 ;(your mouse unlocked - Settings.ahk MouseLockOff)
 MouseLockOff("round")
 
-Switch()
+SwitchWindow()
 	
-TestRound() ; V1toV2: Goto->FuncCall
-Return ; V1toV2: post-return for Goto
+Goto("TestRound")
 }
 ;##############################################
-mobloop() { ; V1toV2: Lbl->Func
+mobloop() { ; (v1: a label)
 global
 if (loopmode == 1)
 	{
@@ -4379,11 +4456,14 @@ return
 }
 ;##############################################
 LoreLoop()
-	{ ; V1toV2: Lbl->Func
-	;global
+	{ ; (v1: a label)
+	global
+	local _direction ; (v1 passed these literals as temporaries: locals here, not globals)
 	if ((loremode == 1) && (dualmode == 0))
 		{
-		num := Mod(%battles% + 1, 50)
+		;(v1: "Mod(%battles% + 1, 50)" read the variable named by the number of battles - a command-line parameter or
+		;the count of them, never 49: never 0)
+		num := ""
 		if (num == 0)
 			{
 			UsePotion()
@@ -4393,43 +4473,44 @@ LoreLoop()
 		s(5000)
 		Spam("x")
 		s(16000)
-		LockMove(&"w")
+		LockMove(&_direction := "w")
 		s(5000)
 		} else if ((loremode == 1) && (dualmode == 1))
 			{
 			;Joins Battles with same wizard you started the loop in
 			;(your mouse locked the whole way - about a minute: Settings.ahk MouseLockOn, 2 minutes before its watchdog)
 			MouseLockOn("lore", 120000)
-			num := Mod(%battles% + 1, 50)
+			;(v1: never 0 - as above)
+			num := ""
 			if (num == 0)
 				{
 				UsePotion()
-				Switch()
+				SwitchWindow()
 				s(500)
 				UsePotion()
-				Switch()
+				SwitchWindow()
 				}	
 			log()
-			switch()
+			SwitchWindow()
 			centermouse()
 			log()
 			join()
-			switch()
+			SwitchWindow()
 			centermouse()
 			join()
-			switch()
+			SwitchWindow()
 			s(30000)
 			Spam("x")
-			Switch()
+			SwitchWindow()
 			s(1000)
 			Spam("x")
 			s(17000)
-			LockMove(&"w")
-			Switch()
+			LockMove(&_direction := "w")
+			SwitchWindow()
 			s(1000)
-			LockMove(&"w")
+			LockMove(&_direction := "w")
 			s(5000)
-			switch()
+			SwitchWindow()
 			MouseLockOff("lore")
 			return
 			} else 
@@ -4438,23 +4519,25 @@ LoreLoop()
 				}
 	}
 ;##############################################
-HkDev() { ; V1toV2: Lbl->Func
+HkDev(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
-	ModeBox(&devmode, &"Developer", 10, 10, 144, 30)
+	ModeBox(&devmode, &_name := "Developer", &_x := 10, &_y := 10, &_w := 144, &_h := 30)
 	}
 return
 }
 ;##############################################
-HkLore() { ; V1toV2: Lbl->Func
+HkLore(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
 	msgResult := MsgBox("Please make sure you're standing next to the lore sigil when activating this mode.`n`nPress Ok to continue.", "AutoFarmer: Lore Mode", 1)
 	if (msgResult = "ok")
 		{
-		ModeBox(&loremode, &"Lore", 10, 10, 140, 30)
+		ModeBox(&loremode, &_name := "Lore", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 		}
 	if (msgResult = "cancel")
 		{
@@ -4468,14 +4551,15 @@ if (on == 1)
 return
 }
 ;##############################################
-HkDual() { ; V1toV2: Lbl->Func
+HkDual(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
 	msgResult := MsgBox("Please make sure that, when activating this mode two Wizard101 instances are open and that, when `"Alt+Tab`" is pressed it'll switch bewteen them.`n`nPress Ok to continue.", "AutoFarmer: Dual Mode", 1)
 	if (msgResult = "ok")
 		{
-		ModeBox(&dualmode, &"Dual", 10, 10, 120, 30)
+		ModeBox(&dualmode, &_name := "Dual", &_x := 10, &_y := 10, &_w := 120, &_h := 30)
 		}
 	if (msgResult = "cancel")
 		{
@@ -4485,40 +4569,44 @@ if (on == 1)
 return
 }
 ;##############################################
-HkCommand() { ; V1toV2: Lbl->Func
+HkCommand(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
-	ModeBox(&commandmode, &"Command", 10, 10, 144, 30)
+	ModeBox(&commandmode, &_name := "Command", &_x := 10, &_y := 10, &_w := 144, &_h := 30)
 	}
 return
 }
 ;##############################################
-HkStats() { ; V1toV2: Lbl->Func
+HkStats(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
-	ModeBox(&statsmode, &"Statistic", 10, 10, 140, 30)
+	ModeBox(&statsmode, &_name := "Statistic", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	}
 return
 }
 ;##############################################
-HkResponse() { ; V1toV2: Lbl->Func
+HkResponse(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
-	ModeBox(&responcemode, &"Responce", 10, 10, 140, 30)
+	ModeBox(&responcemode, &_name := "Responce", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	}
 return
 }
 ;##############################################
-HkBoss() { ; V1toV2: Lbl->Func
+HkBoss(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _text, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if ((on == 1) && (inbattle == 1))
 	{
 	;(your mouse free for the pick - Settings.ahk MouseLockPause; locked again after if a round still has it)
 	MouseLockPause(1)
-	NewStaticGui(&"Please Select Boss Location.", 10, 10, 140, 30)
+	NewStaticGui(&_text := "Please Select Boss Location.", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	ErrorLevel := !KeyWait("LButton", "D, 10")
 		If (Errorlevel = 0)
 			{
@@ -4529,8 +4617,8 @@ if ((on == 1) && (inbattle == 1))
 			;A newly picked boss starts with no traps counted (those on the enemy with the most health too: KillCalc.ahk
 			;TrapPut - BossTraps holds one enemy's)
 			BossMax := 0
-			BossTraps := {}, TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
-			Try myGui.Destroy()
+			BossTraps := V1Obj(), TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
+			Gui1Destroy()
 			}
 	MouseLockPause(0)
 	CenterMouse()
@@ -4538,21 +4626,23 @@ if ((on == 1) && (inbattle == 1))
 return
 }
 ;##############################################
-HkLoop() { ; V1toV2: Lbl->Func
+HkLoop(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _name, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if (on == 1)
 	{
-	ModeBox(&loopmode, &"Loop", 10, 10, 140, 30)
+	ModeBox(&loopmode, &_name := "Loop", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	}
 return
 }
 ;##############################################
-HkBoost() { ; V1toV2: Lbl->Func
+HkBoost(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _text, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if ((on == 1) && (inbattle == 1))
 	{
 	MouseLockPause(1)
-	NewStaticGui(&"Please Select Hammer Location.", 10, 10, 140, 30)
+	NewStaticGui(&_text := "Please Select Hammer Location.", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	ErrorLevel := !KeyWait("LButton", "D, 10")
 		If (Errorlevel == 0)
 			{
@@ -4561,7 +4651,7 @@ if ((on == 1) && (inbattle == 1))
 			;(its school - the blade and trap kind for it; your own school - the cards looked for - stays yours)
 			ManualSchool := BestBadge(ManualX - Px(75), ManualY - Px(75), ManualX + Px(75), ManualY + Px(75), &manualBX, &manualBY, ManualX, ManualY)
 			DebugLog(HkText("boost") ": the boosts go to the plate at " ManualX - GameLeft "," ManualY - GameTop " (" (ManualSchool = "" ? "its school not read" : ManualSchool) ") this battle")
-			Try myGui.Destroy()
+			Gui1Destroy()
 			CenterMouse()
 			}
 	;(locked again whether or not a plate was picked - if a round still has it)
@@ -4570,18 +4660,19 @@ if ((on == 1) && (inbattle == 1))
 return
 }
 ;##############################################
-HkPlayer() { ; V1toV2: Lbl->Func
+HkPlayer(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
+local _text, _x, _y, _w, _h ; (v1 passed these literals as temporaries: locals here, not globals)
 if ((on == 1) && (inbattle == 1))
 	{
 	MouseLockPause(1)
-	NewStaticGui(&"Please Select New Player Location.", 10, 10, 140, 30)
+	NewStaticGui(&_text := "Please Select New Player Location.", &_x := 10, &_y := 10, &_w := 140, &_h := 30)
 	ErrorLevel := !KeyWait("LButton", "D, 10")
 		If (Errorlevel = 0)
 			{
 			global ManualPlayer := 1
 			MouseGetPos(&ManualPlayerX, &ManualPlayerY)
-			Try myGui.Destroy()
+			Gui1Destroy()
 			}
 	MouseLockPause(0)
 	CenterMouse()
@@ -4589,13 +4680,13 @@ if ((on == 1) && (inbattle == 1))
 return
 }
 ;##############################################
-GuiClose(*) { ; V1toV2: Lbl->Func
+GuiClose(*) { ; (v1: a label)
 global
-Try myGui.Destroy()
+Gui1Destroy()
 return
 }
 ;##############################################
-HkDash() { ; V1toV2: Lbl->Func
+HkDash(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
 ;Windows+2: the dashboard (Dashboard.ahk) - in dev mode, the info box below
 if (devmode != 1)
@@ -4606,6 +4697,8 @@ if (devmode != 1)
 if (devmode == 1)
 {
 HealthInfo := HealthText()
+;(v1: boostlimit and responsemode are set nowhere - blank in the box)
+boostlimit := "", responsemode := ""
 ;(the school blade's and trap's flags, the group's - this round's: KillCalc.ahk BoostPick)
 DevB1 := used%BladeU2%, DevSB1 := used%BladeU1%, DevB2 := used%Blade2U2%, DevSB2 := used%Blade2U1%
 DevT1 := used%TrapU2%, DevPT1 := used%TrapU1%, DevT2 := used%Trap2U2%, DevPT2 := used%Trap2U1%
@@ -4660,8 +4753,9 @@ Lore(" loremode ")"
 return
 }
 ;##############################################
-HK1_() { ; V1toV2: HK->Func
+HK1_() { ; (v1: a hotkey)
 global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 if (on = 1)
 	{
 	if (devmode = 1)
@@ -4682,7 +4776,7 @@ if (on = 1)
 			Loading := 5100 ;Default is 5000
 			Wait := 325 ;Default is 300
 			Delay := 175 ;Default is 150
-			Buffer := 10 ;Default is 10
+			BufferVar := 10 ;Default is 10
 			
 			Loop
 				{
@@ -4699,7 +4793,7 @@ if (on = 1)
 				Sleep(Wait)
 				MouseMove(615 + leftoffset, 575 + topoffset, Mousespeedfast)
 				Click()
-				Sleep(Buffer)
+				Sleep(BufferVar)
 				MouseMove(A_ScreenWidth/2, A_ScreenHeight/2, Mousespeedfast)
 				BlockInput("SendAndMouse")
 				MouseLockRenew()
@@ -4723,9 +4817,10 @@ if (on = 1)
 					{
 					 Send("s")
 					 }
-					Sleep(Buffer)
+					Sleep(BufferVar)
 					}
-				Sleep(%Loading% - 1500a)
+				;(v1: "sleep, %Loading% - 1500a" - not a number: it slept 0 ms)
+				Sleep(0)
 				MouseMove(610 + leftoffset, 575 + topoffset, Mousespeedfast)
 				Sleep(Delay)
 				Click()
@@ -4749,9 +4844,11 @@ if (on = 1)
 			}
 		}
 	}
+;(v1: no return before #`:: - Alt+0's lines ran on into Win+`'s)
+HK2_()
 }
 ;##############################################
-HK2_() { ; V1toV2: HK->Func
+HK2_() { ; (v1: a hotkey)
 global
 if (on = 1)
 	{
@@ -4766,13 +4863,50 @@ if (on = 1)
 return
 }
 ;##############################################
-HkQuit() { ; V1toV2: Lbl->Func
+HkQuit(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
 ExitApp()
 }
 ;##############################################
-HkRestart2() { ; V1toV2: Lbl->Func
+HkRestart2(*) { ; (v1: a label - a hotkey's: Hotkeys.ahk HkRun calls it by name)
 global
 BotRestart()
 return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+AutofarmerBlank()
+	{
+	global on := "", BotOn := "", BotStandby := "", BotEverOn := "", BotGameSeenAt := "", PotionManual := "", Stats := "", EnemyHP := ""
+	global BossSlot := "", HealthStatus := "", AppliedBlades := "", BossTraps := "", AuraRounds := "", EnchantedHits := "", PipSaveFor := ""
+	global PipSaveRounds := "", PipSaveGaveUp := "", OwnHpPct := "", OwnHpRound := "", PipSaveBare := "", PipSaveTarget := "", PipSaveLastPips := ""
+	global PipSaveStall := "", PipOrbs := "", PlayerActive := "", PlayerTookRound := "", RoundLeft := "", RoundAgain := "", PlayForMe := ""
+	global MobWalkMs := "", EnemyPhaseDone := "", PlateDuel := "", BookSeenAt := "", PassSeenAt := "", PassNudgeAt := "", PassNudges := ""
+	global PassNudgeSaidAt := "", PassHover := "", PassHoverSaidAt := "", PipsNow := "", PipsNote := "", BoostRun := "", BossMax := ""
+	global DualBattle := "", BattleRole := "", HammerSchool := "", HammerName := "", HammerSlot := "", ManualSchool := "", HammerGroup := ""
+	global SidePlates := "", SidePlatesKey := "", MySlot := "", PartyLowX := "", PartyLowY := "", PartyLowPct := "", PartyLowName := ""
+	global PartyLowKey := "", PartyHits := "", PartyHitR := "", PartyHitsSeen := "", PartyHitsDuel := "", PartyHitsWait := "", PartyMySchool := ""
+	global PartyFlagRound := "", PartyFlagDuel := "", PartyCastRound := "", PartySrcRound := "", TrapOn := "", TrapAtX := "", TrapAtY := ""
+	global TrapMine := "", TrapAtMax := "", TrapPick := "", TrapWhy := "", TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := ""
+	global TrapSlot := "", SlotGame := "", HeadsMemo := "", BoostPctMem := "", AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := ""
+	global PlanList := "", BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := ""
+	global Trap2U1 := "", Trap2U2 := "", PlanWait := "", SbFound := "", GbFound := "", BoostHand := "", BoostSrcUsed := "", BoostExtra := ""
+	global HammerPlan := "", BoostMemOk := "", BoostSaid := "", BoostMisfitDone := "", BoostUnrec := "", BoostOneOfOff := "", BoostMemOnly := ""
+	global BubbleUp := "", absorb := "", absorbX := "", absorbY := "", AbsorbFreeOk := "", AbsorbOnlyFree := "", negaura := "", NegAuraOn := ""
+	global ConvertOn := "", inbattle := "", roundnumber := "", battles := "", BossChoosen := "", BossRelX := "", BossRelY := "", EnemyPlates := ""
+	global EnemyPlatesAt := "", boosts := "", afkVar := "", bossX := "", bossY := "", GameExe := "", GameClass := "", CardTol := "", PicSets := ""
+	global PicSet := "", PicDir := "", UiScale := "", LastSetTry := "", HandHalf := "", HalfPitch := "", GameLeft := "", GameTop := "", GameW := ""
+	global GameH := "", GameRight := "", GameBottom := "", ScreenX := "", ScreenY := "", StatsWanted := "", commandmode := "", dualmode := ""
+	global responcemode := "", devmode := "", loremode := "", boostlimitmode := "", dualhittermode := "", statsmode := "", loopmode := "", Tick := ""
+	global AfkWhy := "", AfkRetries := "", PicSetOkAt := "", PicSetOkSize := "", BufferVar := "", Half := "", Second := "", Five := "", Ten := ""
+	global Loading := "", playerX := "", playerY := "", player := "", PlateByName := "", school := "", schoolX := "", schoolY := "", hitter := ""
+	global hitschool := "", hammerX := "", hammerY := "", hitterX := "", hitterY := "", sharpen := "", potent := "", blade := "", blade3 := ""
+	global blade4 := "", trap := "", trap3 := "", aura := "", tower := "", reshuffle := "", feint := "", bubble := "", convert := "", hit4 := ""
+	global hit3 := "", hit2 := "", hit1 := "", wand := "", heal1 := "", heal2 := "", KillHit := "", KillEnchant := "", ManualPlayer := ""
+	global bubbleX := "", Manual := "", blade2 := "", trap2 := "", enchant := "", enchantX := "", enchantY := "", OwnHpCur := "", OwnHpAt := ""
+	global OwnHpWin := "", OwnHpMax := "", OwnHpVotes := "", VisionPlateWhy := "", used := "", hit := "", passX := "", passY := "", VisionOn := ""
+	global LearnHitFails := "", RcOn := "", Tray := "", LearnAll := "", KeysDown := "", HeldW := "", LastBeat := "", BlPhase := "", BlPhaseAt := ""
+	global BlDuel := "", SeenOut := "", SpeedNow := "", PicError := "", PicMeasuredSize := "", PicMeasureSize := "", PotionResting := "", DgRun := ""
+	global MouseHomeSet := "", MouseHomeX := "", MouseHomeY := "", ManualX := "", ManualY := "", trap4 := ""
+	}

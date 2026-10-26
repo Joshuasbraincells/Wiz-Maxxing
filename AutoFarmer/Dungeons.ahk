@@ -42,25 +42,28 @@ DgDir()
 DgLoad(file)
 	{
 	steps := [], name := "", deck := ""
+	;(v1: a file that can't be read - the loop skipped; v2 throws)
+	try
 	Loop Read, file
 		{
 		line := Trim(A_LoopReadLine)
 		if (line = "" || SubStr(line, 1, 1) = ";")
 			continue
 		f := StrSplit(line, "|")
+		;(v1: a field the line doesn't have - blank; a coordinate that isn't a number + 0 - blank)
 		if (f[1] = "name")
-			name := f[2]
+			name := V1At(f, 2)
 		;(the deck the run's fought with - Decks.ahk; older versions skip the line)
 		else if (f[1] = "deck")
-			deck := RegExReplace(f[2], "[^\w-]")
+			deck := RegExReplace(V1At(f, 2), "[^\w-]")
 		else if (RegExMatch(f[1], "^(walk|x|fight)$") && f.Length >= 5 && f[3] f[4] f[5] != "")
-			steps.Push({kind: f[1], zone: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0})
+			steps.Push(V1Obj({kind: f[1], zone: f[2], x: V1Add(f[3], 0), y: V1Add(f[4], 0), z: V1Add(f[5], 0)}))
 		}
 	if (steps.Length < 2)
 		return ""
 	if (name = "")
 		SplitPath(file, , , , &name)
-	return {name: name, file: file, steps: steps, deck: deck}
+	return V1Obj({name: name, file: file, steps: steps, deck: deck})
 	}
 
 ;The list on the Dungeons tab filled from the folder (the run being walked selected)
@@ -68,18 +71,17 @@ DgListFill()
 	{
 	if (!DashHwnd)
 		return
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	Gui, Dash:ListView, DgList ; V1toV2: [DgList] not found. Manual edit required.
+	;(v1: Gui, Dash:Default / Gui, Dash:ListView, DgList - v2: the ListView itself)
+	LV := Dash["DgList"]
 	LV.Delete()
 	Loop Files, DgDir() "\*.txt"
 		{
 		d := DgLoad(A_LoopFilePath)
 		if (!IsObject(d))
 			continue
-		zones := map(), nx := 0, nf := 0
+		zones := V1Obj(), nx := 0, nf := 0
 		for i, s in d.steps
-			zones[s.zone] := 1, nx += (s.kind = "x"), nf += (s.kind = "fight") ;  V1toV2: Invalid Index errors?, try 'zones.Push(<val>)'
+			zones[s.zone] := 1, nx += (s.kind = "x"), nf += (s.kind = "fight")
 		nz := 0
 		for z in zones
 			nz++
@@ -88,19 +90,17 @@ DgListFill()
 		if (IsObject(DgRun) && DgRun.file = A_LoopFilePath)
 			LV.Modify(row, "Select Focus")
 		}
-	Gui, Dash:ListView, DgList ; V1toV2: [DgList] not found. Manual edit required.
 	}
 
 ;The selected run's file ("" none)
 DgSelected()
 	{
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	Gui, Dash:ListView, DgList ; V1toV2: [DgList] not found. Manual edit required.
+	;(v1: Gui, Dash:Default / Gui, Dash:ListView, DgList - v2: the ListView itself; its 7th column the file)
+	LV := Dash["DgList"]
 	row := LV.GetNext(0)
 	if (!row)
 		return ""
-	file := LV.GetText(row)
+	file := LV.GetText(row, 7)
 	return file
 	}
 
@@ -118,17 +118,18 @@ DgShow(text := "")
 		else
 			text := "Not running. Record a run, or pick one and click Run."
 		}
-	ogcDgStatus.Value := text
-	GuiControl, % "Dash:" (DgRecording || IsObject(DgRun) ? "Disable" : "Enable"), DgRecBtn ; V1toV2: Ternary not yet supported (coming soon)
-	GuiControl, % "Dash:" (DgRecording ? "Enable" : "Disable"), DgRecStopBtn ; V1toV2: Ternary not yet supported (coming soon)
-	GuiControl, % "Dash:" (DgRecording || IsObject(DgRun) ? "Disable" : "Enable"), DgRunBtn ; V1toV2: Ternary not yet supported (coming soon)
-	GuiControl, % "Dash:" (IsObject(DgRun) ? "Enable" : "Disable"), DgStopBtn ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DgStatus"].Text := text
+	Dash["DgRecBtn"].Enabled := !(DgRecording || IsObject(DgRun))
+	Dash["DgRecStopBtn"].Enabled := DgRecording ? true : false
+	Dash["DgRunBtn"].Enabled := !(DgRecording || IsObject(DgRun))
+	Dash["DgStopBtn"].Enabled := IsObject(DgRun) ? true : false
 	}
 
 ;---- Recording ----
 
 DgRecordStart()
 	{
+	global Walking, DgRecSteps, DgRecZone, DgRecBattleAt, DgRecLast, DgRecPrev, DgRecOut, DgRecording, DgRecKey ; (v1 globals it sets)
 	if (DgRecording || IsObject(DgRun))
 		return
 	if (PotionRecording)
@@ -152,22 +153,24 @@ DgRecordStart()
 	DgRecording := 1
 	Hotkey("~*x", DgRecXKey, "On")
 	DgRecKey := HkKeyOf("record")
+	;(v1's UseErrorLevel: a key that can't be a hotkey - nothing made, no error; v2 throws. Nothing here reads ErrorLevel)
 	if (DgRecKey != "")
-		Hotkey("$" DgRecKey, DgRecF9, "On") ; V1toV2: Removed UseErrorLevel
+		try Hotkey("$" DgRecKey, DgRecF9, "On")
 	SetTimer(DgRecTick,250)
 	DebugLog("Dungeons: recording a run from " nav.zone " at " Round(nav.x) ", " Round(nav.y) " - " HkName(DgRecKey) " to finish")
-	TrayTip("Wizard101 bot", "Recording a dungeon run from " nav.zone ". Play it, "then press `" HkName(DgRecKey) `".`", 8, 1")
+	TrayTip("Recording a dungeon run from " nav.zone ". Play it, come back here, then press " HkName(DgRecKey) ".", "Wizard101 bot", 1)
 	DgShow()
 	;(a dungeon played: its drops held from quick selling too - QuickSell.ahk)
-	if (IsFunc("QsDungeonMark"))
+	if (V1IsFunc("QsDungeonMark"))
 		QsDungeonMark.Call()
 	}
 
 ;A step recorded where nav says the wizard is
 DgRecAdd(kind, nav)
 	{
-	DgRecSteps.Push({kind: kind, zone: nav.zone, x: nav.x, y: nav.y, z: nav.z})
-	DgRecLast := {x: nav.x, y: nav.y, z: nav.z, zone: nav.zone}
+	global DgRecLast ; (v1 globals it sets)
+	DgRecSteps.Push(V1Obj({kind: kind, zone: nav.zone, x: nav.x, y: nav.y, z: nav.z}))
+	DgRecLast := V1Obj({x: nav.x, y: nav.y, z: nav.z, zone: nav.zone})
 	DgShow()
 	}
 
@@ -175,17 +178,18 @@ DgRecAdd(kind, nav)
 ;battle's start (the Pass button up after none for 15 s) - nothing while one's on
 DgRecTickF()
 	{
+	global DgRecOut, DgRecBattleAt, DgRecZone, DgRecPrev ; (v1 globals it sets)
 	if (!DgRecording)
 		{
 		SetTimer(DgRecTick,0)
 		return
 		}
-	ErrorLevel := !ImageSearch(&bx, &by, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
+	V1ImageSearch(&bx, &by, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
 	battle := (ErrorLevel = 0)
 	;(out of battle again - the spellbook up - since the last: a new battle counts as one)
 	if (!battle)
 		{
-		ErrorLevel := !ImageSearch(&bx, &by, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
+		V1ImageSearch(&bx, &by, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundfinish.png"))
 		if (ErrorLevel = 0)
 			DgRecOut := 1
 		}
@@ -199,7 +203,7 @@ DgRecTickF()
 			DgRecOut := 0
 			;(where the wizard was walking when it started: the last spot, as the battle moves it into the circle)
 			last := DgRecSteps[DgRecSteps.Length]
-			DgRecSteps.Push({kind: "fight", zone: last.zone, x: last.x, y: last.y, z: last.z})
+			DgRecSteps.Push(V1Obj({kind: "fight", zone: last.zone, x: last.x, y: last.y, z: last.z}))
 			DebugLog("Dungeons: recording - a battle (" DgRecSteps.Length " steps)")
 			DgShow()
 			}
@@ -238,15 +242,16 @@ DgRecX()
 ;Recording ends: named and saved (save false: thrown away)
 DgRecordStop(save := true)
 	{
+	global DgRecording, ErrorLevel ; (v1 globals it sets)
 	if (!DgRecording)
 		return
 	DgRecording := 0
 	SetTimer(DgRecTick,0)
 	Hotkey("~*x", "Off")
 	if (DgRecKey != "")
-		Hotkey("$" DgRecKey, "Off") ; V1toV2: Removed UseErrorLevel
+		V1Do(Hotkey, "$" DgRecKey, "Off")
 	;(Stop recording's caption: the key set now again, if it was changed meanwhile)
-	if (DgRecKey != HkKeyOf("record") && IsFunc("DashKeysChanged"))
+	if (DgRecKey != HkKeyOf("record") && V1IsFunc("DashKeysChanged"))
 		DashKeysChanged.Call()
 	steps := DgRecSteps
 	if (!save || steps.Length < 3)
@@ -267,15 +272,15 @@ DgRecordStop(save := true)
 		return
 		}
 	name := Trim(RegExReplace(name, "[\\/:*?`"<>|]", "-"))
-	DirCreate(DgDir())
+	V1Do(DirCreate, DgDir())
 	file := DgDir() "\" name ".txt"
 	text := "; Wiz-Maxxing dungeon run, recorded " A_Now ". One step a line: kind|zone|x|y|z`r`n"
 		. "; walk: walk to this spot; x: press X here (a sigil, a door, someone to talk to); fight: a battle started here`r`n"
 		. "name|" name "`r`n"
 	for i, s in steps
 		text .= s.kind "|" s.zone "|" Round(s.x, 1) "|" Round(s.y, 1) "|" Round(s.z, 1) "`r`n"
-	Try FileDelete(file)
-	FileAppend(text, file)
+	V1Do(FileDelete, file)
+	V1Do(FileAppend, text, file)
 	DebugLog("Dungeons: saved '" name "' - " steps.Length " steps (" file ")")
 	DgListFill()
 	DgShow("Saved '" name "' (" steps.Length " steps). Pick it and click Run.")
@@ -286,6 +291,7 @@ DgRecordStop(save := true)
 ;The run in file started (times: how many - 0 till stopped; avoid: keep away from mobs on the way)
 DgRunStart(file, times, avoid)
 	{
+	global DgRun, Walking ; (v1 globals it sets)
 	if (DgRecording || IsObject(DgRun))
 		return
 	d := DgLoad(file)
@@ -305,8 +311,9 @@ DgRunStart(file, times, avoid)
 		MsgBox("The bot can't read where your wizard is from the game's memory (" NavWhy ").", "Dungeons", 262192)
 		return
 		}
-	DgRun := {name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: times + 0, avoid: avoid, misses: 0, seen: battles
-		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck}
+	;(v1: a blank times + 0 - blank: till stopped)
+	DgRun := V1Obj({name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: V1Add(times, 0), avoid: avoid, misses: 0, seen: battles
+		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck})
 	;(not at the start: on from the nearest spot in this zone)
 	k := DgNearest(nav)
 	if (!k)
@@ -324,7 +331,7 @@ DgRunStart(file, times, avoid)
 	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length (avoid ? " (keeping away from mobs)" : ""))
 	DgShow()
 	;(its drops are the good gear: the next full backpack held, not quick sold - QuickSell.ahk)
-	if (IsFunc("QsDungeonMark"))
+	if (V1IsFunc("QsDungeonMark"))
 		QsDungeonMark.Call()
 	}
 
@@ -361,11 +368,12 @@ DgFresh()
 ;Stops the run (why: for the log and the tab; alert: also to Discord and the tray)
 DgStop(why, alert := true)
 	{
+	global DgRun, Walking ; (v1 globals it sets)
 	if (!IsObject(DgRun))
 		return
 	name := DgRun.name, runs := DgRun.runs
 	;(the run's drops in the backpack: the next full one held, not quick sold - QuickSell.ahk)
-	if (IsFunc("QsDungeonMark"))
+	if (V1IsFunc("QsDungeonMark"))
 		QsDungeonMark.Call()
 	DgRun := ""
 	ReleaseKeys()
@@ -374,7 +382,7 @@ DgStop(why, alert := true)
 	DgShow("Stopped '" name "' after " runs " run" (runs = 1 ? "" : "s") ": " why)
 	if (alert)
 		{
-		TrayTip("Wizard101 bot", "Dungeon run stopped: " why, 2)
+		TrayTip("Dungeon run stopped: " why, "Wizard101 bot", 2)
 		AlertSend("dungeon", "Dungeon run stopped", "'" name "' stopped after " runs " run" (runs = 1 ? "" : "s") ": " why)
 		}
 	}
@@ -386,10 +394,13 @@ DgNavTo(p)
 	answer := VisionGet("/navto?x=" Round(p.x, 1) "&y=" Round(p.y, 1) "&z=" Round(p.z, 1) (DgRun.avoid ? NavMobArgs() : ""), 2500, true)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
-	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}
+	nav := V1Obj({x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
+		;(v1: a field the line doesn't have - blank)
+		while (f.Length < 5)
+			f.Push("")
 		if (f[1] = "pos")
 			nav.x := f[2], nav.y := f[3], nav.z := f[4], nav.yaw := f[5]
 		else if (f[1] = "zone")
@@ -426,7 +437,7 @@ DgNext()
 		if (r.want && r.runs >= r.want)
 			{
 			DgStop("done - " r.runs " run" (r.runs = 1 ? "" : "s"), false)
-			TrayTip("Wizard101 bot", "Dungeon runs done: " r.runs, 1)
+			TrayTip("Dungeon runs done: " r.runs, "Wizard101 bot", 1)
 			return
 			}
 		r.i := 1
@@ -448,7 +459,7 @@ DgNext()
 			k--
 			}
 		dx := IsObject(prev) ? cur.x - prev.x : 0, dy := IsObject(prev) ? cur.y - prev.y : 0, l := Sqrt(dx * dx + dy * dy)
-		r.push := l > 1 ? {x: cur.x + dx / l * 400, y: cur.y + dy / l * 400, z: cur.z} : ""
+		r.push := l > 1 ? V1Obj({x: cur.x + dx / l * 400, y: cur.y + dy / l * 400, z: cur.z}) : ""
 		r.loadUntil := A_TickCount + 10000, r.fromZone := cur.zone, r.loadStep := (r.i = 1 ? r.steps.Length : r.i - 1)
 		r.loadBattles := battles
 		}
@@ -458,9 +469,10 @@ DgNext()
 ;Turns h degrees (+ right) walking on: by the game's memory when it can, else by time
 DgTurn(h)
 	{
+	global MsStandGot ; (v1 globals it sets)
 	;(by the mouse first - running or standing (MouseSteer.ahk MouseTurnAny); the keys only when it couldn't: 2026-10-24)
 	MsStandGot := ""
-	if (IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500) && MouseTurnAny(h) != "")
+	if (V1IsFunc("MouseTurnAny") && (WkNavTrusted || WkNavChecked) && !(MsTriedAt && A_TickCount - MsTriedAt < 500) && MouseTurnAny(h) != "")
 		return
 	;(a turn from standing by the mouse that missed but turned him: the rest by the keys, not h again on top)
 	if (MsStandGot != "" && Abs(MsStandGot) >= 3)
@@ -477,6 +489,7 @@ DgTurn(h)
 ;One step of a dungeon run (the main loop, out of a battle round, instead of the quest walker's)
 DungeonStep()
 	{
+	global WkFrontLook ; (v1 globals it sets)
 	r := DgRun
 	if (!IsObject(r))
 		return
@@ -504,7 +517,8 @@ DungeonStep()
 		if (!loaded && Walking && GameActive() && inbattle != 1)
 			DgDialogs()
 		;(Wizard101 behind another window, you away 5 minutes - or Play for me: brought to the front, as the walker does)
-		if (Walking && !GameActive() && inbattle != 1 && IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
+		;(v1: WkFrontLook never set - blank - compared as text: not > 1500)
+		if (Walking && !GameActive() && inbattle != 1 && V1IsFunc("GameToFront") && UserIdle() > 300000 && V1Gt(V1Ago(WkFrontLook), 1500))
 			WkFrontLook := A_TickCount, GameToFront.Call("a dungeon run", true, true)
 		r.bestAt := A_TickCount
 		Sleep(150)
@@ -774,14 +788,13 @@ DgDeckPick()
 ;own chosen - again after a deck's saved, made or deleted on the Cards tab (DeckLoadAll)
 DgDeckShow()
 	{
+	global DgDeckIds ; (v1 globals it sets)
 	if (!DashHwnd)
 		return
-	if (!IsObject(DeckList) && IsFunc("DeckLoadAll"))
+	if (!IsObject(DeckList) && V1IsFunc("DeckLoadAll"))
 		DeckLoadAll.Call()
-	prevLV := A_DefaultListView
+	;(v1 put the default ListView back after DgSelected - v2 has no default ListView)
 	file := DgSelected()
-	if (prevLV != "" && prevLV != "DgList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	d := file != "" ? DgLoad(file) : ""
 	items := "|(none)", want := 1, DgDeckIds := []
 	for i, k in IsObject(DeckList) ? DeckList : []
@@ -791,76 +804,89 @@ DgDeckShow()
 		if (IsObject(d) && d.deck = k.id)
 			want := i + 1
 		}
-	ogcDgDeck.Value := items
-	ogcDgDeck.Choose(%want%)
+	;(v1: GuiControl, Dash:, DgDeck, |... - the list replaced)
+	Dash["DgDeck"].Delete()
+	Dash["DgDeck"].Add(StrSplit(SubStr(items, 2), "|"))
+	Dash["DgDeck"].Choose(want)
 	}
 
 ;The picked run's deck written into its file (deck|<id>; none: the line taken out) - its steps kept as they are
 DgDeckSet()
 	{
+	global DeckDirty ; (v1 globals it sets)
 	file := DgSelected()
 	if (file = "" || !FileExist(file))
 		return
 	;(AltSubmit: the place picked)
-	pos := ogcDgDeck.Value
+	pos := Dash["DgDeck"].Value
 	id := (IsObject(DgDeckIds) && pos >= 2 && pos - 1 <= DgDeckIds.Length) ? DgDeckIds[pos - 1] : ""
 	pick := ""
 	for i, k in IsObject(DeckList) ? DeckList : []
 		if (k.id = id)
 			pick := k.name
-	made := FileGetTime(file, "M")
-	text := FileRead(file)
+	;(v1: a file that can't be read - blank, ErrorLevel 1; v2 throws)
+	made := V1Try(FileGetTime, file, "M")
+	text := V1FileRead(file)
 	text := RegExReplace(text, "m)^deck\|[^\r\n]*\R?", "")
 	if (id != "")
 		text := RegExMatch(text, "m)^name\|") ? RegExReplace(text, "m)^(name\|[^\r\n]*\R?)", "$1deck|" id "`r`n", , 1) : "deck|" id "`r`n" text
 	;(written as it was read - the ANSI code page, as FileAppend recorded it - and its date kept: the list's Recorded)
-	f := FileOpen(file ".tmp", "w", "CP0")
+	;(v1's FileOpen gave no object when it couldn't open the file; v2 throws)
+	f := V1Try(FileOpen, file ".tmp", "w", "CP0")
 	if (!IsObject(f))
 		return
 	f.Write(text)
 	f.Close()
-	Try {
-		FileMove(file ".tmp", file, 1)
-		ErrorLevel := 0
-	} Catch as Err {
-		ErrorLevel := Err.Extra
-	}
+	V1Do(FileMove, file ".tmp", file, 1)
 	if (made != "")
-		FileSetTime(made, file, "M")
+		V1Do(FileSetTime, made, file, "M")
 	;(the run being walked: its deck from now on, not from its next start)
 	if (IsObject(DgRun) && DgRun.file = file)
 		DgRun.deck := id, DeckDirty := 1
 	DebugLog("Dungeons: " file " - its deck " (id != "" ? pick : "none (the usual pick)"))
 	}
 
-;###############  V1toV2 FUNCS  ###############
-DgRecordClick() { ; V1toV2: Lbl->Func
+;###############  (v2 port: v1's labels, as functions)  ###############
+;(the Dungeons tab's buttons - g-labels in v1: Dashboard.ahk's OnEvent("Click", Fn.Bind("Normal")); A_GuiEvent, A_GuiControl,
+;Info as v1 had them)
+DgRecordClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgRecordStart()
 	return
 }
 ;##############################################
-DgRecF9(ThisHotkey:="") { ; V1toV2: Lbl->Func
+;(v1: the label DgRecStopClick: ran on into DgRecF9: - the Stop recording button)
+DgRecStopClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgRecordStop()
 	return
 }
 ;##############################################
-DgRecXKey(ThisHotkey:="") { ; V1toV2: Lbl->Func
+DgRecF9(ThisHotkey:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	DgRecordStop()
+	return
+}
+;##############################################
+DgRecXKey(ThisHotkey:="", *) { ; (v1: a label - its code ran in the global scope)
+	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	DgRecX()
 	return
 }
 ;##############################################
-DgRecTick() { ; V1toV2: Lbl->Func
+DgRecTick() { ; (v1: a label - its code ran in the global scope)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	DgRecTickF()
 	return
 }
 ;##############################################
-DgRunClick() { ; V1toV2: Lbl->Func
+DgRunClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	oSaved := Dash.Submit(0)
+	;(v1: Gui, Dash:Submit, NoHide - DgTimes, DgAvoid... set)
+	V1GuiSubmit(Dash, false)
 	DgRunFile := DgSelected()
 	if (DgRunFile = "")
 		MsgBox("Pick a run in the list first (or record one).", "Dungeons", 262208)
@@ -869,13 +895,13 @@ DgRunClick() { ; V1toV2: Lbl->Func
 	return
 }
 ;##############################################
-DgStopClick() { ; V1toV2: Lbl->Func
+DgStopClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgStop("you stopped it", false)
 	return
 }
 ;##############################################
-DgDeleteClick() { ; V1toV2: Lbl->Func
+DgDeleteClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgRunFile := DgSelected()
 	if (DgRunFile = "")
@@ -889,32 +915,47 @@ DgDeleteClick() { ; V1toV2: Lbl->Func
 	msgResult := MsgBox("Delete the run '" DgRunName "'? (It goes to the Recycle Bin.)", "Dungeons", 262436)
 	if (msgResult = "Yes")
 		{
-		FileRecycle(DgRunFile)
+		;(v1: ErrorLevel 1 when it couldn't - v2 throws)
+		V1Do(FileRecycle, DgRunFile)
 		DebugLog("Dungeons: deleted " DgRunFile)
 		DgListFill()
 		}
 	return
 }
 ;##############################################
-DgFolderClick() { ; V1toV2: Lbl->Func
+DgFolderClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
-	DirCreate(DgDir())
+	V1Do(DirCreate, DgDir())
 	Run(DgDir())
 	return
 }
 ;##############################################
-DgListEvent() { ; V1toV2: Lbl->Func
+;(the list's events - Dashboard.ahk: OnEvent("DoubleClick", DgListEvent.Bind("DoubleClick")) and OnEvent("ItemSelect",
+;DgListEvent.Bind("I")); v1's AltSubmit "I" event with ErrorLevel holding S or s - InStr isn't case-sensitive: a row
+;selected or unselected - is v2's ItemSelect)
+DgListEvent(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	if (A_GuiEvent = "DoubleClick" && !DgRecording && !IsObject(DgRun))
-		DgRunClick() ; V1toV2: Gosub
+		DgRunClick() ; (v1: Gosub DgRunClick - the same thread)
 	;(a run picked: its deck in the Deck box)
-	else if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
+	else if (A_GuiEvent = "I" || A_GuiEvent = "ItemSelect")
 		DgDeckShow()
 	return
 }
 ;##############################################
-DgDeckPick() { ; V1toV2: Lbl->Func
+;(the Deck box - v1's gDgDeckPick: Dashboard.ahk's OnEvent("Change", DgDeckPick.Bind("Normal")))
+DgDeckPick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgDeckSet()
 	return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+DungeonsBlank()
+	{
+	global DgRun := "", DgRecording := "", DgRecSteps := "", DgRecLast := "", DgRecZone := "", DgRecBattleAt := "", DgRecPrev := "", DgRecOut := ""
+	global DashTabs := "", DgList := "", DgHelp := "", DgRecBtn := "", DgRecStopBtn := "", DgRunBtn := "", DgStopBtn := "", DgDelBtn := ""
+	global DgFolderBtn := "", DgTimes := "", DgTimesUD := "", DgAvoid := "", DgStatus := "", DgTimesLabel := "", DgTimesNote := "", DgDeck := ""
+	global DgDeckT := "", DgRecKey := "", DgDeckIds := ""
+	}

@@ -33,12 +33,16 @@ global EnemyLethal, EnemyLethalRound
 ;only what happens from now on (a battle going on is picked up at its next planning phase, which names every slot)
 BattleLogRead(force := false)
 	{
+	global BlReadAt, BlHead, BlPos ; (v1 globals it sets)
 	if (!force && BlReadAt && A_TickCount - BlReadAt < 500)
 		return
 	BlReadAt := A_TickCount
 	if (RcLog = "" || !FileExist(RcLog))
 		return
-	blFile := FileOpen(RcLog, "r", "CP0")
+	try
+		blFile := FileOpen(RcLog, "r", "CP0")
+	catch
+		blFile := ""  ; (v1: FileOpen gave 0 when it couldn't open the log - v2 throws)
 	if (!IsObject(blFile))
 		return
 	blSize := blFile.Length
@@ -77,19 +81,20 @@ BattleLogRead(force := false)
 ;it for no arrow out of battle and pressed Escape: the game's menu over the round)
 BattleLogInBattle()
 	{
-	return BlPhaseAt && A_TickCount - BlPhaseAt < 60000 && BookSeenAt < BlPhaseAt
+	return (BlPhaseAt && A_TickCount - BlPhaseAt < 60000 && BookSeenAt < BlPhaseAt) ? 1 : 0  ; (v1: && gave 1 or 0 - v2 an operand, "" here)
 	}
 
 ;A round up for your cards by the game's log - its planning phase begun at least ms ago (and 90 s at most), in a battle
 ;(BattleLogInBattle)
 BattleLogPlanning(ms)
 	{
-	return BlPhase = "kPhase_Planning" && BlPhaseAt && A_TickCount - BlPhaseAt >= ms && A_TickCount - BlPhaseAt < 90000 && BookSeenAt < BlPhaseAt
+	return (BlPhase = "kPhase_Planning" && BlPhaseAt && A_TickCount - BlPhaseAt >= ms && A_TickCount - BlPhaseAt < 90000 && BookSeenAt < BlPhaseAt) ? 1 : 0  ; (v1: 1 or 0)
 	}
 
 ;One line of the game's log, for the battle
 BattleLogLine(blLine)
 	{
+	global BlFled, BlPhase, BlPhaseAt, BlDuel, BlNames, BlCasts, BlRound, BlSub, BlMe, BlMeChar ; (v1 globals it sets)
 	if (!InStr(blLine, "Combat") && !InStr(blLine, "Subcircle"))
 		return
 	if (InStr(blLine, "MSG_CombatFlee"))
@@ -106,10 +111,10 @@ BattleLogLine(blLine)
 		{
 		BlPhase := blM[2], BlPhaseAt := A_TickCount
 		if (blM[1] != BlDuel)
-			BlDuel := blM[1], BlNames := {}, BlCasts := [], BlRound := 0, BlSub := ""
+			BlDuel := blM[1], BlNames := V1Obj(), BlCasts := [], BlRound := 0, BlSub := ""
 		;(each planning phase names those still in the circle - one that died isn't: the names afresh)
 		else if (blM[2] = "kPhase_Planning")
-			BlNames := {}, BlSub := ""
+			BlNames := V1Obj(), BlSub := ""
 		;(a new round: no flee chosen in it yet)
 		if (blM[2] = "kPhase_Planning")
 			BlFled := 0
@@ -123,8 +128,8 @@ BattleLogLine(blLine)
 			if (blN = 1 && blOne != "" && blOne != BlMe)
 				{
 				BlMe := blOne, BlMeChar := StatsCharID()
-				IniWrite(blOne, A_ScriptDir "\party.ini", "me", "name")
-				IniWrite(BlMeChar, A_ScriptDir "\party.ini", "me", "char")
+				V1Do(IniWrite, blOne, A_ScriptDir "\party.ini", "me", "name")
+				V1Do(IniWrite, BlMeChar, A_ScriptDir "\party.ini", "me", "char")
 				DebugLog("Battle log: this wizard is " blOne " (the only one on your side)")
 				}
 			}
@@ -138,8 +143,8 @@ BattleLogLine(blLine)
 	if (BlSub != "" && RegExMatch(blLine, "CombatantDataControl(?:Small)?, name:(.*?)\s*$", &blM))
 		{
 		if (!IsObject(BlNames))
-			BlNames := {}
-		BlNames[BlSub] := blM[1], BlSub := "" ;  V1toV2: Invalid Index errors?, try 'BlNames.Push(<val>)'
+			BlNames := V1Obj()
+		BlNames[BlSub] := blM[1], BlSub := ""
 		return
 		}
 	if (RegExMatch(blLine, "ResolveCombatRound\. Duel ID:\d+ Round:(\d+) Caster:(\d+) Spell:(.*?)\s*$", &blM))
@@ -151,7 +156,7 @@ BattleLogLine(blLine)
 		for each, blC in BlCasts
 			if (blC.round = blRnd && blC.slot = blSlot)
 				return
-		BlCasts.Push({round: blRnd, slot: blSlot, spell: blM[3]})
+		BlCasts.Push(V1Obj({round: blRnd, slot: blSlot, spell: blM[3]}))
 		BlRound := Max(BlRound ? BlRound : 0, blRnd)
 		;(an enemy's: counted for its creature - the odds learn)
 		if (blSlot <= 3 && IsObject(BlNames) && BlNames.Has(blSlot) && VisionOn)
@@ -176,10 +181,11 @@ OwnName()
 	cid := StatsCharID()
 	if (BlMe != "" && (BlMeChar = "" || cid = "" || BlMeChar = cid))
 		return BlMe
-	n := IniRead(A_ScriptDir "\party.ini", "me", "name", A_Space)
-	nChar := IniRead(A_ScriptDir "\party.ini", "me", "char", A_Space)
+	;(v1's %A_Space% default: a blank)
+	n := IniRead(A_ScriptDir "\party.ini", "me", "name", "")
+	nChar := IniRead(A_ScriptDir "\party.ini", "me", "char", "")
 	if (Trim(n) = "" || (nChar != "" && cid != "" && nChar != cid))
-		n := IniRead(A_ScriptDir "\party.ini", "party", "name", A_Space)
+		n := IniRead(A_ScriptDir "\party.ini", "party", "name", "")
 	return Trim(n)
 	}
 
@@ -211,13 +217,14 @@ PlayerPlateByName(&x, &y)
 ;(0 not found). Read once a round. How many were found
 ReadSidePlates()
 	{
+	global SidePlatesKey, SidePlates, MySlot ; (v1 globals it sets)
 	rsKey := BlDuel "|" roundnumber "|" BattleTeam()
 	if (rsKey = SidePlatesKey && IsObject(SidePlates))
 		return SidePlates.Count
-	SidePlatesKey := rsKey, SidePlates := {}, MySlot := 0
-	if (BattleTeam() < 2 || !IsFunc("WalkLetters"))
+	SidePlatesKey := rsKey, SidePlates := V1Obj(), MySlot := 0
+	if (BattleTeam() < 2 || !V1IsFunc("WalkLetters"))
 		return 0
-	rsT := OcrRect(GameLeft, Round(GameTop + GameH * 0.8), GameW, Round(GameH * 0.2), "en", 2, rsLines)
+	rsT := OcrRect(GameLeft, Round(GameTop + GameH * 0.8), GameW, Round(GameH * 0.2), "en", 2, &rsLines)
 	if (ErrorLevel || !IsObject(rsLines))
 		return 0
 	rsWords := []
@@ -226,10 +233,10 @@ ReadSidePlates()
 			{
 			rsK := WalkLetters.Call(rsW.text)
 			if (StrLen(rsK) >= 3)
-				rsWords.Push({k: rsK, x: rsW.x, y: rsW.y, caps: StrLen(RegExReplace(rsW.text, "[^A-Z]")) >= StrLen(RegExReplace(rsW.text, "[^a-z]")), used: 0})
+				rsWords.Push(V1Obj({k: rsK, x: rsW.x, y: rsW.y, caps: StrLen(RegExReplace(rsW.text, "[^A-Z]")) >= StrLen(RegExReplace(rsW.text, "[^a-z]")), used: 0}))
 			}
 	rsMe := WalkLetters.Call(OwnName())
-	rsLike := IsFunc("WalkNameLike") && IsFunc("WalkEditDist")
+	rsLike := V1IsFunc("WalkNameLike") && V1IsFunc("WalkEditDist")
 	;(round 1: capitals only - the row the plates are in comes from the first found; round 2: any word, in that row.
 	;Pass 1 the same letters, 2 alike, 3 - capitals in the row only - half the first word's letters)
 	rsRowY := ""
@@ -285,7 +292,7 @@ ReadSidePlates()
 				if (rsBest)
 					{
 					rsWords[rsBest].used := 1
-					SidePlates[rsSlot] := {name: BlNames[rsSlot], x: rsWords[rsBest].x, y: rsWords[rsBest].y, me: rsName = rsMe} ;  V1toV2: Invalid Index errors?, try 'SidePlates.Push(<val>)'
+					SidePlates[rsSlot] := V1Obj({name: BlNames[rsSlot], x: rsWords[rsBest].x, y: rsWords[rsBest].y, me: rsName = rsMe})
 					if (rsName = rsMe)
 						MySlot := rsSlot
 					if (rsWords[rsBest].caps && rsRowY = "")
@@ -306,6 +313,7 @@ ReadSidePlates()
 ;and your own health (read here if this round hasn't yet)
 EnemyDanger()
 	{
+	global EnemyLethal, EnemyLethalRound ; (v1 globals it sets)
 	EnemyLethal := "", EnemyLethalRound := roundnumber
 	if (!Stat("enemyspells") || !VisionOn)
 		return false
@@ -333,11 +341,11 @@ EnemyDanger()
 		edHealth := ""
 	;(the casts so far: round:enemy index (its place among the enemies):spell)
 	edHist := ""
-	for each, edC in BlCasts
+	for each, edC in (IsObject(BlCasts) ? BlCasts : [])  ; (v1: names read before any cast or new-duel line - BlCasts blank: no loop; v2 throws)
 		for edI, edS in edSlots
 			if (edC.slot = edS)
 				edHist .= (edHist = "" ? "" : "|") edC.round ":" (edI - 1) ":" NavUri(edC.spell)
-	edAns := VisionGet("/enemies?names=" edNames "&round=" BlRound + 1 "&health=" edHealth "&team=" Max(1, edTeam) "&hist=" edHist, 1500, true)
+	edAns := VisionGet("/enemies?names=" edNames "&round=" V1Add(BlRound, 1) "&health=" edHealth "&team=" Max(1, edTeam) "&hist=" edHist, 1500, true)  ; (v1: BlRound blank - names read before a phase line - gave a blank round)
 	if (edAns = "")
 		return false
 	edText := "", edDash := "", edLethal := ""
@@ -362,11 +370,11 @@ EnemyDanger()
 	EnemyLethal := edLethal
 	edRisk := edLethal = "" ? "your health unknown" : Round(edLethal * 100) "% chance their hits kill you this round"
 	DebugLog("  enemy spells: " edText " - " edRisk)
-	if (IsFunc("DashSee"))
+	if (V1IsFunc("DashSee"))
 		DashSee.Call("threat", edDash (edLethal = "" ? "" : " - " Round(edLethal * 100) "% lethal"))
 	;(the Cards tab: every spell of each enemy and its chance)
-	if (IsFunc("DashFoesSeen"))
-		DashFoesSeen.Call(edAns, edLethal, edHealth, BlRound + 1)
+	if (V1IsFunc("DashFoesSeen"))
+		DashFoesSeen.Call(edAns, edLethal, edHealth, V1Add(BlRound, 1))
 	edAt := Stat("defendat")
 	return edLethal != "" && edAt > 0 && edLethal * 100 >= edAt
 	}
@@ -377,41 +385,50 @@ EnemyDanger()
 EnemyDefend()
 	{
 	global
-	local edWhy
+	local edWhy, _title, _dir  ; (v2 port: the ByRef temporaries below this call's own, as v1's were)
 	edWhy := "  defending: " Round(EnemyLethal * 100) "% chance this round's enemy hits kill you"
 	;(a heal only with health to restore - at full, Tower Shield)
 	if ((heal1 == 1 || heal2 == 1) && OwnHpCur != "" && OwnHpCur < OwnHpMax * 0.9)
 		{
 		DebugLog(edWhy " - a heal first")
-		if (heal1 == 1) && UseHeal("heal1", heal1, hitschool)
+		if (heal1 == 1) && UseHeal("heal1", &heal1, hitschool)
 			return true
-		if (heal2 == 1) && UseHeal("heal2", heal2, hitschool)
+		if (heal2 == 1) && UseHeal("heal2", &heal2, hitschool)
 			return true
 		}
 	if (tower == 1 && Stat("usetower"))
 		{
 		DebugLog(edWhy " - Tower Shield first")
-		UseOnSelf("tower", tower, "resources")
+		UseOnSelf(&_title := "tower", &tower, &_dir := "resources")
 		if (tower == 1 && CastWentOut())
 			{
-			if (IsFunc("DashCast"))
+			if (V1IsFunc("DashCast"))
 				DashCast.Call("tower")
 			return true
 			}
 		}
 	;(no Tower Shield went: an absorb - it soaks N damage - on you, whatever it costs: by its picture (resources\absorb), else
 	;at its card box by the game's hand - KillCalc.ahk AbsorbMem, 2026-10-26)
-	if (absorb == 1 && IsFunc("AbsorbOn") && AbsorbOn.Call())
+	if (absorb == 1 && V1IsFunc("AbsorbOn") && AbsorbOn.Call())
 		{
 		DebugLog(edWhy " - an absorb")
-		UseOnSelf("absorb", absorb, "resources")
+		UseOnSelf(&_title := "absorb", &absorb, &_dir := "resources")
 		if (absorb == 1 && CastWentOut())
 			{
-			if (IsFunc("DashCast"))
+			if (V1IsFunc("DashCast"))
 				DashCast.Call("absorb")
 			return true
 			}
 		}
 	DebugLog(edWhy " - nothing to heal or shield with in hand")
 	return false
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+EnemySpellsBlank()
+	{
+	global BlPos := "", BlHead := "", BlDuel := "", BlNames := "", BlSub := "", BlCasts := "", BlRound := "", BlReadAt := "", BlPhase := ""
+	global BlPhaseAt := "", BlFled := "", BlMe := "", BlMeChar := "", OwnHpCur := "", OwnHpMax := "", OwnHpAt := "", OwnHpVotes := "", OwnHpWin := ""
+	global EnemyLethal := "", EnemyLethalRound := "", heal1 := "", heal2 := "", hitschool := "", tower := "", absorb := ""
 	}

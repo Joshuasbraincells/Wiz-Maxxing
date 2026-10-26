@@ -21,23 +21,23 @@ HkActions()
 	{
 	static list := ""
 	if (!IsObject(list))
-		list := [{id: "bot", label: "The bot on / off", def: "F6", ctx: "game", run: "MenuBotToggle"}
-			, {id: "walk", label: "Walking on / off", def: "F8", ctx: "game", run: "MenuWalk"}
-			, {id: "dash", label: "The dashboard (show / hide)", def: "#2", ctx: "", run: "HkDash"}
-			, {id: "restart", label: "Restart the bot", def: "#1", ctx: "", run: "MenuRestart"}
-			, {id: "restart2", label: "Restart the bot (a second key)", def: "!Esc", ctx: "", run: "HkRestart2"}
-			, {id: "quit", label: "Quit the bot", def: "#Esc", ctx: "", run: "HkQuit"}
-			, {id: "record", label: "Stop recording (a dungeon run, potion buying)", def: "F9", ctx: "rec", run: ""}
-			, {id: "boss", label: "Pick the boss, then click its name plate (in a battle)", def: "!1", ctx: "on", run: "HkBoss"}
-			, {id: "boost", label: "Pick who your blades and traps go to (in a battle)", def: "!2", ctx: "on", run: "HkBoost"}
-			, {id: "player", label: "Pick your own name plate (in a battle)", def: "#3", ctx: "on", run: "HkPlayer"}
-			, {id: "loop", label: "Loop mode on / off", def: "!e", ctx: "on", run: "HkLoop"}
-			, {id: "lore", label: "Lore mode on / off", def: "!l", ctx: "on", run: "HkLore"}
-			, {id: "dual", label: "Dual mode on / off", def: "!d", ctx: "on", run: "HkDual"}
-			, {id: "command", label: "Command mode on / off", def: "!c", ctx: "on", run: "HkCommand"}
-			, {id: "stats", label: "Statistic mode on / off", def: "!s", ctx: "on", run: "HkStats"}
-			, {id: "response", label: "Response mode on / off", def: "!r", ctx: "on", run: "HkResponse"}
-			, {id: "dev", label: "Developer mode on / off", def: "#!d", ctx: "on", run: "HkDev"}]
+		list := [V1Obj({id: "bot", label: "The bot on / off", def: "F6", ctx: "game", run: "MenuBotToggle"})
+			, V1Obj({id: "walk", label: "Walking on / off", def: "F8", ctx: "game", run: "MenuWalk"})
+			, V1Obj({id: "dash", label: "The dashboard (show / hide)", def: "#2", ctx: "", run: "HkDash"})
+			, V1Obj({id: "restart", label: "Restart the bot", def: "#1", ctx: "", run: "MenuRestart"})
+			, V1Obj({id: "restart2", label: "Restart the bot (a second key)", def: "!Esc", ctx: "", run: "HkRestart2"})
+			, V1Obj({id: "quit", label: "Quit the bot", def: "#Esc", ctx: "", run: "HkQuit"})
+			, V1Obj({id: "record", label: "Stop recording (a dungeon run, potion buying)", def: "F9", ctx: "rec", run: ""})
+			, V1Obj({id: "boss", label: "Pick the boss, then click its name plate (in a battle)", def: "!1", ctx: "on", run: "HkBoss"})
+			, V1Obj({id: "boost", label: "Pick who your blades and traps go to (in a battle)", def: "!2", ctx: "on", run: "HkBoost"})
+			, V1Obj({id: "player", label: "Pick your own name plate (in a battle)", def: "#3", ctx: "on", run: "HkPlayer"})
+			, V1Obj({id: "loop", label: "Loop mode on / off", def: "!e", ctx: "on", run: "HkLoop"})
+			, V1Obj({id: "lore", label: "Lore mode on / off", def: "!l", ctx: "on", run: "HkLore"})
+			, V1Obj({id: "dual", label: "Dual mode on / off", def: "!d", ctx: "on", run: "HkDual"})
+			, V1Obj({id: "command", label: "Command mode on / off", def: "!c", ctx: "on", run: "HkCommand"})
+			, V1Obj({id: "stats", label: "Statistic mode on / off", def: "!s", ctx: "on", run: "HkStats"})
+			, V1Obj({id: "response", label: "Response mode on / off", def: "!r", ctx: "on", run: "HkResponse"})
+			, V1Obj({id: "dev", label: "Developer mode on / off", def: "#!d", ctx: "on", run: "HkDev"})]
 	return list
 	}
 
@@ -157,45 +157,76 @@ HkCtxOn(hk := "")
 HkApply()
 	{
 	static ctx := ""
+	global HkOn ; (v1 globals it sets)
 	if (!IsObject(ctx))
-		ctx := {game: HkCtxGame, on: HkCtxOn}
+		ctx := V1Obj({game: HkCtxGame, on: HkCtxOn})
 	if (!IsObject(HkOn))
-		HkOn := {}
-	want := {}
+		HkOn := V1Obj()
+	want := V1Obj()
 	for i, a in HkActions()
 		if (a.ctx != "rec")
-			want[a.id] := HkKeyOf(a.id) ;  V1toV2: Invalid Index errors?, try 'want.Push(<val>)'
+			want[a.id] := HkKeyOf(a.id)
 	for i, a in HkActions()
 		{
 		if (a.ctx = "rec" || !HkOn.Has(a.id) || HkOn[a.id] = "" || HkSame(HkOn[a.id], want[a.id]))
 			continue
 		if (a.ctx != "")
-			HotIf(% ctx[a.ctx])
+			HotIf(ctx[a.ctx])
 		else
 			HotIf()
 		k := HkOn[a.id]
-		Hotkey("$" k, "Off") ; V1toV2: Removed UseErrorLevel
-		HkOn[a.id] := "" ;  V1toV2: Invalid Index errors?, try 'HkOn.Push(<val>)'
+		HkTry("$" k, "Off")
+		HkOn[a.id] := ""
 		}
 	for i, a in HkActions()
 		{
 		if (a.ctx = "rec" || want[a.id] = "" || (HkOn.Has(a.id) && HkSame(HkOn[a.id], want[a.id])))
 			continue
 		if (a.ctx != "")
-			HotIf(% ctx[a.ctx])
+			HotIf(ctx[a.ctx])
 		else
 			HotIf()
 		k := want[a.id], run := a.run
-		Hotkey("$" k, run, "On") ; V1toV2: Removed UseErrorLevel
+		;(v1: the label named run, as the hotkey's own thread - HkRun calls the function of that name)
+		HkTry("$" k, HkRun.Bind(run), "On")
 		if (ErrorLevel)
 			{
 			DebugLog("Keys: " HkName(k) " couldn't be made " a.label "'s key (" ErrorLevel ") - it has none")
 			continue
 			}
-		HkOn[a.id] := k ;  V1toV2: Invalid Index errors?, try 'HkOn.Push(<val>)'
+		HkOn[a.id] := k
 		}
 	HotIf()
 	HkMenuRename()
+	}
+
+;v1's Hotkey, key, action, options UseErrorLevel: ErrorLevel 0, or why it couldn't (v2 throws instead) - v1's numbers:
+;2 a key it doesn't know, 3 an unsupported prefix key, 4 an AltTab one, 5 no such hotkey, 6 no such variant (its If),
+;98 too many hotkeys, 99 out of memory, 1 anything else (v1: no such label)
+HkTry(key, action, opts := "")
+	{
+	global ErrorLevel ; (v1 globals it sets)
+	try
+		{
+		Hotkey(key, action, opts)
+		ErrorLevel := 0
+		}
+	catch as e
+		{
+		msg := e.Message
+		ErrorLevel := (e is MemoryError) ? 99 : InStr(msg, "Nonexistent hotkey variant") ? 6 : InStr(msg, "Nonexistent hotkey") ? 5
+			: InStr(msg, "AltTab") ? 4 : InStr(msg, "Unsupported prefix") ? 3 : InStr(msg, "Max hotkeys") ? 98
+			: (InStr(msg, "Invalid key name") || InStr(msg, "Invalid hotkey")) ? 2 : 1
+		}
+	return ErrorLevel
+	}
+
+;An action's key pressed: v1's Hotkey ran the action's label (Autofarmer.ahk) as the hotkey's own thread, with its own
+;ErrorLevel and A_ThisHotkey - here the function of that name (called with nothing, as v1 ran a label)
+HkRun(run, hk := "", *)
+	{
+	local v1Own := V1Thread()  ; (v1: the hotkey's label ran as a thread of its own - its own ErrorLevel)
+	%run%()
 	}
 
 ;Was the hotkey running now (A_ThisHotkey) one of these actions' (a comma list of ids)?
@@ -213,10 +244,11 @@ HkIsAny(hk, ids)
 ;Item id's name now: what it does and its key ("Bot on/off (F6)")
 HkMenu(id)
 	{
+	global HkMenuNames ; (v1 globals it sets)
 	if (!IsObject(HkMenuNames))
-		HkMenuNames := {}
+		HkMenuNames := V1Obj()
 	if (!HkMenuNames.Has(id))
-		HkMenuNames[id] := HkMenuText(id) ;  V1toV2: Invalid Index errors?, try 'HkMenuNames.Push(<val>)'
+		HkMenuNames[id] := HkMenuText(id)
 	return HkMenuNames[id]
 	}
 
@@ -241,6 +273,7 @@ HkMenuText(id)
 ;The items renamed after a key's changed (Check / Uncheck find them by HkMenu)
 HkMenuRename()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	if (!IsObject(HkMenuNames))
 		return
 	for id, was in HkMenuNames.Clone()
@@ -248,11 +281,15 @@ HkMenuRename()
 		now := HkMenuText(id)
 		if (now == was)
 			continue
-		; V1toV2: Removed UseErrorLevel from Menu Tray
-		Tray := A_TrayMenu
-		Tray.Rename(was, now)
-		; V1toV2: Removed UseErrorLevel from Menu Tray
-		HkMenuNames[id] := now ;  V1toV2: Invalid Index errors?, try 'HkMenuNames.Push(<val>)'
+		;(v1: Menu, Tray, UseErrorLevel around it - an item that isn't there only set ErrorLevel 1; v2 throws)
+		try
+			{
+			A_TrayMenu.Rename(was, now)
+			ErrorLevel := 0
+			}
+		catch
+			ErrorLevel := 1
+		HkMenuNames[id] := now
 		}
 	}
 
@@ -263,46 +300,39 @@ KeyListFill()
 	{
 	if (!DashHwnd)
 		return
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	Gui, Dash:ListView, KeyList ; V1toV2: [KeyList] not found. Manual edit required.
-	row := LV.GetNext(0), keep := ""
+	;(v1: Gui, Dash:Default and Gui, Dash:ListView, KeyList for the LV_ functions, the one before put back after - v2
+	;names the list it works on: nothing to put back)
+	lv := Dash["KeyList"]
+	row := lv.GetNext(0), keep := ""
 	if (row)
-		keep := LV.GetText(row)
-	ogcKeyList.Opt("-Redraw")
-	LV.Delete()
+		keep := lv.GetText(row, 5)
+	lv.Opt("-Redraw")
+	lv.Delete()
 	for i, a in HkActions()
 		{
 		when := a.ctx = "game" ? "the bot on, or in Wizard101" : a.ctx = "on" ? "the bot on" : a.ctx = "rec" ? "while recording" : "always"
 		k := HkKeyOf(a.id)
-		r := LV.Add("", a.label, HkName(k), HkName(a.def) (HkSame(k, a.def) ? "" : "  (changed)"), when, a.id)
+		r := lv.Add("", a.label, HkName(k), HkName(a.def) (HkSame(k, a.def) ? "" : "  (changed)"), when, a.id)
 		if (a.id = keep)
-			LV.Modify(r, "Select Focus")
+			lv.Modify(r, "Select Focus")
 		}
-	ogcKeyList.Opt("+Redraw")
-	if (prevLV != "" && prevLV != "KeyList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+	lv.Opt("+Redraw")
 	}
 
 ;The picked action's id ("" none)
 KeyPicked()
 	{
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	Gui, Dash:ListView, KeyList ; V1toV2: [KeyList] not found. Manual edit required.
-	row := LV.GetNext(0), id := ""
+	;(v1: Gui, Dash:ListView, KeyList and back - v2 names the list)
+	lv := Dash["KeyList"]
+	row := lv.GetNext(0), id := ""
 	if (row)
-		id := LV.GetText(row)
-	if (prevLV != "" && prevLV != "KeyList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+		id := lv.GetText(row, 5)
 	return id
 	}
 
 KeySay(text)
 	{
-	ogcKeyStatus.Value := text
+	Dash["KeyStatus"].Value := text
 	}
 
 ;Action id's key set (k: a key name, "none" switched off, "" its default) - kept in dashboard.ini and made now
@@ -312,14 +342,14 @@ KeySet(id, k)
 	if (!IsObject(a))
 		return
 	if (k = "")
-		IniDelete(A_ScriptDir "\dashboard.ini", "hotkeys", id)
+		V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "hotkeys", id)
 	else
-		IniWrite(k, A_ScriptDir "\dashboard.ini", "hotkeys", id)
+		V1Do(IniWrite, k, A_ScriptDir "\dashboard.ini", "hotkeys", id)
 	HkApply()
 	KeyListFill()
 	now := HkKeyOf(id)
 	;(Open with Wizard101's shortcut names the bot's key: made again)
-	if (id = "bot" && IsFunc("WatchIsOn") && WatchIsOn.Call() && IsFunc("WatchSet"))
+	if (id = "bot" && V1IsFunc("WatchIsOn") && WatchIsOn.Call() && V1IsFunc("WatchSet"))
 		{
 		SplitPath(A_ScriptDir, , &root)
 		WatchSet.Call(root, true)
@@ -327,7 +357,7 @@ KeySet(id, k)
 	KeySay(a.label ": " HkName(now) (k = "" ? " (its default)" : ""))
 	DebugLog("Keys: " a.label " - " HkName(now) (k = "" ? " (its default)" : ""))
 	;(the dashboard's texts that name a key: with the new one)
-	if (IsFunc("DashKeysChanged"))
+	if (V1IsFunc("DashKeysChanged"))
 		DashKeysChanged.Call()
 	}
 
@@ -335,6 +365,7 @@ KeySet(id, k)
 ;off meanwhile (Suspend) and what's pressed goes nowhere else (the InputHook keeps it)
 KeyCapStart(id)
 	{
+	global HkCapId, HkCapMods, HkCapHook ; (v1 globals it sets)
 	a := HkAction(id)
 	if (!IsObject(a))
 		return KeySay("Pick an action in the list first")
@@ -351,8 +382,9 @@ KeyCapStart(id)
 	ih := InputHook("T8 I")
 	ih.KeyOpt("{All}", "ES")
 	ih.KeyOpt("{F13}{F14}{F15}{F16}{F17}{F18}{F19}{F20}{F21}{F22}{F23}{F24}", "-ES")
-	HkCapMods := {0x1D: GetKeyState("LControl", "P"), 0x11D: GetKeyState("RControl", "P"), 0x38: GetKeyState("LAlt", "P"), 0x138: GetKeyState("RAlt", "P")
-		, 0x2A: GetKeyState("LShift", "P"), 0x36: GetKeyState("RShift", "P"), 0x15B: GetKeyState("LWin", "P"), 0x15C: GetKeyState("RWin", "P")}
+	;(v1's {0x1D: ...}: number keys - the scan codes KeyCapMod gets)
+	HkCapMods := V1Obj(0x1D, GetKeyState("LControl", "P"), 0x11D, GetKeyState("RControl", "P"), 0x38, GetKeyState("LAlt", "P"), 0x138, GetKeyState("RAlt", "P")
+		, 0x2A, GetKeyState("LShift", "P"), 0x36, GetKeyState("RShift", "P"), 0x15B, GetKeyState("LWin", "P"), 0x15C, GetKeyState("RWin", "P"))
 	ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E+N")
 	ih.OnKeyDown := KeyCapMod.Bind(1)
 	ih.OnKeyUp := KeyCapMod.Bind(0)
@@ -365,17 +397,19 @@ KeyCapStart(id)
 KeyCapMod(down, ih, vk, sc)
 	{
 	if (ih == HkCapHook && IsObject(HkCapMods))
-		HkCapMods[sc] := down ;  V1toV2: Invalid Index errors?, try 'HkCapMods.Push(<val>)'
+		HkCapMods[sc] := down
 	}
 
 ;The key caught: the modifiers held (as the keyboard has them) and the key - refused if it's one the bot or the game
 ;needs, or another action's
 KeyCapEnd(ih)
 	{
+	global HkCapHook, HkCapId ; (v1 globals it sets)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	;(a capture replaced by a newer Change...: not this one's end)
 	if (ih != HkCapHook)
 		return
-	m := IsObject(HkCapMods) ? HkCapMods : {}
+	m := IsObject(HkCapMods) ? HkCapMods : V1Obj()
 	win := m[0x15B] || m[0x15C], ctrl := m[0x1D] || m[0x11D], alt := m[0x38] || m[0x138], shift := m[0x2A] || m[0x36]
 	Suspend(false)
 	HkCapHook := ""
@@ -419,32 +453,37 @@ KeyListEvent()
 	return
 
 ;###############  V1toV2 FUNCS  ###############
-KeyChangeClick() { ; V1toV2: Lbl->Func
+;(the Keys tab's buttons and list - g-labels in v1: Dashboard.ahk binds them, Fn.Bind("Normal") / the list's
+;.Bind("DoubleClick"); Info: v1's A_EventInfo)
+KeyChangeClick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
 	KeyCapStart(KeyPicked())
 	return
 }
 ;##############################################
-KeyDefaultClick() { ; V1toV2: Lbl->Func
+KeyDefaultClick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
+	local v1Own := V1Thread()  ; (v1: a button's thread had its own ErrorLevel - KeySet's V1Do and HkApply set it)
 	KeyId := KeyPicked()
 	if (KeyId = "")
 		{
 		KeySay("Pick an action in the list first")
 		return
 		}
-	KeyW := HkRefuse(HkAction(KeyId).def, KeyId)
+	;(V1At: v1 read a blank where HkAction gave none)
+	KeyW := HkRefuse(V1At(HkAction(KeyId), "def"), KeyId)
 	if (KeyW != "")
 		{
-		KeySay(HkAction(KeyId).label ": not changed - " KeyW)
+		KeySay(V1At(HkAction(KeyId), "label") ": not changed - " KeyW)
 		return
 		}
 	KeySet(KeyId, "")
 	return
 }
 ;##############################################
-KeyNoneClick() { ; V1toV2: Lbl->Func
+KeyNoneClick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
+	local v1Own := V1Thread()  ; (v1: a button's thread had its own ErrorLevel - KeySet's V1Do and HkApply set it)
 	KeyId := KeyPicked()
 	if (KeyId = "")
 		{
@@ -453,31 +492,41 @@ KeyNoneClick() { ; V1toV2: Lbl->Func
 		}
 	if (KeyId = "bot" || KeyId = "quit" || KeyId = "record")
 		{
-		KeySay(HkAction(KeyId).label " always has a key - change it instead")
+		KeySay(V1At(HkAction(KeyId), "label") " always has a key - change it instead")
 		return
 		}
 	KeySet(KeyId, "none")
 	return
 }
 ;##############################################
-KeyAllClick() { ; V1toV2: Lbl->Func
+KeyAllClick(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
+	local v1Own := V1Thread()  ; (v1: a button's thread had its own ErrorLevel - V1Do and HkApply set it)
 	msgResult := MsgBox("Put every key back to its default (F6, F8, Alt+1...)?", "Keys", 262180)
 	if (msgResult = "No")
 		return
-	IniDelete(A_ScriptDir "\dashboard.ini", "hotkeys")
+	V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "hotkeys")
 	HkApply()
 	KeyListFill()
 	KeySay("Every key back to its default")
 	DebugLog("Keys: every key back to its default")
-	if (IsFunc("DashKeysChanged"))
+	if (V1IsFunc("DashKeysChanged"))
 		DashKeysChanged.Call()
 	return
 }
 ;##############################################
-KeyListEvent() { ; V1toV2: Lbl->Func
+KeyListEvent(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	global
-	if (A_GuiEvent = "DoubleClick" && A_EventInfo)
+	;(Info: v1's A_EventInfo - the row double-clicked, 0 none)
+	if (A_GuiEvent = "DoubleClick" && Info)
 		KeyCapStart(KeyPicked())
 	return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+HotkeysBlank()
+	{
+	global HkOn := "", HkMenuNames := "", HkCapId := "", HkCapHook := "", HkCapMods := "", KeyList := "", KeyHelp := "", KeyStatus := ""
+	global KeyChangeBtn := "", KeyDefaultBtn := "", KeyNoneBtn := "", KeyAllBtn := ""
+	}

@@ -16,19 +16,17 @@
 BotProgram(rel, args := "")
 	{
 	if (!A_IsCompiled && FileExist(rel ".ahk"))
-		return (AHKv1v2_Temp := {target: A_AhkPath, args: "`"" rel ".ahk`"" (args = "" ? "" : " " args)}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		return V1Obj({target: A_AhkPath, args: "`"" rel ".ahk`"" (args = "" ? "" : " " args)})
 	if (FileExist(rel ".exe"))
-		return {target: rel ".exe", args: args}
-	return {target: rel ".ahk", args: args}
+		return V1Obj({target: rel ".exe", args: args})
+	return V1Obj({target: rel ".ahk", args: args})
 	}
 
 ;Starts it (BotProgram) in dir. False if Windows wouldn't (A_LastError says why)
 BotRun(rel, args, dir)
 	{
 	p := BotProgram(rel, args)
-	{   ErrorLevel := "ERROR"
-	   Try ErrorLevel := Run("""" p.target """" (p.args = "" ? "" : " " p.args), dir, "", )
-	}
+	V1Run("`"" p.target "`"" (p.args = "" ? "" : " " p.args), dir)
 	return !ErrorLevel
 	}
 
@@ -48,22 +46,24 @@ WatchIsOn()
 ;(not only at the next sign-in); off: the shortcut deleted and a running watcher closed. True if done
 WatchSet(root, wantOn)
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	link := WatchLink()
 	if (wantOn)
 		{
 		p := BotProgram(root "\Wiz-Maxxing", "/watch")
-		FileCreateShortcut(p.target, link, root, p.args, "Opens the Wizard101 bot when Wizard101 starts (in standby - " WatchBotKey(root "\AutoFarmer") " starts it)")
+		V1Do(FileCreateShortcut, p.target, link, root, p.args, "Opens the Wizard101 bot when Wizard101 starts (in standby - " WatchBotKey(root "\AutoFarmer") " starts it)")
 		if (ErrorLevel)
 			return false
-		if (!WatchPids().Length())
+		if (!WatchPids().Length)
 			BotRun(root "\Wiz-Maxxing", "/watch", root)
 		return true
 		}
-	Try FileDelete(link)
+	V1Do(FileDelete, link)
 	DetectHiddenWindows(true)
 	for i, pid in WatchPids()
 		{
-		WinClose("ahk_pid " pid " ahk_class AutoHotkey")
+		;(v1: WinClose of a window that's gone meanwhile did nothing - v2 throws)
+		try WinClose("ahk_pid " pid " ahk_class AutoHotkey")
 		ErrorLevel := ProcessWaitClose(pid, 3)
 		if (ErrorLevel)
 			ErrorLevel := ProcessClose(pid)
@@ -102,8 +102,12 @@ WatchRestart()
 ;don't have it, so it's read here
 WatchBotKey(dir)
 	{
-	if (IsFunc("HkText"))
-		return HkText.Call("bot")
+	;(by its name: the watcher and Setup don't have HkText - a plain HkText there would be a load-time warning)
+	if (V1IsFunc("HkText"))
+		{
+		hk := "HkText"
+		return %hk%("bot")
+		}
 	k := IniRead(dir "\dashboard.ini", "hotkeys", "bot", A_Space)
 	k := Trim(k)
 	if (k = "none")
@@ -127,6 +131,7 @@ WatchStartBot(dir)
 ;mutex: a new one started by an update waits up to 8 s for the old one to go)
 WatchGame(dir)
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	t0 := A_TickCount
 	Loop
 		{
@@ -141,9 +146,10 @@ WatchGame(dir)
 	if (!A_IsCompiled && FileExist(A_ScriptDir "\assets\wizard.ico"))
 		TraySetIcon(A_ScriptDir . "\assets\wizard.ico")
 	;(shown: the launcher's #NoTrayIcon hides it)
-	TraySetIcon("Menu, Tray, Icon","Menu, Tray, Icon","Menu, Tray, Icon")
+	A_IconHidden := false
 	Tray := A_TrayMenu
-	Tray.Delete() ; V1toV2: not 100% replacement of NoStandard, Only if NoStandard is used at the beginning
+	;(v1's Menu, Tray, NoStandard: only the standard items are there yet)
+	Tray.Delete()
 	watchItem := "Opens the bot when Wizard101 starts (" WatchBotKey(dir) " starts it)"
 	Tray.Add(watchItem, WatchMenuNothing)
 	Tray.Disable(watchItem)
@@ -167,7 +173,7 @@ WatchGame(dir)
 				;the bot, so it's opened again, and the watcher starts again from the new Wiz-Maxxing.exe)
 				Sleep(3000)
 				WatchStartBot(dir)
-				if (IsFunc("UpCheck") && WatchUpCheck())
+				if (V1IsFunc("UpCheck") && WatchUpCheck())
 					{
 					Sleep(1500)
 					if (!WatchBotRunning())
@@ -180,9 +186,8 @@ WatchGame(dir)
 		now := "Opens the bot when Wizard101 starts (" WatchBotKey(dir) " starts it)"
 		if (now != watchItem)
 			{
-			; V1toV2: Removed UseErrorLevel from Menu Tray
-			Tray.Rename(watchItem, now)
-			; V1toV2: Removed UseErrorLevel from Menu Tray
+			;(v1: Menu, Tray, UseErrorLevel - a rename that fails is no error; v2 throws)
+			try Tray.Rename(watchItem, now)
 			watchItem := now
 			}
 		Sleep(3000)
@@ -200,7 +205,9 @@ WatchUpCheck()
 		DllCall("CloseHandle", "Ptr", mutex)
 		return false
 		}
-	updated := UpCheck.Call(true)
+	;(by its name: the bot's program doesn't have UpCheck - a plain UpCheck there would be a load-time warning)
+	up := "UpCheck"
+	updated := %up%(true)
 	DllCall("CloseHandle", "Ptr", mutex)
 	return updated
 	}
@@ -217,21 +224,22 @@ WatchMenuOff:
 WatchMenuOff()
 	ExitApp()
 
-;###############  V1toV2 FUNCS  ###############
-WatchMenuNothing(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+;###############  v1's labels, as functions  ###############
+WatchMenuNothing(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: the label WatchMenuNothing - a tray item)
 	global
 	return
 }
 ;##############################################
-WatchMenuStop(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+WatchMenuStop(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: the label WatchMenuStop - a tray item)
 	global
 	ExitApp()
 }
 ;##############################################
-WatchMenuOff(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+WatchMenuOff(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: the label WatchMenuOff - a tray item)
 	global
-	Try FileDelete(WatchLink())
-	TrayTip("Wiz-Maxxing", "The bot won't open with Wizard101 any more (the bot's tray menu `"Open with Wizard101`" turns it back on).", 1)
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	V1Do(FileDelete, WatchLink())
+	TrayTip("The bot won't open with Wizard101 any more (the bot's tray menu `"Open with Wizard101`" turns it back on).", "Wiz-Maxxing", 1)
 	Sleep(3000)
 	ExitApp()
 }

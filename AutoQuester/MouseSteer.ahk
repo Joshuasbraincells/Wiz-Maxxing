@@ -31,7 +31,8 @@ global MsStandGot
 ;The setting (mousesteer, on unless 0) and the game's memory there to read the facing by
 MouseSteerOn()
 	{
-	return IsFunc("NavRead") && !(IsObject(Stats) && Stats.Has("mousesteer") && !Stats["mousesteer"])
+	;(Stats: AutoFarmer's settings - blank in AutoQuester, as in v1)
+	return V1IsFunc("NavRead") && !(IsObject(Stats) && Stats.Has("mousesteer") && !Stats["mousesteer"])
 	}
 
 ;Whether a mouse turn may go now: why not ("" it may). needW: W held already (false: about to be). byMem false: a
@@ -71,6 +72,7 @@ MouseSteerWhyNot(needW := true, byMem := true)
 ;afresh after the walker presses a key or clicks (PressKey, WalkClick: MsWinAt := 0)
 MouseSteerWindowClear()
 	{
+	global MsWinOk, MsWinWhy, MsWinAt ; (v1 globals it sets)
 	if (MsWinAt && A_TickCount - MsWinAt < 2500)
 		return MsWinOk
 	MsWinOk := 0, MsWinWhy := ""
@@ -82,7 +84,7 @@ MouseSteerWindowClear()
 		}
 	if (RegExMatch(mwT, "i)cr[o0]wn|\bshop|\bbuy\b|\bsell\b|purchase|accept|decline|\bquest|reward|\btrade|upgrade|member|recipe|reagent|\bgold\b|friend|okay|\bok\b|cancel|confirm|\bclose\b", &mwM))
 		{
-		MsWinWhy := "a window over the game (`"" (mwM&&mwM[0]) "`")", MsWinAt := A_TickCount
+		MsWinWhy := "a window over the game (`"" mwM[0] "`")", MsWinAt := A_TickCount
 		return 0
 		}
 	MsWinOk := 1, MsWinAt := A_TickCount
@@ -100,8 +102,9 @@ MouseSteerPoint(&x, &y)
 ;put the walker's own reads off (NavRead's wait after one is put back)
 MouseSteerYaw()
 	{
+	global NavWait, NavWaitUntil, NavWhy ; (v1 globals it sets)
 	mwWait := NavWait, mwUntil := NavWaitUntil, mwWhy := NavWhy
-	nav := NavRead.Call(120)
+	nav := %"NavRead"%.Call(120)
 	NavWait := mwWait, NavWaitUntil := mwUntil, NavWhy := mwWhy
 	return (IsObject(nav) && nav.yaw != "") ? nav.yaw : ""
 	}
@@ -129,6 +132,7 @@ MouseSteerMove(c)
 ;call would look like yours to it (Settings.ahk MouseLockKeys)
 MouseSteerButton(down)
 	{
+	global MsHeld ; (v1 globals it sets)
 	Send("{Blind}{RButton " (down ? "down" : "up") "}")
 	MsHeld := down ? 1 : 0
 	}
@@ -148,7 +152,7 @@ MouseSteerYours(from)
 ;Where the cursor is and whether it shows: "x,y shown" / "x,y hidden" (screen), "?" not known
 MouseSteerCursor()
 	{
-	ci := Buffer(16 + A_PtrSize, 0), NumPut("UInt", 16 + A_PtrSize, ci, 0) ; V1toV2: if 'ci' is a UTF-16 string, use 'VarSetStrCapacity(&ci, 16 + A_PtrSize)' and replace all instances of 'ci.Ptr' with 'StrPtr(ci)'
+	ci := Buffer(16 + A_PtrSize, 0), NumPut("UInt", 16 + A_PtrSize, ci, 0)
 	if (!DllCall("GetCursorInfo", "Ptr", ci.Ptr))
 		return "?"
 	return NumGet(ci, 8 + A_PtrSize, "Int") "," NumGet(ci, 12 + A_PtrSize, "Int") (NumGet(ci, 4, "UInt") & 1 ? " shown" : " hidden")
@@ -157,6 +161,7 @@ MouseSteerCursor()
 ;Said in debug.log at most once a minute for the same thing
 MouseSteerNote(what)
 	{
+	global MsSaid, MsSaidAt ; (v1 globals it sets)
 	if (what = MsSaid && A_TickCount - MsSaidAt < 60000)
 		return
 	MsSaid := what, MsSaidAt := A_TickCount
@@ -171,6 +176,7 @@ MouseSteerNote(what)
 ;anything meanwhile: the turn ends there, the mouse left where you have it
 MouseTurn(h, byMem := true)
 	{
+	global MsK, MsKSign, MsFails, MsOffUntil, MsTriedAt, MsMiss, WkTurnAt ; (v1 globals it sets)
 	;(the memory's heading turned round since the count was measured: so is the count)
 	if (MsK != "" && MsKSign != WkNavSign)
 		MsK := -MsK, MsKSign := WkNavSign
@@ -196,12 +202,12 @@ MouseTurn(h, byMem := true)
 	MouseGetPos(&msX0, &msY0)
 	MouseSteerPoint(&msPx, &msPy)
 	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn; your keys still end the turn)
-	if (IsFunc("MouseLockOn"))
-		MouseLockOn.Call("turn")
+	if (V1IsFunc("MouseLockOn"))
+		%"MouseLockOn"%.Call("turn")
 	MouseMove(msPx, msPy, 0)
 	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved: no tick runs in this Critical)
-	if (IsFunc("MouseLockMoved"))
-		MouseLockMoved.Call()
+	if (V1IsFunc("MouseLockMoved"))
+		%"MouseLockMoved"%.Call()
 	sent := 0, turned := 0, probed := false, msUser := false, msFrom := A_TickCount
 	try
 		{
@@ -311,8 +317,8 @@ MouseTurn(h, byMem := true)
 		;(the mouse back where it was - not if you've taken it meanwhile)
 		if (!MouseSteerYours(msFrom))
 			MouseMove(msX0, msY0, 0)
-		if (IsFunc("MouseLockOff"))
-			MouseLockOff.Call("turn")
+		if (V1IsFunc("MouseLockOff"))
+			%"MouseLockOff"%.Call("turn")
 		if (!wasCrit)
 			Critical("Off")
 		}
@@ -353,6 +359,7 @@ MouseTurn(h, byMem := true)
 ;is measured. Two misses in a row: not tried for 10 minutes (said in the log)
 MouseStandTurn(h)
 	{
+	global MsStandGot, MsK, MsKSign, MsTriedAt, KeysDown, HeldW, WkWalkFrom, MsStandMiss, WkTurnAt, MsStandOff ; (v1 globals it sets)
 	MsStandGot := ""
 	;(the memory's heading turned round since the count was measured: so is the count - as MouseTurn)
 	if (MsK != "" && MsKSign != WkNavSign)
@@ -382,12 +389,12 @@ MouseStandTurn(h)
 	MouseGetPos(&msX0, &msY0)
 	MouseSteerPoint(&msPx, &msPy)
 	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn)
-	if (IsFunc("MouseLockOn"))
-		MouseLockOn.Call("turn")
+	if (V1IsFunc("MouseLockOn"))
+		%"MouseLockOn"%.Call("turn")
 	MouseMove(msPx, msPy, 0)
 	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved)
-	if (IsFunc("MouseLockMoved"))
-		MouseLockMoved.Call()
+	if (V1IsFunc("MouseLockMoved"))
+		%"MouseLockMoved"%.Call()
 	yaw1 := ""
 	try
 		{
@@ -424,8 +431,8 @@ MouseStandTurn(h)
 		Sleep(20)
 		if (!MouseSteerYours(A_TickCount - 1000))
 			MouseMove(msX0, msY0, 0)
-		if (IsFunc("MouseLockOff"))
-			MouseLockOff.Call("turn")
+		if (V1IsFunc("MouseLockOff"))
+			%"MouseLockOff"%.Call("turn")
 		if (!wasCrit)
 			Critical("Off")
 		}
@@ -455,4 +462,12 @@ MouseTurnAny(h)
 	if (HeldW)
 		return MouseTurn(h, false)
 	return MouseStandTurn(h)
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+MouseSteerBlank()
+	{
+	global MsK := "", MsKSign := "", MsOffUntil := "", MsFails := "", MsHeld := "", MsWinAt := "", MsWinOk := "", MsWinWhy := "", MsSaid := ""
+	global MsSaidAt := "", WkArcSentR := "", WkArcMouse := "", MsMiss := "", MsTriedAt := "", MsStandMiss := "", MsStandOff := "", MsStandGot := ""
 	}

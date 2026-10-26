@@ -23,7 +23,7 @@ global FleeHitsRound
 FleeCheck()
 	{
 	global
-	local cards, g, mana, cheapest, why, w, fx, fy, fled, mh, memHit, mc
+	local cards, g, mana, cheapest, why, w, fx, fy, fled, mh, memHit, mc, mcCard
 	static FleeSaidRound := ""
 	if (!Stat("fleeon") || LearnAll || Manual == 1)
 		return false
@@ -35,11 +35,11 @@ FleeCheck()
 	;(the game's own hand when it was read this pass - its count, and a hit in it, greyed out or not: a greyed card the
 	;pictures can't place, or one waiting for pips, is still a card and still a hit - 2026-10-25: fled twice holding
 	;greyed Power Novas / Supernovas with 7 cards in hand)
-	mh := IsFunc("VisionCards") ? VisionCards.Call(0, 5000) : "", memHit := ""
+	mh := V1IsFunc("VisionCards") ? VisionCards.Call(0, 5000) : "", memHit := ""
 	if (IsObject(mh) && IsObject(mh.cards))
 		{
 		cards := mh.cards.Length, memHit := 0
-		for mc in mh.cards
+		for mc, mcCard in mh.cards  ; (v1: mc the index - v2's one variable over an array is its value)
 			if (mh.cards[mc].kind = "damage" || mh.cards[mc].kind = "aoe" || mh.cards[mc].xpip)
 				memHit := 1
 		}
@@ -101,7 +101,7 @@ FleeCheck()
 		}
 	;(out of mana as well: a potion after it, whatever else it fled for)
 	FleeWhy := (InStr(why, "mana") || FleeNoMana >= 2) ? "mana" : "cards", FleeNoCards := 0, FleeNoMana := 0, FleeNoHits := 0
-	TrayTip("Wizard101 bot", "Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), 1)
+	TrayTip("Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), "Wizard101 bot", 1)
 	return true
 	}
 
@@ -111,7 +111,7 @@ FleeCheck()
 FleeConfirm()
 	{
 	Sleep(400)
-	fcT := OcrRect(Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameW * 0.4), Round(GameH * 0.42), "en", 1, fcLines)
+	fcT := OcrRect(Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameW * 0.4), Round(GameH * 0.42), "en", 1, &fcLines)
 	if (ErrorLevel || !IsObject(fcLines) || !RegExMatch(fcT, "is)sure.{0,30}flee"))
 		return false
 	if (RegExMatch(fcT, "i)cr[o0]wn"))
@@ -206,7 +206,7 @@ FleeCheapestHit()
 ;Flee; "" if it can't be read
 FleeWord()
 	{
-	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, lines)
+	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, &lines)
 	if (ErrorLevel || !IsObject(lines))
 		return ""
 	for i, line in lines
@@ -224,6 +224,7 @@ FleeWord()
 ;drink one; fled for cards - nothing to do (the next battle deals a full deck)
 FleeAfter()
 	{
+	global FleeWhy ; (v1 globals it sets)
 	if (FleeWhy = "")
 		return
 	why := FleeWhy, FleeWhy := ""
@@ -237,7 +238,7 @@ FleeAfter()
 	if (!FleeRefillMana("after fleeing"))
 		{
 		Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
-		TrayTip("Wizard101 bot", "Out of mana and couldn't get potions - the bot has stopped (kept from timing out).", 2)
+		TrayTip("Out of mana and couldn't get potions - the bot has stopped (kept from timing out).", "Wizard101 bot", 2)
 		AlertSend("mana", "out of mana", "Fled out of mana, and no potion to be had (none left, and buying didn't work) - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
 		afk("mana")
 		}
@@ -248,6 +249,7 @@ FleeAfter()
 ;as PotionCheck). True if mana went up
 FleeRefillMana(why)
 	{
+	global AfkRetries, PotionFailUntil ; (v1 globals it sets)
 	before := PotionGlobes().mana
 	if (FleeDrinkForMana(before))
 		{
@@ -255,7 +257,7 @@ FleeRefillMana(why)
 		AfkRetries := 0
 		return true
 		}
-	if (A_TickCount < PotionFailUntil)
+	if (V1Lt(A_TickCount, PotionFailUntil))  ; (v1: no failed run yet - blank, Potions.ahk's initializer never ran - compared as text: false)
 		{
 		DebugLog(why ": no potion left, and the last run to buy some failed - not trying again yet")
 		return false
@@ -288,4 +290,13 @@ FleeDrinkForMana(before)
 	if (before != "" && g.mana != "")
 		return g.mana > before
 	return (hpBefore != "" && g.hp != "" && g.hp > hpBefore)
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+FleeBlank()
+	{
+	global FleeNoCards := "", FleeNoMana := "", FleeNoHits := "", FleeWhy := "", FleeHitsRound := "", LearnAll := "", Manual := "", RoundAgain := ""
+	global dualmode := "", roundnumber := "", wand := "", GameLeft := "", GameTop := "", hit1 := "", hit2 := "", hit3 := "", hit4 := ""
+	global BossChoosen := "", reshuffle := "", LastHandAnswer := ""
 	}

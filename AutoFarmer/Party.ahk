@@ -54,10 +54,11 @@ PartyIni(key)
 PartyTick()
 	{
 	static schoolAskAt := 0, schoolChar := ""
+	global PartyMySchool, PartyAskAt, PartyState, PartyWhy, PartyLeader, PartyMembers, PartyRole, PartyMe ; (v1 globals it sets)
 	role := PartyRoleSet()
 	if (role = "off" && PartyRole = "off")
 		return
-	if (!VisionOn || !IsFunc("VisionGet"))
+	if (!VisionOn || !V1IsFunc("VisionGet"))
 		return
 	;(your health only as read this battle round - out of battle it's set to 0, before the first read it's blank)
 	hp := (inbattle = 1 && OwnHpAt != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 30000) ? OwnHpPct : ""
@@ -91,6 +92,9 @@ PartyTick()
 	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
+		;(v1: a field the line doesn't have - blank)
+		while (f.Length < 31)
+			f.Push("")
 		if (f[1] = "party")
 			{
 			if (PartyRole != f[2] || PartyState != f[3])
@@ -98,19 +102,19 @@ PartyTick()
 			PartyRole := f[2], PartyState := f[3], PartyWhy := f[4]
 			}
 		else if (f[1] = "me")
-			PartyMe := {zone: f[2], x: f[3], y: f[4], z: f[5], yaw: f[6]}
+			PartyMe := V1Obj({zone: f[2], x: f[3], y: f[4], z: f[5], yaw: f[6]})
 		else if (f[1] = "leader")
-			leader := {name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
+			leader := V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
 				, walk: f[11], age: f[12], dist: f[13], dzone: f[14], dx: f[15], dy: f[16], dz: f[17], ddx: f[18], ddy: f[19]
 				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]
-				, plan: f[30], lasthit: f[31]}
+				, plan: f[30], lasthit: f[31]})
 		else if (f[1] = "member")
-			members.Push({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
+			members.Push(V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
 				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]
-				, plan: f[20], lasthit: f[21]})
+				, plan: f[20], lasthit: f[21]}))
 		}
 	PartyLeader := leader, PartyMembers := members
-	if (IsFunc("DashSee"))
+	if (V1IsFunc("DashSee"))
 		DashSee.Call("party", PartyText())
 	}
 
@@ -134,7 +138,7 @@ PartySupport()
 ;A name as the plates and the log are matched by: its letters, in capitals (AutoQuester's WalkLetters)
 PartyKey(name)
 	{
-	if (IsFunc("WalkLetters"))
+	if (V1IsFunc("WalkLetters"))
 		return WalkLetters.Call(name)
 	name := StrUpper(name)
 	return RegExReplace(name, "[^A-Z]")
@@ -163,12 +167,12 @@ PartyBattleRole()
 	if (!IsObject(h))
 		return PartyRoleNote("this wizard's a " want ", but no party hitter is on your side of this battle (heard from in the last 5 s, its wizard's name known) - it hits")
 	ReadSidePlates()
-	p := SidePlates[h.slot]
+	p := V1At(SidePlates, h.slot)
 	if (!IsObject(p))
 		return PartyRoleNote(h.wiz "'s name plate wasn't read this round - this wizard hits")
 	hammerX := p.x + Px(25), hammerY := p.y + Px(8)
 	;(its school: as it says, else its plate's badge - left of its name)
-	HammerSchool := BadgeNumber(h.school) ? h.school : BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), bx, by, p.x - Px(45), p.y + Px(15))
+	HammerSchool := BadgeNumber(h.school) ? h.school : BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), &bx, &by, p.x - Px(45), p.y + Px(15))
 	BattleRole := want, HammerName := h.wiz, HammerSlot := h.slot
 	;(its planned hit's schools - the boosts are for them: KillCalc.ahk BoostSearch, BoostPick)
 	HammerPlan := PartySchools(h.plan)
@@ -182,7 +186,8 @@ PartyBattleRole()
 ;{wiz, school, hits, hitr, slot} or "". MySlot: your slot (by your name in the log)
 PartyHitter()
 	{
-	phSlots := {}, phTwice := {}, MySlot := 0
+	global MySlot ; (v1 globals it sets)
+	phSlots := V1Obj(), phTwice := V1Obj(), MySlot := 0
 	phMe := PartyKey(OwnName())
 	Loop 4
 		{
@@ -191,27 +196,28 @@ PartyHitter()
 			continue
 		phK := PartyKey(BlNames[phS])
 		if (phSlots.Has(phK))
-			phTwice[phK] := 1 ;  V1toV2: Invalid Index errors?, try 'phTwice.Push(<val>)'
-		phSlots[phK] := phS ;  V1toV2: Invalid Index errors?, try 'phSlots.Push(<val>)'
+			phTwice[phK] := 1
+		phSlots[phK] := phS
 		if (phK != "" && phK = phMe)
 			MySlot := phS
 		}
 	phAll := []
 	if (IsObject(PartyLeader))
-		phAll.Push({m: PartyLeader, lead: 1})
+		phAll.Push(V1Obj({m: PartyLeader, lead: 1}))
 	if (IsObject(PartyMembers))
 		for each, phM in PartyMembers
-			phAll.Push({m: phM, lead: 0})
+			phAll.Push(V1Obj({m: phM, lead: 0}))
 	phLead := "", phBest := "", phBestK := ""
 	for each, phC in phAll
 		{
 		phM := phC.m, phK := PartyKey(phM.wiz)
 		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.Has(phK) || phTwice.Has(phK))
 			continue
-		phW := {wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit}
+		phW := V1Obj({wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit})
 		if (phC.lead)
 			phLead := phW
-		if (phM.brole = "hitter" && (phC.lead || (!IsObject(phBest) || (phBestK != "lead" && phK < phBestK))))
+		;(v1: the names compared alphabetically, as text - v2's < throws on text)
+		if (phM.brole = "hitter" && (phC.lead || (!IsObject(phBest) || (phBestK != "lead" && V1Lt(phK, phBestK)))))
 			phBest := phW, phBestK := phC.lead ? "lead" : phK
 		}
 	return IsObject(phBest) ? phBest : phLead
@@ -238,16 +244,16 @@ PartyNoteBoosts()
 	global
 	local n, pnbK, pnbI, pnbGone
 	if (PartyFlagDuel != BlDuel || !IsObject(PartyFlagRound))
-		PartyFlagDuel := BlDuel, PartyFlagRound := {}, PartyCastRound := "", PartySrcRound := {}
+		PartyFlagDuel := BlDuel, PartyFlagRound := V1Obj(), PartyCastRound := "", PartySrcRound := V1Obj()
 	if (!IsObject(PartySrcRound))
-		PartySrcRound := map()
+		PartySrcRound := V1Obj()
 	Loop 53
 		{
 		n := A_Index - 1
 		if (used%n% = 1)
 			{
 			if (!PartyFlagRound.Has(n))
-				PartyFlagRound[n] := PartyCastRound != "" ? PartyCastRound : 0 ;  V1toV2: Invalid Index errors?, try 'PartyFlagRound.Push(<val>)'
+				PartyFlagRound[n] := PartyCastRound != "" ? PartyCastRound : 0
 			}
 		else
 			PartyFlagRound.Delete(n)
@@ -261,7 +267,7 @@ PartyNoteBoosts()
 	if (IsObject(BoostSrcUsed))
 		for pnbK in BoostSrcUsed
 			if (!PartySrcRound.Has(pnbK))
-				PartySrcRound[pnbK] := PartyCastRound != "" ? PartyCastRound : 0 ;  V1toV2: Invalid Index errors?, try 'PartySrcRound.Push(<val>)'
+				PartySrcRound[pnbK] := PartyCastRound != "" ? PartyCastRound : 0
 	;(this round's cast goes out in the log's next round)
 	PartyCastRound := (BlRound ? BlRound : 0) + 1
 	}
@@ -284,7 +290,8 @@ PartyReblade(h)
 	if (h.hits != PartyHitsSeen)
 		{
 		;(the round its hit goes out in - its log's; not said: the next one here)
-		wait := (h.hitr > 0) ? h.hitr : (BlRound ? BlRound : 0) + 1
+		;(v1: a blank hitr - an older bot's - compared as text: not > 0)
+		wait := V1Gt(h.hitr, 0) ? h.hitr : (BlRound ? BlRound : 0) + 1
 		PartyHitsSeen := h.hits, PartyHitsWait := wait
 		}
 	if (PartyHitsWait = "")
@@ -293,6 +300,8 @@ PartyReblade(h)
 	if ((BlRound ? BlRound : 0) < PartyHitsWait)
 		return
 	ours := 0, theirs := 0
+	;(v1: a for over a blank - no log's battle yet - did nothing)
+	if (IsObject(BlCasts))
 	for i, c in BlCasts
 		if (c.round = PartyHitsWait && c.spell != "None")
 			{
@@ -371,7 +380,8 @@ PartyLowest()
 			DebugLog("  " p.name "'s health: not read for sure")
 			continue
 			}
-		pct := Round(100 * r.cur / r.max)
+		;(v1: a max of 0 made it blank, Round of a blank 0)
+		pct := V1Round(V1Div(100 * r.cur, r.max))
 		if (pct < limit && r.votes < 3)
 			{
 			DebugLog("  " p.name "'s health: read " r.cur "/" r.max " only " r.votes " times out of 4 - not sure enough to heal")
@@ -397,14 +407,16 @@ PartyHealAlly()
 	;(you lower - a reading your own heal acts on, 3 of its 4 reads agreeing: your own heal, next)
 	if (OwnHpRound != roundnumber && playerX != "")
 		OwnHealthLow(true)
-	if (OwnHpRound = roundnumber && OwnHpPct != "" && OwnHpPct <= PartyLowPct && OwnHpVotes >= 3)
+	;(v1: a blank count of reads compared as text - not >= 3)
+	if (OwnHpRound = roundnumber && OwnHpPct != "" && OwnHpPct <= PartyLowPct && V1Ge(OwnHpVotes, 3))
 		return false
 	DebugLog("  healer: " PartyLowName " at " PartyLowPct "% (under " limit "%) - a heal on " PartyLowName)
 	for each, hcard in ["heal1", "heal2"]
 		{
 		if (%hcard% != 1 || (Stats.Has(hitschool "." hcard "target") && Stats[hitschool "." hcard "target"] = 0))
 			continue
-		if UseHeal(hcard, %hcard%, hitschool, PartyLowX, PartyLowY)
+		;(v1: heal1 / heal2 itself passed ByRef - v2's reference to the variable that names)
+		if UseHeal(hcard, &%hcard%, hitschool, PartyLowX, PartyLowY)
 			return true
 		}
 	DebugLog("  healer: no heal in hand that goes on an ally")
@@ -417,7 +429,7 @@ PartyHealAlly()
 PartyShield()
 	{
 	global
-	local limit, tx, ty, who
+	local limit, tx, ty, who, _title, _dir
 	if (tower != 1 || !Stat("usetower") || used19 = 1)
 		return false
 	limit := StatOr("healat", 40)
@@ -426,10 +438,10 @@ PartyShield()
 	else
 		tx := hammerX, ty := hammerY, who := HammerName
 	DebugLog("  " BattleRole ": Tower Shield on " who)
-	if (UseOnHammer("tower", tower, "resources", tx, ty) && CastWentOut())
+	if (UseOnHammer(&_title := "tower", &tower, &_dir := "resources", tx, ty) && CastWentOut())
 		{
 		used19 := 1
-		if (IsFunc("DashCast"))
+		if (V1IsFunc("DashCast"))
 			DashCast.Call("tower")
 		return true
 		}
@@ -441,7 +453,8 @@ PartyShield()
 ;(KillCalc.ahk ReadEnemyHealth). False: none read - no traps (nowhere sure to put them)
 PartyTrapTarget(&x, &y)
 	{
-	if (A_TickCount - EnemyPlatesAt > 8000)
+	;(v1: never read - blank - counted as just read: not read now)
+	if (V1Gt(V1Ago(EnemyPlatesAt), 8000))
 		ReadEnemyHealth()
 	if (!IsObject(EnemyPlates) || !EnemyPlates.Length || !IsObject(EnemyHP) || EnemyHP.Length != EnemyPlates.Length)
 		return false
@@ -474,13 +487,14 @@ PartyText()
 		{
 		t := ""
 		for each, m in PartyMembers
-			t .= (t = "" ? "" : ", ") (m.name != "" ? m.name : "?") " " (m.zone != PartyMe.zone ? "in another zone" : m.battle = 1 ? "in battle" : m.dist != "" ? m.dist " away" : "?")
+			t .= (t = "" ? "" : ", ") (m.name != "" ? m.name : "?") " " (m.zone != V1At(PartyMe, "zone") ? "in another zone" : m.battle = 1 ? "in battle" : m.dist != "" ? m.dist " away" : "?")
 		return "leader - " (t = "" ? "no followers yet" : t) (PartyHolding != "" ? " (waiting: " PartyHolding ")" : "")
 		}
 	L := PartyLeader
 	if (!IsObject(L))
 		return "follower - waiting to hear from the leader"
-	return "following " (L.name != "" ? L.name : "the leader") " - " (L.zone != PartyMe.zone ? "in " L.zone : L.battle = 1 ? "in battle" : L.dist " away")
+	;(PartyMe blank till the helper says where you are - v1: its zone blank)
+	return "following " (L.name != "" ? L.name : "the leader") " - " (L.zone != V1At(PartyMe, "zone") ? "in " L.zone : L.battle = 1 ? "in battle" : L.dist " away")
 	}
 
 ;The leader's hold (the walker asks: Walker.ahk WalkStep): why it should wait now - a follower (heard from in the last 5 s)
@@ -488,11 +502,12 @@ PartyText()
 ;till it's been near once
 PartyHoldWhy()
 	{
+	global PartyHolding, PartyHeldFrom, PartySkip ; (v1 globals it sets)
 	PartyHolding := ""
 	if (PartyRoleSet() != "leader" || PartyState != "serving" || !IsObject(PartyMembers))
 		return ""
 	if (!IsObject(PartyHeldFrom))
-		PartyHeldFrom := {}, PartySkip := {}
+		PartyHeldFrom := V1Obj(), PartySkip := V1Obj()
 	maxS := Stat("partywaitmax"), far := Stat("partywaitdist")
 	why := ""
 	for each, m in PartyMembers
@@ -501,11 +516,11 @@ PartyHoldWhy()
 			continue
 		key := m.name != "" ? m.name : "a follower"
 		;(near again: waited for again)
-		if (m.zone = PartyMe.zone && m.dist != "" && m.dist <= far / 2)
+		if (m.zone = V1At(PartyMe, "zone") && m.dist != "" && m.dist <= far / 2)
 			PartySkip.Delete(key), PartyHeldFrom.Delete(key)
 		if (PartySkip.Has(key))
 			continue
-		w := m.loading = 1 ? key " is loading" : m.zone != PartyMe.zone ? key " is in another zone" : (m.dist != "" && m.dist > far) ? key " is " m.dist " away"
+		w := m.loading = 1 ? key " is loading" : m.zone != V1At(PartyMe, "zone") ? key " is in another zone" : (m.dist != "" && m.dist > far) ? key " is " m.dist " away"
 			: m.ready != 1 ? key " isn't ready (bot off, not walking, or played by hand)" : ""
 		if (w = "")
 			{
@@ -513,10 +528,10 @@ PartyHoldWhy()
 			continue
 			}
 		if (!PartyHeldFrom.Has(key))
-			PartyHeldFrom[key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'PartyHeldFrom.Push(<val>)'
+			PartyHeldFrom[key] := A_TickCount
 		if (maxS > 0 && A_TickCount - PartyHeldFrom[key] > maxS * 1000)
 			{
-			PartySkip[key] := 1 ;  V1toV2: Invalid Index errors?, try 'PartySkip.Push(<val>)'
+			PartySkip[key] := 1
 			DebugLog("Party: waited " maxS " s for " key " - walking on without them till they're near again")
 			continue
 			}
@@ -532,12 +547,14 @@ PartyHoldWhy()
 ;down for 3 s): back up, turn 90, walk - 4 times at most, then it waits for the leader to come back near
 PartyFollowStep()
 	{
+	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY ; (v1 globals it sets)
 	if (!Walking || !GameActive() || inbattle = 1 || !BotNoBattle())
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		;(Wizard101 behind another window, you away 5 minutes - or Play for me: brought to the front, as the walker does)
-		if (Walking && !GameActive() && inbattle != 1 && IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
+		;(v1: WkFrontLook never set - blank - compared as text: not > 1500)
+		if (Walking && !GameActive() && inbattle != 1 && V1IsFunc("GameToFront") && UserIdle() > 300000 && V1Gt(V1Ago(WkFrontLook), 1500))
 			WkFrontLook := A_TickCount, GameToFront.Call("following the leader", true, true)
 		Sleep(150)
 		return
@@ -553,11 +570,12 @@ PartyFollowStep()
 		}
 	near := Stat("partynear")
 	;Where to: the leader's battle, the leader, or the door it took
-	if (L.zone = PartyMe.zone && L.battle = 1 && L.bx != "")
-		tgt := {x: L.bx, y: L.by, z: L.bz, kind: "battle", stop: 40}
-	else if (L.zone = PartyMe.zone && L.x != "")
+	;(PartyMe blank till the helper says where you are - v1: its zone blank)
+	if (L.zone = V1At(PartyMe, "zone") && L.battle = 1 && L.bx != "")
+		tgt := V1Obj({x: L.bx, y: L.by, z: L.bz, kind: "battle", stop: 40})
+	else if (L.zone = V1At(PartyMe, "zone") && L.x != "")
 		{
-		tgt := {x: L.x, y: L.y, z: L.z, kind: "leader", stop: near}
+		tgt := V1Obj({x: L.x, y: L.y, z: L.z, kind: "leader", stop: near})
 		;(standing by it: still till it's twice as far)
 		if (!PartyNear && L.dist != "" && L.dist <= near)
 			PartyNear := 1
@@ -573,8 +591,8 @@ PartyFollowStep()
 			return
 			}
 		}
-	else if (L.dzone = PartyMe.zone && L.dx != "")
-		tgt := {x: L.dx, y: L.dy, z: L.dz, kind: "door", stop: 100}
+	else if (L.dzone = V1At(PartyMe, "zone") && L.dx != "")
+		tgt := V1Obj({x: L.dx, y: L.dy, z: L.dz, kind: "door", stop: 100})
 	else
 		{
 		if (KeysDown || HeldW)
@@ -584,9 +602,10 @@ PartyFollowStep()
 		return
 		}
 	;(through the door: walked on the way the leader went, for 4 s)
-	if (tgt.kind = "door" && A_TickCount < PartyPushUntil)
-		tgt := {x: L.dx + 400 * L.ddx, y: L.dy + 400 * L.ddy, z: L.dz, kind: "push", stop: 0}
-	nav := PartyNavTo(tgt, tgt.kind := "leader" || tgt.kind = "door")
+	;(v1: PartyPushUntil never set - blank - compared as text: the tick isn't < it; a blank way to go made a blank place)
+	if (tgt.kind = "door" && V1Lt(A_TickCount, PartyPushUntil))
+		tgt := V1Obj({x: V1Add(L.dx, V1Mul(400, L.ddx)), y: V1Add(L.dy, V1Mul(400, L.ddy)), z: L.dz, kind: "push", stop: 0})
+	nav := PartyNavTo(tgt, tgt.kind = "leader" || tgt.kind = "door")
 	if (!IsObject(nav))
 		{
 		if (KeysDown || HeldW)
@@ -595,7 +614,9 @@ PartyFollowStep()
 		Sleep(300)
 		return
 		}
-	d := Sqrt((nav.x - tgt.x) ** 2 + (nav.y - tgt.y) ** 2)
+	;(v1: a blank place - a field the helper didn't give - made the sum blank, and Sqrt of a blank 0)
+	pfDx := V1Sub(nav.x, tgt.x), pfDy := V1Sub(nav.y, tgt.y)
+	d := Sqrt((pfDx = "" || pfDy = "") ? 0 : pfDx ** 2 + pfDy ** 2)
 	if (tgt.kind = "door" && d <= tgt.stop)
 		{
 		PartyPushUntil := A_TickCount + 4000
@@ -613,8 +634,10 @@ PartyFollowStep()
 		{
 		if (A_TickCount - PartyStillAt > 3000)
 			{
-			PartyTries += 1, PartyStillAt := 0
-			if (PartyTries > 4)
+			;(v1: += chained with a comma kept a blank PartyTries blank - set to 0 only once it's stood by the leader;
+			;blank isn't > 4, and blank & 1 is blank: -90)
+			PartyTries := V1Add(PartyTries, 1), PartyStillAt := 0
+			if (V1Gt(PartyTries, 4))
 				{
 				ReleaseKeys()
 				SetStatus("party: stuck on the way to the leader - waiting for it to come back near")
@@ -623,7 +646,7 @@ PartyFollowStep()
 				}
 			DebugLog("Party: stuck on the way to the " tgt.kind " (" Round(d) " away) - backing up and turning, try " PartyTries)
 			BackUp(700)
-			DgTurn(PartyTries & 1 ? 90 : -90)
+			DgTurn((V1IsNum(PartyTries) && (PartyTries & 1)) ? 90 : -90)
 			HoldW(1)
 			Sleep(900)
 			return
@@ -639,13 +662,17 @@ PartyFollowStep()
 ;zone} or ""
 PartyNavTo(p, avoid)
 	{
-	answer := VisionGet("/navto?x=" Round(p.x, 1) "&y=" Round(p.y, 1) "&z=" Round(p.z, 1) (avoid ? NavMobArgs() : ""), 2500, true)
+	;(v1: Round of a blank - a place the helper didn't give - 0.0)
+	answer := VisionGet("/navto?x=" Round(V1N(p.x), 1) "&y=" Round(V1N(p.y), 1) "&z=" Round(V1N(p.z), 1) (avoid ? NavMobArgs() : ""), 2500, true)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
-	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}
+	nav := V1Obj({x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
+		;(v1: a field the line doesn't have - blank)
+		while (f.Length < 5)
+			f.Push("")
 		if (f[1] = "pos")
 			nav.x := f[2], nav.y := f[3], nav.z := f[4], nav.yaw := f[5]
 		else if (f[1] = "zone")
@@ -661,20 +688,38 @@ PartyNavTo(p, avoid)
 ;Tray menu "Party...": this wizard's party name, and (a follower) the leader PC's address - kept in party.ini
 PartySetup()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	name := PartyIni("name"), leader := PartyIni("leader")
 	IB := InputBox("A name for this wizard in the party (shown on the other PCs' dashboards) - its in-game name is best.`n`nThe role (Off / Leader / Follower) is in Settings > PARTY.", "Party - this wizard's name", "w420 h190", name != "" ? name : A_ComputerName), newName := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel)
 		return
 	newName := RegExReplace(Trim(newName), "[^\w .'-]")
-	IniWrite(newName, A_ScriptDir "\party.ini", "party", "name")
+	V1Do(IniWrite, newName, A_ScriptDir "\party.ini", "party", "name")
 	IB := InputBox("Followers only: the leader PC's address on your home network - its name (e.g. " A_ComputerName ") or its IP (e.g. 192.168.1.20: on the leader PC, Settings > Network > Properties > IPv4 address).`n`nLeave it empty on the leader.", "Party - the leader's PC", "w460 h220", leader), newLeader := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel)
 		return
 	newLeader := RegExReplace(Trim(newLeader), "[^\w.-]")
-	IniWrite(newLeader, A_ScriptDir "\party.ini", "party", "leader")
+	V1Do(IniWrite, newLeader, A_ScriptDir "\party.ini", "party", "leader")
 	DebugLog("Party: this wizard's name '" newName "'" (newLeader != "" ? ", the leader at " newLeader : ""))
 	}
 
-PartyTimer:
+;(v1: the label PartyTimer: - Autofarmer.ahk's SetTimer, PartyTimer, 500; it ran in the global scope)
+PartyTimer() {
+global
+local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 PartyTick()
 return
+}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+PartyBlank()
+	{
+	global PartyRole := "", PartyState := "", PartyWhy := "", PartyMe := "", PartyLeader := "", PartyMembers := "", PartyAskAt := ""
+	global PartyHolding := "", PartyHeldFrom := "", PartySkip := "", PartyTgt := "", PartyStillAt := "", PartyStillX := "", PartyStillY := ""
+	global PartyTries := "", PartyPushUntil := "", PartyNear := "", DualBattle := "", Manual := "", SidePlates := "", PartyFlagDuel := ""
+	global BlDuel := "", PartyFlagRound := "", used := "", BoostSrcUsed := "", BlRound := "", PartyHitsDuel := "", BlCasts := "", MySlot := ""
+	global PartySrcRound := "", roundnumber := "", PartyLowKey := "", PartyLowName := "", PartyLowPct := "", OwnHpRound := "", playerX := ""
+	global OwnHpPct := "", OwnHpVotes := "", Stats := "", hitschool := "", PartyLowX := "", PartyLowY := "", tower := "", used19 := ""
+	global BattleRole := "", hammerX := "", hammerY := "", HammerName := ""
+	}

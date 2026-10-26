@@ -76,7 +76,7 @@ ReadArrow(&dist := "", &score := "")
 ;matches in a row that point at another size)}. One object shared by every ReadArrow
 ArrowScale()
 	{
-	static size := {scale: 1, sure: 0, poor: 0}
+	static size := V1Obj({scale: 1, sure: 0, poor: 0})
 	return size
 	}
 
@@ -204,7 +204,7 @@ ArrowShape(&pix, bx, by, mode, scale, bw)
 	colAt := []
 	Loop w2
 		colAt.Push(Round((A_Index - 1) * step) * 4)
-	mask := Buffer(cells, 0) ; V1toV2: if 'mask' is a UTF-16 string, use 'VarSetStrCapacity(&mask, cells)' and replace all instances of 'mask.Ptr' with 'StrPtr(mask)'
+	mask := Buffer(cells, 0)
 	Loop h2
 		{
 		j := A_Index - 1, row := Round(j * step) * bw * 4
@@ -216,7 +216,7 @@ ArrowShape(&pix, bx, by, mode, scale, bw)
 		}
 
 	;Largest 4-connected yellow blob is the arrow (the quest text under it is thin, separate glyphs)
-	lab := Buffer(cells * 2, 0), stack := Buffer(cells * 4, 0) ; V1toV2: if 'stack' is a UTF-16 string, use 'VarSetStrCapacity(&stack, cells * 4)' and replace all instances of 'stack.Ptr' with 'StrPtr(stack)'
+	lab := Buffer(cells * 2, 0), stack := Buffer(cells * 4, 0)
 	cur := 0, best := 0, bestN := 0
 	Loop cells
 		{
@@ -245,10 +245,10 @@ ArrowShape(&pix, bx, by, mode, scale, bw)
 		return ""
 	;Far too big for an arrow at this size: maybe the UI is bigger than assumed, so say how much
 	if (bestN > 2600)
-		return {h: "", score: 0, pvx: "", pvy: "", mode: mode, boxY: by, scale: scale, est: scale * Sqrt(bestN / TypicalN[mode + 1])}
+		return V1Obj({h: "", score: 0, pvx: "", pvy: "", mode: mode, boxY: by, scale: scale, est: scale * Sqrt(bestN / TypicalN[mode + 1])})
 
 	;Fill the hole the distance number leaves: background reachable from the border stays background
-	outside := Buffer(cells, 0), sp := 0 ; V1toV2: if 'outside' is a UTF-16 string, use 'VarSetStrCapacity(&outside, cells)' and replace all instances of 'outside.Ptr' with 'StrPtr(outside)'
+	outside := Buffer(cells, 0), sp := 0
 	Loop cells
 		{
 		p := A_Index - 1, px := Mod(p, w2), py := p // w2
@@ -286,7 +286,7 @@ ArrowShape(&pix, bx, by, mode, scale, bw)
 	cx := sx / n, cy := sy / n
 
 	;The shape relative to its centre, as a grid
-	obs := Buffer(GridW * GridW, 0), nObs := 0 ; V1toV2: if 'obs' is a UTF-16 string, use 'VarSetStrCapacity(&obs, GridW * GridW)' and replace all instances of 'obs.Ptr' with 'StrPtr(obs)'
+	obs := Buffer(GridW * GridW, 0), nObs := 0
 	Loop cells
 		{
 		p := A_Index - 1
@@ -345,7 +345,7 @@ ArrowShape(&pix, bx, by, mode, scale, bw)
 		}
 	;The UI size the arrow's area points at, going by the best reference near the rough heading
 	est := first ? scale * Sqrt(nObs / refs[first].v[6].n) : ""
-	return (AHKv1v2_Temp := {h: ArrowWrap(bestH), score: (bestIoU < 0 ? 0 : bestIoU), pvx: pvx, pvy: pvy, mode: mode, boxY: by, scale: scale, est: est, clipped: (edge >= 3)}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+	return V1Obj({h: ArrowWrap(bestH), score: (bestIoU < 0 ? 0 : bestIoU), pvx: pvx, pvy: pvy, mode: mode, boxY: by, scale: scale, est: est, clipped: (edge >= 3)})
 	}
 
 ;Screen y of an arrow box (135 px tall at scale 1) around the densest arrow-yellow area between 560
@@ -403,12 +403,12 @@ AqDir()
 
 ArrowRefs(mode := 0)
 	{
-	static cache := {}, OFF := 70, GridW := 141
+	static cache := V1Obj(), OFF := 70, GridW := 141
 	if (cache.Has(mode))
 		return cache[mode]
-	cache[mode] := "" ;  V1toV2: Invalid Index errors?, try 'cache.Push(<val>)'
+	cache[mode] := ""
 	dir := AqDir()
-	text := FileRead(dir "\resources\" (mode >= 1 ? "arrow_refs_hue.txt" : "arrow_refs.txt"))
+	text := V1FileRead(dir "\resources\" (mode >= 1 ? "arrow_refs_hue.txt" : "arrow_refs.txt"))
 	if (ErrorLevel)
 		return ""
 	list := []
@@ -431,10 +431,11 @@ ArrowRefs(mode := 0)
 		Loop 11
 			{
 			t := (-15 + 2.5 * A_Index) * 0.01745329252, c := Cos(t), s := Sin(t)
-			seen := Buffer(GridW * GridW, 0) ; V1toV2: if 'seen' is a UTF-16 string, use 'VarSetStrCapacity(&seen, GridW * GridW)' and replace all instances of 'seen.Ptr' with 'StrPtr(seen)'
-			v := {n: 0}
-			v.SetCapacity("idx", pts.Length * 4)
-			addr := v.GetAddress("idx"), cnt := 0
+			seen := Buffer(GridW * GridW, 0)
+			;(v1 kept the indexes in the object's own memory - SetCapacity / GetAddress: a Buffer here. Plain objects: their
+			;keys are always there, and ArrowIoU reads them per look)
+			v := {n: 0, idx: Buffer(pts.Length * 4, 0)}
+			addr := v.idx.Ptr, cnt := 0
 			for each, pt in pts
 				{
 				rx := Round(pt[1] * c - pt[2] * s), ry := Round(pt[1] * s + pt[2] * c)
@@ -451,21 +452,21 @@ ArrowRefs(mode := 0)
 		list.Push(ref)
 		}
 	if (list.Length)
-		cache[mode] := list ;  V1toV2: Invalid Index errors?, try 'cache.Push(<val>)'
+		cache[mode] := list
 	return cache[mode]
 	}
 
 ;Details of the last ReadArrow (blob size, centre, rough heading, turning point...), for status and debugging
 ArrowInfo()
 	{
-	static info := {}
+	static info := V1Obj()
 	return info
 	}
 
 ;Overlap (intersection over union) of one pre-rotated reference with the shape on screen
 ArrowIoU(v, &obs, nObs)
 	{
-	p := v.GetAddress("idx"), n := v.n, inter := 0
+	p := v.idx.Ptr, n := v.n, inter := 0
 	Loop n
 		inter += NumGet(obs, NumGet(p + 0, (A_Index - 1) * 4, "UInt"), "UChar")
 	return inter / (nObs + n - inter)
@@ -486,19 +487,19 @@ ArrowNeighbour(k, q, qx, qy, w, h)
 ;Copies a screen rectangle into pix as 32-bit BGRA pixels, top row first
 ArrowCapture(x, y, w, h, &pix)
 	{
-	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	bi := Buffer(40, 0)
 	NumPut("UInt", 40, bi, 0), NumPut("Int", w, bi, 4), NumPut("Int", -h, bi, 8)
 	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	sdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", sdc, "Ptr")
 	bits := 0, ok := false
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", &bits, "Ptr", 0, "UInt", 0, "Ptr")
 	if (hbm && bits)
 		{
 		obm := DllCall("SelectObject", "Ptr", mdc, "Ptr", hbm, "Ptr")
 		ok := DllCall("BitBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Ptr", sdc, "Int", x, "Int", y, "UInt", 0x00CC0020)
 		DllCall("GdiFlush")
-		pix := Buffer(w * h * 4, 0) ; V1toV2: if 'pix' is a UTF-16 string, use 'VarSetStrCapacity(&pix, w * h * 4)' and replace all instances of 'pix.Ptr' with 'StrPtr(pix)'
+		pix := Buffer(w * h * 4, 0)
 		DllCall("RtlMoveMemory", "Ptr", pix.Ptr, "Ptr", bits, "Ptr", w * h * 4)
 		DllCall("SelectObject", "Ptr", mdc, "Ptr", obm, "Ptr")
 		DllCall("DeleteObject", "Ptr", hbm)

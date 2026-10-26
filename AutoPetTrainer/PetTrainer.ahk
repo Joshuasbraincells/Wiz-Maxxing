@@ -1,9 +1,15 @@
-﻿#1::
-{ ; V1toV2: Added opening brace for [#1]
-global ; V1toV2: Made function global
-
+﻿#Requires AutoHotkey v2.0
+;(v1's #InstallMouseHook / #InstallKeybdHook: both hooks from the start)
+V1Start() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 InstallMouseHook()
 InstallKeybdHook()
+;(v1's default sending mode was Event - v2's is Input, which moves the mouse at once (MouseMove's speed ignored) and
+;sends with no key or click delays)
+SendMode("Event")
+
+#1::
+{
+global ; (v1: a hotkey label - global scope)
 
 ;Screen Varibles
 CoordMode("Mouse", "Window")
@@ -24,7 +30,7 @@ Mousespeedslow := 10 ;Default is 10
 Loading := 5100 ;Default is 5000
 Wait := 325 ;Default is 300
 Delay := 175 ;Default is 150
-Buffer := 10 ;Default is 10
+BufferVar := 10 ;Default is 10
 
 Loop{
   BlockInput("SendAndMouse")
@@ -39,7 +45,7 @@ Loop{
   Sleep(Wait)
   MouseMove(615 + leftoffset, 575 + topoffset, Mousespeedfast)
   Click()
-  Sleep(Buffer)
+  Sleep(BufferVar)
   MouseMove(A_ScreenWidth/2, A_ScreenHeight/2, Mousespeedfast)
   BlockInput("SendAndMouse")
   BlockInput("Mousemove")
@@ -63,9 +69,11 @@ Loop{
     {
      Send("s")
      }
-    Sleep(Buffer)
+    Sleep(BufferVar)
   }
-    Sleep(%Loading% - 1500)
+    ;(v1: "sleep, %Loading% - 1500" was an expression whose %Loading% read the variable named "5100" - a blank one:
+    ;blank - 1500 is blank, a sleep of 0 - checked with v1.1. Kept: no wait here)
+    Sleep(0)
   MouseMove(610 + leftoffset, 575 + topoffset, Mousespeedfast)
   Sleep(Delay)
   Click()
@@ -85,5 +93,6 @@ Loop{
   Sleep(Loading)
   BlockInput("Off")
 }
-} ; V1toV2: Added closing brace for [#1] (NO CLEAR EXIT FOUND)
+}
 Esc::Reload()
+#Include %A_ScriptDir%\..\V1Compat.ahk ; (v2 port: the v1 behaviours it keeps)

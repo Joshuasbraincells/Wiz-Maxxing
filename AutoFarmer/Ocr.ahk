@@ -34,6 +34,7 @@
 ; ==============================================================================
 OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
 {
+    global ErrorLevel   ; (v2 port: OcrRect answers in ErrorLevel - the global one, as v1's thread's)
     static Init := 0, OcrStatics := 0, LangFactory := 0, SbFactory := 0, MaxDim := 0
          , Engine := 0, EngineLang := "", Busy := 0, Pad := 8
          , IID_IOcrEngineStatics       := "{5BFFA85A-3384-3540-9940-699120D428A8}"
@@ -116,7 +117,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
             }
 
             ; ---------------- capture the screen rectangle into a 32bpp top-down DIB ----------------
-            x := Round(x), y := Round(y), w := Round(w), h := Round(h)
+            x := V1Round(x), y := V1Round(y), w := V1Round(w), h := V1Round(h)   ; (v1: Round of a blank was 0)
             if (w < 1 || h < 1)
             {
                 err := "OcrRect: empty rectangle"
@@ -137,7 +138,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
             }
             ox := (bw - sw) // 2, oy := (bh - sh) // 2
 
-            bi := Buffer(40, 0)                                        ; BITMAPINFOHEADER ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+            bi := Buffer(40, 0)                                        ; BITMAPINFOHEADER
             NumPut("UInt", 40, bi, 0), NumPut("Int", bw, bi, 4), NumPut("Int", -bh, bi, 8)   ; -height = top-down
             NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)        ; 1 plane, 32 bpp, BI_RGB
             hdcScreen := DllCall("GetDC", "Ptr", 0, "Ptr")                   ; virtual-screen DC: source coords = screen coords
@@ -152,7 +153,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
             if (redOnly)
             {
                 ; keep only reddish pixels, as black text on white: capture 1:1, filter, then scale into the OCR bitmap
-                bi1 := Buffer(40, 0) ; V1toV2: if 'bi1' is a UTF-16 string, use 'VarSetStrCapacity(&bi1, 40)' and replace all instances of 'bi1.Ptr' with 'StrPtr(bi1)'
+                bi1 := Buffer(40, 0)
                 NumPut("UInt", 40, bi1, 0), NumPut("Int", w, bi1, 4), NumPut("Int", -h, bi1, 8)
                 NumPut("UShort", 1, bi1, 12), NumPut("UShort", 32, bi1, 14)
                 pBits1 := 0, obm1 := 0
@@ -228,7 +229,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
                 break
             }
             ; IBitmapBuffer::GetPlaneDescription(0) (vtbl 7) -> {Int32 StartIndex, Width, Height, Stride}
-            pd := Buffer(16, 0) ; V1toV2: if 'pd' is a UTF-16 string, use 'VarSetStrCapacity(&pd, 16)' and replace all instances of 'pd.Ptr' with 'StrPtr(pd)'
+            pd := Buffer(16, 0)
             DllCall(_OcrVT(bbuf, 7), "Ptr", bbuf, "Int", 0, "Ptr", pd.Ptr, "Int")
             rowBytes := bw * 4
             start := NumGet(pd, 0, "Int"), stride := NumGet(pd, 12, "Int")
@@ -294,7 +295,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
             ; lineRects (optional out): [{text, x, y, w, h}, ...] per line, in SCREEN coordinates
             lineRects := []
             fx := w / sw, fy := h / sh                                                 ; bitmap px -> screen px
-            wr := Buffer(16, 0) ; V1toV2: if 'wr' is a UTF-16 string, use 'VarSetStrCapacity(&wr, 16)' and replace all instances of 'wr.Ptr' with 'StrPtr(wr)'
+            wr := Buffer(16, 0)
             Loop n
             {
                 line := 0, hTxt := 0
@@ -327,21 +328,21 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
                             ; can come back as one line)
                             hWord := 0
                             DllCall(_OcrVT(word, 7), "Ptr", word, "Ptr*", &hWord, "Int")
-                            wordRects.Push({text: _OcrHStrTake(hWord), x: Round(x + (rx - ox) * fx), y: Round(y + (ry - oy) * fy)
-                                , w: Round((rx2 - rx) * fx), h: Round((ry2 - ry) * fy)})
+                            wordRects.Push(V1Obj({text: _OcrHStrTake(hWord), x: Round(x + (rx - ox) * fx), y: Round(y + (ry - oy) * fy)
+                                , w: Round((rx2 - rx) * fx), h: Round((ry2 - ry) * fy)}))
                         }
                         ObjRelease(word)
                     }
                     ObjRelease(words)
                 }
                 if (x1 != "")
-                    lineRects.Push({text: lineText, x: Round(x + (x1 - ox) * fx), y: Round(y + (y1 - oy) * fy)
-                        , w: Round((x2 - x1) * fx), h: Round((y2 - y1) * fy), words: wordRects})
+                    lineRects.Push(V1Obj({text: lineText, x: Round(x + (x1 - ox) * fx), y: Round(y + (y1 - oy) * fy)
+                        , w: Round((x2 - x1) * fx), h: Round((y2 - y1) * fy), words: wordRects}))
                 ObjRelease(line)
             }
         }
     }
-    Catch Error as e
+    catch Any as e   ; (v1: catch caught anything thrown)
         err := "OcrRect: " (IsObject(e) ? e.Message " (" e.What ")" : e)
 
     ; ---------------- cleanup (runs on every path) ----------------
@@ -388,7 +389,7 @@ _OcrVT(p, i)   ; address of vtable slot i of interface pointer p
 _OcrQI(p, iid, &out)   ; IUnknown::QueryInterface (vtbl 0) -> HRESULT; out = new reference
 {
     out := 0
-    guid := Buffer(16, 0) ; V1toV2: if 'guid' is a UTF-16 string, use 'VarSetStrCapacity(&guid, 16)' and replace all instances of 'guid.Ptr' with 'StrPtr(guid)'
+    guid := Buffer(16, 0)
     DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", guid.Ptr, "Int")
     return DllCall(_OcrVT(p, 0), "Ptr", p, "Ptr", guid.Ptr, "Ptr*", &out, "Int")
 }
@@ -406,7 +407,7 @@ _OcrClose(p)   ; Windows.Foundation.IClosable::Close (vtbl 6)
 
 _OcrFactory(className, iid)   ; RoGetActivationFactory -> statics/factory interface, or 0
 {
-    guid := Buffer(16, 0) ; V1toV2: if 'guid' is a UTF-16 string, use 'VarSetStrCapacity(&guid, 16)' and replace all instances of 'guid.Ptr' with 'StrPtr(guid)'
+    guid := Buffer(16, 0)
     if (DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", guid.Ptr, "Int") != 0)
         return 0
     hCls := _OcrHStr(className), fac := 0
@@ -418,8 +419,8 @@ _OcrFactory(className, iid)   ; RoGetActivationFactory -> statics/factory interf
 _OcrHStr(str)   ; new HSTRING - caller must WindowsDeleteString it
 {
     h := 0
-    len := StrPut(str, "UTF-16") - 1          ; UTF-16 code units (correct on ANSI and Unicode builds)
-    DllCall("combase\WindowsCreateString", "WStr", "str", "UInt", len, "Ptr*", &h, "Int")
+    len := StrPut(str, "UTF-16") // 2 - 1     ; UTF-16 code units (v2 port: v2's StrPut gives bytes, v1's characters)
+    DllCall("combase\WindowsCreateString", "WStr", str, "UInt", len, "Ptr*", &h, "Int")
     return h
 }
 

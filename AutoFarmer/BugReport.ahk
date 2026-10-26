@@ -23,29 +23,30 @@ BugShow()
 		bugPos := ""
 		if (DashHwnd && DashShown)
 			{
-			bugMm := WinGetMinMax("ahk_id " DashHwnd)
-			WinGetPos(&bugDx, &bugDy, , , "ahk_id " DashHwnd)
+			;(v1: a window that isn't there - blank, no error)
+			bugMm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
+			bugDx := "", bugDy := ""
+			try WinGetPos(&bugDx, &bugDy, , , "ahk_id " DashHwnd)
 			if (bugDx != "" && bugMm != -1)
 				bugPos := "x" bugDx + 60 " y" bugDy + 80 " "
 			}
-		Bug := Gui()
-		Bug.OnEvent("Close", BugGuiClose)
-		Bug.OnEvent("Escape", BugGuiEscape)
 		Bug.Title := "Wizard101 bot " BotVersion() " - report a bug"
 		Bug.Show(bugPos "AutoSize")
 		}
 	else
 		Bug.Show()
-	ogcBugText.Focus()
+	Bug["BugText"].Focus()
 	}
 
 ;Makes the window (not shown)
 BugBuild()
 	{
+	global Bug, BugHwnd ; (v1 globals it sets)
 	Bug := Gui("-MaximizeBox", "Wizard101 bot " BotVersion() " - report a bug"), BugHwnd := Bug.Hwnd
 	Bug.OnEvent("Close", BugGuiClose)
 	Bug.OnEvent("Escape", BugGuiEscape)
 	Bug.BackColor := "1B1D22"
+	;(v1's Gui Color's second colour, 111317, was the Edit controls' background - v2: their Background option)
 	Bug.MarginX := 12, Bug.MarginY := 10
 	Bug.SetFont("s9 w600 c8AB4F8", "Segoe UI")
 	Bug.Add("Text", "x12 y12 w560 h18", "REPORT A BUG")
@@ -54,11 +55,11 @@ BugBuild()
 	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
 	Bug.Add("Text", "x12 y74 w560 h18", "Title (a few words)")
 	Bug.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditBugTitle := Bug.Add("Edit", "x12 y94 w560 h24 Limit120 vBugTitle")
+	ogcEditBugTitle := Bug.Add("Edit", "x12 y94 w560 h24 Limit120 vBugTitle Background111317")
 	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
 	Bug.Add("Text", "x12 y128 w560 h18", "What happened")
 	Bug.SetFont("s9 w400 cF2F2F2", "Segoe UI")
-	ogcEditBugText := Bug.Add("Edit", "x12 y148 w560 h220 Multi +VScroll Limit20000 vBugText")
+	ogcEditBugText := Bug.Add("Edit", "x12 y148 w560 h220 Multi +VScroll Limit20000 vBugText Background111317")
 	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
 	ogcCheckboxBugAddLog := Bug.Add("Checkbox", "x12 y378 w560 h18 Checked vBugAddLog", "Add the end of debug.log (the last few hundred lines)")
 	Bug.SetFont("s9 w400 c000000", "Segoe UI")
@@ -74,10 +75,8 @@ BugBuild()
 ;Send: the report written to reports\ and Wiz-Maxxing started to post it; BugPoll waits for its answer
 BugSendNow()
 	{
-	oSaved := Bug.Submit(0)
-	Try BugAddLog := oSaved.BugAddLog
-	Try BugText := oSaved.BugText
-	Try BugTitle := oSaved.BugTitle
+	global BugFile, BugSentAt ; (v1 globals it sets)
+	V1GuiSubmit(Bug, false)
 	if (BugFile != "")
 		return
 	bugWhat := Trim(BugText, " `t`r`n")
@@ -89,11 +88,12 @@ BugSendNow()
 	;(Wiz-Maxxing posts it: the exe - or, run as a script, Wiz-Maxxing.ahk by this AutoHotkey)
 	if (A_IsCompiled && !FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
 		return BugSay("Not sent: Wiz-Maxxing.exe isn't in the bot's folder (it sends the report).")
-	DirCreate(A_ScriptDir "\reports")
+	V1Do(DirCreate, A_ScriptDir "\reports")
 	bugStamp := FormatTime(, "yyyyMMdd_HHmmss")
 	bugF := A_ScriptDir "\reports\report_" bugStamp ".txt"
-	Try FileDelete(bugF ".result")
-	bugOut := FileOpen(bugF, "w", "UTF-8")
+	V1Do(FileDelete, bugF ".result")
+	;(v1's FileOpen gave no object when it couldn't open the file; v2 throws)
+	bugOut := V1Try(FileOpen, bugF, "w", "UTF-8")
 	if (!IsObject(bugOut))
 		return BugSay("Not sent: couldn't write " bugF)
 	bugOut.Write(BugRedact(StrReplace(bugHead, "`n", " ")) "`n" BugBody(bugWhat, BugAddLog))
@@ -101,11 +101,11 @@ BugSendNow()
 	if (!BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/report `"" bugF "`"", A_ScriptDir "\.."))
 		{
 		bugErr := A_LastError
-		Try FileDelete(bugF)
+		V1Do(FileDelete, bugF)
 		return BugSay("Not sent: Wiz-Maxxing couldn't be started (error " bugErr ").")
 		}
 	BugFile := bugF, BugSentAt := A_TickCount
-	ogcButtonBugSendBtn.Enabled := false
+	Bug["BugSendBtn"].Enabled := false
 	BugSay("Sending...")
 	SetTimer(BugPoll,500)
 	}
@@ -113,6 +113,7 @@ BugSendNow()
 ;Wiz-Maxxing's answer (BugSendNow's report): "ok|<issue number>|<address>" or "err|<why>" - none in 45 s: given up
 BugPollNow()
 	{
+	global BugFile ; (v1 globals it sets)
 	if (BugFile = "")
 		{
 		SetTimer(BugPoll,0)
@@ -121,7 +122,7 @@ BugPollNow()
 	bugAns := ""
 	if (FileExist(BugFile ".result"))
 		{
-		bugIn := FileOpen(BugFile ".result", "r", "UTF-8")
+		bugIn := V1Try(FileOpen, BugFile ".result", "r", "UTF-8")
 		if (IsObject(bugIn))
 			bugAns := Trim(bugIn.Read(), " `t`r`n"), bugIn.Close()
 		}
@@ -133,20 +134,21 @@ BugPollNow()
 		bugAns := "err|no answer from Wiz-Maxxing in 45 s"
 		}
 	SetTimer(BugPoll,0)
-	Try FileDelete(BugFile ".result")
-	Try FileDelete(BugFile)
+	V1Do(FileDelete, BugFile ".result")
+	V1Do(FileDelete, BugFile)
 	BugFile := ""
-	ogcButtonBugSendBtn.Enabled := true
+	Bug["BugSendBtn"].Enabled := true
 	bugP := StrSplit(bugAns, "|", , 3)
+	;(v1: a part that isn't there - blank)
 	if (bugP[1] = "ok")
 		{
-		ogcEditBugTitle.Value := ""
-		ogcEditBugText.Value := ""
-		BugSay("Sent: issue #" bugP[2] " on GitHub. Thanks!")
-		DebugLog("Bug report sent: issue #" bugP[2] " on GitHub")
+		Bug["BugTitle"].Value := ""
+		Bug["BugText"].Value := ""
+		BugSay("Sent: issue #" V1At(bugP, 2) " on GitHub. Thanks!")
+		DebugLog("Bug report sent: issue #" V1At(bugP, 2) " on GitHub")
 		return
 		}
-	bugWhy := (bugP[1] = "err" && bugP[2] != "") ? bugP[2] : bugAns
+	bugWhy := (bugP[1] = "err" && V1At(bugP, 2) != "") ? bugP[2] : bugAns
 	BugSay("Not sent: " bugWhy ". What you typed is still here.")
 	DebugLog("Bug report not sent: " bugWhy)
 	}
@@ -154,7 +156,7 @@ BugPollNow()
 ;The window's status line
 BugSay(msg)
 	{
-	ogcTextBugStatus.Value := msg
+	Bug["BugStatus"].Text := msg
 	return ""
 	}
 
@@ -163,8 +165,9 @@ BugSay(msg)
 ;looks secret is blanked out (BugRedact)
 BugBody(what, addLog)
 	{
+	global DashShown ; (v1 globals it sets)
 	;(the dashboard hidden: its texts aren't kept up - made now, the window staying hidden)
-	if (DashHwnd && !DashShown && IsFunc("DashRefresh"))
+	if (DashHwnd && !DashShown && V1IsFunc("DashRefresh"))
 		{
 		Critical()
 		DashShown := 1
@@ -175,8 +178,9 @@ BugBody(what, addLog)
 	bugNow := FormatTime(, "yyyy-MM-dd HH:mm:ss")
 	bugB := what "`n`n---`n**" BotVersion() "** - " bugNow " - PC " A_ComputerName " - screen " A_ScreenWidth "x" A_ScreenHeight
 		. " - UI " UiScale " - " (BotOn ? "bot on" : "bot off") (Walking ? ", walking" : "") (school != "" ? " - " school : "") "`n"
-	bugStats := ogcDashStatText.Value
-	bugSees := ogcDashSeeText.Value
+	;(v1's GuiControlGet: blank when the dashboard isn't there)
+	bugStats := V1Try((*) => Dash["DashStatText"].Text)
+	bugSees := V1Try((*) => Dash["DashSeeText"].Text)
 	if (Trim(bugStats) != "")
 		bugB .= BugFold("Statistics", bugStats)
 	if (Trim(bugSees) != "")
@@ -205,7 +209,7 @@ BugFold(title, text)
 BugLogTail(maxBytes, &lines)
 	{
 	lines := 0
-	bugIn := FileOpen(A_ScriptDir "\debug.log", "r")
+	bugIn := V1Try(FileOpen, A_ScriptDir "\debug.log", "r")
 	if (!IsObject(bugIn))
 		return ""
 	bugSize := bugIn.Length
@@ -215,7 +219,7 @@ BugLogTail(maxBytes, &lines)
 	bugIn.Close()
 	;(from somewhere in a line: from the next one)
 	if (bugSize > maxBytes)
-		bugT := SubStr(bugT, (InStr(bugT, "`n") + 1)<1 ? (InStr(bugT, "`n") + 1)-1 : (InStr(bugT, "`n") + 1))
+		bugT := SubStr(bugT, InStr(bugT, "`n") + 1)
 	bugT := StrReplace(bugT, "`r", "")
 	StrReplace(Trim(bugT, "`n"), "`n", "`n", , &lines)
 	lines += (Trim(bugT, "`n") != "")
@@ -248,26 +252,35 @@ BugGuiEscape:
 BugGuiEscape()
 	return
 
-;###############  V1toV2 FUNCS  ###############
-BugSend(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+;###############  (v2 port: v1's labels, as functions)  ###############
+BugSend(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	BugSendNow()
 	return
 }
 ;##############################################
-BugPoll() { ; V1toV2: Lbl->Func
+BugPoll() { ; (v1: a label - its code ran in the global scope)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	BugPollNow()
 	return
 }
 ;##############################################
-BugGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+BugGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: a label - its code ran in the global scope)
 global
 BugGuiEscape()
 }
 ;##############################################
-BugGuiEscape(*) { ; V1toV2: Lbl->Func
+BugGuiEscape(*) { ; (v1: a label - its code ran in the global scope)
 	global
 	Bug.Hide()
 	return
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+BugReportBlank()
+	{
+	global BugHwnd := "", BugTitle := "", BugText := "", BugAddLog := "", BugSendBtn := "", BugStatus := "", BugFile := "", BugSentAt := ""
+	}

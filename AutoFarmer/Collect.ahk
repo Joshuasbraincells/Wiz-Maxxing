@@ -48,11 +48,12 @@ CollectItems(goal, far := false)
 	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "item" && f.Length >= 8)
-			out.Push({name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, dist: f[6] + 0, quest: f[7] = 1, gid: f[8]
+		;(v1: a field that isn't there - an empty line's first - and a field + 0 that isn't a number read blank)
+		if (V1At(f, 1) = "item" && f.Length >= 8)
+			out.Push(V1Obj({name: f[2], x: V1Add(f[3], 0), y: V1Add(f[4], 0), z: V1Add(f[5], 0), dist: V1Add(f[6], 0), quest: f[7] = 1, gid: f[8]
 				, key: f.Length >= 11 ? Trim(f[9]) : "", template: f.Length >= 11 ? Trim(f[10]) : ""
 				, src: f.Length >= 11 ? Trim(f[11]) : ""
-				, kind: (f.Length >= 12 && Trim(f[12]) != "") ? Trim(f[12]) : f.Length >= 11 ? CollectKeyKind(Trim(f[9])) : ""})
+				, kind: (f.Length >= 12 && Trim(f[12]) != "") ? Trim(f[12]) : f.Length >= 11 ? CollectKeyKind(Trim(f[9])) : ""}))
 		}
 	return out
 	}
@@ -78,16 +79,18 @@ CollectKeyKind(key)
 ;for - the walker does its own collecting (monsters, roaming)
 CollectItemStep(goal)
 	{
+	global CiGid, CiSkip, CiFrom, CiOnAt, CiStillAt, CiXAt, CiStepAt, CiAskAt, CiItems, CiLine, CiLineAt, CiTries, CiStillX ; (v1 globals it sets)
+	global CiStillY ; (v1 globals it sets)
 	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		{
 		CiGid := ""
 		return false
 		}
 	if (!IsObject(CiSkip))
-		CiSkip := {}
+		CiSkip := V1Obj()
 	;(away from collecting meanwhile - a battle, a prompt, F8, you: not counted on the item)
 	if (CiStepAt && A_TickCount - CiStepAt > 5000)
-		CiFrom += A_TickCount - CiStepAt, CiOnAt := 0, CiStillAt := 0, CiXAt := 0
+		CiFrom := V1Add(CiFrom, A_TickCount - CiStepAt), CiOnAt := 0, CiStillAt := 0, CiXAt := 0   ; (v1: += in a comma chain - a blank stayed blank)
 	CiStepAt := A_TickCount
 	if (!CiAskAt || A_TickCount - CiAskAt > 1500)
 		{
@@ -133,14 +136,14 @@ CollectItemStep(goal)
 		}
 	;(a minute on one without getting it - out of reach, or not one to pick up: another one first, this one again in 3
 	;minutes)
-	if (A_TickCount - CiFrom > 60000)
+	if (V1Gt(V1Ago(CiFrom), 60000))   ; (v1: CiFrom blank - not set yet - never counted as a minute)
 		{
-		CiSkip[it.gid] := A_TickCount + 180000, CiGid := "" ;  V1toV2: Invalid Index errors?, try 'CiSkip.Push(<val>)'
+		CiSkip[it.gid] := A_TickCount + 180000, CiGid := ""
 		WalkLog("collect: couldn't get " it.name " in a minute - another one first")
 		ReleaseKeys()
 		return true
 		}
-	nav := PartyNavTo({x: it.x, y: it.y, z: it.z}, true)
+	nav := PartyNavTo(V1Obj({x: it.x, y: it.y, z: it.z}), true)
 	if (!IsObject(nav))
 		{
 		ReleaseKeys()
@@ -169,17 +172,17 @@ CollectItemStep(goal)
 		{
 		if (A_TickCount - CiStillAt > 3000)
 			{
-			CiTries += 1, CiStillAt := 0
-			if (CiTries > 4)
+			CiTries := V1Add(CiTries, 1), CiStillAt := 0   ; (v1: += in a comma chain - a blank stayed blank)
+			if (V1Gt(CiTries, 4))
 				{
-				CiSkip[it.gid] := A_TickCount + 180000, CiGid := "" ;  V1toV2: Invalid Index errors?, try 'CiSkip.Push(<val>)'
+				CiSkip[it.gid] := A_TickCount + 180000, CiGid := ""
 				WalkLog("collect: stuck on the way to " it.name " - another one first")
 				ReleaseKeys()
 				return true
 				}
 			WalkLog("collect: stuck on the way to " it.name " (" Round(d) " away) - backing up and turning, try " CiTries)
 			BackUp(700)
-			DgTurn(CiTries & 1 ? 90 : -90)
+			DgTurn(V1IsNum(CiTries) && CiTries & 1 ? 90 : -90)   ; (v1: a blank & 1 was blank)
 			HoldW(1)
 			Sleep(900)
 			return true
@@ -188,7 +191,7 @@ CollectItemStep(goal)
 	else
 		CiStillAt := A_TickCount, CiStillX := nav.x, CiStillY := nav.y
 	SetStatus("collecting - walking to " it.name " (" Round(d) " away)")
-	DgSteer(nav, {x: it.x, y: it.y}, d)
+	DgSteer(nav, V1Obj({x: it.x, y: it.y}), d)
 	return true
 	}
 
@@ -211,8 +214,10 @@ CollectItemsWaiting()
 ;what was used. Time away (a battle, a prompt, F8) isn't counted on the thing or the looking
 UseBegin(kind)
 	{
+	global UsDone, UsSkip, UsTalkXs, CiGid, UsGoalWas, UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsNoneFrom, UsLastCount, UsAtFrom ; (v1 globals it sets)
+	global UsThrough, UsNoted, UsBudget, UsPromptAt, UsPrompt, UsD, UsAskAt, UsFrom, UsTries, UsStillAt, UsStepAt ; (v1 globals it sets)
 	if (!IsObject(UsDone))
-		UsDone := {}
+		UsDone := V1Obj()
 	if (!IsObject(UsSkip))
 		UsSkip := []
 	if (!IsObject(UsTalkXs))
@@ -221,7 +226,7 @@ UseBegin(kind)
 	CiGid := "(" kind ")"
 	ubKey := kind ":" (WkCollect.goalid != "" ? WkCollect.goalid : WalkLetters(RegExReplace(WkCollect.text, "i)\(?\s*\d+\s*(of|/)\s*\d+\s*\)?")))
 	if (!UsDone.Has(ubKey))
-		UsDone[ubKey] := [] ;  V1toV2: Invalid Index errors?, try 'UsDone.Push(<val>)'
+		UsDone[ubKey] := []
 	if (UsGoalWas != ubKey)
 		{
 		UsGoalWas := ubKey, UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsNoneFrom := 0, UsLastCount := ""
@@ -241,6 +246,7 @@ UseBegin(kind)
 ;Forget what was left for a while - Keep trying on the notice (Walker.ahk WalkNoteKeep)
 UseForget()
 	{
+	global UsSkip, UsNoneFrom, UsIt, UsXAt, UsXs, UsTalkXs, UsNoted, UsAtFrom, UsThrough ; (v1 globals it sets)
 	UsSkip := [], UsNoneFrom := 0, UsIt := "", UsXAt := 0, UsXs := 0, UsTalkXs := [], UsNoted := "", UsAtFrom := 0, UsThrough := 0
 	}
 
@@ -262,6 +268,7 @@ UseIn(list, x)
 ;Is thing x left for a while (UsSkip, its time not up - the ones whose time is up dropped)?
 UseSkipped(x)
 	{
+	global UsSkip ; (v1 globals it sets)
 	usKeep := [], usHit := false
 	for i, e in UsSkip
 		if (A_TickCount < e.until)
@@ -280,7 +287,7 @@ UseTriedNear(key)
 	{
 	if (!IsObject(WkNavLast) || WkNavLast.x = "" || WkNavLast.y = "")
 		return true
-	utMe := {x: WkNavLast.x, y: WkNavLast.y}
+	utMe := V1Obj({x: WkNavLast.x, y: WkNavLast.y})
 	for i, e in UsDone[key]
 		if ((e.x - utMe.x) ** 2 + (e.y - utMe.y) ** 2 <= 160000)
 			return true
@@ -293,8 +300,9 @@ UseTriedNear(key)
 ;The thing walked to (UsIt) left for 5 minutes; why: for the log. True (the step's done)
 UseLeave(why)
 	{
+	global UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsBudget, UsD ; (v1 globals it sets)
 	if (IsObject(UsIt))
-		UsSkip.Push({t: UseT(UsIt), x: UsIt.x, y: UsIt.y, until: A_TickCount + 300000})
+		UsSkip.Push(V1Obj({t: UseT(UsIt), x: UsIt.x, y: UsIt.y, until: A_TickCount + 300000}))
 	WalkLog("use: " (IsObject(UsIt) ? UsIt.name : "the thing") " - " why " - left for 5 minutes")
 	UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsBudget := 0, UsD := ""
 	ReleaseKeys()
@@ -304,8 +312,9 @@ UseLeave(why)
 ;The thing walked to (UsIt) used: kept as used for this goal (key: UseBegin's), on to the next; why: for the log. True
 UseUsed(key, why)
 	{
+	global UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsNoneFrom, UsBudget, UsD ; (v1 globals it sets)
 	if (IsObject(UsIt))
-		UsDone[key].Push({t: UseT(UsIt), x: UsIt.x, y: UsIt.y})
+		UsDone[key].Push(V1Obj({t: UseT(UsIt), x: UsIt.x, y: UsIt.y}))
 	WalkLog("use: " (IsObject(UsIt) ? UsIt.name : "the thing") " used - " why)
 	SetStatus("using - " (IsObject(UsIt) ? UsIt.name : "the thing") " used")
 	UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsNoneFrom := 0, UsBudget := 0, UsD := ""
@@ -318,7 +327,7 @@ UseCount()
 	{
 	ucLine := WalkGoalText()
 	if (WkGoalId != "" && WkGoalCount != "")
-		return WkGoalCount + 0
+		return V1Add(WkGoalCount, 0)   ; (v1: not a number + 0 was blank)
 	return CollectCount(ucLine)
 	}
 
@@ -326,11 +335,12 @@ UseCount()
 ;Crowns on its prompt; the count and the goal's id noted first, then watched (UseWait). why: for the log; key: UseBegin's
 UseX(it, why, key)
 	{
+	global UsFrom, UsBudget, UsXs, UsBlind, UsIt, UsCount0, UsGoalX, WkPreXText, UsAfterX, WkLastX, UsXAt, UsCountAt ; (v1 globals it sets)
 	if (!IsObject(it))
 		{
-		uxMe := IsObject(WkNavLast) ? WkNavLast : {x: 0, y: 0, z: 0}
-		it := {name: WalkGoalItemName(WkCollect.text), template: "prompt:" WkPromptDest, x: uxMe.x != "" ? uxMe.x + 0 : 0
-			, y: uxMe.y != "" ? uxMe.y + 0 : 0, z: uxMe.z != "" ? uxMe.z + 0 : 0, src: "prompt", dist: 0, quest: 1}
+		uxMe := IsObject(WkNavLast) ? WkNavLast : V1Obj({x: 0, y: 0, z: 0})
+		it := V1Obj({name: WalkGoalItemName(WkCollect.text), template: "prompt:" WkPromptDest, x: uxMe.x != "" ? V1Add(uxMe.x, 0) : 0
+			, y: uxMe.y != "" ? V1Add(uxMe.y, 0) : 0, z: uxMe.z != "" ? V1Add(uxMe.z, 0) : 0, src: "prompt", dist: 0, quest: 1})
 		UsFrom := A_TickCount, UsBudget := 60000, UsXs := 0, UsBlind := 0
 		}
 	UsIt := it
@@ -344,7 +354,7 @@ UseX(it, why, key)
 	if (UsBlind && UsNearCount != "" && UsNearCount != "-" && UsCount0 != "" && UsCount0 > UsNearCount)
 		return UseUsed(key, "picked up on contact (the count " UsCount0 ", " UsNearCount " when it came near)")
 	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX)
-	WkPreXText := WalkAfterXText(uxPre), UsAfterX := 0
+	WkPreXText := WalkAfterXText(&uxPre), UsAfterX := 0
 	PressKey("x")
 	WkLastX := A_TickCount, UsXAt := A_TickCount, UsCountAt := A_TickCount
 	UsXs := UsXs ? UsXs + 1 : 1
@@ -360,6 +370,7 @@ UseX(it, why, key)
 ;key: UseBegin's. True
 UseWait(key)
 	{
+	global UsAfterX, UsCountAt, WkGoalReadAt, UsXAt ; (v1 globals it sets)
 	if (WalkDialogOpen())
 		{
 		WalkSkipDialog()
@@ -401,6 +412,7 @@ UseWait(key)
 ;roaming. what: what was looked for, for the notice. True if it gave up
 UseNothing(left, what)
 	{
+	global UsNoneFrom ; (v1 globals it sets)
 	if (!UsNoneFrom)
 		UsNoneFrom := A_TickCount
 	if (!left && A_TickCount - UsNoneFrom <= 180000)
@@ -417,6 +429,7 @@ UseNothing(left, what)
 ;(true). nav: PartyNavTo's; d: how far; what: the log's word
 UseStuck(nav, d, what)
 	{
+	global UsTries, UsStillAt, UsStillX, UsStillY ; (v1 globals it sets)
 	if (HeldW && UsStillAt && (nav.x - UsStillX) ** 2 + (nav.y - UsStillY) ** 2 < 3600)
 		{
 		if (A_TickCount - UsStillAt <= 3000)
@@ -445,13 +458,15 @@ UseStuck(nav, d, what)
 ;did this step; false when there's nothing to go for (the walker roams)
 UseStep(goal)
 	{
+	global UsLastCount, UsAskAt, UsThings, UsIt, UsD, UsPromptAt, UsNoneFrom, UsFrom, UsBudget, UsXs, UsBlind, UsBareAt ; (v1 globals it sets)
+	global UsTries, UsStillAt, UsPrompt, UsNearCount ; (v1 globals it sets)
 	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	usKey := UseBegin("use")
 	if (UsXAt)
 		return UseWait(usKey)
 	;(the count risen while right by it - picked up on contact: that one's used)
-	usCount := WkCollect.count
+	usCount := WkCollect["count"]
 	if (IsObject(UsIt) && UsLastCount != "" && usCount != "" && usCount > UsLastCount && UsD != "" && UsD <= 300)
 		UseUsed(usKey, "the count rose to " usCount " by it")
 	UsLastCount := usCount
@@ -502,11 +517,11 @@ UseStep(goal)
 	if (!IsObject(UsIt) || UseT(usPick) != UseT(UsIt) || (usPick.x - UsIt.x) ** 2 + (usPick.y - UsIt.y) ** 2 > 160000)
 		{
 		UsFrom := A_TickCount, UsBudget := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsTries := 0, UsStillAt := 0, UsPrompt := "-", UsNearCount := ""
-		WalkLog("use: " usPick.name " " Round(usPick.dist) " away ("(usPick.src = "file" ? "the zone's file" : "the game's memory") ", at "
+		WalkLog("use: " usPick.name " " Round(usPick.dist) " away (" (usPick.src = "file" ? "the zone's file" : "the game's memory") ", at "
 			. Round(usPick.x) ", " Round(usPick.y) ") - walking to it" (usLeft ? " (" usLeft " left for a while)" : ""))
 		}
 	UsIt := usPick
-	usNav := PartyNavTo({x: UsIt.x, y: UsIt.y, z: UsIt.z}, true)
+	usNav := PartyNavTo(V1Obj({x: UsIt.x, y: UsIt.y, z: UsIt.z}), true)
 	if (!IsObject(usNav))
 		{
 		ReleaseKeys()
@@ -555,7 +570,7 @@ UseStep(goal)
 	if (UseStuck(usNav, usDist, "use"))
 		return true
 	SetStatus("using - walking to " UsIt.name " (" Round(usDist) " away)")
-	DgSteer(usNav, {x: UsIt.x, y: UsIt.y}, usDist)
+	DgSteer(usNav, V1Obj({x: UsIt.x, y: UsIt.y}), usDist)
 	return true
 	}
 
@@ -563,6 +578,7 @@ UseStep(goal)
 ;once a zone, again after 30 s if it couldn't be read
 UseVolumes()
 	{
+	global UsVolsAt, UsVolsZone, UsVols ; (v1 globals it sets)
 	uvZone := IsObject(WkNavLast) ? WkNavLast.zone : ""
 	if (uvZone = "")
 		return []
@@ -578,8 +594,9 @@ UseVolumes()
 	Loop Parse, uvAns, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "vol" && f.Length >= 6)
-			UsVols.Push({name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, r: f[6] + 0, src: "volume", dist: ""})
+		;(v1: an empty line's first field and a field + 0 that isn't a number read blank)
+		if (V1At(f, 1) = "vol" && f.Length >= 6)
+			UsVols.Push(V1Obj({name: f[2], x: V1Add(f[3], 0), y: V1Add(f[4], 0), z: V1Add(f[5], 0), r: V1Add(f[6], 0), src: "volume", dist: ""}))
 		}
 	return UsVols
 	}
@@ -591,6 +608,7 @@ UseVolumes()
 ;then the notice. goal: the goal line. True when it did this step
 GoStep(goal)
 	{
+	global UsAskAt, UsThings, UsIt, UsD, UsNoneFrom, UsAtFrom, UsThrough, UsTries, UsStillAt ; (v1 globals it sets)
 	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	gsKey := UseBegin("go")
@@ -637,7 +655,7 @@ GoStep(goal)
 			. ", at " Round(gsPick.x) ", " Round(gsPick.y) ") - walking to it, no X")
 		}
 	UsIt := gsPick
-	gsNav := PartyNavTo({x: UsIt.x, y: UsIt.y, z: UsIt.z}, true)
+	gsNav := PartyNavTo(V1Obj({x: UsIt.x, y: UsIt.y, z: UsIt.z}), true)
 	if (!IsObject(gsNav))
 		{
 		ReleaseKeys()
@@ -651,7 +669,7 @@ GoStep(goal)
 		if (A_TickCount - UsThrough < 2500)
 			{
 			if (gsD > 40)
-				DgSteer(gsNav, {x: UsIt.x, y: UsIt.y}, gsD)
+				DgSteer(gsNav, V1Obj({x: UsIt.x, y: UsIt.y}), gsD)
 			else
 				HoldW(1)
 			SetStatus("going - through " UsIt.name)
@@ -682,13 +700,14 @@ GoStep(goal)
 	if (UseStuck(gsNav, gsD, "go"))
 		return true
 	SetStatus("going - walking to " UsIt.name " (" Round(gsD) " away)")
-	DgSteer(gsNav, {x: UsIt.x, y: UsIt.y}, gsD)
+	DgSteer(gsNav, V1Obj({x: UsIt.x, y: UsIt.y}), gsD)
 	return true
 	}
 
 ;Fewer than 3 X at the talk goal's NPC from TalkStep in the last 2 minutes (the older ones dropped)
 UseTalkTries()
 	{
+	global UsTalkXs ; (v1 globals it sets)
 	utKeep := []
 	for i, utAt in UsTalkXs
 		if (A_TickCount - utAt < 120000)
@@ -701,6 +720,7 @@ UseTalkTries()
 ;WkArrived 2: the dialogue Spaced through, X again or the wait by it); a try counted. d: how far, why: for the log. True
 UseTalkX(d, why)
 	{
+	global UsBareAt ; (v1 globals it sets)
 	if (RegExMatch(WkPromptText, "i)cr[o0]wn"))
 		return UseLeave("Crowns on its prompt - never an X there")
 	UsTalkXs.Push(A_TickCount)
@@ -718,6 +738,8 @@ UseTalkX(d, why)
 ;looks about, 3 minutes, then the notice. goal: the goal line. True when it did this step
 TalkStep(goal)
 	{
+	global UsAskAt, UsThings, UsIt, UsD, UsNoneFrom, UsTries, UsStillAt, UsBareAt, UsPrompt, WkNpTarget, UsHandAt, WkArrived ; (v1 globals it sets)
+	global WkBestTime, WkLastRead, UsNoted, UsPromptAt ; (v1 globals it sets)
 	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	tsKey := UseBegin("talk")
@@ -757,8 +779,8 @@ TalkStep(goal)
 			. Round(tsPick.x) ", " Round(tsPick.y) ") - walking to it; it stands in for the goal's place")
 		}
 	UsIt := tsPick
-	WkNpTarget := {goalid: tsGid, x: tsPick.x, y: tsPick.y, z: tsPick.z, name: tsPick.name}
-	tsNav := PartyNavTo({x: UsIt.x, y: UsIt.y, z: UsIt.z}, true)
+	WkNpTarget := V1Obj({goalid: tsGid, x: tsPick.x, y: tsPick.y, z: tsPick.z, name: tsPick.name})
+	tsNav := PartyNavTo(V1Obj({x: UsIt.x, y: UsIt.y, z: UsIt.z}), true)
 	if (!IsObject(tsNav))
 		{
 		ReleaseKeys()
@@ -815,6 +837,18 @@ TalkStep(goal)
 	if (UseStuck(tsNav, tsD, "talk"))
 		return true
 	SetStatus("finding - walking to " UsIt.name " (" Round(tsD) " away)")
-	DgSteer(tsNav, {x: UsIt.x, y: UsIt.y}, tsD)
+	DgSteer(tsNav, V1Obj({x: UsIt.x, y: UsIt.y}), tsD)
 	return true
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+CollectBlank()
+	{
+	global CiGid := "", CiFrom := "", CiItems := "", CiAskAt := "", CiSkip := "", CiStillAt := "", CiStillX := "", CiStillY := "", CiTries := ""
+	global CiOnAt := "", CiXAt := "", CiStepAt := "", CiLine := "", CiLineAt := "", UsIt := "", UsFrom := "", UsBudget := "", UsThings := ""
+	global UsAskAt := "", UsDone := "", UsSkip := "", UsXs := "", UsXAt := "", UsCount0 := "", UsGoalX := "", UsBlind := "", UsAfterX := ""
+	global UsBareAt := "", UsNoneFrom := "", UsPromptAt := "", UsPrompt := "", UsStillAt := "", UsStillX := "", UsStillY := "", UsTries := ""
+	global UsStepAt := "", UsCountAt := "", UsGoalWas := "", UsLastCount := "", UsD := "", UsNearCount := "", UsVols := "", UsVolsZone := ""
+	global UsVolsAt := "", UsAtFrom := "", UsThrough := "", UsNoted := "", UsTalkXs := "", UsHandAt := ""
 	}

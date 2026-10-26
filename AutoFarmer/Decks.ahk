@@ -12,7 +12,7 @@
 ; boss ahead held: while its in-game deck is the one on). One only passed by isn't: the walker routes round it, and one
 ; walked into is found in the battle.
 ; One file per deck: decks\<id>.txt - yours (updates keep them). The dashboard's Cards tab shows and edits them
-; (Dashboard.ahk). AutoHotkey v1.1, #Included by Autofarmer.ahk.
+; (Dashboard.ahk). AutoHotkey v2 (ported from v1.1), #Included by Autofarmer.ahk.
 
 ;The decks ([{id, file, name, school, eqset, when: {default, collect, boss, dungeon, farm}, priority, vals: {key: value}}]),
 ;the one in use ("" none - your Settings as they are) and why, read again soon (an edit on the tab), when an Equipment Set
@@ -61,20 +61,21 @@ DeckKeyInfo(key)
 	{
 	static own := ""
 	if (!IsObject(own))
-		own := {usehit1: "Plays hit1", usehit2: "Plays hit2", usehit3: "Plays hit3", usehit4: "Plays hit4", useheal: "Plays its heals (heal1, heal2)"}
+		own := V1Obj({usehit1: "Plays hit1", usehit2: "Plays hit2", usehit3: "Plays hit3", usehit4: "Plays hit4", useheal: "Plays its heals (heal1, heal2)"})
 	if (own.Has(key))
-		return {key: key, label: own[key], kind: "check", def: 1}
-	if (IsFunc("CfgList"))
+		return V1Obj({key: key, label: own[key], kind: "check", def: 1})
+	if (V1IsFunc("CfgList"))
 		for i, s in CfgList.Call()
 			if (s.key = key)
 				return s
-	return {key: key, label: key, kind: "num", def: 0}
+	return V1Obj({key: key, label: key, kind: "num", def: 0})
 	}
 
 ;The decks read from the folder (DeckList) - the two to start with made if there are none
 DeckLoadAll()
 	{
-	DirCreate(DeckDir())
+	global DeckList, DeckNow ; (v1 globals it sets)
+	V1Do(DirCreate, DeckDir())
 	list := []
 	Loop Files, DeckDir() "\*.txt"
 		{
@@ -86,7 +87,7 @@ DeckLoadAll()
 		{
 		for i, s in [["small", "Small deck", "default,collect"], ["large", "Large deck", "boss"]]
 			{
-			d := {id: s[1], file: DeckDir() "\" s[1] ".txt", name: s[2], school: "any", eqset: 0, when: DeckWhenOf(s[3]), priority: 0, vals: {}}
+			d := V1Obj({id: s[1], file: DeckDir() "\" s[1] ".txt", name: s[2], school: "any", eqset: 0, when: DeckWhenOf(s[3]), priority: 0, vals: V1Obj()})
 			DeckSave(d)
 			list.Push(d)
 			}
@@ -104,7 +105,8 @@ DeckLoadAll()
 			{
 			at := order.Length + 1
 			Loop order.Length
-				if (order[A_Index].id != "small" && order[A_Index].id != "large" && d.id < order[A_Index].id)
+				;(v1's < compared the ids - text - alphabetically; v2's throws on text: V1Lt)
+				if (order[A_Index].id != "small" && order[A_Index].id != "large" && V1Lt(d.id, order[A_Index].id))
 					{
 					at := A_Index
 					break
@@ -115,7 +117,7 @@ DeckLoadAll()
 	;(the Cards tab's buttons named after them; the Dungeons tab's Deck box)
 	if (DashHwnd)
 		DeckButtonsShow()
-	if (DashHwnd && IsFunc("DgDeckShow"))
+	if (DashHwnd && V1IsFunc("DgDeckShow"))
 		DgDeckShow.Call()
 	;(the one in use, read afresh - or none if it's gone; not in a battle: the round goes on as it was planned, the edit
 	;from the next battle - DeckTick picks afresh out of battle)
@@ -139,10 +141,10 @@ DeckIndexOf(id)
 ;{default: 1, collect: 1, ...} of a comma list
 DeckWhenOf(text)
 	{
-	w := {}
+	w := V1Obj()
 	Loop Parse, text, ",", A_Space
 		if (RegExMatch(A_LoopField, "^(default|collect|boss|dungeon|farm)$"))
-			w[A_LoopField] := 1 ;  V1toV2: Invalid Index errors?, try 'w.Push(<val>)'
+			w[A_LoopField] := 1
 	return w
 	}
 
@@ -150,10 +152,10 @@ DeckWhenOf(text)
 DeckLoad(file)
 	{
 	SplitPath(file, , , , &id)
-	d := map("id", id, "file", file, "name", id, "school", "any", "eqset", 0, "when", {), priority: 0, vals: {}}
-	allowed := {}
+	d := V1Obj({id: id, file: file, name: id, school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj()})
+	allowed := V1Obj()
 	for i, k in DeckKeys()
-		allowed[k] := 1 ;  V1toV2: Invalid Index errors?, try 'allowed.Push(<val>)'
+		allowed[k] := 1
 	dropped := ""
 	Loop Read, file
 		{
@@ -165,29 +167,41 @@ DeckLoad(file)
 			if (m[1] = "name")
 				d.name := Trim(SubStr(RegExReplace(m[2], "[^\x20-\x7E]|\|", ""), 1, 30))
 			else if (m[1] = "school")
-				d.school := RegExMatch(Trim(m2), "i)^(storm|fire|myth|balance|ice|life|death)$") ? Format("{:L}", Trim(m[2])) : "any"
+				d.school := RegExMatch(Trim(m[2]), "i)^(storm|fire|myth|balance|ice|life|death)$") ? Format("{:L}", Trim(m[2])) : "any"
 			else if (m[1] = "eqset")
-				d.eqset := RegExMatch(Trim(m2), "^[0-9]$") ? Trim(m[2]) + 0 : 0
+				d.eqset := RegExMatch(Trim(m[2]), "^[0-9]$") ? Trim(m[2]) + 0 : 0
 			else if (m[1] = "when")
 				d.when := DeckWhenOf(m[2])
 			else if (m[1] = "priority")
-				d.priority := RegExMatch(Trim(m2), "^-?\d{1,3}$") ? Trim(m[2]) + 0 : 0
+				d.priority := RegExMatch(Trim(m[2]), "^-?\d{1,3}$") ? Trim(m[2]) + 0 : 0
 			continue
 			}
 		if (RegExMatch(line, "^([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?$", &m))
 			{
 			k := StrLower(m[1])
 			if (allowed.Has(k))
-				d.vals[k] := m[2] + 0 ;  V1toV2: Invalid Index errors?, try 'd.vals.Push(<val>)'
+				d.vals[k] := DeckNum(m[2])
 			else
 				dropped .= (dropped = "" ? "" : ", ") k
 			}
+		}
+	else
+		{
+		;(v1: a deck file that couldn't be read - gone since it was listed - gave no lines; v2 throws when the loop has no
+		;Else. Empty or unreadable: nothing read, the deck as it starts)
 		}
 	if (dropped != "")
 		DebugLog("Decks: " d.name " (" file "): not a deck's setting, left out - " dropped)
 	if (d.name = "")
 		d.name := id
 	return d
+	}
+
+;A setting's number as v1 kept it (v2 port): text + 0 - one with a decimal point a float, which AutoHotkey v1 wrote out
+;with 6 decimals ("1.5" -> "1.500000": in the deck's file and on the Cards tab); v2 would write "1.5"
+DeckNum(s)
+	{
+	return InStr(s, ".") ? Format("{:.6f}", s) : s + 0
 	}
 
 ;One deck written back to its file
@@ -201,18 +215,14 @@ DeckSave(d)
 	for i, k in DeckKeys()
 		if (d.vals.Has(k))
 			text .= k ":" d.vals[k] "`r`n"
-	DirCreate(DeckDir())
-	f := FileOpen(d.file ".tmp", "w", "UTF-8-RAW")
+	V1Do(DirCreate, DeckDir())
+	;(v1's FileOpen gave 0 when the file couldn't be opened; v2 throws)
+	f := V1Try(FileOpen, d.file ".tmp", "w", "UTF-8-RAW")
 	if (!IsObject(f))
 		return false
 	f.Write(text)
 	f.Close()
-	Try {
-		FileMove(d.file ".tmp", d.file, 1)
-		ErrorLevel := 0
-	} Catch as Err {
-		ErrorLevel := Err.Extra
-	}
+	V1Do(FileMove, d.file ".tmp", d.file, 1)
 	return !ErrorLevel
 	}
 
@@ -237,20 +247,20 @@ DeckById(id)
 DeckPick(inBattle, noBoss := false)
 	{
 	if (!IsObject(DeckList) || !DeckList.Length)
-		return {deck: "", why: "no decks"}
-	sch := inBattle && hitschool != "" ? hitschool : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+		return V1Obj({deck: "", why: "no decks"})
+	sch := inBattle && hitschool != "" ? hitschool : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	if (IsObject(DgRun) && DgRun.deck != "")
 		{
 		d := DeckById(DgRun.deck)
 		if (IsObject(d))
-			return {deck: d, why: "the dungeon run " DgRun.name "'s"}
+			return V1Obj({deck: d, why: "the dungeon run " DgRun.name "'s"})
 		}
 	pin := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (pin != "")
 		{
 		d := DeckById(pin)
 		if (IsObject(d) && DeckFits(d, sch))
-			return {deck: d, why: "pinned on the Cards tab"}
+			return V1Obj({deck: d, why: "pinned on the Cards tab"})
 		}
 	;(the boss's: your Alt+1 pick; in a battle a boss among its enemies - DeckFoe, DeckRound - or the boss ahead held,
 	;while its deck is the one on in the game; out of battle a boss ahead)
@@ -282,14 +292,14 @@ DeckPick(inBattle, noBoss := false)
 			;(no Equipment Set: it puts no cards on - the deck for what this battle is)
 			if (!best.eqset)
 				continue
-			onSet := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (IsFunc("StatsCharID") ? StatsCharID.Call() : ""), A_Space)
+			onSet := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""), A_Space)
 			if (onSet != "" && onSet != best.eqset)
 				continue
 			}
 		if (IsObject(best))
-			return (AHKv1v2_Temp := {deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+			return V1Obj({deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0})
 		}
-	return {deck: "", why: "no deck for this"}
+	return V1Obj({deck: "", why: "no deck for this"})
 	}
 
 ;A deck is for this wizard: its school, or any (school not known: only an 'any' one)
@@ -301,6 +311,7 @@ DeckFits(d, sch)
 ;The deck in use set (said in the log and on the dashboard when it changes)
 DeckSet(d, why)
 	{
+	global DeckNow, DeckWhy ; (v1 globals it sets)
 	if ((IsObject(d) ? d.id : "") = (IsObject(DeckNow) ? DeckNow.id : ""))
 		{
 		;(the same deck for another reason - a boss ahead now in the battle: the dashboard's line says so, not the log)
@@ -325,6 +336,7 @@ DeckSet(d, why)
 DeckTick()
 	{
 	static lookAt := 0
+	global DeckDirty ; (v1 globals it sets)
 	if (lookAt && A_TickCount - lookAt < 2000)
 		return
 	lookAt := A_TickCount
@@ -344,6 +356,7 @@ DeckTick()
 ;log (BlDuel), else by the battle count (constant within a battle) - not every round a new one
 DeckRound()
 	{
+	global DeckFoe, DeckFoeTries, DeckFoeKnown, DeckDuel ; (v1 globals it sets)
 	if (!IsObject(DeckList))
 		DeckLoadAll()
 	drKey := BlDuel != "" ? BlDuel : "#" battles
@@ -356,13 +369,14 @@ DeckRound()
 	;DeckTick): pressed at the battle's start or under a dialog, maybe not taken)
 	if (drNew && DeckEqAt && BookSeenAt < DeckEqAt + 500)
 		{
-		drWho := IsFunc("StatsCharID") ? StatsCharID.Call() : ""
-		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "eqset" drWho)
+		drWho := V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""
+		V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "decks", "eqset" drWho)
 		}
 	drFoe := 0
-	if (!DeckFoeKnown && DeckFoeTries < 3 && DeckBossWanted())
+	;(DeckFoeTries starts blank: v1 compared a blank with 3 as text - TRUE - and its += counted it as 0)
+	if (!DeckFoeKnown && V1Lt(DeckFoeTries, 3) && DeckBossWanted())
 		{
-		DeckFoeTries += 1
+		DeckFoeTries := V1N(DeckFoeTries) + 1
 		drWas := IsObject(DeckFoe) ? DeckFoe.from "|" DeckFoe.name : ""
 		DeckFoeLook()
 		drFoe := drWas != (IsObject(DeckFoe) ? DeckFoe.from "|" DeckFoe.name : "")
@@ -382,23 +396,24 @@ DeckRound()
 ;game didn't take - a dialog up, a battle starting)
 DeckEquip(d, soon := false)
 	{
-	static at := {}
+	static at := V1Obj()
+	global DeckEqAt ; (v1 globals it sets)
 	secs := Stats.Has("handsoff") ? Stats["handsoff"] : 3
-	if (!d.eqset || !BotOn || inbattle = 1 || WkLoading || (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
+	if (!d.eqset || !BotOn || inbattle = 1 || WkLoading || (V1IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
 		|| !GameActive() || UserIdle() < Max(3, secs) * 1000 || (DeckEqAt && A_TickCount - DeckEqAt < (soon ? 10000 : 60000)))
 		return false
-	who := IsFunc("StatsCharID") ? StatsCharID.Call() : ""
+	who := V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""
 	was := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" who, A_Space)
 	if (was = d.eqset && at.Has(who) && A_TickCount - at[who] < 900000)
 		return false
-	at[who] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'at.Push(<val>)'
+	at[who] := A_TickCount
 	DeckEqAt := A_TickCount
 	if (KeysDown || HeldW)
 		ReleaseKeys()
 	Sleep(150)
 	key := d.eqset
 	Send("{Blind}^" key)
-	IniWrite(d.eqset, A_ScriptDir "\dashboard.ini", "decks", "eqset" who)
+	V1Do(IniWrite, d.eqset, A_ScriptDir "\dashboard.ini", "decks", "eqset" who)
 	DebugLog("Deck: " d.name "'s in-game deck put on - Equipment Set " d.eqset " (Ctrl+" d.eqset ")" (was = d.eqset ? " again" : ""))
 	Sleep(400)
 	return true
@@ -407,6 +422,7 @@ DeckEquip(d, soon := false)
 ;The hit, heal and wand slots the deck in use doesn't play, taken out of this round's hand (after the slots were looked for)
 DeckFilterHand()
 	{
+	global hit1, hit2, hit3, hit4, heal1, heal2, wand ; (v1 globals it sets)
 	if (!IsObject(DeckNow))
 		return
 	v := DeckNow.vals
@@ -444,8 +460,8 @@ DeckStatFor(d, sch, key)
 ;none: no hit known for it
 DeckDamage(d)
 	{
-	sch := (IsObject(d) && d.school != "any") ? d.school : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
-	out := {lo: "", hi: "", loName: "", hiName: "", boosts: "", guess: false, none: true, school: sch}
+	sch := (IsObject(d) && d.school != "any") ? d.school : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	out := V1Obj({lo: "", hi: "", loName: "", hiName: "", boosts: "", guess: false, none: true, school: sch})
 	if (sch = "")
 		return out
 	hits := []
@@ -463,31 +479,31 @@ DeckDamage(d)
 		if (lo <= 0)
 			continue
 		hi := DeckSlotHigh(sch, slot)
-		name := IsFunc("DashShortName") ? DashShortName.Call(slot, sch) : slot
+		name := V1IsFunc("DashShortName") ? DashShortName.Call(slot, sch) : slot
 		;(an X-pip hit - its pips 0: its number a pip's - 1 pip at the least, 14 at the most: 7 power pips)
 		if (Stats.Has(sch "." slot "pips") && Stats[sch "." slot "pips"] = 0 && slot != "wand")
-			hits.Push({lo: lo, hi: (hi != "" ? hi : lo) * 14, guess: hi := "", name: name " (X pips)"})
+			hits.Push(V1Obj({lo: lo, hi: (hi != "" ? hi : lo) * 14, guess: hi = "", name: name " (X pips)"}))
 		else
-			hits.Push({lo: lo, hi: hi != "" ? hi : lo, guess: hi := "", name: name})
+			hits.Push(V1Obj({lo: lo, hi: hi != "" ? hi : lo, guess: hi = "", name: name}))
 		}
 	;(learned hits in no slot, when it casts them: learnedhits)
 	if (DeckStatFor(d, sch, "learnedhits") != 0 && IsObject(LearnedCards))
 		for i, c in LearnedCards
 			if ((c.type = "damage" || c.type = "aoe") && c.sch = sch && c.slot = "" && !LearnHasFlag(c, "skip"))
 				{
-				lo := IsFunc("LearnHitBase") ? LearnHitBase.Call(c) : c.value
+				lo := V1IsFunc("LearnHitBase") ? LearnHitBase.Call(c) : c.value
 				if (lo = "" || lo <= 0)
 					continue
 				hi := DeckRangeTop(c.text)
 				hi := hi != "" && hi >= lo ? hi : lo
 				xp := LearnHasFlag(c, "xpip")
-				hits.Push({lo: lo, hi: xp ? hi * 14 : hi, guess: hi := lo, name: (c.name != "" ? c.name : "a learned hit") (xp ? " (X pips)" : "")})
+				hits.Push(V1Obj({lo: lo, hi: xp ? hi * 14 : hi, guess: hi = lo, name: (c.name != "" ? c.name : "a learned hit") (xp ? " (X pips)" : "")}))
 				}
 	if (!hits.Length)
 		return out
 	dmgPct := Stats.Has(sch ".damage") ? Stats[sch ".damage"] : Stats.Has("damage") ? Stats.damage : 0
 	critR := Stats.Has(sch ".critical") ? Stats[sch ".critical"] : Stats.Has("critical") ? Stats.critical : 0
-	mult := IsFunc("DamageMultiplier") ? DamageMultiplier.Call(dmgPct) : 1
+	mult := V1IsFunc("DamageMultiplier") ? DamageMultiplier.Call(dmgPct) : 1
 	weak := "", strong := ""
 	for i, h in hits
 		{
@@ -501,7 +517,7 @@ DeckDamage(d)
 	;for balance. Balance's own blade and trap are Balanceblade and Hex - blade3, trap3: counted once, as the kill check
 	;does - KillCalc.ahk BoostKey)
 	boost := 1, names := ""
-	grp := IsFunc("SchoolGroup") ? SchoolGroup.Call(sch) : ""
+	grp := V1IsFunc("SchoolGroup") ? SchoolGroup.Call(sch) : ""
 	b2 := grp = "elemental" ? "elementalblade" : grp = "spirit" ? "spiritblade" : ""
 	t2 := grp = "elemental" ? "elementaltrap" : grp = "spirit" ? "spirittrap" : ""
 	ddB := (sch = "balance") ? [b2, "blade3", "blade4"] : ["blade", b2, "blade3", "blade4"]
@@ -610,8 +626,9 @@ DeckBossWanted()
 ;let go (see above)
 DeckBossLook()
 	{
+	global DeckBoss ; (v1 globals it sets)
 	;(the zone from the game's log now: WkZoneAt and WkLoading up to date before the mobs are read)
-	if (IsFunc("WalkZone"))
+	if (V1IsFunc("WalkZone"))
 		WalkZone.Call(true)
 	;(the bot off, or another zone since it was last found ahead: let go - not kept for a fight it won't be in)
 	if (IsObject(DeckBoss) && (!BotOn || (WkZoneAt && WkZoneAt > DeckBoss.seenAt)))
@@ -619,9 +636,9 @@ DeckBossLook()
 		DebugLog("Deck: no boss ahead now - " DeckBoss.name (!BotOn ? " (the bot's off)" : " (another zone)"))
 		DeckBoss := ""
 		}
-	if (!DeckBossWanted() || !BotOn || inbattle = 1 || WkLoading || !IsFunc("NavMobs"))
+	if (!DeckBossWanted() || !BotOn || inbattle = 1 || WkLoading || !V1IsFunc("NavMobs"))
 		return
-	if (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
+	if (V1IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
 		return
 	dblNow := A_TickCount
 	;(a battle over while it was on - the boss's, or one the game's memory couldn't name: let go now unless it's still
@@ -712,8 +729,8 @@ DeckBossFind(dbfMobs, holdKey := "")
 		dbfScore := dbfOrder * 10 + (dbfKind = "boss" ? 2 : 0) + (holdKey != "" && dbfId = holdKey ? 1 : 0)
 		if (IsObject(dbfBest) && (dbfScore < dbfBest.score || (dbfScore = dbfBest.score && (dbfM.dist = "" || (dbfBest.dist != "" && dbfM.dist >= dbfBest.dist)))))
 			continue
-		dbfBest := {key: dbfId, name: dbfM.name, gid: dbfM.gid, title: dbfM.title, rank: dbfM.rank, health: dbfM.health, school: dbfM.school
-			, kind: dbfKind, why: dbfWhy, order: dbfOrder, score: dbfScore, dist: dbfM.dist, x: dbfM.x, y: dbfM.y, text: DeckBossText(dbfM.name, dbfM.rank, dbfKind, dbfNote)}
+		dbfBest := V1Obj({key: dbfId, name: dbfM.name, gid: dbfM.gid, title: dbfM.title, rank: dbfM.rank, health: dbfM.health, school: dbfM.school
+			, kind: dbfKind, why: dbfWhy, order: dbfOrder, score: dbfScore, dist: dbfM.dist, x: dbfM.x, y: dbfM.y, text: DeckBossText(dbfM.name, dbfM.rank, dbfKind, dbfNote)})
 		}
 	return dbfBest
 	}
@@ -755,7 +772,7 @@ DeckBestHit()
 	if (dbhAt && A_TickCount - dbhAt < 30000)
 		return dbhKeep
 	dbhAt := A_TickCount
-	dbhP := DeckPick(inbattle := 1, true)
+	dbhP := DeckPick(inbattle = 1, true)
 	dbhR := DeckDamage(dbhP.deck)
 	dbhKeep := (dbhR.none || dbhR.hiNoCrit = "") ? "" : dbhR.hiNoCrit
 	return dbhKeep
@@ -770,7 +787,7 @@ DeckBossText(dbtName, dbtRank, dbtKind, dbtNote := "")
 ;Just the letters of a name, in capitals (the walker's WalkLetters when it's there - OCR's digit slips put right)
 DeckLetters(dlText)
 	{
-	if (IsFunc("WalkLetters"))
+	if (V1IsFunc("WalkLetters"))
 		return WalkLetters.Call(dlText)
 	dlText := StrUpper(dlText)
 	return RegExReplace(dlText, "[^A-Z]")
@@ -782,14 +799,17 @@ DeckDgAhead(ddaM)
 	{
 	if (!IsObject(DgRun) || !IsObject(DgRun.steps) || ddaM.x = "" || ddaM.y = "")
 		return false
-	ddaI := DgRun.i >= 1 ? DgRun.i : 1
+	;(v1: a blank i compared with 1 as text - not >= 1)
+	ddaI := V1Ge(DgRun.i, 1) ? DgRun.i : 1
 	if (ddaI > DgRun.steps.Length)
 		return false
 	ddaZone := DgRun.steps[ddaI].zone
 	while (ddaI <= DgRun.steps.Length && DgRun.steps[ddaI].zone = ddaZone)
 		{
 		ddaS := DgRun.steps[ddaI]
-		if ((ddaS.x - ddaM.x) ** 2 + (ddaS.y - ddaM.y) ** 2 <= 1000000)
+		;(v1: a step with no x or y made the distance blank, and a blank <= 1000000 was TRUE - compared as text)
+		ddaDx := V1Sub(ddaS.x, ddaM.x), ddaDy := V1Sub(ddaS.y, ddaM.y)
+		if (V1Le(V1Add(V1Mul(ddaDx, ddaDx), V1Mul(ddaDy, ddaDy)), 1000000))
 			return true
 		ddaI += 1
 		}
@@ -802,12 +822,13 @@ DeckDgAhead(ddaM)
 ;again next round)
 DeckFoeLook()
 	{
-	dflB := IsFunc("NavBattle") ? NavBattle.Call() : ""
+	global DeckFoe, DeckFoeKnown ; (v1 globals it sets)
+	dflB := V1IsFunc("NavBattle") ? NavBattle.Call() : ""
 	if (!IsObject(dflB))
 		{
 		if (IsObject(DeckBoss))
 			{
-			DeckFoe := {name: DeckBoss.name, kind: DeckBoss.kind, text: DeckBoss.text, max: DeckBoss.health, gid: DeckBoss.gid, from: "walk"}
+			DeckFoe := V1Obj({name: DeckBoss.name, kind: DeckBoss.kind, text: DeckBoss.text, max: DeckBoss.health, gid: DeckBoss.gid, from: "walk"})
 			DeckBoss.battled := 1
 			}
 		return false
@@ -826,7 +847,7 @@ DeckFoeLook()
 			continue
 		if (IsObject(dflBest) && (dflKind != dflBest.kind ? dflKind != "boss" : (dflF.max = "" || (dflBest.max != "" && dflF.max <= dflBest.max))))
 			continue
-		dflBest := {name: dflF.name, kind: dflKind, max: dflF.max, gid: dflF.gid, from: "memory", text: DeckBossText(dflF.name, dflF.rank, dflKind, dflNote)}
+		dflBest := V1Obj({name: dflF.name, kind: dflKind, max: dflF.max, gid: dflF.gid, from: "memory", text: DeckBossText(dflF.name, dflF.rank, dflKind, dflNote)})
 		}
 	DeckFoe := dflBest
 	;(known: a boss among them, or every one's title read - else looked at again next round, its first 3 at most)
@@ -855,13 +876,13 @@ DeckButtonsShow()
 		{
 		if (A_Index <= DeckList.Length)
 			{
-			ogcDeckView%A_Index%.Text := SubStr(DeckList[A_Index].name, 1, 14)
-			ogcDeckView%A_Index%.Visible := true
+			Dash["DeckView" A_Index].Text := SubStr(DeckList[A_Index].name, 1, 14)
+			Dash["DeckView" A_Index].Visible := true
 			}
 		else
-			ogcDeckView%A_Index%.Visible := false
+			Dash["DeckView" A_Index].Visible := false
 		}
-	GuiControl, % "Dash:" (DeckList.Length() >= 6 ? "Hide" : "Show"), DeckAddBtn ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DeckAddBtn"].Visible := (DeckList.Length >= 6) ? false : true
 	}
 
 DeckHandCtrls()
@@ -879,6 +900,7 @@ DeckFormCtrls()
 ;One of the Cards tab's views up: 0 the hand and the enemies, n the n-th deck (its form filled from a copy of it)
 DeckViewShow(n)
 	{
+	global DeckView ; (v1 globals it sets)
 	if (!DashHwnd)
 		return
 	if (!IsObject(DeckList))
@@ -886,17 +908,19 @@ DeckViewShow(n)
 	if (n > DeckList.Length)
 		n := 0
 	DeckView := n
-	ogcDeckView%n%.Value := 1
+	;(v1's GuiControl on a control that isn't there - a 7th deck - did nothing; v2 throws)
+	try Dash["DeckView" n].Value := 1
 	for i, c in DeckHandCtrls()
-		GuiControl, % "Dash:" (n ? "Hide" : "Show"), %c% ; V1toV2: Ternary not yet supported (coming soon)
+		Dash[c].Visible := n ? false : true
 	Loop 7
 		{
-		p := IsObject(DashCardWant) && DashCardWant["p" A_Index], t := IsObject(DashCardWant) && DashCardWant["t" A_Index]
-		GuiControl, % "Dash:" (!n && p ? "Show" : "Hide"), DashCardPic%A_Index% ; V1toV2: Ternary not yet supported (coming soon)
-		GuiControl, % "Dash:" (!n && t ? "Show" : "Hide"), DashCardTxt%A_Index% ; V1toV2: Ternary not yet supported (coming soon)
+		;(v1: IsObject(DashCardWant) && DashCardWant[...] - a missing one blank)
+		p := V1At(DashCardWant, "p" A_Index), t := V1At(DashCardWant, "t" A_Index)
+		Dash["DashCardPic" A_Index].Visible := (!n && p) ? true : false
+		Dash["DashCardTxt" A_Index].Visible := (!n && t) ? true : false
 		}
 	for i, c in DeckFormCtrls()
-		GuiControl, % "Dash:" (n ? "Show" : "Hide"), %c% ; V1toV2: Ternary not yet supported (coming soon)
+		Dash[c].Visible := n ? true : false
 	if (n)
 		DeckFormFill(DeckCopy(DeckList[n]))
 	}
@@ -912,18 +936,20 @@ DeckCopy(d)
 ;The deck view's fields and settings list from deck d (the copy being edited)
 DeckFormFill(d)
 	{
+	global DeckEdit ; (v1 globals it sets)
 	DeckEdit := d
-	ogcDeckFName.Value := d.name
-	ogcDeckFSchool.Choose(d.school)
-	ogcDeckFSet.Value := d.eqset
-	ogcDeckFPri.Value := d.priority
-	for k, c in {default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"}
-		GuiControl, Dash:, %c%, % d.when[k] ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DeckFName"].Value := d.name
+	;(v1's ChooseString: no item starting so - nothing chosen, ErrorLevel 1; v2 may throw)
+	try Dash["DeckFSchool"].Choose(d.school)
+	Dash["DeckFSet"].Value := d.eqset
+	Dash["DeckFPri"].Value := d.priority
+	for k, c in V1Obj({default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"})
+		Dash[c].Value := d.when[k] ? 1 : 0
 	pin := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
-	GuiControl, Dash:, DeckFPin, % pin = d.id ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
-	ogcDeckFDmg.Value := DeckDamageText(d)
+	Dash["DeckFPin"].Value := pin = d.id ? 1 : 0
+	Dash["DeckFDmg"].Text := DeckDamageText(d)
 	DeckListFill(d)
-	GuiControl, Dash:, DeckFNote, % IsObject(DeckNow) && DeckNow.id = d.id ? "In use now (" DeckWhy ")" : "" ; V1toV2: Ternary not yet supported (coming soon)
+	Dash["DeckFNote"].Text := IsObject(DeckNow) && DeckNow.id = d.id ? "In use now (" DeckWhy ")" : ""
 	}
 
 ;A setting's value in words: on/off, a pick's name, a number
@@ -933,8 +959,10 @@ DeckValText(s, v)
 		return ""
 	if (s.kind = "check")
 		return v ? "on" : "off"
-	if (s.kind = "pick" && IsObject(s.picks) && s.picks.Has(v))
-		return v " - " s.picks[v]
+	;(v1's picks.HasKey(v): an item there by its number - V1At, not v2's Has, which takes 1.5 for 1. A float - "2.0" set,
+	;a deck's "2.000000" - was a text key to v1's HasKey, never found: no "." in it)
+	if (s.kind = "pick" && IsObject(s.picks) && !InStr(v, ".") && V1At(s.picks, v) != "")
+		return v " - " V1At(s.picks, v)
 	return v
 	}
 
@@ -942,13 +970,12 @@ DeckValText(s, v)
 ;the plain one)
 DeckListFill(d)
 	{
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	Gui, Dash:ListView, DeckFList ; V1toV2: [DeckFList] not found. Manual edit required.
-	ogcDeckFList.Opt("-Redraw")
+	;(v1: Gui, Dash:Default, its ListView DeckFList made the default one and the one before put back after - v2 names the
+	;control)
+	LV := Dash["DeckFList"]
+	LV.Opt("-Redraw")
 	LV.Delete()
-	sch := d.school != "any" ? d.school : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	sch := d.school != "any" ? d.school : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	for i, k in DeckKeys()
 		{
 		s := DeckKeyInfo(k)
@@ -956,23 +983,17 @@ DeckListFill(d)
 		other := (sch != "" && Stats.Has(sch "." k)) ? Stats[sch "." k] : Stats.Has(k) ? Stats[k] : s.def
 		LV.Add("", s.label, mine, DeckValText(s, other), k)
 		}
-	ogcDeckFList.Opt("+Redraw")
-	if (prevLV != "" && prevLV != "DeckFList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+	LV.Opt("+Redraw")
 	}
 
 ;The key of the setting picked in the list ("" none)
 DeckListKey(&row := 0)
 	{
-	;Gui, Dash:Default ; V1toV2: removed
-	V1toV2_LineFill := true ; remove me after inspection
-	prevLV := A_DefaultListView
-	Gui, Dash:ListView, DeckFList ; V1toV2: [DeckFList] not found. Manual edit required.
+	;(v1: Gui, Dash:Default and its ListView DeckFList, the one before put back after - v2 names the control)
+	LV := Dash["DeckFList"]
 	row := LV.GetNext(0), key := ""
 	if (row)
-		key := LV.GetText(row)
-	if (prevLV != "" && prevLV != "DeckFList")
-		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
+		key := LV.GetText(row, 4)
 	return key
 	}
 
@@ -982,28 +1003,29 @@ DeckFormRead()
 	d := DeckEdit
 	if (!IsObject(d))
 		return ""
-	v := ogcDeckFName.Value
+	v := Dash["DeckFName"].Value
 	d.name := Trim(SubStr(RegExReplace(v, "[^\x20-\x7E]|\|", ""), 1, 30))
 	d.name := d.name != "" ? d.name : d.id
-	v := ogcDeckFSchool.Value
+	;(a DropDownList without AltSubmit: v1's GuiControlGet gave its text)
+	v := Dash["DeckFSchool"].Text
 	d.school := v != "" ? v : "any"
-	v := ogcDeckFSet.Value
+	v := Dash["DeckFSet"].Value
 	d.eqset := RegExMatch(v, "^[0-9]$") ? v + 0 : 0
-	v := ogcDeckFPri.Value
+	v := Dash["DeckFPri"].Value
 	d.priority := RegExMatch(v, "^-?\d{1,3}$") ? v + 0 : 0
-	d.when := {}
-	for k, c in {default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"}
+	d.when := V1Obj()
+	for k, c in V1Obj({default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"})
 		{
-		v := ogc%c%.Value
+		v := Dash[c].Value
 		if (v)
-			d.when[k] := 1 ;  V1toV2: Invalid Index errors?, try 'd.when.Push(<val>)'
+			d.when[k] := 1
 		}
 	return d
 	}
 
 DeckSay(text)
 	{
-	ogcDeckFNote.Value := text
+	Dash["DeckFNote"].Text := text
 	}
 
 ;A new deck's id (its file's name): when it was made - never a deleted deck's (a dungeon run naming that one would take
@@ -1020,32 +1042,58 @@ DeckNewId()
 	return "deck" A_Now A_TickCount
 	}
 
-DeckViewClick:
-	DeckViewShow(SubStr(A_GuiControl, 9) + 0)
-	return
+;---- The Cards tab's buttons (v1: g-labels - Dashboard.ahk's controls run them) ----
+;(v2 port: each was a label - its own thread, in the global scope: global first, the interrupted thread's ErrorLevel kept
+;as v1 did. Dashboard.ahk binds them as Fn.Bind("Normal") on Click - A_GuiControl is then the control - and DeckFList's
+;as DeckListEvent.Bind("I") on ItemSelect)
 
-;(a setting picked: its value for this deck in the box)
-DeckListEvent:
-	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S") && IsObject(DeckEdit))
+DeckViewClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	global
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	A_GuiControl := V1GuiName(A_GuiControl)  ; (v1: the control's v-name, else its text)
+	DeckViewShow(SubStr(A_GuiControl, 9) + 0)
+	}
+
+;(a setting picked: its value for this deck in the box. v1: the ListView's "I" event with S - or s: InStr isn't
+;case-sensitive - in its ErrorLevel, an item selected or deselected; v2's ItemSelect, bound as "I")
+DeckListEvent(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	global
+	if (A_GuiEvent = "I" && IsObject(DeckEdit))
 		{
 		DeckKey := DeckListKey()
-		GuiControl, Dash:, DeckFVal, % DeckKey != "" && DeckEdit.vals.HasKey(DeckKey) ? DeckEdit.vals[DeckKey] : "" ; V1toV2: Ternary not yet supported (coming soon)
+		Dash["DeckFVal"].Value := DeckKey != "" && DeckEdit.vals.Has(DeckKey) ? DeckEdit.vals[DeckKey] : ""
 		}
-	return
+	}
 
-DeckValSet:
-DeckValClear:
+DeckValSet(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	DeckValSetClear("DeckValSet")
+	}
+
+DeckValClear(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	DeckValSetClear("DeckValClear")
+	}
+
+;(v1: the labels DeckValSet and DeckValClear - one body, told apart by A_ThisLabel)
+DeckValSetClear(thisLabel)
+	{
+	global
 	DeckKey := DeckListKey()
 	if (DeckKey = "" || !IsObject(DeckEdit))
 		{
 		DeckSay("Pick a setting in the list first")
 		return
 		}
-	if (A_ThisLabel = "DeckValClear")
+	if (thisLabel = "DeckValClear")
 		DeckEdit.vals.Delete(DeckKey), DeckSay(DeckKey ": not set by this deck - Save to keep it")
 	else
 		{
-		DeckV := ogcDeckFVal.Value
+		DeckV := Dash["DeckFVal"].Value
 		DeckS := DeckKeyInfo(DeckKey)
 		DeckV := Trim(DeckV)
 		DeckLo := DeckS.kind = "check" ? 0 : DeckS.kind = "pick" ? 1 : DeckS.lo, DeckHi := DeckS.kind = "check" ? 1 : DeckS.kind = "pick" ? DeckS.picks.Length : DeckS.hi
@@ -1054,22 +1102,25 @@ DeckValClear:
 			DeckSay(DeckS.label ": " (DeckS.kind = "check" ? "1 (on) or 0 (off)" : DeckLo " to " DeckHi))
 			return
 			}
-		DeckEdit.vals[DeckKey] := DeckV + 0, DeckSay(DeckKey " " DeckV + 0 " for this deck - Save to keep it") ;  V1toV2: Invalid Index errors?, try 'DeckEdit.vals.Push(<val>)'
+		DeckEdit.vals[DeckKey] := DeckNum(DeckV), DeckSay(DeckKey " " DeckNum(DeckV) " for this deck - Save to keep it")
 		}
 	DeckListFill(DeckEdit)
-	ogcDeckFDmg.Value := DeckDamageText(DeckEdit)
-	return
+	Dash["DeckFDmg"].Text := DeckDamageText(DeckEdit)
+	}
 
-DeckSaveClick:
+DeckSaveClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	global
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
 	DeckD := DeckFormRead()
 	if (!IsObject(DeckD))
 		return
-	DeckPinOn := ogcDeckFPin.Value
+	DeckPinOn := Dash["DeckFPin"].Value
 	DeckPinWas := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (DeckPinOn)
-		IniWrite(DeckD.id, A_ScriptDir "\dashboard.ini", "decks", "pin")
+		V1Do(IniWrite, DeckD.id, A_ScriptDir "\dashboard.ini", "decks", "pin")
 	else if (DeckPinWas = DeckD.id)
-		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "pin")
+		V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "decks", "pin")
 	if (DeckSave(DeckD))
 		{
 		;(read again from the files at once - the deck in use too - and the pick made afresh out of battle: DeckTick)
@@ -1083,10 +1134,24 @@ DeckSaveClick:
 		}
 	else
 		DeckSay("Couldn't write " DeckD.file)
-	return
+	}
 
-DeckCopyClick:
-DeckAddClick:
+DeckCopyClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	DeckAddCopy("DeckCopyClick")
+	}
+
+DeckAddClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	DeckAddCopy("DeckAddClick")
+	}
+
+;(v1: the labels DeckCopyClick and DeckAddClick - one body, told apart by A_ThisLabel)
+DeckAddCopy(thisLabel)
+	{
+	global
 	if (!IsObject(DeckList))
 		DeckLoadAll()
 	if (DeckList.Length >= 6)
@@ -1095,27 +1160,43 @@ DeckAddClick:
 		return
 		}
 	DeckId := DeckNewId()
-	if (A_ThisLabel = "DeckCopyClick" && IsObject(DeckEdit))
+	if (thisLabel = "DeckCopyClick" && IsObject(DeckEdit))
 		DeckD := DeckCopy(DeckFormRead()), DeckD.name := SubStr(DeckD.name " copy", 1, 30)
 	else
-		DeckD := {name: "New deck", school: "any", eqset: 0, when: {}, priority: 0, vals: {}}
+		DeckD := V1Obj({name: "New deck", school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj()})
 	DeckD.id := DeckId, DeckD.file := DeckDir() "\" DeckId ".txt"
 	DeckSave(DeckD), DeckLoadAll(), DeckButtonsShow()
 	DeckViewShow(DeckIndexOf(DeckId))
 	DeckSay("Made - set what it's for and its settings, then Save")
-	return
+	}
 
-DeckDelClick:
+DeckDelClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	global
+	local v1KeepG := V1Thread(), msgResult  ; (v1: a g-label - its own thread and ErrorLevel)
 	if (!IsObject(DeckEdit))
 		return
 	msgResult := MsgBox("Delete the deck '" DeckEdit.name "'? Its file goes (" DeckEdit.file "); your Settings aren't touched.", "Decks", 262180)
 	if (msgResult = "No")
 		return
-	Try FileDelete(DeckEdit.file)
+	V1Do(FileDelete, DeckEdit.file)
 	DeckPinWas := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (DeckPinWas = DeckEdit.id)
-		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "pin")
+		V1Do(IniDelete, A_ScriptDir "\dashboard.ini", "decks", "pin")
 	DebugLog("Decks: " DeckEdit.name " deleted")
 	DeckEdit := "", DeckLoadAll(), DeckButtonsShow()
 	DeckViewShow(0)
-	return
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+DecksBlank()
+	{
+	global DeckList := "", DeckNow := "", DeckWhy := "", DeckDirty := "", DeckEqAt := "", DeckDuel := "", DeckView := "", DeckBoss := ""
+	global DeckFoe := "", DeckFoeTries := "", DeckFoeKnown := "", DeckEdit := "", DashCardWant := "", DeckView0 := "", DeckView1 := ""
+	global DeckView2 := "", DeckView3 := "", DeckView4 := "", DeckView5 := "", DeckView6 := "", DeckAddBtn := "", DeckFNameT := "", DeckFName := ""
+	global DeckFSchoolT := "", DeckFSchool := "", DeckFSetT := "", DeckFSet := "", DeckFSetN := "", DeckFWhenT := "", DeckFWDefault := ""
+	global DeckFWCollect := "", DeckFWBoss := "", DeckFWDungeon := "", DeckFWFarm := "", DeckFPriT := "", DeckFPri := "", DeckFPin := ""
+	global DeckFSave := "", DeckFCopy := "", DeckFDel := "", DeckFDmg := "", DeckFList := "", DeckFValT := "", DeckFVal := "", DeckFValSet := ""
+	global DeckFValClear := "", DeckFNote := "", inbattle := ""
+	}

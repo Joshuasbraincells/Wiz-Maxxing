@@ -1,4 +1,4 @@
-#Requires Autohotkey v2.0
+#Requires AutoHotkey v2.0
 ; Wiz-Maxxing.ahk - opens the bot: first checks GitHub for a newer version (Updater.ahk) and asks to install it,
 ; then starts AutoFarmer\Autofarmer.exe (else AutoFarmer\Autofarmer.ahk, with AutoHotkey). Built to
 ; Wiz-Maxxing.exe by build.ps1, with the wizard icon; Setup puts it in the Start menu and on the desktop.
@@ -16,11 +16,14 @@
 ;                            STATISTICS say from it whether a newer one is out) - nothing shown, nothing installed
 ;   Wiz-Maxxing.exe /report <file>   posts a bug report as an issue on GitHub (the dashboard's Report a bug -
 ;                            Updater.ahk UpReport); its answer in <file>.result
-; AutoHotkey v1.1.
-; V1toV2: Removed #NoEnv
+; AutoHotkey v2 (ported from v1.1).
+;(v1's #NoEnv: what v2 does anyway)
 #NoTrayIcon
 #SingleInstance off
-checkOnly := (A_Args[1] = "/check")
+;(v1's default title match: a window's title starts with the text - v2's is 2, anywhere in it: UpOnlyOne's WinActivate)
+V1Start(), UpdaterBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+SetTitleMatchMode(1)
+checkOnly := (V1At(A_Args, 1) = "/check")  ;(v1: A_Args[1] with no arguments - blank; v2 throws)
 ;(/check's other words: /auto - an update by itself; how to start the bot again - off, in standby, Play for me on)
 autoUp := false, botArg := ""
 if (checkOnly)
@@ -30,19 +33,19 @@ if (checkOnly)
 		else if (BotArgOk(a))
 			botArg .= (botArg = "" ? "" : " ") a
 dir := A_ScriptDir "\AutoFarmer"
-if (A_Args[1] = "/watch")
+if (V1At(A_Args, 1) = "/watch")
 	{
 	WatchGame(dir)
 	ExitApp()
 	}
-if (A_Args[1] = "/latest")
+if (V1At(A_Args, 1) = "/latest")
 	{
 	UpPeek()
 	ExitApp()
 	}
-if (A_Args[1] = "/report")
+if (V1At(A_Args, 1) = "/report")
 	{
-	UpReport(A_Args[2])
+	UpReport(V1At(A_Args, 2))
 	ExitApp()
 	}
 if (!FileExist(dir "\Autofarmer.ahk") && !FileExist(dir "\Autofarmer.exe"))
@@ -56,10 +59,10 @@ if (!UpOnlyOne(!autoUp))
 	;(the Updates button while an update by itself is downloaded and waiting for the bot to close for it: it's asked to
 	;close for it now - as soon as it's out of battle with nothing loading, not waiting for you to leave the keys and
 	;mouse alone - and you're told)
-	if (checkOnly && !autoUp && UpAutoWaiting(waitTag))
+	if (checkOnly && !autoUp && UpAutoWaiting(&waitTag))
 		{
-		IniWrite(1, A_ScriptDir "\updater.ini", "auto", "now")
-		MsgBox(waitTag " is downloaded - the bot closes for it as soon as it's out of battle with nothing loading, installs it and starts again as it is now.", 30, "Wiz-Maxxing update", 262208)
+		V1Do(IniWrite, 1, A_ScriptDir "\updater.ini", "auto", "now")
+		MsgBox(waitTag " is downloaded - the bot closes for it as soon as it's out of battle with nothing loading, installs it and starts again as it is now.", "Wiz-Maxxing update", "262208 T30")
 		}
 	if (checkOnly)
 		ExitApp()
@@ -98,11 +101,9 @@ if (!started && autoUp)
 			break
 		runErr := A_LastError
 		}
-	if (!started && A_IsCompiled && (v1Ahk := AhkV1()) != "" && FileExist(dir "\Autofarmer.ahk"))
+	if (!started && A_IsCompiled && (v2Ahk := AhkV2()) != "" && FileExist(dir "\Autofarmer.ahk"))
 		{
-		{   ErrorLevel := "ERROR"
-		   Try ErrorLevel := Run("""" v1Ahk """ """ dir "\Autofarmer.ahk""" (botArg = "" ? "" : " " botArg), dir, "", )
-		}
+		V1Run("`"" v2Ahk "`" `"" dir "\Autofarmer.ahk`"" (botArg = "" ? "" : " " botArg), dir)
 		started := !ErrorLevel
 		if (started)
 			UpLog("auto: started the bot as a script (Autofarmer.ahk by AutoHotkey) - Autofarmer.exe wouldn't run")
@@ -125,23 +126,25 @@ BotArgOk(a)
 ;common with AutoHotkey programs - pointed at Windows Security's Protection history), or not there at all
 LaunchWhy(hasExe, err)
 	{
-	security := "Windows Security often takes AutoHotkey programs for a virus (a false alarm): Windows Security > Virus & threat protection > Protection history > the Autofarmer.exe entry > Actions > Allow (or Restore). To keep it from happening again: Virus & threat protection > Manage settings > Exclusions > add the Wiz-Maxxing folder.`n`n`"Smart App Control blocked`" instead: it blocks the bot's exes (they aren't signed) and lets no exceptions be made - install AutoHotkey v1.1 (autohotkey.com) and open Wiz-Maxxing.ahk instead of Wiz-Maxxing.exe: the bot then runs as scripts."
+	security := "Windows Security often takes AutoHotkey programs for a virus (a false alarm): Windows Security > Virus & threat protection > Protection history > the Autofarmer.exe entry > Actions > Allow (or Restore). To keep it from happening again: Virus & threat protection > Manage settings > Exclusions > add the Wiz-Maxxing folder.`n`n`"Smart App Control blocked`" instead: it blocks the bot's exes (they aren't signed) and lets no exceptions be made - install AutoHotkey v2 (autohotkey.com) and open Wiz-Maxxing.ahk instead of Wiz-Maxxing.exe: the bot then runs as scripts."
 	if (hasExe)
 		{
-		msg := Buffer(1024, 0) ; V1toV2: if 'msg' is a UTF-16 string, use 'VarSetStrCapacity(&msg, 1024)' and replace all instances of 'msg.Ptr' with 'StrPtr(msg)'
-		n := DllCall("FormatMessage", "UInt", 0x1200, "Ptr", 0, "UInt", err, "UInt", 0, "Str", msg, "UInt", 512, "Ptr", 0)
-		text := n ? Trim(msg, " `r`n.") : "error " err
+		msg := Buffer(1024, 0)
+		n := DllCall("FormatMessage", "UInt", 0x1200, "Ptr", 0, "UInt", err, "UInt", 0, "Ptr", msg, "UInt", 512, "Ptr", 0)
+		text := n ? Trim(StrGet(msg), " `r`n.") : "error " err
 		return "Windows wouldn't start AutoFarmer\Autofarmer.exe: " text " (" err ").`n`n" ((err = 225 || err = 1260 || err = 5) ? security : "Run Setup.exe and tick `"Unblock the bot's files`", then try again.")
 		}
-	return "AutoFarmer\Autofarmer.exe isn't there, and AutoHotkey v1.1 isn't installed to run Autofarmer.ahk instead.`n`n" security "`n`nOr run Setup.exe and tick `"AutoHotkey v1.1`" - then the bot runs as a script."
+	return "AutoFarmer\Autofarmer.exe isn't there, and AutoHotkey v2 isn't installed to run Autofarmer.ahk instead.`n`n" security "`n`nOr run Setup.exe and tick `"AutoHotkey v2`" - then the bot runs as a script."
 	}
 
 #Include "%A_ScriptDir%\Updater.ahk"
 #Include "%A_ScriptDir%\Watch.ahk"
+#Include "%A_ScriptDir%\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
-;A v1.1 AutoHotkey to run the bot's scripts with ("" none): the installed one if it's v1.1 - with v2 installed too it
-;can be v2 (or its launcher), and the scripts are v1.1 - else v1.1 where the v2 installer puts it (a v1.1.x folder)
-AhkV1()
+;A v2 AutoHotkey to run the bot's scripts with ("" none): the installed one if it's v2 - with v1.1 installed first
+;it's v1.1 (or the launcher), and the scripts are v2 - else v2's AutoHotkey64.exe where the v2 installer puts it (v2\,
+;a v2.x.y folder). (v2 port: the scripts are v2 now - v1's AhkV1 looked for v1.1 the same way)
+AhkV2()
 	{
 	cands := [A_AhkPath]
 	SplitPath(A_AhkPath, , &ahkDir)
@@ -149,15 +152,16 @@ AhkV1()
 		{
 		if (root = "")
 			continue
-		cands.Push(root "\AutoHotkeyU64.exe")
-		Loop Files, root "\v1.1*", "D"
-			cands.Push(A_LoopFilePath "\AutoHotkeyU64.exe")
+		cands.Push(root "\AutoHotkey64.exe")
+		Loop Files, root "\v2*", "D"
+			cands.Push(A_LoopFilePath "\AutoHotkey64.exe")
 		}
 	for each, exe in cands
 		if (exe != "" && FileExist(exe))
 			{
-			ver := FileGetVersion(exe)
-			if (SubStr(ver, 1, 4) = "1.1.")
+			;(v1: an exe without a version - blank; v2 throws)
+			ver := V1Try(FileGetVersion, exe)
+			if (SubStr(ver, 1, 2) = "2.")
 				return exe
 			}
 	return ""

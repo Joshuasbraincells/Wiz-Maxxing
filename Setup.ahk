@@ -1,7 +1,7 @@
 #Warn Unreachable, Off
-#Requires Autohotkey v2.0
+#Requires AutoHotkey v2.0
 ; Setup.ahk - gets a PC ready to run the Wizard101 bot. Compiled to Setup.exe by build.ps1; it sits next to
-; AutoFarmer\ and AutoQuester\. AutoHotkey v1.1.
+; AutoFarmer\ and AutoQuester\. AutoHotkey v2 (ported from v1.1).
 ;
 ; Each part shows whether it's there already; the ones that are missing are ticked. Install does the ticked
 ; ones, in order, writing what happens in the log below:
@@ -22,15 +22,15 @@
 ;   Desktop shortcut  "Wiz-Maxxing" -> Wiz-Maxxing.exe (it starts AutoFarmer\Autofarmer.exe)
 ;   Run box and PATH  this folder on your PATH (type Wiz-Maxxing in a terminal) and Wiz-Maxxing.exe in "App
 ;                     Paths" (type Wiz-Maxxing in Win+R) - yours only, no admin
-;   AutoHotkey v1.1   only to change the scripts and rebuild the exes (build.cmd); asks for admin
+;   AutoHotkey v2     only to change the scripts and rebuild the exes (build.cmd); asks for admin
 ;   Git               only to get updates with git pull; asks for admin
 ;   GitHub updates    a read-only GitHub token, so Wiz-Maxxing can check for and download new versions when you
 ;                     open it (the repo is private): the token page opens, you paste the token, it's tested and
 ;                     kept in Windows Credential Manager (Updater.ahk)
-; V1toV2: Removed #NoEnv
+;(v1's #NoEnv and SetBatchLines, -1: what v2 does anyway)
 #SingleInstance force
+V1Start(), SetupBlank(), UpdaterBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 SetWorkingDir(A_ScriptDir)
-; V1toV2: Removed SetBatchLines, -1
 
 global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS, SuUp, SuUpS, SuPa, SuPaS
 global SuWa, SuWaS, SuIn, SuInS
@@ -40,14 +40,15 @@ global SuLogHwnd := 0, SuBusy := 0
 global SuMovedFrom := "", SuMovedDo := "", SuMovedPid := 0, SuMovedSaved := ""
 for suI, suA in A_Args
 	{
+	;(v1: A_Args[i] past the last one - blank; v2 throws. A blank or text + 0 - blank)
 	if (suA = "/moved")
-		SuMovedFrom := RTrim(A_Args[suI + 1], "\")
+		SuMovedFrom := RTrim(V1At(A_Args, suI + 1), "\")
 	else if (suA = "/saved")
-		SuMovedSaved := A_Args[suI + 1]
+		SuMovedSaved := V1At(A_Args, suI + 1)
 	else if (suA = "/do")
-		SuMovedDo := A_Args[suI + 1]
+		SuMovedDo := V1At(A_Args, suI + 1)
 	else if (suA = "/oldpid")
-		SuMovedPid := A_Args[suI + 1] + 0
+		SuMovedPid := V1Add(V1At(A_Args, suI + 1), 0)
 	}
 
 if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
@@ -56,8 +57,8 @@ if (!FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.ahk"))
 	ExitApp()
 	}
 
-suVersion := FileRead(A_ScriptDir "\version.txt")
-Su := Gui("Wizard101 bot setup " Trim(suVersion, " `t`r`n"))
+suVersion := V1FileRead(A_ScriptDir "\version.txt")
+Su := Gui(, "Wizard101 bot setup " Trim(suVersion, " `t`r`n"))
 Su.OnEvent("Close", SuGuiClose)
 Su.OnEvent("Escape", SuGuiEscape)
 Su.MarginX := 14, Su.MarginY := 12
@@ -83,7 +84,7 @@ ogcCheckboxSuPa := Su.Add("Checkbox", "xm y+8 w260 vSuPa", "Run box and PATH (Wi
 ogcTextSuPaS := Su.Add("Text", "x+8 w350 vSuPaS", "...")
 ogcCheckboxSuWa := Su.Add("Checkbox", "xm y+8 w260 vSuWa", "Open with Wizard101 (" WatchBotKey(A_ScriptDir "\AutoFarmer") " starts it)")
 ogcTextSuWaS := Su.Add("Text", "x+8 w350 vSuWaS", "...")
-ogcCheckboxSuAh := Su.Add("Checkbox", "xm y+8 w260 vSuAh", "AutoHotkey v1.1 (to rebuild the exes)")
+ogcCheckboxSuAh := Su.Add("Checkbox", "xm y+8 w260 vSuAh", "AutoHotkey v2 (to rebuild the exes)")
 ogcTextSuAhS := Su.Add("Text", "x+8 w350 vSuAhS", "...")
 ogcCheckboxSuGi := Su.Add("Checkbox", "xm y+8 w260 vSuGi", "Git (to get updates with git pull)")
 ogcTextSuGiS := Su.Add("Text", "x+8 w350 vSuGiS", "...")
@@ -102,7 +103,7 @@ SuCheck(true)
 if (SuMovedFrom != "")
 	{
 	SuMovedPrep()
-	SuInstall() ; V1toV2: Gosub
+	SuInstall()  ;(v1: gosub, SuInstall - in this same thread)
 	SuOfferDelete(SuMovedFrom)
 	}
 return
@@ -110,26 +111,28 @@ return
 ;Before the moved-on install: the parts that were ticked ticked again, the old Setup gone, the old folder off the PATH
 SuMovedPrep()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	SuLogLine("Installed in " A_ScriptDir " - doing the rest here")
 	;(never copied on again from here; the parts exactly as they were ticked - plus what still points into the old
 	;folder, which may go to the Recycle Bin: the shortcuts, the watcher, the PATH)
-	ogcCheckboxSuIn.Value := 0
+	Su["SuIn"].Value := 0
 	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
-		GuiControl, Su:, % "Su" code, % InStr("," SuMovedDo ",", "," code ",") ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
+		Su["Su" code].Value := InStr("," SuMovedDo ",", "," code ",") ? 1 : 0
 	if (SuLinkHere(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk", SuMovedFrom))
-		ogcCheckboxSuSm.Value := 1
+		Su["SuSm"].Value := 1
 	if (SuLinkHere(A_Desktop "\Wiz-Maxxing.lnk", SuMovedFrom))
-		ogcCheckboxSuSh.Value := 1
+		Su["SuSh"].Value := 1
 	if (SuLinkHere(WatchLink(), SuMovedFrom))
-		ogcCheckboxSuWa.Value := 1
-	oldPath := RegRead("HKCU\Environment", "Path")
+		Su["SuWa"].Value := 1
+	;(v1's RegRead of a value that isn't there: blank - v2 throws)
+	oldPath := V1Try(RegRead, "HKCU\Environment", "Path")
 	if (SuInPath(oldPath, SuMovedFrom))
-		ogcCheckboxSuPa.Value := 1
+		Su["SuPa"].Value := 1
 	;(the old Setup gone, so its folder can go)
 	if (SuMovedPid)
 		ErrorLevel := ProcessWaitClose(SuMovedPid, 15)
 	;(the old folder off your PATH - this one goes on it)
-	pa := ogcCheckboxSuPa.Value
+	pa := Su["SuPa"].Value
 	if (pa)
 		SuRemovePath(SuMovedFrom)
 	}
@@ -155,7 +158,7 @@ SuCheck(tick := false)
 	pk := py != "" && SuRun("`"" py "`" -c `"import numpy, PIL`"", false) = 0
 	SuShow("SuPk", "SuPkS", pk, pk ? "installed" : (py = "" ? "needs Python first" : "not installed"), tick)
 	marked := SuMarkedCount()
-	SuShow("SuUn", "SuUnS", marked := 0, marked = 0 ? "nothing blocked" : marked " file(s) marked as downloaded", tick)
+	SuShow("SuUn", "SuUnS", marked = 0, marked = 0 ? "nothing blocked" : marked " file(s) marked as downloaded", tick)
 	up := UpToken() != ""
 	SuShow("SuUp", "SuUpS", up, up ? "token saved - Wiz-Maxxing checks for updates when you open it" : "no token yet", tick)
 	sm := SuLinkHere(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk")
@@ -175,9 +178,9 @@ SuCheck(tick := false)
 ;A part's status; tick it when it's missing (and wanted by default)
 SuShow(box, label, ok, text, tick, wanted := true)
 	{
-	GuiControl, Su:, %label%, % (ok ? "OK - " : "") text ; V1toV2: Ternary not yet supported (coming soon)
+	Su[label].Text := (ok ? "OK - " : "") text
 	if (tick)
-		GuiControl, Su:, %box%, % (!ok && wanted) ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
+		Su[box].Value := (!ok && wanted) ? 1 : 0
 	}
 
 SuInstall:
@@ -218,13 +221,15 @@ SuSamePath(a, b)
 	}
 
 ;Whether shortcut lnk is there and starts something in this folder (in: another) - its own folder, or the script it
-;runs
-SuLinkHere(lnk, in := "")
+;runs (v2 port: the parameter in is inV - "in" is a v2 word)
+SuLinkHere(lnk, inV := "")
 	{
 	if (!FileExist(lnk))
 		return false
-	FileGetShortcut(lnk, &target, &dir, &args)
-	here := RTrim(in = "" ? A_ScriptDir : in, "\") "\"
+	;(v1: a shortcut it couldn't read - its outputs blank, ErrorLevel 1; v2 throws, and leaves them unset)
+	if (V1Do(FileGetShortcut, lnk, &target, &dir, &args))
+		target := "", dir := "", args := ""
+	here := RTrim(inV = "" ? A_ScriptDir : inV, "\") "\"
 	return InStr(target, here) = 1 || InStr(dir "\", here) = 1 || InStr(args, here)
 	}
 
@@ -246,8 +251,9 @@ SuOwnFolder(dir, contentsToo := true)
 			return "it's " k " itself"
 	if (!contentsToo)
 		return ""
+	;(v2 port: V1Compat.ahk - the port's own file beside Updater.ahk and Watch.ahk - is the bot's too)
 	Loop Files, dir "\*", "FD"
-		if (!RegExMatch(A_LoopFileName, "i)^(\.git.*|\.github|AutoFarmer|AutoPetTrainer|AutoQuester|assets|backups|README\.md|Setup\.(ahk|exe)|Updater\.ahk|Watch\.ahk|Wiz-Maxxing\.(ahk|exe)|build\.(cmd|ps1)|version\.txt|updater\.(ini|log)|.+\.old|desktop\.ini|Thumbs\.db)$"))
+		if (!RegExMatch(A_LoopFileName, "i)^(\.git.*|\.github|AutoFarmer|AutoPetTrainer|AutoQuester|assets|backups|README\.md|Setup\.(ahk|exe)|Updater\.ahk|Watch\.ahk|V1Compat\.ahk|Wiz-Maxxing\.(ahk|exe)|build\.(cmd|ps1)|version\.txt|updater\.(ini|log)|.+\.old|desktop\.ini|Thumbs\.db)$"))
 			return "it has other things in it too (" A_LoopFileName ")"
 	return ""
 	}
@@ -255,9 +261,11 @@ SuOwnFolder(dir, contentsToo := true)
 ;A known folder's path (guid: its FOLDERID), "" if Windows doesn't say
 SuKnownFolder(guid)
 	{
-	id := Buffer(16, 0) ; V1toV2: if 'id' is a UTF-16 string, use 'VarSetStrCapacity(&id, 16)' and replace all instances of 'id.Ptr' with 'StrPtr(id)'
+	id := Buffer(16, 0)
 	if (DllCall("ole32\CLSIDFromString", "WStr", guid, "Ptr", id.Ptr) != 0)
 		return ""
+	;(v1: p blank - 0; v2's DllCall wants the variable set)
+	p := 0
 	if (DllCall("shell32\SHGetKnownFolderPath", "Ptr", id.Ptr, "UInt", 0, "Ptr", 0, "Ptr*", &p) != 0 || !p)
 		return ""
 	path := StrGet(p, "UTF-16")
@@ -270,8 +278,8 @@ SuNewerThere(home)
 	{
 	if (!FileExist(home "\AutoFarmer\Autofarmer.ahk"))
 		return ""
-	theirs := FileRead(home "\version.txt")
-	mine := FileRead(A_ScriptDir "\version.txt")
+	theirs := V1FileRead(home "\version.txt")
+	mine := V1FileRead(A_ScriptDir "\version.txt")
 	theirs := Trim(theirs, " `t`r`n"), mine := Trim(mine, " `t`r`n")
 	return (theirs != "" && UpCompare(theirs, mine) > 0) ? theirs : ""
 	}
@@ -282,8 +290,9 @@ SuLastRun(dir)
 	for i, f in [dir "\AutoFarmer\debug.log", dir "\AutoFarmer\debug.previous.log"]
 		if (FileExist(f))
 			{
-			at := FileGetTime(f, "M")
-			return at + 0
+			;(v1: a time it couldn't read - blank, and blank + 0 blank)
+			at := V1Try(FileGetTime, f, "M")
+			return V1Add(at, 0)
 			}
 	return 0
 	}
@@ -296,18 +305,13 @@ SuCopyMine(from, to)
 	n := 0
 	Loop Files, from "\*", "FR"
 		{
-		rel := SubStr(A_LoopFilePath, (StrLen(from) + 2)<1 ? (StrLen(from) + 2)-1 : (StrLen(from) + 2))
+		rel := SubStr(A_LoopFilePath, StrLen(from) + 2)
 		if (RegExMatch(rel, "i)(^|\\)(backups|generated)\\|\.log$") || !UpIsMine(rel, slots))
 			continue
 		target := to "\" rel
 		SplitPath(target, , &targetDir)
-		DirCreate(targetDir)
-		Try {
-			FileCopy(A_LoopFileFullPath, target, 1)
-			ErrorLevel := 0
-		} Catch as Err {
-			ErrorLevel := Err.Extra
-		}
+		V1Do(DirCreate, targetDir)
+		V1Do(FileCopy, A_LoopFilePath, target, 1)
 		if (!ErrorLevel)
 			n++
 		}
@@ -319,11 +323,7 @@ SuInstallStop(text, closedWatch)
 	{
 	SuLogLine(text)
 	if (closedWatch && WatchIsOn())
-	{
-		{   ErrorLevel := "ERROR"
-		   Try ErrorLevel := Run(WatchLink(), , "", )
-		}
-	}
+		V1Run(WatchLink())
 	return -1
 	}
 
@@ -331,6 +331,7 @@ SuInstallStop(text, closedWatch)
 ;then goes), 0 if there was nothing to do (here already), -1 if it couldn't (nothing else is done)
 SuInstallHome()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	SuLogLine("== Install to your Programs folder")
 	home := SuHome()
 	if (SuSamePath(A_ScriptDir, home))
@@ -355,37 +356,39 @@ SuInstallHome()
 	UpCloseBots(A_ScriptDir)
 	UpCloseBots(home)
 	DetectHiddenWindows(true)
-	closedWatch := WatchPids().Length() > 0
+	closedWatch := WatchPids().Length > 0
 	for i, pid in WatchPids()
 		{
-		WinClose("ahk_pid " pid " ahk_class AutoHotkey")
+		;(v1: WinClose of a window that's gone meanwhile did nothing - v2 throws)
+		try WinClose("ahk_pid " pid " ahk_class AutoHotkey")
 		ErrorLevel := ProcessWaitClose(pid, 5)
 		if (ErrorLevel)
 			ErrorLevel := ProcessClose(pid)
 		}
-	ver := FileRead(A_ScriptDir "\version.txt")
+	ver := V1FileRead(A_ScriptDir "\version.txt")
 	ver := Trim(ver, " `t`r`n")
 	if (FileExist(home "\AutoFarmer\Autofarmer.ahk"))
 		{
 		;(an install there already: this version's files over it - all or nothing, as an update does. Your settings,
 		;learned cards and routes: the folder the bot ran from last keeps them in use, the other's are saved in the
 		;install's backups\ - nothing lost)
-		oldWins := SuLastRun(A_ScriptDir) > SuLastRun(home)
+		;(v1: a blank time - one it couldn't read - compared as text)
+		oldWins := V1Gt(SuLastRun(A_ScriptDir), SuLastRun(home))
 		stamp := FormatTime(, "yyyy-MM-dd HHmm")
 		SplitPath(A_ScriptDir, , &oldParent)
 		SplitPath(oldParent, &oldParentName)
 		saved := home "\backups\install " stamp (oldWins ? " - the install's own before" : " - from " oldParentName)
 		SuLogLine("an install is there already - copying this version over it")
 		rollback := A_Temp "\wiz-maxxing-install-rollback"
-		DirDelete(rollback, 1)
+		V1Do(DirDelete, rollback, 1)
 		res := UpCopy(A_ScriptDir, home, rollback)
 		if (res.failed.Length)
 			{
 			UpRollback(res, home, rollback)
-			DirDelete(rollback, 1)
+			V1Do(DirDelete, rollback, 1)
 			return SuInstallStop("couldn't write " res.failed.Length " file(s) there (in use?) - put back as it was: " res.failed[1], closedWatch)
 			}
-		DirDelete(rollback, 1)
+		V1Do(DirDelete, rollback, 1)
 		if (oldWins)
 			{
 			n := SuCopyMine(home, saved)
@@ -398,29 +401,19 @@ SuInstallHome()
 			SuLogLine("the install's own settings, learned cards and routes stay in use (this folder's " n " file(s) saved in " saved ")")
 			}
 		UpMergeStats(A_ScriptDir "\AutoFarmer\PlayerStats.txt", home "\AutoFarmer\PlayerStats.txt", ver)
-		Try {
-			FileCopy(A_ScriptDir "\version.txt", home "\version.txt", 1)
-			ErrorLevel := 0
-		} Catch as Err {
-			ErrorLevel := Err.Extra
-		}
+		V1Do(FileCopy, A_ScriptDir "\version.txt", home "\version.txt", 1)
 		SuLogLine(res.copied " file(s) copied")
 		}
 	else
 		{
 		existed := InStr(FileExist(home), "D")
-		DirCreate(home)
-		Try {
-			DirCopy(A_ScriptDir, home, 1)
-			ErrorLevel := 0
-		} Catch {
-			ErrorLevel := 1
-		}
+		V1Do(DirCreate, home)
+		V1Do(DirCopy, A_ScriptDir, home, 1)
 		if (ErrorLevel || !FileExist(home "\AutoFarmer\Autofarmer.ahk"))
 			{
 			;(half a copy must never count as an install)
 			if (!existed)
-				DirDelete(home, 1)
+				V1Do(DirDelete, home, 1)
 			return SuInstallStop("couldn't copy everything to " home " (in use? the disk full?) - nothing installed", closedWatch)
 			}
 		saved := ""
@@ -430,7 +423,7 @@ SuInstallHome()
 	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
 		if (Su%code%)
 			do .= (do = "" ? "" : ",") code
-	if (!BotRun(home "\Setup", "/moved """ A_ScriptDir """ /do " (do = "" ? "-" : do) " /oldpid " DllCall("GetCurrentProcessId") (saved = "" ? "" : " /saved """ saved """"), home))
+	if (!BotRun(home "\Setup", "/moved `"" A_ScriptDir "`" /do " (do = "" ? "-" : do) " /oldpid " DllCall("GetCurrentProcessId") (saved = "" ? "" : " /saved `"" saved "`""), home))
 		return SuInstallStop("installed in " home ", but its Setup didn't start - start it there yourself (Start menu or " home "\Setup)", closedWatch)
 	return 1
 	}
@@ -438,14 +431,14 @@ SuInstallHome()
 ;Your PATH without folder dir (and its App Paths entry, if it's that folder's)
 SuRemovePath(dir, envKey := "HKCU\Environment")
 	{
-	path := RegRead(envKey, "Path")
+	path := V1Try(RegRead, envKey, "Path")
 	if (!SuInPath(path, dir))
 		return
 	keep := ""
 	Loop Parse, path, "`;"
 		if (Trim(A_LoopField) != "" && RTrim(Trim(A_LoopField), "\") != RTrim(dir, "\"))
 			keep .= (keep = "" ? "" : ";") A_LoopField
-	RegWrite(keep, "REG_EXPAND_SZ", envKey, "Path")
+	V1Do(RegWrite, keep, "REG_EXPAND_SZ", envKey, "Path")
 	SuLogLine(ErrorLevel ? "couldn't take the old folder off your PATH" : "the old folder taken off your PATH: " dir)
 	}
 
@@ -482,7 +475,7 @@ SuOfferDelete(old)
 		;(the old bot's vision helper can take a few seconds to go after the bot)
 		Loop 5
 			{
-			FileRecycle(f)
+			V1Do(FileRecycle, f)
 			if (!FileExist(f))
 				break
 			Sleep(1500)
@@ -491,7 +484,7 @@ SuOfferDelete(old)
 		}
 	for i, z in zips
 		{
-		FileRecycle(z)
+		V1Do(FileRecycle, z)
 		SuLogLine(FileExist(z) ? "couldn't move " z : "to the Recycle Bin: " z)
 		}
 	}
@@ -524,13 +517,13 @@ SuInstallPython()
 		url := "https://www.python.org/ftp/python/3.12.7/python-3.12.7-amd64.exe"
 		file := A_Temp "\python-3.12.7-amd64.exe"
 		SuLogLine("downloading the installer from python.org: " url)
-		Download(url,file)
+		V1Do(Download, url, file)
 		if (ErrorLevel || !FileExist(file))
 			return SuLogLine("couldn't download it - check the internet connection, or install Python 3 from https://www.python.org/downloads/ (tick 'Add python.exe to PATH')")
 		SuLogLine("installing (for you only)...")
-		RunWait("`"" file "`" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1", , "UseErrorLevel")
+		V1RunWait("`"" file "`" /quiet InstallAllUsers=0 PrependPath=1 Include_launcher=1")
 		SuLogLine("installer finished (exit " ErrorLevel ")")
-		Try FileDelete(file)
+		V1Do(FileDelete, file)
 		}
 	py := SuPython()
 	SuLogLine(py != "" ? "Python is ready: " py : "Python still isn't found - install it from https://www.python.org/downloads/ and run Setup again")
@@ -564,14 +557,16 @@ SuShortcut()
 	{
 	SuLogLine("== Desktop shortcut")
 	p := SuBotProgram()
-	FileCreateShortcut(p.target, A_Desktop "\Wiz-Maxxing.lnk", A_ScriptDir, p.args, "Wiz-Maxxing - the Wizard101 bot (battles and quest walking)")
+	V1Do(FileCreateShortcut, p.target, A_Desktop "\Wiz-Maxxing.lnk", A_ScriptDir, p.args, "Wiz-Maxxing - the Wizard101 bot (battles and quest walking)")
 	SuLogLine(ErrorLevel ? "couldn't make it" : "made: " A_Desktop "\Wiz-Maxxing.lnk -> " p.target (p.args = "" ? "" : " " p.args))
 	;(the one an earlier Setup made, by its old name)
 	if (FileExist(A_Desktop "\Wizard101 bot.lnk"))
 		{
-		FileGetShortcut(A_Desktop "\Wizard101 bot.lnk", &old)
+		;(v1: a shortcut it couldn't read - old blank; v2 throws, and leaves it unset)
+		if (V1Do(FileGetShortcut, A_Desktop "\Wizard101 bot.lnk", &old))
+			old := ""
 		if (InStr(old, A_ScriptDir) = 1)
-			Try FileDelete(A_Desktop "\Wizard101 bot.lnk")
+			V1Do(FileDelete, A_Desktop "\Wizard101 bot.lnk")
 		}
 	}
 
@@ -582,7 +577,7 @@ SuStartMenu(menuDir := "")
 	SuLogLine("== Start menu")
 	if (menuDir = "")
 		menuDir := A_Programs "\Wiz-Maxxing"
-	DirCreate(menuDir)
+	V1Do(DirCreate, menuDir)
 	made := 0
 	;(each its exe - or its script when Setup runs as one: Watch.ahk BotProgram)
 	for each, e in [["Wiz-Maxxing", "", A_ScriptDir, "The Wizard101 bot: battles and quest walking"]
@@ -593,7 +588,7 @@ SuStartMenu(menuDir := "")
 		p := e[2] = "" ? SuBotProgram() : BotProgram(e[2])
 		if (!FileExist(p.target) || (e[2] != "" && !FileExist(e[2] ".exe") && !FileExist(e[2] ".ahk")))
 			continue
-		FileCreateShortcut(p.target, menuDir "\" e[1] ".lnk", e[3], p.args, e[4])
+		V1Do(FileCreateShortcut, p.target, menuDir "\" e[1] ".lnk", e[3], p.args, e[4])
 		if (!ErrorLevel)
 			made++, SuLogLine("made: " e[1] " -> " p.target (p.args = "" ? "" : " " p.args))
 		}
@@ -604,6 +599,7 @@ SuStartMenu(menuDir := "")
 ;Windows Credential Manager. It's never shown or logged
 SuToken()
 	{
+	global ErrorLevel ; (v1 globals it sets)
 	SuLogLine("== GitHub updates")
 	if (UpToken() != "" && UpTokenTest(UpToken()) = "")
 		return SuLogLine("the saved token works")
@@ -629,8 +625,9 @@ SuToken()
 ;Whether this folder is on your PATH and Wiz-Maxxing.exe is in App Paths
 SuPathOk(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\Wiz-Maxxing.exe")
 	{
-	path := RegRead(envKey, "Path")
-	app := RegRead(appKey)
+	;(v1's RegRead of a value that isn't there: blank - v2 throws)
+	path := V1Try(RegRead, envKey, "Path")
+	app := V1Try(RegRead, appKey)
 	return SuInPath(path, A_ScriptDir) && app = A_ScriptDir "\Wiz-Maxxing.exe"
 	}
 
@@ -649,13 +646,13 @@ SuInPath(path, dir)
 SuAddPath(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windows\CurrentVersion\App Paths\Wiz-Maxxing.exe")
 	{
 	SuLogLine("== Run box and PATH")
-	path := RegRead(envKey, "Path")
+	path := V1Try(RegRead, envKey, "Path")
 	if (SuInPath(path, A_ScriptDir))
 		SuLogLine("this folder is on your PATH already")
 	else
 		{
 		newPath := (Trim(path) = "" ? "" : RTrim(path, "; ") ";") A_ScriptDir
-		RegWrite(newPath, "REG_EXPAND_SZ", envKey, "Path")
+		V1Do(RegWrite, newPath, "REG_EXPAND_SZ", envKey, "Path")
 		SuLogLine(ErrorLevel ? "couldn't add it to your PATH" : "added to your PATH: " A_ScriptDir)
 		}
 	exe := A_ScriptDir "\Wiz-Maxxing.exe"
@@ -664,10 +661,12 @@ SuAddPath(envKey := "HKCU\Environment", appKey := "HKCU\Software\Microsoft\Windo
 	;(Setup run as a script - Smart App Control: the exe would be blocked; the shortcuts start the scripts)
 	if (!A_IsCompiled)
 		return SuLogLine("Setup runs as a script (Smart App Control?) - the Run box entry is skipped: use the Start menu or desktop shortcut")
-	RegWrite(exe, "REG_SZ", appKey)
-	RegWrite(A_ScriptDir, "REG_SZ", appKey, "Path")
+	V1Do(RegWrite, exe, "REG_SZ", appKey)
+	V1Do(RegWrite, A_ScriptDir, "REG_SZ", appKey, "Path")
 	SuLogLine(ErrorLevel ? "couldn't add it to App Paths" : "Win+R: type Wiz-Maxxing")
 	;(WM_SETTINGCHANGE "Environment" to every window)
+	;(v1: result blank - 0; v2's DllCall wants the variable set)
+	result := 0
 	DllCall("SendMessageTimeout", "Ptr", 0xFFFF, "UInt", 0x1A, "Ptr", 0, "Str", "Environment", "UInt", 2, "UInt", 3000, "Ptr*", &result)
 	}
 
@@ -682,19 +681,22 @@ SuBotProgram()
 
 SuInstallAhk()
 	{
-	SuLogLine("== AutoHotkey v1.1")
+	SuLogLine("== AutoHotkey v2")
 	if (SuAhk() != "")
 		return SuLogLine("already installed: " SuAhk())
-	url := "https://www.autohotkey.com/download/ahk-install.exe"
-	file := A_Temp "\ahk-v1-install.exe"
-	SuLogLine("downloading the v1.1 installer from autohotkey.com...")
-	Download(url,file)
+	;(v2 port: the scripts are v2 now - v1 downloaded v1.1's installer, ahk-install.exe, and ran it with /S; v2's
+	;installer takes /silent /installto, and doesn't ask for admin itself - *RunAs: Windows asks, as it did for v1.1's)
+	url := "https://www.autohotkey.com/download/ahk-v2.exe"
+	file := A_Temp "\ahk-v2-install.exe"
+	SuLogLine("downloading the v2 installer from autohotkey.com...")
+	V1Do(Download, url, file)
 	if (ErrorLevel || !FileExist(file))
-		return SuLogLine("couldn't download it - get it from https://www.autohotkey.com/download/1.1/")
+		return SuLogLine("couldn't download it - get it from https://www.autohotkey.com/")
 	SuLogLine("installing (Windows asks for admin)...")
-	RunWait("`"" file "`" /S", , "UseErrorLevel")
-	Try FileDelete(file)
-	SuLogLine(SuAhk() != "" ? "AutoHotkey v1.1 is ready - build.cmd can rebuild the exes" : "it isn't found after the installer (exit " ErrorLevel ") - get it from https://www.autohotkey.com/download/1.1/")
+	V1RunWait("*RunAs `"" file "`" /silent /installto `"" A_ProgramFiles "\AutoHotkey`"")
+	;(v1: the "exit" below was this FileDelete's ErrorLevel - 0 deleted, 1 not - not the installer's exit code)
+	V1Do(FileDelete, file)
+	SuLogLine(SuAhk() != "" ? "AutoHotkey v2 is ready - build.cmd can rebuild the exes" : "it isn't found after the installer (exit " ErrorLevel ") - get it from https://www.autohotkey.com/ (its compiler: AutoHotkey's Dash > Compile)")
 	}
 
 SuInstallGit()
@@ -729,18 +731,19 @@ SuPython()
 	return best
 	}
 
-;Ahk2Exe with a v1.1 base, i.e. what build.cmd needs ("" if not): the v1 installer's .bin, or v1.1's
-;AutoHotkeyU64.exe (the v2 installer puts v1.1 in a v1.1.x folder)
+;Ahk2Exe with a v2 base, i.e. what build.cmd needs ("" if not): v2's AutoHotkey64.exe - in v2\ (a v2.x.y folder
+;when several are installed), or the root's when it's v2. (v2 port: the scripts are v2 now - v1 looked for a v1.1 base,
+;the v1 installer's Unicode 64-bit.bin or v1.1's AutoHotkeyU64.exe, the same way)
 SuAhk()
 	{
 	for each, root in [A_ProgramFiles "\AutoHotkey", A_AppData "\..\Local\Programs\AutoHotkey"]
 		{
 		if (!FileExist(root "\Compiler\Ahk2Exe.exe"))
 			continue
-		if (FileExist(root "\Compiler\Unicode 64-bit.bin") || FileExist(root "\AutoHotkeyU64.exe"))
+		if (SubStr(V1Try(FileGetVersion, root "\AutoHotkey64.exe"), 1, 2) = "2.")
 			return root
-		Loop Files, root "\v1.1*", "D"
-			if (FileExist(A_LoopFilePath "\AutoHotkeyU64.exe"))
+		Loop Files, root "\v2*", "D"
+			if (SubStr(V1Try(FileGetVersion, A_LoopFilePath "\AutoHotkey64.exe"), 1, 2) = "2.")
 				return root
 		}
 	return ""
@@ -749,8 +752,9 @@ SuAhk()
 ;A program on the PATH (as the system sees it now: after an install the PATH of this process is old)
 SuWhere(exe)
 	{
-	sysPath := RegRead("HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "Path")
-	userPath := RegRead("HKCU\Environment", "Path")
+	;(v1's RegRead of a value that isn't there: blank - v2 throws)
+	sysPath := V1Try(RegRead, "HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Environment", "Path")
+	userPath := V1Try(RegRead, "HKCU\Environment", "Path")
 	procPath := EnvGet("PATH")
 	all := procPath ";" sysPath ";" userPath
 	Loop Parse, all, "`;"
@@ -761,9 +765,9 @@ SuWhere(exe)
 		;(%USERPROFILE% and the like, as the registry keeps them)
 		if (InStr(dir, "%"))
 			{
-			buf := Buffer(4096 * 2, 0) ; V1toV2: if 'buf' is a UTF-16 string, use 'VarSetStrCapacity(&buf, 4096 * 2)' and replace all instances of 'buf.Ptr' with 'StrPtr(buf)'
-			DllCall("ExpandEnvironmentStrings", "Str", dir, "Str", buf, "UInt", 4096)
-			dir := buf
+			buf := Buffer(4096 * 2, 0)
+			DllCall("ExpandEnvironmentStrings", "Str", dir, "Ptr", buf, "UInt", 4096)
+			dir := StrGet(buf)
 			}
 		if (FileExist(dir "\" exe))
 			return dir "\" exe
@@ -777,9 +781,9 @@ SuWhere(exe)
 SuMarkedCount()
 	{
 	tmp := A_Temp "\su_marked.txt"
-	RunWait(A_ComSpec " /c powershell -NoProfile -ExecutionPolicy Bypass -Command `"(Get-ChildItem -LiteralPath '" A_ScriptDir "' -Recurse -File | Get-Item -Stream Zone.Identifier -ErrorAction SilentlyContinue | Measure-Object).Count`" > `"" tmp "`" 2>nul", , "Hide UseErrorLevel")
-	n := FileRead(tmp)
-	Try FileDelete(tmp)
+	V1RunWait(A_ComSpec " /c powershell -NoProfile -ExecutionPolicy Bypass -Command `"(Get-ChildItem -LiteralPath '" A_ScriptDir "' -Recurse -File | Get-Item -Stream Zone.Identifier -ErrorAction SilentlyContinue | Measure-Object).Count`" > `"" tmp "`" 2>nul", , "Hide")
+	n := V1FileRead(tmp)
+	V1Do(FileDelete, tmp)
 	n := Trim(n, " `t`r`n")
 	return (n ~= "^\d+$") ? n + 0 : 0
 	}
@@ -792,11 +796,11 @@ SuRun(cmd, log := true)
 	tmp := A_Temp "\su_out_" A_TickCount ".txt"
 	if (log)
 		SuLogLine("> " cmd)
-	RunWait(A_ComSpec " /c `"" cmd " > `"" tmp "`" 2>&1`"", A_ScriptDir, "Hide UseErrorLevel")
+	V1RunWait(A_ComSpec " /c `"" cmd " > `"" tmp "`" 2>&1`"", A_ScriptDir, "Hide")
 	code := ErrorLevel
 	if (log)
 		{
-		out := FileRead(tmp)
+		out := V1FileRead(tmp)
 		;(progress bars: only what's left after the last carriage return of each line)
 		text := ""
 		Loop Parse, out, "`n"
@@ -811,7 +815,7 @@ SuRun(cmd, log := true)
 			SuAppend(text)
 		SuLogLine("  (exit code " code ")")
 		}
-	Try FileDelete(tmp)
+	V1Do(FileDelete, tmp)
 	return code
 	}
 
@@ -836,27 +840,16 @@ SuShort(path)
 
 #Include "%A_ScriptDir%\Updater.ahk"
 #Include "%A_ScriptDir%\Watch.ahk"
+#Include "%A_ScriptDir%\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
-;###############  V1toV2 FUNCS  ###############
-SuInstall(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+;###############  v1's labels, as functions  ###############
+SuInstall(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: the label SuInstall - the Install button's, and gosub)
 	global
 	if (SuBusy)
 		return
-	oSaved := Su.Submit(0)
-	Try SuAh := oSaved.SuAh
-	Try SuGi := oSaved.SuGi
-	Try SuIn := oSaved.SuIn
-	Try SuPa := oSaved.SuPa
-	Try SuPk := oSaved.SuPk
-	Try SuPy := oSaved.SuPy
-	Try SuSh := oSaved.SuSh
-	Try SuSm := oSaved.SuSm
-	Try SuUn := oSaved.SuUn
-	Try SuUp := oSaved.SuUp
-	Try SuWa := oSaved.SuWa
-	Try SuLog := oSaved.SuLog
+	V1GuiSubmit(Su, false)
 	SuBusy := 1
-	ogcButtonSuGo.Enabled := false
+	Su["SuGo"].Enabled := false
 	;(first: copied to the Programs folder - Setup starts again from there and does the rest; this one goes)
 	if (SuIn)
 		{
@@ -867,7 +860,7 @@ SuInstall(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 			{
 			SuLogLine("")
 			SuLogLine("Stopped: nothing else was done (see above). Untick `"Install to your Programs folder`" to set this folder up as it is.")
-			ogcButtonSuGo.Enabled := true
+			Su["SuGo"].Enabled := true
 			SuBusy := 0
 			return
 			}
@@ -898,13 +891,14 @@ SuInstall(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	SuLogLine("")
 	SuLogLine("Done. The statuses above are looked at again.")
 	SuCheck()
-	ogcButtonSuGo.Enabled := true
+	Su["SuGo"].Enabled := true
 	SuBusy := 0
 	return
 }
 ;##############################################
-SuStartBot(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+SuStartBot(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: the label SuStartBot - the Start the bot button's)
 	global
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 	;(the launcher - its exe, or its script when Setup runs as one: Watch.ahk BotProgram)
 	if (FileExist(A_ScriptDir "\Wiz-Maxxing.exe") || FileExist(A_ScriptDir "\Wiz-Maxxing.ahk"))
 		{
@@ -914,22 +908,33 @@ SuStartBot(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
 	if (FileExist(A_ScriptDir "\AutoFarmer\Autofarmer.exe") || SuAhk() != "")
 		BotRun(A_ScriptDir "\AutoFarmer\Autofarmer", "", A_ScriptDir "\AutoFarmer")
 	else
-		MsgBox("There's no AutoFarmer\Autofarmer.exe here - download the zip from the GitHub Releases page (it has the exes), or install AutoHotkey v1.1 and run build.cmd.", "Wizard101 bot setup", 48)
+		MsgBox("There's no AutoFarmer\Autofarmer.exe here - download the zip from the GitHub Releases page (it has the exes), or install AutoHotkey v2 and run build.cmd.", "Wizard101 bot setup", 48)
 	return
 }
 ;##############################################
-SuGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+SuGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: the labels SuGuiClose and SuGuiEscape - one body; the Close button's)
 global
-SuGuiEscape()
+;(v1: the window stayed open when the GuiClose label returned - v2 hides it unless the Close callback returns true)
+return SuGuiEscape()
 }
 ;##############################################
-SuGuiEscape(*) { ; V1toV2: Lbl->Func
+SuGuiEscape(*) { ; (v1: the label SuGuiEscape)
 	global
 	if (SuBusy)
 		{
 		msgResult := MsgBox("Setup is still installing. Close anyway?", "Wizard101 bot setup", 52)
 		if (msgResult = "No")
-			return
+			return true
 		}
 	ExitApp()
 }
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+SetupBlank()
+	{
+	global SuLog := "", SuPyS := "", SuPkS := "", SuUnS := "", SuShS := "", SuAhS := "", SuGiS := "", SuPy := "", SuPk := "", SuUn := "", SuSh := ""
+	global SuAh := "", SuGi := "", SuGo := "", SuStart := "", SuSm := "", SuSmS := "", SuUp := "", SuUpS := "", SuPa := "", SuPaS := "", SuWa := ""
+	global SuWaS := "", SuIn := "", SuInS := "", SuLogHwnd := "", SuBusy := "", SuMovedFrom := "", SuMovedDo := "", SuMovedPid := ""
+	global SuMovedSaved := ""
+	}

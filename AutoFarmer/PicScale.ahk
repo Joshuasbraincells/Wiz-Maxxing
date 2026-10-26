@@ -27,7 +27,8 @@ global PicCutTol, PicCutOkAt, PicCutOkSize, PicCutOkSet
 ;Called by LoadPicSets
 PicScaleInit()
 	{
-	GenTol := 20, PicEnlarged := {}, PicMade := {}, PicCutTol := 0, PicCutOkAt := 0, PicCutOkSize := "", PicCutOkSet := ""
+	global GenTol, PicEnlarged, PicMade, PicCutTol, PicCutOkAt, PicCutOkSize, PicCutOkSet, GenRoot, PassFleeDist ; (v1 globals it sets)
+	GenTol := 20, PicEnlarged := V1Obj(), PicMade := V1Obj(), PicCutTol := 0, PicCutOkAt := 0, PicCutOkSize := "", PicCutOkSet := ""
 	GenRoot := A_WorkingDir "\generated"
 	;Distance between the middles of the Pass and Flee buttons at UI scale 1 (521 px at UI 1.144,
 	;580 px at UI 1.265)
@@ -38,8 +39,9 @@ PicScaleInit()
 ;then the sets made before at other sizes (generated\ui<scale>, gen: 1)
 LoadPicSets()
 	{
+	global PicSets ; (v1 globals it sets)
 	PicScaleInit()
-	PicSets := [{dir: A_WorkingDir, scale: 1.0}]
+	PicSets := [V1Obj({dir: A_WorkingDir, scale: 1.0})]
 	for each, root in [A_WorkingDir, GenRoot]
 		{
 		Loop Files, root "\ui*", "D"
@@ -48,7 +50,7 @@ LoadPicSets()
 			if isNumber(sc)
 				{
 				if (sc >= 0.5 && sc <= 3)
-					PicSets.Push({dir: A_LoopFilePath, scale: sc + 0, gen: (root := GenRoot)})
+					PicSets.Push(V1Obj({dir: A_LoopFilePath, scale: sc + 0, gen: (root = GenRoot)}))
 				}
 			}
 		}
@@ -66,7 +68,7 @@ LoadPicSets()
 ;roundfinish.png) - not one of the card learner's folders (LearnSetDir) holding only the cards learned at that size
 PicCutOwn(set)
 	{
-	return IsObject(set) && !set.gen && (FileExist(set.dir "\resources\roundstart.png") || FileExist(set.dir "\resources\roundstart_hover.png") || FileExist(set.dir "\resources\roundfinish.png"))
+	return (IsObject(set) && !set.gen && (FileExist(set.dir "\resources\roundstart.png") || FileExist(set.dir "\resources\roundstart_hover.png") || FileExist(set.dir "\resources\roundfinish.png"))) ? 1 : 0   ; (v1: && || gave 1 / 0)
 	}
 
 ;Looks for the spellbook (out of battle) or the Pass button (a battle round) with each picture set,
@@ -85,7 +87,7 @@ DetectPicSet(skipCurrent := false)
 	if (home && !PicSets[PicSet].gen && PicCutTol < GenTol && (!slackAt || A_TickCount - slackAt > 9000))
 		{
 		slackAt := A_TickCount
-		if (PicCutFind(PicSets[PicSet], ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, &GameLeft + GameW, &GameTop + GameH, dpsTol, dpsPic, PicCutTol))
+		if (PicCutFind(PicSets[PicSet], ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, &dpsTol, &dpsPic, PicCutTol))
 			{
 			PicCutSlackSet(dpsTol, dpsPic)
 			PicCutOk()
@@ -104,7 +106,7 @@ DetectPicSet(skipCurrent := false)
 	;(the set this window size was last played at first - generated\scales.txt: a cut one before its copy)
 	want := PicScaleFor(GameW "x" GameH), order := [], wantN := 0
 	for i, set in PicSets
-		if (want != "" && Abs(set.scale - want) < 0.002)
+		if (want != "" && V1Lt(V1Abs(V1Sub(set.scale, want)), 0.002))   ; (v1: scales.txt's text compared as v1 did)
 			order.InsertAt(set.gen ? wantN + 1 : 1, i), wantN += 1
 		else
 			order.Push(i)
@@ -124,7 +126,7 @@ DetectPicSet(skipCurrent := false)
 			;(a made picture this see-through - the spellbook at a small UI size keeps 6-8% - matches nearly anything)
 			if (PicTooThin(file))
 				continue
-			ErrorLevel := !ImageSearch(&fx, &fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, (set.gen ? "*" GenTol : "*" (PicCutTol > 3 ? PicCutTol : 3)) " *TransFF00FF " file)
+			V1ImageSearch(&fx, &fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, (set.gen ? "*" GenTol : "*" (PicCutTol > 3 ? PicCutTol : 3)) " *TransFF00FF " file)
 			if (ErrorLevel = 0)
 				{
 				if (skipCurrent && i != PicSet && !(cand = i && A_TickCount - candAt >= 2500 && A_TickCount - candAt <= 20000))
@@ -138,7 +140,7 @@ DetectPicSet(skipCurrent := false)
 				if (i != PicSet || !skipCurrent)
 					UsePicSet(i, "its " (pic = "roundstart" ? "Pass button" : "spellbook") " picture found on screen"
 						. (dpsGap != "" ? " twice, " dpsGap " s apart, where " PicSetName(PicSet) "'s own wasn't" : "")
-						. (want != "" && Abs(set.scale - want) < 0.002 ? " - the size this window was last played at" : "")
+						. (want != "" && V1Lt(V1Abs(V1Sub(set.scale, want)), 0.002) ? " - the size this window was last played at" : "")
 						. (set.gen ? " (made, " PicSolidPct(file) "% solid, *" GenTol ")" : ""))
 				if (!set.gen)
 					PicCutOk()
@@ -148,8 +150,8 @@ DetectPicSet(skipCurrent := false)
 		;(the start: the cut set this window was last played at, not matching as cut - its own pictures with more colour
 		;tolerance before any other set's. From the tolerance just used, not over it: the hovered Pass button wasn't looked
 		;for above - drawn hovered on an exact screen it matches at *3, no tolerance learned for it)
-		if (!skipCurrent && !set.gen && want != "" && Abs(set.scale - want) < 0.002
-			&& PicCutFind(set, ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, &GameLeft + GameW, &GameTop + GameH, dpsTol, dpsPic, (PicCutTol > 3 ? PicCutTol : 3) - 1))
+		if (!skipCurrent && !set.gen && want != "" && V1Lt(V1Abs(V1Sub(set.scale, want)), 0.002)
+			&& PicCutFind(set, ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, &dpsTol, &dpsPic, (PicCutTol > 3 ? PicCutTol : 3) - 1))
 			{
 			cand := 0
 			UsePicSet(i, "its " (dpsPic = "roundfinish" ? "spellbook" : dpsPic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " picture found on screen at *" dpsTol " - the size this window was last played at")
@@ -172,24 +174,24 @@ PicTooThin(file)
 ;else. Kept per file and its time
 PicSolidPct(file)
 	{
-	static seen := {}
+	static seen := V1Obj()
 	if (SubStr(file, -4) != ".bmp")
 		return 100
-	t := FileGetTime(file)
+	t := V1Try(FileGetTime, file)   ; (v1: blank when it can't be read)
 	key := file "|" t
 	if (seen.Has(key))
 		return seen[key]
-	f := FileOpen(file, "r")
+	f := V1Try(FileOpen, file, "r")   ; (v1: 0 when it can't be opened)
 	if (!IsObject(f))
 		return 100
 	f.Pos := 10, off := f.ReadUInt(), f.Pos := 18, w := f.ReadInt(), h := f.ReadInt(), f.Pos := 28, bpp := f.ReadUShort()
 	if (bpp != 24 || w <= 0 || h = 0)
 		{
 		f.Close()
-		return seen[key] := 100 ;  V1toV2: Invalid Index errors?, try 'seen.Push(<val>)'
+		return seen[key] := 100
 		}
 	hh := Abs(h), row := ((w * 3 + 3) // 4) * 4, solid := 0
-	buf := Buffer(row * hh, 0) ; V1toV2: if 'buf' is a UTF-16 string, use 'VarSetStrCapacity(&buf, row * hh)' and replace all instances of 'buf.Ptr' with 'StrPtr(buf)'
+	buf := Buffer(row * hh, 0)
 	f.Pos := off
 	f.RawRead(buf, row * hh)
 	f.Close()
@@ -203,14 +205,14 @@ PicSolidPct(file)
 				solid += 1
 			}
 		}
-	return seen[key] := Round(100 * solid / (w * hh)) ;  V1toV2: Invalid Index errors?, try 'seen.Push(<val>)'
+	return seen[key] := Round(100 * solid / (w * hh))
 	}
 
 ;The UI scale a battle round's Pass button was last found with at window size size ("<w>x<h>"), from
 ;generated\scales.txt ("<w>x<h>=<scale>" lines) - "" none
 PicScaleFor(size)
 	{
-	t := FileRead(GenRoot "\scales.txt")
+	t := V1FileRead(GenRoot "\scales.txt")   ; (v1: blank when it isn't there)
 	Loop Parse, t, "`n", "`r"
 		if (InStr(A_LoopField, size "=") = 1)
 			return SubStr(A_LoopField, (StrLen(size) + 2)<1 ? (StrLen(size) + 2)-1 : (StrLen(size) + 2))
@@ -223,7 +225,7 @@ PicSetForSize()
 	want := PicScaleFor(GameW "x" GameH)
 	if (want != "")
 		for i, set in PicSets
-			if (Abs(set.scale - want) < 0.002)
+			if (V1Lt(V1Abs(V1Sub(set.scale, want)), 0.002))   ; (v1: scales.txt's text compared as v1 did)
 				return i
 	return 1
 	}
@@ -240,16 +242,16 @@ PicRemember()
 	if (said = size "=" sc)
 		return
 	said := size "=" sc
-	if (PicScaleFor(size) != "" && Abs(PicScaleFor(size) - sc) < 0.002)
+	if (PicScaleFor(size) != "" && V1Lt(V1Abs(V1Sub(PicScaleFor(size), sc)), 0.002))   ; (v1: scales.txt's text compared as v1 did)
 		return
-	t := FileRead(GenRoot "\scales.txt")
+	t := V1FileRead(GenRoot "\scales.txt")   ; (v1: blank when it isn't there)
 	out := ""
 	Loop Parse, t, "`n", "`r"
 		if (A_LoopField != "" && InStr(A_LoopField, size "=") != 1)
 			out .= A_LoopField "`r`n"
-	DirCreate(GenRoot)
+	V1Do(DirCreate, GenRoot)
 	was := PicScaleFor(size)
-	f := FileOpen(GenRoot "\scales.txt", "w")
+	f := V1Try(FileOpen, GenRoot "\scales.txt", "w")   ; (v1: 0 when it can't be opened)
 	if (IsObject(f))
 		f.Write(out size "=" sc "`r`n"), f.Close()
 	DebugLog("UI size: " size " remembered at UI scale " sc " (generated\scales.txt" (was != "" ? "; it was " was : "") ") - the set the bot starts with at this size")
@@ -258,7 +260,7 @@ PicRemember()
 ;The name of picture set i for the log: "the main set", "ui1.144", "generated\ui1.130"
 PicSetName(i)
 	{
-	return (i = 1) ? "the main set" : IsObject(PicSets[i]) ? SubStr(PicSets[i].dir, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) : "set " i
+	return (i = 1) ? "the main set" : IsObject(V1At(PicSets, i)) ? SubStr(PicSets[i].dir, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) : "set " i
 	}
 
 ;The set in use is a cut set (or its copy, PicCopySet) at this game window's own size: its own picture matched at this
@@ -266,16 +268,16 @@ PicSetName(i)
 ;window (generated\scales.txt). DetectPicSet holds such a set - no made set at another size takes over from it
 PicCutHome()
 	{
-	set := PicSets[PicSet], size := GameW "x" GameH
+	set := V1At(PicSets, PicSet), size := GameW "x" GameH   ; (v1: no such set - blank)
 	;(a cut set with its own Pass button or spellbook - PicCutOwn - or such a set's copy)
 	if (!IsObject(set) || (set.gen ? !set.copy : !PicCutOwn(set)))
 		return false
 	;(PicCutOk's window size only as noted with this very set - or, for a copy, with the cut set it's the copy of)
-	pchOk := PicSets[PicCutOkSet]
+	pchOk := V1At(PicSets, PicCutOkSet)   ; (v1: blank - "" when none was noted yet)
 	if ((PicCutOkSize = size && (PicCutOkSet = PicSet || (set.copy && IsObject(pchOk) && Abs(pchOk.scale - set.scale) < 0.0005))) || PicMeasuredSize = size)
 		return true
 	want := PicScaleFor(size)
-	return (want != "" && Abs(set.scale - want) < 0.002)
+	return (want != "" && V1Lt(V1Abs(V1Sub(set.scale, want)), 0.002))   ; (v1: scales.txt's text compared as v1 did)
 	}
 
 ;A cut set's own picture just matched with it in use (the spellbook, a round's Pass button - the main loop, DetectPicSet,
@@ -284,7 +286,8 @@ PicCutHome()
 ;has no Pass button or spellbook of its own: the made, mostly see-through one would hold a size a little off)
 PicCutOk(file := "")
 	{
-	pcoSet := PicSets[PicSet]
+	global PicCutOkAt, PicCutOkSize, PicCutOkSet ; (v1 globals it sets)
+	pcoSet := V1At(PicSets, PicSet)   ; (v1: no such set - blank)
 	if (IsObject(pcoSet) && !pcoSet.gen && (file != "" ? (InStr(file, pcoSet.dir "\resources\") = 1 && SubStr(file, -4) = ".png" && FileExist(file)) : PicCutOwn(pcoSet)))
 		PicCutOkAt := A_TickCount, PicCutOkSize := GameW "x" GameH, PicCutOkSet := PicSet
 	}
@@ -308,7 +311,7 @@ PicCutFind(set, pics, x1, y1, x2, y2, &tolAt, &picAt, above := 0)
 			file := set.dir "\resources\" pic ".png"
 			if (!FileExist(file))
 				continue
-			ErrorLevel := !ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" tol " *TransFF00FF " file)
+			V1ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" tol " *TransFF00FF " file)
 			if (ErrorLevel = 0)
 				{
 				tolAt := tol, picAt := pic
@@ -323,6 +326,7 @@ PicCutFind(set, pics, x1, y1, x2, y2, &tolAt, &picAt, above := 0)
 ;searches every cut picture with at least that) and said once per change
 PicCutSlackSet(tol, pic)
 	{
+	global PicCutTol ; (v1 globals it sets)
 	if (tol = "" || tol <= 3 || tol <= PicCutTol)
 		return
 	PicCutTol := tol
@@ -334,7 +338,7 @@ PicCutSlackSet(tol, pic)
 ;draws the cut set's size but not its pixels. Made in PicSets if it isn't there. Its index (i itself for a made set)
 PicCopySet(i)
 	{
-	if (!IsObject(PicSets[i]) || PicSets[i].gen)
+	if (!IsObject(V1At(PicSets, i)) || PicSets[i].gen)   ; (v1: no such set - blank)
 		return i
 	sc := PicSets[i].scale
 	for j, set in PicSets
@@ -344,8 +348,8 @@ PicCopySet(i)
 			return j
 			}
 	dir := GenRoot "\ui" Round(sc, 3)
-	DirCreate(dir)
-	PicSets.Push({dir: dir, scale: sc + 0, gen: 1, copy: 1})
+	V1Do(DirCreate, dir)
+	PicSets.Push(V1Obj({dir: dir, scale: sc + 0, gen: 1, copy: 1}))
 	return PicSets.Length
 	}
 
@@ -377,29 +381,29 @@ PicMake(rel, set)
 	dest := set.dir "\" RegExReplace(rel, "i)\.png$", ".bmp")
 	srcs := PicMasters(rel, set.scale)
 	if (!srcs.Length)
-		return PicMade[key] := "" ;  V1toV2: Invalid Index errors?, try 'PicMade.Push(<val>)'
+		return PicMade[key] := ""
 	if (srcs[1].scale < set.scale * 0.97)
-		PicEnlarged[dest] := 1 ;  V1toV2: Invalid Index errors?, try 'PicEnlarged.Push(<val>)'
+		PicEnlarged[dest] := 1
 	;(cut at nearly this size - under 1% off: that picture as it is; resizing a mostly see-through one
 	;that little only loses pixels. Not for a cut set's copy - PicCopySet: resized 1:1, that's what it's for)
 	if (!set.copy && Abs(set.scale / srcs[1].scale - 1) < 0.01)
-		return PicMade[key] := srcs[1].file ;  V1toV2: Invalid Index errors?, try 'PicMade.Push(<val>)'
+		return PicMade[key] := srcs[1].file
 	if (FileExist(dest))
 		{
 		;(made before: kept unless a picture it could come from has changed since)
-		destTime := FileGetTime(dest)
+		destTime := V1Try(FileGetTime, dest)   ; (v1: blank when it can't be read)
 		newer := false
 		for each, src in srcs
 			{
-			srcTime := FileGetTime(src.file)
-			if (srcTime > destTime)
+			srcTime := V1Try(FileGetTime, src.file)
+			if (V1Gt(srcTime, destTime))   ; (v1: a blank time compared as text)
 				newer := true
 			}
 		if (!newer)
-			return PicMade[key] := dest ;  V1toV2: Invalid Index errors?, try 'PicMade.Push(<val>)'
+			return PicMade[key] := dest
 		}
 	SplitPath(dest, , &destDir)
-	DirCreate(destDir)
+	V1Do(DirCreate, destDir)
 	;From the best one; a picture that's mostly see-through can come out too thin to use, then the next
 	for each, src in srcs
 		{
@@ -407,10 +411,10 @@ PicMake(rel, set)
 		kept := PicResize(src.resize, dest, set.scale / src.scale)
 		DebugLog("  made " rel " for UI size " Round(set.scale, 3) " from the one cut at " Round(src.scale, 3) " (" (kept ? kept "% of it kept" : "too little left to use") ", " A_TickCount - madeFrom " ms)")
 		if (kept)
-			return PicMade[key] := dest ;  V1toV2: Invalid Index errors?, try 'PicMade.Push(<val>)'
+			return PicMade[key] := dest
 		}
-	Try FileDelete(dest)
-	return PicMade[key] := "" ;  V1toV2: Invalid Index errors?, try 'PicMade.Push(<val>)'
+	V1Do(FileDelete, dest)
+	return PicMade[key] := ""
 	}
 
 ;The cut pictures to make rel from for UI scale `scale`, best first: [{file, scale}, ...]. Best is the
@@ -429,7 +433,7 @@ PicMasters(rel, scale)
 		;(a cut card is mostly see-through - the parts that change between copies - which leaves too little
 		;once resized; a solid copy saved next to it as <name>.raw.png is resized instead)
 		raw := set.dir "\" RegExReplace(rel, "i)\.png$", ".raw.png")
-		list.InsertAt(at, {file: set.dir "\" rel, scale: set.scale, resize: FileExist(raw) ? raw : set.dir "\" rel})
+		list.InsertAt(at, V1Obj({file: set.dir "\" rel, scale: set.scale, resize: FileExist(raw) ? raw : set.dir "\" rel}))
 		}
 	for each, m in down
 		up.Push(m)
@@ -453,20 +457,21 @@ PicResize(src, dest, ratio, phases := 4)
 	if (w < 12 || h < 12)
 		return 0
 	;src colours and see-through pixels, flat (index y * w + x)
-	SrcR := [], SrcG := [], SrcB := [], SrcK := []
+	;(v1: these [] are stores indexed from 0 - V1Obj, as v1's objects)
+	SrcR := V1Obj(), SrcG := V1Obj(), SrcB := V1Obj(), SrcK := V1Obj()
 	Loop w * h
 		{
 		i := A_Index - 1
 		c := NumGet(pix, i * 4, "UInt")
-		SrcR[i] := (c >> 16) & 0xFF, SrcG[i] := (c >> 8) & 0xFF, SrcB[i] := c & 0xFF ;  V1toV2: Invalid Index errors?, try 'SrcR.Push(<val>)'
-		SrcK[i] := !(SrcR[i] = 255 && SrcG[i] = 0 && SrcB[i] = 255) ;  V1toV2: Invalid Index errors?, try 'SrcK.Push(<val>)'
+		SrcR[i] := (c >> 16) & 0xFF, SrcG[i] := (c >> 8) & 0xFF, SrcB[i] := c & 0xFF
+		SrcK[i] := !(SrcR[i] = 255 && SrcG[i] = 0 && SrcB[i] = 255)
 		}
 	;across: every src row resized to tw, for each phase (colour sums and solid share, of the solid
 	;pixels only)
-	PhR := [], PhG := [], PhB := [], PhK := []
+	PhR := V1Obj(), PhG := V1Obj(), PhB := V1Obj(), PhK := V1Obj()
 	Loop phases
 		{
-		ph := A_Index, ar := [], ag := [], ab := [], ak := []
+		ph := A_Index, ar := V1Obj(), ag := V1Obj(), ab := V1Obj(), ak := V1Obj()
 		Loop tw
 			{
 			u := A_Index - 1
@@ -481,18 +486,18 @@ PicResize(src, dest, ratio, phases := 4)
 					if (SrcK[i])
 						wt := s[2], r += SrcR[i] * wt, g += SrcG[i] * wt, b += SrcB[i] * wt, k += wt
 					}
-				ar[o] := r, ag[o] := g, ab[o] := b, ak[o] := k ;  V1toV2: Invalid Index errors?, try 'ar.Push(<val>)'
+				ar[o] := r, ag[o] := g, ab[o] := b, ak[o] := k
 				}
 			}
-		PhR[ph] := ar, PhG[ph] := ag, PhB[ph] := ab, PhK[ph] := ak ;  V1toV2: Invalid Index errors?, try 'PhR.Push(<val>)'
+		PhR[ph] := ar, PhG[ph] := ag, PhB[ph] := ab, PhK[ph] := ak
 		}
 	;down: those resized to th, for each of the phases x phases; summed, and the spread of each colour
-	n := tw * th, SR := [], SG := [], SB := [], Keep := [], LoR := [], LoG := [], LoB := [], HiR := [], HiG := [], HiB := []
+	n := tw * th, SR := V1Obj(), SG := V1Obj(), SB := V1Obj(), Keep := V1Obj(), LoR := V1Obj(), LoG := V1Obj(), LoB := V1Obj(), HiR := V1Obj(), HiG := V1Obj(), HiB := V1Obj()
 	Loop n
 		{
 		o := A_Index - 1
-		SR[o] := 0, SG[o] := 0, SB[o] := 0, Keep[o] := 1 ;  V1toV2: Invalid Index errors?, try 'SR.Push(<val>)'
-		LoR[o] := 999, LoG[o] := 999, LoB[o] := 999, HiR[o] := -1, HiG[o] := -1, HiB[o] := -1 ;  V1toV2: Invalid Index errors?, try 'LoR.Push(<val>)'
+		SR[o] := 0, SG[o] := 0, SB[o] := 0, Keep[o] := 1
+		LoR[o] := 999, LoG[o] := 999, LoB[o] := 999, HiR[o] := -1, HiG[o] := -1, HiB[o] := -1
 		}
 	Loop phases
 		{
@@ -517,23 +522,23 @@ PicResize(src, dest, ratio, phases := 4)
 						}
 					if (k < 0.39999)
 						{
-						Keep[o] := 0 ;  V1toV2: Invalid Index errors?, try 'Keep.Push(<val>)'
+						Keep[o] := 0
 						continue
 						}
 					r /= k, g /= k, b /= k
 					SR[o] += r, SG[o] += g, SB[o] += b
 					if (r < LoR[o])
-						LoR[o] := r ;  V1toV2: Invalid Index errors?, try 'LoR.Push(<val>)'
+						LoR[o] := r
 					if (r > HiR[o])
-						HiR[o] := r ;  V1toV2: Invalid Index errors?, try 'HiR.Push(<val>)'
+						HiR[o] := r
 					if (g < LoG[o])
-						LoG[o] := g ;  V1toV2: Invalid Index errors?, try 'LoG.Push(<val>)'
+						LoG[o] := g
 					if (g > HiG[o])
-						HiG[o] := g ;  V1toV2: Invalid Index errors?, try 'HiG.Push(<val>)'
+						HiG[o] := g
 					if (b < LoB[o])
-						LoB[o] := b ;  V1toV2: Invalid Index errors?, try 'LoB.Push(<val>)'
+						LoB[o] := b
 					if (b > HiB[o])
-						HiB[o] := b ;  V1toV2: Invalid Index errors?, try 'HiB.Push(<val>)'
+						HiB[o] := b
 					}
 				}
 			}
@@ -543,7 +548,7 @@ PicResize(src, dest, ratio, phases := 4)
 	;enlarged picture has)
 	agree := ratio > 1.03 ? 6 : 10
 	stride := (tw * 3 + 3) & ~3, size := stride * th, cnt := phases * phases, kept := 0
-	bits := Buffer(size, 0) ; V1toV2: if 'bits' is a UTF-16 string, use 'VarSetStrCapacity(&bits, size)' and replace all instances of 'bits.Ptr' with 'StrPtr(bits)'
+	bits := Buffer(size, 0)
 	Loop th
 		{
 		v := A_Index - 1, line := (th - 1 - v) * stride
@@ -562,7 +567,7 @@ PicResize(src, dest, ratio, phases := 4)
 	;(a picture that's nearly all see-through would match anything)
 	if (kept < 12)
 		return 0
-	bmp := FileOpen(dest, "w")
+	bmp := V1Try(FileOpen, dest, "w")   ; (v1: 0 when it can't be opened)
 	if (!IsObject(bmp))
 		return 0
 	bmp.WriteUShort(0x4D42), bmp.WriteUInt(54 + size), bmp.WriteUInt(0), bmp.WriteUInt(54)
@@ -597,24 +602,25 @@ PicRead(file, &pix, &w, &h)
 	if (!token)
 		{
 		DllCall("LoadLibrary", "Str", "gdiplus", "Ptr")
-		si := Buffer(A_PtrSize = 8 ? 24 : 16, 0), NumPut("UInt", 1, si, 0) ; V1toV2: if 'si' is a UTF-16 string, use 'VarSetStrCapacity(&si, A_PtrSize = 8 ? 24 : 16)' and replace all instances of 'si.Ptr' with 'StrPtr(si)'
-		DllCall("gdiplus\GdiplusStartup", "Ptr*", &token, "Ptr", &si, "Ptr", 0)
+		si := Buffer(A_PtrSize = 8 ? 24 : 16, 0), NumPut("UInt", 1, si, 0)
+		DllCall("gdiplus\GdiplusStartup", "Ptr*", &token, "Ptr", si, "Ptr", 0)
 		if (!token)
 			return false
 		}
 	gbmp := 0
 	if (DllCall("gdiplus\GdipCreateBitmapFromFile", "WStr", file, "Ptr*", &gbmp) || !gbmp)
 		return false
+	w := 0, h := 0   ; (v1: a blank UInt* was read as 0 - v2's DllCall needs a value)
 	DllCall("gdiplus\GdipGetImageWidth", "Ptr", gbmp, "UInt*", &w)
 	DllCall("gdiplus\GdipGetImageHeight", "Ptr", gbmp, "UInt*", &h)
-	rect := Buffer(16, 0), NumPut("Int", w, rect, 8), NumPut("Int", h, rect, 12) ; V1toV2: if 'rect' is a UTF-16 string, use 'VarSetStrCapacity(&rect, 16)' and replace all instances of 'rect.Ptr' with 'StrPtr(rect)'
+	rect := Buffer(16, 0), NumPut("Int", w, rect, 8), NumPut("Int", h, rect, 12)
 	;BitmapData: Width, Height, Stride, PixelFormat, Scan0, Reserved; read only, 32 bpp ARGB
-	data := Buffer(16 + 2 * A_PtrSize, 0) ; V1toV2: if 'data' is a UTF-16 string, use 'VarSetStrCapacity(&data, 16 + 2 * A_PtrSize)' and replace all instances of 'data.Ptr' with 'StrPtr(data)'
+	data := Buffer(16 + 2 * A_PtrSize, 0)
 	ok := false
 	if (!DllCall("gdiplus\GdipBitmapLockBits", "Ptr", gbmp, "Ptr", rect.Ptr, "UInt", 1, "Int", 0x26200A, "Ptr", data.Ptr))
 		{
 		stride := NumGet(data, 8, "Int"), scan := NumGet(data, 16, "Ptr")
-		pix := Buffer(w * h * 4, 0) ; V1toV2: if 'pix' is a UTF-16 string, use 'VarSetStrCapacity(&pix, w * h * 4)' and replace all instances of 'pix.Ptr' with 'StrPtr(pix)'
+		pix := Buffer(w * h * 4, 0)
 		Loop h
 			DllCall("RtlMoveMemory", "Ptr", pix.Ptr + (A_Index - 1) * w * 4, "Ptr", scan + (A_Index - 1) * stride, "Ptr", w * 4)
 		DllCall("gdiplus\GdipBitmapUnlockBits", "Ptr", gbmp, "Ptr", data.Ptr)
@@ -631,21 +637,22 @@ PicRead(file, &pix, &w, &h)
 ;before). True if it did
 DetectUiScale()
 	{
+	global PicMeasureWhy, PicMeasuredSize ; (v1 globals it sets)
 	;Cheap look first: Pass and Flee are pure yellow words left and right of the middle (clear of the
 	;middle, where the yellow quest arrow is)
 	top := GameTop + Round(GameH * 0.45), bottom := GameTop + Round(GameH * 0.8)
 	PicMeasureWhy := "no pure yellow words (Pass / Flee) on the screen"
-	ErrorLevel := !PixelSearch(&yx, &yy, GameLeft + Round(GameW * 0.2), top, GameLeft + Round(GameW * 0.45), bottom, 0xFFFF00, 0)
+	V1PixelSearch(&yx, &yy, GameLeft + Round(GameW * 0.2), top, GameLeft + Round(GameW * 0.45), bottom, 0xFFFF00, 0, "Fast RGB")
 	if (ErrorLevel)
 		return false
-	ErrorLevel := !PixelSearch(&yx, &yy, GameLeft + Round(GameW * 0.55), top, GameLeft + Round(GameW * 0.8), bottom, 0xFFFF00, 0)
+	V1PixelSearch(&yx, &yy, GameLeft + Round(GameW * 0.55), top, GameLeft + Round(GameW * 0.8), bottom, 0xFFFF00, 0, "Fast RGB")
 	if (ErrorLevel)
 		return false
 	PicMeasureWhy := "OCR didn't work"
-	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, lines)
+	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, &lines)
 	if (ErrorLevel || !IsObject(lines))
 		return false
-	pass := "", flee := "", looksLike := RcLooksLike
+	pass := "", flee := "", looksLike := V1IsFunc("RcLooksLike") ? %"RcLooksLike"% : ""   ; (v1: Func() - 0 when the program hasn't it)
 	if (!IsObject(looksLike))
 		return false
 	for i, line in lines
@@ -683,7 +690,7 @@ DetectUiScale()
 			near := i
 		duTol := (PicCutTol > 3 ? PicCutTol : 3), duPic := "roundstart"
 		if (!PicPassAt(cutPass, "*" duTol " *TransFF00FF", passX, passY, set.scale)
-			&& !PicCutFind(set, ["roundstart_hover", "roundstart"], passX - 110 * set.scale, passY - 45 * set.scale, passX + 110 * set.scale, &v2Param7:=passY + 45 * set.scale, &duTol, duPic))
+			&& !PicCutFind(set, ["roundstart_hover", "roundstart"], passX - 110 * set.scale, passY - 45 * set.scale, passX + 110 * set.scale, passY + 45 * set.scale, &duTol, &duPic))
 			continue
 		DebugLog("UI size: " duSaid "; the Pass button cut at " Round(set.scale, 3) " matches" (duPic = "roundstart_hover" ? " (drawn hovered)" : "") (duTol > 3 ? " at *" duTol : "") " - UI scale " Round(set.scale, 3))
 		PicMeasuredSize := GameW "x" GameH
@@ -733,7 +740,7 @@ DetectUiScale()
 		return false
 	src := srcs[1].file, srcScale := srcs[1].scale
 	tmp := A_Temp "\Wizard101 bot pass.bmp"
-	tuneFrom := A_TickCount, fits := {}
+	tuneFrom := A_TickCount, fits := V1Obj()
 	Loop 7
 		{
 		step := A_Index - 4
@@ -742,15 +749,15 @@ DetectUiScale()
 		sc := guess * (1 + step * 0.01)
 		for each, tol in [14, 20]
 			{
-			ErrorLevel := !ImageSearch(&sx, &sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, "*" tol " *TransFF00FF " tmp)
+			V1ImageSearch(&sx, &sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, "*" tol " *TransFF00FF " tmp)
 			if (ErrorLevel = 0)
 				{
-				fits[step] := tol ;  V1toV2: Invalid Index errors?, try 'fits.Push(<val>)'
+				fits[step] := tol
 				break
 				}
 			}
 		}
-	Try FileDelete(tmp)
+	V1Do(FileDelete, tmp)
 	best := "", fitList := ""
 	for each, tol in [14, 20]
 		{
@@ -800,7 +807,7 @@ PicPassAt(file, opts, passX, passY, sc, tries := 5)
 		{
 		if (A_Index > 1)
 			Sleep(150)
-		ErrorLevel := !ImageSearch(&sx, &sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, opts " " file)
+		V1ImageSearch(&sx, &sy, passX - 110 * sc, passY - 45 * sc, passX + 110 * sc, passY + 45 * sc, opts " " file)
 		if (ErrorLevel = 0)
 			return true
 		}
@@ -835,7 +842,7 @@ PicScaleFromBook()
 		}
 	if (!bestLo)
 		{
-		Try FileDelete(tmp)
+		V1Do(FileDelete, tmp)
 		return 0
 		}
 	;That run (and a step either side) again, 0.5% apart: the middle of what matches with the least
@@ -853,7 +860,7 @@ PicScaleFromBook()
 		if (lo)
 			break
 		}
-	Try FileDelete(tmp)
+	V1Do(FileDelete, tmp)
 	return lo ? Round(Sqrt(lo * hi), 3) : Round(Sqrt(sizes[bestLo] * sizes[bestHi]), 3)
 	}
 
@@ -863,7 +870,7 @@ PicScaleTry(rel, sc, tmp, x1, y1, x2, y2, tol)
 	srcs := PicMasters(rel, sc)
 	if (!srcs.Length || !PicResize(srcs[1].file, tmp, sc / srcs[1].scale))
 		return false
-	ErrorLevel := !ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" tol " *TransFF00FF " tmp)
+	V1ImageSearch(&fx, &fy, x1, y1, x2, y2, "*" tol " *TransFF00FF " tmp)
 	return (ErrorLevel = 0)
 	}
 
@@ -878,7 +885,15 @@ PicSetFor(sc, within := 0.005)
 	if (near)
 		return near
 	dir := GenRoot "\ui" Round(sc, 3)
-	DirCreate(dir)
-	PicSets.Push({dir: dir, scale: Round(sc, 3) + 0, gen: 1})
+	V1Do(DirCreate, dir)
+	PicSets.Push(V1Obj({dir: dir, scale: Round(sc, 3) + 0, gen: 1}))
 	return PicSets.Length
+	}
+
+;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
+;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
+PicScaleBlank()
+	{
+	global GenTol := "", GenRoot := "", PassFleeDist := "", PicEnlarged := "", PicMade := "", PicMeasuredSize := "", PicMeasureSize := ""
+	global PicMeasureTries := "", PicMeasureWhy := "", PicCutTol := "", PicCutOkAt := "", PicCutOkSize := "", PicCutOkSet := ""
 	}
