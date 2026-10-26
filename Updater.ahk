@@ -395,6 +395,21 @@ UpFetch(rel, ByRef tmp, ByRef src)
 		FileRemoveDir, %tmp%, 1
 		return false
 		}
+	;(every exe a release carries there too: an antivirus that took one out of the unpacked files - Defender's
+	;"Contebrew.A!ml" guess at a fresh Autofarmer.exe, 2026-10-25 - would leave the old exe beside the new scripts, or none)
+	missing := ""
+	for i, exe in ["Wiz-Maxxing.exe", "Setup.exe", "AutoFarmer\Autofarmer.exe", "AutoFarmer\StatsReader.exe", "AutoQuester\AutoQuester.exe"]
+		if (!FileExist(src "\" exe))
+			missing .= (missing = "" ? "" : ", ") exe
+	if (missing != "")
+		{
+		UpProgress("Off")
+		UpLog("the update to " rel.tag " has no " missing " after unpacking (an antivirus took it out?) - nothing was changed")
+		if (!UpQuiet)
+			MsgBox, 48, Wiz-Maxxing update, % "The update to " rel.tag " is missing " missing " after unpacking - most likely your antivirus removed it (Windows Security > Virus & threat protection > Protection history). Nothing was changed.`n`nAdd exclusions for this folder (" A_ScriptDir ") and " tmp " (Windows Security > Virus & threat protection > Manage settings > Exclusions) - the update is offered again next time."
+		FileRemoveDir, %tmp%, 1
+		return false
+		}
 	return true
 	}
 
