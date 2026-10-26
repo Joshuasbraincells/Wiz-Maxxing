@@ -4654,7 +4654,15 @@ WalkZone(fresh := false)
 		WkZoneFrom := zoneBefore, WkZoneAt := A_TickCount
 		;(X at a sigil just before: this zone's its dungeon)
 		if (WkSigilAt && A_TickCount - WkSigilAt < SigilWait + 15000 && IsObject(WkSigilZones))
+			{
 			WkSigilZones[zone] := 1, WkSigilAt := 0
+			;(a dungeon: its drops held from quick selling - AutoFarmer's QuickSell.ahk; AutoQuester has none)
+			if (IsFunc("QsDungeonMark"))
+				Func("QsDungeonMark").Call(zone)
+			}
+		;(a zone a dungeon's zone leads to - its deeper zones held from quick selling too: QuickSell.ahk)
+		if (IsFunc("QsZoneChange"))
+			Func("QsZoneChange").Call(zoneBefore, zone)
 		}
 	return zone
 	}

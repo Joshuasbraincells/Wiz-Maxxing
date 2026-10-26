@@ -31,3 +31,5 @@ updater.ini
 updater.log
 # Your decks (the dashboard's Cards tab - Decks.ahk)
 AutoFarmer/decks/
+# Quick sell's count per character and its hold after a dungeon (QuickSell.ahk)
+AutoFarmer/quicksell.ini

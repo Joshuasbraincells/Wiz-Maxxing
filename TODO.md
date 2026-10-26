@@ -37,7 +37,7 @@ Done: NPCs with a quest marker talked to when passed.
 - [ ] Gear read and compared to what's worn; better pieces equipped before anything is sold
 - [ ] Repeat each until its gear is all swapped; then the next
 
-In progress: quick sell when the backpack's full (a setting, never in dungeons).
+Done: quick sell when the backpack's full.
 
 ## 6. Perfect pets, automatic
 - [ ] Build on AutoPetTrainer: training, snacks (gold only)

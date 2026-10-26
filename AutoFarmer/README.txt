@@ -19,8 +19,9 @@ AutoQuester.ahk at the same time.
 Discord alerts (tray menu "Discord alerts..."): when the wizard needs you, a
 message goes to your Discord channel - stuck (walking stopped), a teleport that
 doesn't work, no quest arrow, waiting at the quest goal, a collect quest that
-needs you, out of potions with none to be had, "Crowns" seen in a potion run,
-out of mana, a wizard it doesn't know, the backpack full, or it can't get back
+needs you, out of potions with none to be had, "Crowns" seen in a potion run
+or a quick sell, out of mana, a wizard it doesn't know, the backpack full and
+not quick sold, the gold bag nearly full, or it can't get back
 into the game (a login turned down, patching, the launcher). It says what's
 wrong, the zone and the time - never a login or a screenshot. Set it up: in
 Discord the channel's settings > Integrations > Webhooks > New Webhook > Copy
@@ -184,17 +185,18 @@ from you as it starts; switched off or changed, that holds for the run.
 Your mouse locked while the bot uses it (Settings > THE MOUSE AND WAITS, "Lock
 my mouse while the bot uses it" - mouselock, on unless 0): while the bot has
 the mouse - a battle round (from its first look at the hand to "Round done"),
-a click out of battle, a mouse turn while walking, a potion route's or a login
-click - your mouse can't move the pointer, and with the pointer over Wizard101
-its buttons and wheel do nothing. What you do with the mouse then doesn't count
-as you playing. The keyboard always stays free: F6 stops the bot and frees the
-mouse, and with "Wait for me" on any key leaves the round to you (Alt+1 / Alt+2
-/ Windows+3 free the mouse for their pick). It's freed at once when the bot's
-done, when Wizard101 isn't the window in front (Alt+Tab), on an error and when
-the bot closes - and by itself if a hold of the bot's hasn't been renewed for
-15 s (one it forgot to give back too, however busy the rest of the bot is).
-Off: your mouse always works (moving it makes the bot wait for you, as "Wait
-for me" says). debug.log: "Mouse locked - ..." / "Mouse unlocked - ...".
+a click out of battle, a mouse turn while walking, a potion route's, a login
+or a quick sell's click - your mouse can't move the pointer, and with the
+pointer over Wizard101 its buttons and wheel do nothing. What you do with the
+mouse then doesn't count as you playing. The keyboard always stays free: F6
+stops the bot and frees the mouse, and with "Wait for me" on any key leaves
+the round to you (Alt+1 / Alt+2 / Windows+3 free the mouse for their pick).
+It's freed at once when the bot's done, when Wizard101 isn't the window in
+front (Alt+Tab), on an error and when the bot closes - and by itself if a hold
+of the bot's hasn't been renewed for 15 s (one it forgot to give back too,
+however busy the rest of the bot is). Off: your mouse always works (moving it
+makes the bot wait for you, as "Wait for me" says). debug.log:
+"Mouse locked - ..." / "Mouse unlocked - ...".
 
 Play for me (the dashboard's button, or the tray menu): for leaving the PC for
 days. Every check for you is off - it no longer waits while you use the
@@ -438,6 +440,8 @@ restart. Defaults fills in the defaults (Save to use them).
 	  timed), the wait after clicks, before playing a round, after a discard
 	  and before looking at the hand again.
 	- Health: heal under %, drink a potion under %, flee when out of cards.
+	- The backpack: quick sell it when it's full, pets too, after a dungeon
+	  too (see Quick sell below).
 	- Card logic: boost first (traps - on the boss, else on the enemy with
 	  the most health -, blades, bubble, aura, then
 	  the biggest hit it can cast - as always), hit first (the biggest hit it
@@ -1067,6 +1071,45 @@ it goes to buy more WITH GOLD (never Crowns):
 	  use the mount you'll farm with, a route is a timing) and recalls back.
 Mark & Recall: since Nov 2024 they cost 1-10 mana and recalling keeps the
 mark. Some places (dorms, houses, some dungeons) can't be marked.
+
+Quick sell when the backpack is full (QuickSell.ahk - Settings > THE BACKPACK,
+quicksell, off till you tick it; needs the vision helper - the game's memory,
+read-only, never a picture):
+	- After a battle the bot played it looks at the game's memory: the
+	  backpack's count against its size, and Prospector Zeke's alert in the
+	  right-hand column (the same portrait also means "the gold bag is nearly
+	  full" - then you're only told). Full: B, the game's own N/M read (it has
+	  to say full), Quick Sell, each gear group (hats, robes, shoes, weapons,
+	  athames, amulets, rings, decks) and - "...pets too", on - the Pet group
+	  with ALL, No to "include Crowns Items?", SELL, the confirmation's numbers
+	  read (no Crown items, furniture, jewels, reagents or treasure cards), SELL,
+	  then the backpack's count checked. Gold over the pouch is lost (logged).
+	- Never in a dungeon run, a dungeon being recorded, a zone the bot
+	  entered through a sigil or a zone it leads on to. A dungeon you walked
+	  into yourself isn't known as one: switch quick sell off before you start
+	  the bot in it. After a dungeon the next full backpack is held - you're
+	  told, so you can look through the good gear first - until 10 items have
+	  gone from it, you ask from the tray, or you tick "...even with a dungeon's
+	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
+	  is left out, and set items are checked after: one gone turns it off.
+	  Lock what you want to keep - the game never quick sells locked items.
+	- Every click is a window the game's memory names, shown, its size as in
+	  the game's files, on a short list; no key or mouse of yours since it
+	  began, no battle, no "Crown" read round it. A Crown box other than that
+	  No, or anything it doesn't know, stops it (it closes its windows or
+	  leaves them to you); a key of yours stops it at once, and so does your
+	  mouse between its clicks (while it moves to a button and clicks your
+	  mouse is locked - "Lock my mouse while the bot uses it" - and what you
+	  do with it then doesn't count).
+	- Tray menu: "Quick sell the backpack now" (whether full or not) and "Quick
+	  sell rehearsal (stops at the confirmation)" - everything up to the
+	  confirmation, read and logged, closed, nothing sold (quicksell:2 in
+	  PlayerStats.txt rehearses after battles, at most once an hour).
+	  A group with Crown-shop gear ("Crown-..." or "Crowns-..." items) in the
+	  backpack is left out - bank it to have that group sold (a full
+	  backpack's alert names those groups and items).
+	  quicksellfree:N sells with N slots or fewer left. debug.log:
+	  "Backpack: ..."; the dashboard: Quick sells.
 
 Along side simply playing the game this program has certain modes
 all of which include, command mode, response mode, dual mode and lore mode.

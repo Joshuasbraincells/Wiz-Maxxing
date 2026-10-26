@@ -34,7 +34,7 @@ CfgList()
 	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 3
 		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."})
 	list.Push({key: "mouselock", label: "Lock my mouse while the bot uses it", kind: "check", def: 1
-		, help: "While the bot has the mouse - a battle round, a click, a mouse turn while walking, a potion or login click - your mouse can't move the pointer, and over Wizard101 its buttons and wheel do nothing (what you do with it then doesn't count as you playing). The keyboard always stays free: {key:bot} stops the bot and frees the mouse, and with Wait for me on any key leaves the round to you. Freed at once when Wizard101 isn't the window in front (Alt+Tab), and if nothing's renewed it for 15 s. Off: your mouse always works - moving it makes the bot wait for you, as Wait for me says."})
+		, help: "While the bot has the mouse - a battle round, a click, a mouse turn while walking, a potion, login or quick sell click - your mouse can't move the pointer, and over Wizard101 its buttons and wheel do nothing (what you do with it then doesn't count as you playing). The keyboard always stays free: {key:bot} stops the bot and frees the mouse, and with Wait for me on any key leaves the round to you. Freed at once when Wizard101 isn't the window in front (Alt+Tab), and if nothing's renewed it for 15 s. Off: your mouse always works - moving it makes the bot wait for you, as Wait for me says."})
 	list.Push({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
 		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."})
 	list.Push({key: "hungload", label: "Restart Wizard101 stuck on a loading screen (minutes, 0 = never)", kind: "num", lo: 0, hi: 120, def: 5
@@ -68,6 +68,13 @@ CfgList()
 		, help: "Out of potions: to Hilda Brewer in Wizard City's Commons by the zone's map - a Recall to your Mark (anywhere in the Commons) or End in Wizard City - X, Fill All, drink. No recording needed. Off: the recorded ways (tray menu Record potion buying)."})
 	list.Push({key: "fleeon", label: "Flee when out of cards", kind: "check", def: 1
 		, help: "Completely out of cards (none in hand, two rounds running): flee and try again with a full deck. Never for no hit in hand or out of mana."})
+	list.Push({key: "-", label: "THE BACKPACK"})
+	list.Push({key: "quicksell", label: "Quick sell the backpack when it's full", kind: "check", def: 0
+		, help: "After a battle, when the game shows the backpack full (Prospector Zeke's alert on the right - the game's memory, never a picture; the game's own N/M has to read full): B, Quick Sell, each gear group (hats, robes, shoes, weapons, athames, amulets, rings, decks) and the pets' with ALL - No to Crowns Items - and SELL, for gold. Never in a dungeon run or a dungeon zone, and not after one unless ticked below - a dungeon you walked into yourself isn't known as one: switch quick sell off there. A group an Equipment Set's item is in is left out. Locked items are never sold: lock gear you want to keep. Tray menu: Quick sell the backpack now, and a rehearsal that stops at the confirmation (quicksell:2 in PlayerStats.txt does that after battles, at most once an hour)."})
+	list.Push({key: "quicksellpets", label: "...pets too", kind: "check", def: 1
+		, help: "On: the Pet group is sold too (each pet in the backpack that isn't locked or in an Equipment Set - Yes to the game's pets box only when its count is the confirmation's). Off: pets are kept."})
+	list.Push({key: "quicksellafterdungeon", label: "...even with a dungeon's drops in it", kind: "check", def: 0
+		, help: "Off: after a dungeon (a dungeon run, or a zone entered through a sigil) the next full backpack is not sold - you're told, so you can look through it first; it's sold again once 10 items have gone from it, or you ask from the tray. On: sold like any other. Inside a dungeon it's never sold (a dungeon run, one the bot went into through its sigil and its deeper zones - not one you walked into yourself)."})
 	list.Push({key: "-", label: "WALKING"})
 	list.Push({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."})
@@ -173,7 +180,7 @@ CfgSimpleKeys()
 	if (!IsObject(keys))
 		{
 		keys := {}
-		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
+		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}
@@ -604,7 +611,8 @@ MouseOnGame(x, y)
 ;one hold not renewed for 15 s - an Off that never came - whatever else holds it (MouseLockOn renews its own hold;
 ;MouseLockRenew - the bot's card and battle moves - every hold; MouseLockOn's ttl for longer). Whether your clicks are
 ;swallowed is looked at again after each of the bot's own moves (MouseLockMoved - onto the game or off it) and four times
-;a second. mouselock:0: none of it
+;a second. Quick sell's moves, clicks and B (QuickSell.ahk's input block) hold it too - a run from the tray with the bot
+;off as well (QsManual). mouselock:0: none of it
 ;Who has it ({why: how many}), when it was last renewed and how long it may go unrenewed, whether it's on now (moves held)
 ;and its clicks too, the span your mouse input isn't you (opened as it locks, kept through a pause: from, to - and your
 ;last mouse input before it), open now, the pauses, what's been said when, the first who took it, set up, locked since,
@@ -722,7 +730,8 @@ MouseLockWanted(ByRef whyNot)
 		whyNot := "Lock my mouse is off (Settings)"
 	else if (PotionRecording || DgRecording)
 		whyNot := "a recording is on"
-	else if (!BotIsOn())
+	;(the bot on, a potion run from the tray - BotIsOn - or a quick sell from the tray: QuickSell.ahk QsManual)
+	else if (!BotIsOn() && !QsManual)
 		whyNot := "the bot's off"
 	else if (!GameActive())
 		whyNot := "Wizard101 isn't in front"
@@ -909,7 +918,7 @@ MouseLockWhat(why)
 	{
 	mlNames := {round: "a battle round", click: "a click", turn: "a mouse turn while walking", route: "the potion route's click"
 		, login: "a login click", walker: "a walker click", stats: "a click in the spellbook", lore: "lore farming"
-		, dev: "dev mode's loop"}
+		, dev: "dev mode's loop", quicksell: "quick selling the backpack"}
 	return mlNames.HasKey(why) ? mlNames[why] : why
 	}
 

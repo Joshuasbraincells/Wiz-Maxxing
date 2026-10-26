@@ -155,6 +155,9 @@ DgRecordStart()
 	DebugLog("Dungeons: recording a run from " nav.zone " at " Round(nav.x) ", " Round(nav.y) " - " HkName(DgRecKey) " to finish")
 	TrayTip, Wizard101 bot, % "Recording a dungeon run from " nav.zone ". Play it, come back here, then press " HkName(DgRecKey) ".", 8, 1
 	DgShow()
+	;(a dungeon played: its drops held from quick selling too - QuickSell.ahk)
+	if (IsFunc("QsDungeonMark"))
+		Func("QsDungeonMark").Call()
 	}
 
 ;A step recorded where nav says the wizard is
@@ -317,6 +320,9 @@ DgRunStart(file, times, avoid)
 	ReleaseKeys()
 	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length() (avoid ? " (keeping away from mobs)" : ""))
 	DgShow()
+	;(its drops are the good gear: the next full backpack held, not quick sold - QuickSell.ahk)
+	if (IsFunc("QsDungeonMark"))
+		Func("QsDungeonMark").Call()
 	}
 
 ;The step nearest the wizard in its zone (1 when it's the start's); 0 if no step is in its zone
@@ -355,6 +361,9 @@ DgStop(why, alert := true)
 	if (!IsObject(DgRun))
 		return
 	name := DgRun.name, runs := DgRun.runs
+	;(the run's drops in the backpack: the next full one held, not quick sold - QuickSell.ahk)
+	if (IsFunc("QsDungeonMark"))
+		Func("QsDungeonMark").Call()
 	DgRun := ""
 	ReleaseKeys()
 	Walking := 0

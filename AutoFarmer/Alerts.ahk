@@ -2,8 +2,10 @@
 ; and labels only; #Included by Autofarmer.ahk.
 ;
 ; Sent for: the walker's "needs you" notices (stuck, a teleport that doesn't work, no quest arrow, waiting at the
-; quest goal, a collect quest), out of potions with none to be had, "Crowns" seen in a potion run, out of mana, a
-; wizard whose school the bot doesn't know, the backpack full, and not getting back into the game (a login turned
+; quest goal, a collect quest), out of potions with none to be had, "Crowns" seen in a potion run or a quick sell, out of
+; mana, a wizard whose school the bot doesn't know, the backpack full and not quick sold (inventory - held for a dungeon's
+; drops, quick sell failing, an Equipment Set's item sold), the gold bag nearly full (gold - Prospector Zeke's alert), and
+; not getting back into the game (a login turned
 ; down, patching, the launcher, a ban or another login). The message says what's wrong, the zone and the time -
 ; nothing else: never a login, never a screenshot.
 ;

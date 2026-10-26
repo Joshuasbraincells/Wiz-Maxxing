@@ -1060,6 +1060,9 @@ class NavMem:
         # {(object, gid): (info or None, why, when to try again)} - kept while the object lives
         self._boss, self._boss_thread, self._boss_fail, self._boss_seen = None, None, (None, 0.0, ""), {}
         self._boss_said = 0.0            # (when a failure to read them may be logged again)
+        # the backpack, the HUD's tips and the game's windows by name (bagmem.py): its reader of the attached game, the
+        # thread making it (about half a second), why it couldn't be made (the game it was for, when to try again)
+        self._bagm, self._bagm_thread, self._bagm_fail = None, None, (None, 0.0, "")
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1075,6 +1078,7 @@ class NavMem:
             self._quest = None
             self._boss = None
             self._boss_seen = {}
+            self._bagm = None
 
     def _attach(self, pid):
         try:
@@ -1539,6 +1543,98 @@ class NavMem:
                 p["mob"] = seen[tname]
             if not p["name"] and key and names.get(key):
                 p["name"] = names[key]
+
+    # ------------------------------------------------------------ the backpack and the game's windows (bagmem.py)
+    def _bag_reader(self, st, wait=0.0):
+        """(the backpack's reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later)"""
+        with self.lock:
+            bm = self._bagm
+            if bm is not None and bm.st is st:
+                return bm, ""
+            fst, again, fwhy = self._bagm_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._bagm_thread
+            if th is None or not th.is_alive():
+                self._bagm = None
+                th = self._bagm_thread = threading.Thread(target=self._bag_make, args=(st,), name="bag", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            bm = self._bagm
+            if bm is not None and bm.st is st:
+                return bm, ""
+            fst, again, fwhy = self._bagm_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's backpack and window classes (once, about half a second)"
+
+    def _bag_make(self, st):
+        """the backpack's reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import bagmem
+            bm = bagmem.BagMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the backpack can't be read in this build: %s" % e) if sig else \
+                "the backpack's classes couldn't be read (%r)" % (e,)
+            self.log("bagmem: " + why)
+            with self.lock:
+                self._bagm_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+            return
+        with self.lock:
+            self._bagm = bm
+
+    def _bag_readers(self, wait):
+        """(game, backpack reader, hand reader, "") - the hand's for the GUI's root and the template map - or (None, None,
+        None, why)"""
+        st, why = self._ensure(wait)
+        if st is None:
+            return None, None, None, why
+        bm, why = self._bag_reader(st, wait)
+        if bm is None:
+            return None, None, None, why
+        hm, why = self._hand_reader(st, wait)
+        if hm is None:
+            return None, None, None, why
+        return st, bm, hm, ""
+
+    def bag(self, wait=0.3):
+        """(r, why): the backpack, read now - bagmem.BagMem.bag (items - the list's size -, allowed, extra, gold, gold_max,
+        player_gid, cats {kind: [n, crowns, nosell, plain]}, crownshop, sets, set_items, tips - the HUD's right-hand icons -, space - the
+        backpack page's N/M while it's shown -, root) - through the same read-only handle on the game as everything here,
+        under the same lock; its reader made in a thread once per game (waited for up to wait s). None and why when the
+        game can't be read. Never raises"""
+        try:
+            st, bm, hm, why = self._bag_readers(wait)
+            if st is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or hm.st is not st or bm.st is not st:
+                    return None, "the game changed"
+                return bm.bag(hm)
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the backpack failed (%r)" % (e,)
+
+    def gui(self, paths, wait=0.3):
+        """(g, why): the game's windows named by paths ("Anc/Name"), read now - bagmem.BagMem.gui (each one's type, shown,
+        rect in the root, its parent's, checked, greyed, text and key; the message box that's up and its buttons), the
+        texts' "<string;KEY>" given their words from the name tables outside the lock (bagmem.finish_gui). None and why
+        when the game can't be read. Never raises"""
+        try:
+            import bagmem
+            st, bm, hm, why = self._bag_readers(wait)
+            if st is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or hm.st is not st or bm.st is not st:
+                    return None, "the game changed"
+                g, why = bm.gui(hm, paths)
+            return bagmem.finish_gui(g, hm.lang_text), why
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the game's windows failed (%r)" % (e,)
 
     # ------------------------------------------------------------ the zone's mobs
     def mobs(self):

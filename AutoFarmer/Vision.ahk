@@ -393,6 +393,8 @@ global NavUnblock
 global NavGoalWhy, NavGoalWaitUntil
 ;Why the last NavMobs / NavBattle got nothing; when each may ask again
 global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
+;Why the last NavBag / NavGui got nothing; when each may ask again (declared only: a top-level := never runs here)
+global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
 ;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
@@ -877,6 +879,157 @@ PicMemCheck()
 	done[pmcKey] := 1
 	if (Abs(pmcSc / UiScale - 1) > 0.008)
 		DebugLog("UI size: the game's memory says UI scale " Round(pmcSc, 3) " (its GUI " NavUiRootW " units wide in a " GameW " px window) - the pictures in use are at " Round(UiScale, 3) " (" (PicSet = 1 ? "the main set" : SubStr(PicDir, StrLen(A_WorkingDir) + 2)) "): they disagree - nothing switched on it (only a cross-check for now)")
+	}
+
+;The backpack from the game's memory (the helper's /bag - READ-ONLY, vision\bagmem.py: nothing in the game is written,
+;injected or hooked; no key, click or window), as an object: items (the backpack list's own count - emotes too), allowed
+;(its size: 150), extra, gold, goldMax (the pouch), gid (the character's id, hex), walked (items read), emotes, setsOk (1:
+;every Equipment Set and its items read, every item walked - QuickSell.ahk sells nothing without it), space
+;({n, m, text}: the backpack page's own "N/M" - only while that page is shown - else ""), cats ({kind: {n, crowns,
+;nosell, plain}} - deck, hat, robe, shoes, weapon, athame, amulet, ring, pet, mount, emote...; ? not read; crowns: a Crowns
+;item or a Crown-shop template's, or one whose name wasn't read; plain: neither crowns nor unsellable), crownShop ([{kind,
+;name}]: Crown-shop templates without the game's Crowns flag, and items whose name wasn't read), tips ([{i, shown, l,
+;t, r, b, image, button, name}]: the HUD's right-hand icons - Prospector Zeke's portrait: the backpack full, or the gold
+;bag nearly full), sets ([{n, equipped, ids, name}]), setItems ([{set, equipped, gid, tid, name, kind, crowns}]: the
+;Equipment Sets' items in the backpack), rootW, rootH (the game's GUI in its own units). "" when it can't be read -
+;navmem:0, the helper not running or older (no /bag), dual mode, "none|<why>" (not in the world, the reader being
+;made): NavBagWhy says why (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+NavBag(timeoutMs := 600)
+	{
+	NavBagWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavBagWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavBagWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavBagWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavBagWaitUntil && A_TickCount < NavBagWaitUntil)
+		{
+		NavBagWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	nbgAns := VisionGet("/bag", timeoutMs, true)
+	if (nbgAns = "")
+		{
+		NavBagWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavBagWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavBagWaitUntil := 0
+	nbgOut := {items: "", allowed: "", extra: "", gold: "", goldMax: "", gid: "", walked: "", emotes: "", setsOk: 0, space: "", cats: {}
+		, tips: [], sets: [], setItems: [], crownShop: [], rootW: "", rootH: ""}
+	Loop, Parse, nbgAns, `n, `r
+		{
+		nbgF := StrSplit(A_LoopField, "|")
+		if (nbgF[1] = "none")
+			{
+			NavBagWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (nbgF[1] = "bag" && nbgF.Length() >= 7)
+			nbgOut.items := NavNum(nbgF[2]), nbgOut.allowed := NavNum(nbgF[3]), nbgOut.extra := NavNum(nbgF[4]), nbgOut.gold := NavNum(nbgF[5])
+				, nbgOut.goldMax := NavNum(nbgF[6]), nbgOut.gid := Trim(nbgF[7]), nbgOut.walked := NavNum(nbgF[8]), nbgOut.emotes := NavNum(nbgF[9])
+				, nbgOut.setsOk := nbgF[10] = "1" ? 1 : 0
+		else if (nbgF[1] = "space" && NavNum(nbgF[2]) != "" && NavNum(nbgF[3]) != "")
+			nbgOut.space := {n: NavNum(nbgF[2]), m: NavNum(nbgF[3]), text: Trim(nbgF[4])}
+		else if (nbgF[1] = "cat" && Trim(nbgF[2]) != "")
+			nbgOut.cats[Trim(nbgF[2])] := {n: NavNum(nbgF[3]), crowns: NavNum(nbgF[4]), nosell: NavNum(nbgF[5]), plain: NavNum(nbgF[6])}
+		else if (nbgF[1] = "crownshop" && Trim(nbgF[3]) != "")
+			nbgOut.crownShop.Push({kind: Trim(nbgF[2]), name: Trim(nbgF[3])})
+		else if (nbgF[1] = "tip")
+			nbgOut.tips.Push({i: NavNum(nbgF[2]), shown: nbgF[3] = "1" ? 1 : 0, l: NavNum(nbgF[4]), t: NavNum(nbgF[5]), r: NavNum(nbgF[6])
+				, b: NavNum(nbgF[7]), image: Trim(nbgF[8]), button: Trim(nbgF[9]), name: Trim(nbgF[10])})
+		else if (nbgF[1] = "set")
+			nbgOut.sets.Push({n: NavNum(nbgF[2]), equipped: nbgF[3] = "1" ? 1 : 0, ids: NavNum(nbgF[4]), name: Trim(nbgF[5])})
+		else if (nbgF[1] = "setitem")
+			nbgOut.setItems.Push({set: NavNum(nbgF[2]), equipped: nbgF[3] = "1" ? 1 : 0, gid: Trim(nbgF[4]), tid: NavNum(nbgF[5])
+				, name: Trim(nbgF[6]), kind: Trim(nbgF[7]), crowns: nbgF[8] = "1" ? 1 : 0})
+		else if (nbgF[1] = "root")
+			nbgOut.rootW := NavNum(nbgF[2]), nbgOut.rootH := NavNum(nbgF[3])
+		}
+	if (nbgOut.items = "" || nbgOut.allowed = "")
+		{
+		NavBagWhy := "an odd answer (no backpack line): " SubStr(RegExReplace(nbgAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return nbgOut
+	}
+
+;The game's windows from its memory (the helper's /gui - READ-ONLY, vision\bagmem.py), paths: "Anc/Name,..." (a window
+;named Name with an ancestor named Anc - more ancestors allowed, in order; 40 at most). An object: rootW, rootH (the GUI
+;in its own units - the game's client area), win ({path: {found, type, shown (VISIBLE on it and every ancestor), l, t, r,
+;b (in the root's units), checked, greyed (1/0, "" not one), text (its words, the markup out), key (the .gui file's
+;"<string;KEY>" when that's all its text), dups (its shown matches), pl, pt, pr, pb (its parent's), matches}}), box
+;(the message box up: {shown, title, caption, titleKey, captionKey, count - how many are up}; shown 0 none), btns
+;([{name, label, l, t, r, b, key, greyed}]: its shown buttons - centerButton, leftButton, rightButton). "" when it can't be
+;read - as NavBag: NavGuiWhy
+NavGui(paths, timeoutMs := 600)
+	{
+	NavGuiWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavGuiWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGuiWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavGuiWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavGuiWaitUntil && A_TickCount < NavGuiWaitUntil)
+		{
+		NavGuiWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	nguAns := VisionGet("/gui?w=" paths, timeoutMs, true)
+	if (nguAns = "")
+		{
+		NavGuiWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGuiWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavGuiWaitUntil := 0
+	nguOut := {rootW: "", rootH: "", win: {}, box: {shown: 0, title: "", caption: "", titleKey: "", captionKey: ""}, btns: []}
+	Loop, Parse, nguAns, `n, `r
+		{
+		nguF := StrSplit(A_LoopField, "|")
+		if (nguF[1] = "none")
+			{
+			NavGuiWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (nguF[1] = "root")
+			nguOut.rootW := NavNum(nguF[2]), nguOut.rootH := NavNum(nguF[3])
+		else if (nguF[1] = "win" && nguF.Length() >= 18)
+			nguOut.win[Trim(nguF[2])] := {found: Trim(nguF[3]) != "" ? 1 : 0, type: Trim(nguF[3]), shown: nguF[4] = "1" ? 1 : 0, l: NavNum(nguF[5]), t: NavNum(nguF[6])
+				, r: NavNum(nguF[7]), b: NavNum(nguF[8]), checked: NavNum(nguF[9]), greyed: NavNum(nguF[10]), text: Trim(nguF[11]), key: Trim(nguF[12])
+				, dups: NavNum(nguF[13]), pl: NavNum(nguF[14]), pt: NavNum(nguF[15]), pr: NavNum(nguF[16]), pb: NavNum(nguF[17]), matches: NavNum(nguF[18])}
+		else if (nguF[1] = "box")
+			nguOut.box := {shown: nguF[2] = "1" ? 1 : 0, title: Trim(nguF[3]), caption: Trim(nguF[4]), titleKey: Trim(nguF[5]), captionKey: Trim(nguF[6]), count: NavNum(nguF[7])}
+		else if (nguF[1] = "btn" && nguF.Length() >= 9)
+			nguOut.btns.Push({name: Trim(nguF[2]), label: Trim(nguF[3]), l: NavNum(nguF[4]), t: NavNum(nguF[5]), r: NavNum(nguF[6]), b: NavNum(nguF[7])
+				, key: Trim(nguF[8]), greyed: NavNum(nguF[9])})
+		}
+	if (nguOut.rootW = "" || nguOut.rootW <= 0 || nguOut.rootH = "" || nguOut.rootH <= 0)
+		{
+		NavGuiWhy := "an odd answer (no root line): " SubStr(RegExReplace(nguAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return nguOut
 	}
 
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob

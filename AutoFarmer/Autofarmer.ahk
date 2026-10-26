@@ -53,6 +53,8 @@ Menu, Tray, Add, % HkMenu("standby"), MenuWatch
 Menu, Tray, Add, Read wizard stats now, MenuStats
 Menu, Tray, Add, Record potion buying..., MenuPotionRoute
 Menu, Tray, Add, Buy potions now, MenuPotionRun
+Menu, Tray, Add, Quick sell the backpack now, MenuQuickSell
+Menu, Tray, Add, Quick sell rehearsal (stops at the confirmation), MenuQuickSellRehearse
 Menu, Tray, Add, Learn every card (a deck of one of each), MenuLearnAll
 Menu, Tray, Add, % HkMenu("restart"), MenuRestart
 Menu, Tray, Add, % HkMenu("quit"), MenuExit
@@ -185,6 +187,16 @@ PotionRun()
 PotionManual := 0
 if (mouseOwn)
 	MouseLetGo()
+return
+
+;The backpack quick sold for gold now - whether it's full or not (never in a dungeon) - or up to the confirmation only, read
+;and closed: nothing sold (QuickSell.ahk)
+MenuQuickSell:
+QsMenuNow(false)
+return
+
+MenuQuickSellRehearse:
+QsMenuNow(true)
 return
 
 MenuLogin:
@@ -594,6 +606,8 @@ loop,
 		if (inbattle = 1)
 			{
 			battles++
+			;(the backpack looked at after the bot's battle - QuickSell.ahk: noted before ResetVariables clears inbattle)
+			QsBattleEnd()
 			}
 		;(the mouse, if any of this takes it - potions, stats - goes back where it was at the end: mousereturn)
 		MouseGrab()
@@ -620,6 +634,9 @@ loop,
 		StatsAuto()
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
 		PotionCheck()
+		;The backpack full after the battle (Prospector Zeke's alert, the game's memory): quick sold for gold - quicksell,
+		;Settings: THE BACKPACK (QuickSell.ahk). Here, before the walker's step: walking waits while it runs
+		QsTick()
 		MouseLetGo()
 		;(the log's OneDrive copy, when it's on: a picture of the game every 2 minutes - LogMirrorSnap)
 		LogMirrorSnap(120000)
@@ -3084,19 +3101,19 @@ checkmana()
 	
 mobloop:
 if (loopmode == 1)
-	{	
+	{
 	Send, {s down}
 	s(1000)
 	Send, {s up}
-	ImageSearch, inventoryX, inventoryY, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\full.png")
-	if (Errorlevel == 0)
+	;(the backpack full and not sold - held for a dungeon's drops, quick sell failed or waiting: QuickSell.ahk's last look
+	;after the battle, by the game's memory. resources\full.png never existed - that search never found anything)
+	if (QsStillFull())
 		{
-		Respond("Error, Inventory Full. Preventing Time out.")
-		AlertSend("inventory", "backpack full", "The backpack is full - mob-loop farming has stopped (kept from timing out).")
+		AlertSend("inventory", "backpack full", "The backpack is full and wasn't quick sold - mob-loop farming has stopped (kept from timing out).")
 		afk()
 		loopmode := 0
 		return
-		}	
+		}
 	s(5000)
 	Send, {w down}
 	s(1000)
@@ -4348,6 +4365,7 @@ LogMirrorGameShown()
 #Include %A_ScriptDir%\Collect.ahk
 #Include %A_ScriptDir%\Network.ahk
 #Include %A_ScriptDir%\Decks.ahk
+#Include %A_ScriptDir%\QuickSell.ahk
 #Include %A_ScriptDir%\Hotkeys.ahk
 #Include %A_ScriptDir%\Spells.ahk
 #Include %A_ScriptDir%\..\AutoQuester\Walker.ahk
