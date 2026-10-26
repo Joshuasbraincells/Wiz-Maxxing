@@ -5093,7 +5093,7 @@ WalkNav(hScr, dScr)
 				wsSorted := Sort(wsSorted)
 				wsList := StrSplit(wsSorted, "`n")
 				WkWalkSpeed := wsList[Ceil(wsList.Length * 0.75)] + 0
-				TurnRadius := Min(900, Max(60, WkWalkSpeed / (TurnRate * 0.0174533)))
+				TurnRadius := V1Min(900, V1Max(60, V1Div(WkWalkSpeed, V1Mul(TurnRate, 0.0174533))))  ; (v1: TurnRate blank before WalkerInit - TurnRadius blank)
 				}
 			}
 		WalkNavMoveCheck(nav)
@@ -5472,7 +5472,7 @@ NavTurn(h)
 	;still steered by. Not checked yet: not till it agrees with the arrow, or the wizard turns or walks the way it says)
 	else if (ending = "not turning" && stillTurns >= 2 && WkNavChecked)
 		{
-		if (A_TickCount - WkNavTurnLog > 20000)
+		if V1Gt(V1Ago(WkNavTurnLog), 20000)  ; (v1: WkNavTurnLog blank before WalkerInit - false)
 			WkNavTurnLog := A_TickCount, WalkLog("memory turn: the wizard's facing didn't change with " key " held, twice - held by the game (a battle starting, a ride?): still steering by the game's memory")
 		;(out of battle a window can be what holds him - a shop X opened that Escape didn't close: its close button)
 		if (!inbattle)
@@ -5483,7 +5483,7 @@ NavTurn(h)
 		WkNavTrusted := 0, WkNavAgree := 0
 		WalkLog("memory turn: the wizard's facing didn't change with " key " held, twice - not steering by the game's memory till it agrees with the arrow again, or the wizard turns or walks the way it says")
 		}
-	else if (!WkNavTurns || (ending != "" && ending != "walking off" && ending != "focus lost" && A_TickCount - WkNavTurnLog > 60000))
+	else if (!WkNavTurns || (ending != "" && ending != "walking off" && ending != "focus lost" && V1Gt(V1Ago(WkNavTurnLog), 60000)))  ; (v1: WkNavTurnLog blank before WalkerInit - false)
 		{
 		if (ending != "")
 			WkNavTurnLog := A_TickCount
@@ -5492,7 +5492,7 @@ NavTurn(h)
 	;(turned a fair way, the way its heading said: which way round that is, is right)
 	if (ending != "wrong way" && ending != "not turning" && turned * h > 0 && Abs(turned) >= 15 && (!WkNavChecked || !WkNavTrusted))
 		WalkNavConfirm("holding " key " turned the wizard " Round(Abs(turned)) " degrees the way its heading said")
-	WkNavTurns += 1
+	WkNavTurns := V1N(WkNavTurns) + 1  ; (v1: += on a blank counted it as 0)
 	;(a long one - a window closed, the game's menu looked at: its time isn't walking without getting closer. 2026-10-25
 	;11:29:18: Unstick the moment the shop held him 11 s here was closed)
 	if (A_TickCount - downAt > 1500)

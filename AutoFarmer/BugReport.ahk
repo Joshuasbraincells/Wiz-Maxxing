@@ -23,10 +23,12 @@ BugShow()
 		bugPos := ""
 		if (DashHwnd && DashShown)
 			{
-			;(v1: a window that isn't there - blank, no error)
+			;(v1: a window that isn't there - blank, no error; v2's WinGetPos unsets its output variables before it
+			;throws - the blanks are set in the catch)
 			bugMm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
-			bugDx := "", bugDy := ""
 			try WinGetPos(&bugDx, &bugDy, , , "ahk_id " DashHwnd)
+			catch
+				bugDx := "", bugDy := ""
 			if (bugDx != "" && bugMm != -1)
 				bugPos := "x" bugDx + 60 " y" bugDy + 80 " "
 			}

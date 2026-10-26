@@ -945,9 +945,11 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 		;real click on the game's title bar always brings it up, and does nothing in the game
 		if (ErrorLevel)
 			{
-			;(v1: the window gone meanwhile - its place blank, and the sums with it blank: not >= 12)
-			winX := "", winY := "", winW := ""
+			;(v1: the window gone meanwhile - its place blank, and the sums with it blank: not >= 12; v2's WinGetPos
+			;unsets its output variables before it throws - the blanks are set in the catch)
 			try WinGetPos(&winX, &winY, &winW, , "ahk_id " gameWin)
+			catch
+				winX := "", winY := "", winW := ""
 			barX := V1Add(winX, V1FloorDiv(winW, 2)), barY := V1Add(winY, V1FloorDiv(V1Sub(GameTop, winY), 2))
 			;(v1: RcOnGame's DllCalls set ErrorLevel to 0 - once the title bar's point was looked at, covered or not, the
 			;check below let it on; only a click there whose wait failed, or no look at all, stopped it)

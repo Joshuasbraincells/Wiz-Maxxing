@@ -385,7 +385,7 @@ SpShowTab()
 	if (!DashShown)
 		DashToggle()
 	;(minimised - put away - it's shown again)
-	spMinMax := WinGetMinMax("ahk_id " DashHwnd)
+	spMinMax := V1Try(WinGetMinMax, "ahk_id " DashHwnd)  ; (v1: WinGet MinMax of a window not found - blank, no restore)
 	if (spMinMax = -1)
 		WinRestore("ahk_id " DashHwnd)
 	Dash["DashTabs"].Choose(3)
@@ -599,8 +599,12 @@ SpEditShow(hidden := false)
 	pos := ""
 	if (DashHwnd && DashShown)
 		{
-		mm := WinGetMinMax("ahk_id " DashHwnd)
-		WinGetPos(&dx, &dy, , , "ahk_id " DashHwnd)
+		;(v1: WinGet MinMax / WinGetPos of a window not found gave blanks - no place taken from it; v2 throws, and its
+		;WinGetPos unsets the output variables first - the blanks are set in the catch)
+		mm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
+		try WinGetPos(&dx, &dy, , , "ahk_id " DashHwnd)
+		catch
+			dx := "", dy := ""
 		if (dx != "" && mm != -1)
 			pos := "x" dx + 30 " y" dy + 60 " "
 		}

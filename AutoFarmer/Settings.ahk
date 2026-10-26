@@ -249,8 +249,12 @@ CfgShow()
 	if (DashHwnd && DashShown)
 		{
 		;(not a minimised dashboard's place: -32000)
-		cfgMm := WinGetMinMax("ahk_id " DashHwnd)
-		WinGetPos(&cfgDx, &cfgDy, , , "ahk_id " DashHwnd)
+		;(v1: WinGet MinMax / WinGetPos of a window not found gave blanks - no place taken from it; v2 throws, and its
+		;WinGetPos unsets the output variables first - the blanks are set in the catch)
+		cfgMm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
+		try WinGetPos(&cfgDx, &cfgDy, , , "ahk_id " DashHwnd)
+		catch
+			cfgDx := "", cfgDy := ""
 		if (cfgDx != "" && cfgMm != -1)
 			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " ", cfgAtX := cfgDx + 30, cfgAtY := cfgDy + 60
 		}
@@ -359,12 +363,16 @@ CfgShow()
 	Cfg.Title := "Wizard101 bot " BotVersion() " - settings"
 	Cfg.Show(cfgPos "AutoSize")
 	;(all of it on that monitor - its Save button too: moved up and left as far as it needs)
-	WinGetPos(&cfgWx, &cfgWy, &cfgWw, &cfgWh, "ahk_id " CfgHwnd)
+	;(v1: WinGetPos of a window not found - hidden, DetectHiddenWindows off - gave blanks: no move; v2 throws, and
+	;unsets the output variables first - the blanks are set in the catch)
+	try WinGetPos(&cfgWx, &cfgWy, &cfgWw, &cfgWh, "ahk_id " CfgHwnd)
+	catch
+		cfgWx := "", cfgWy := "", cfgWw := "", cfgWh := ""
 	if (cfgWx != "")
 		{
 		cfgNx := Max(cfgML, Min(cfgWx, cfgMR - cfgWw)), cfgNy := Max(cfgMT, Min(cfgWy, cfgMB - cfgWh))
 		if (cfgNx != cfgWx || cfgNy != cfgWy)
-			WinMove(cfgNx, cfgNy, , , "ahk_id " CfgHwnd)
+			try WinMove(cfgNx, cfgNy, , , "ahk_id " CfgHwnd)  ; (v1: WinMove on a window gone did nothing)
 		}
 	}
 
@@ -1196,7 +1204,11 @@ CfgViewToggle(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Fu
 		return
 		}
 	CfgVCount := CfgPending.Count
-	WinGetPos(&CfgReopenX, &CfgReopenY, , , "ahk_id " CfgHwnd)
+	;(v1: WinGetPos of a window not found gave blanks - CfgShow then took no place from them; v2 throws, and unsets
+	;the output variables first - the blanks are set in the catch)
+	try WinGetPos(&CfgReopenX, &CfgReopenY, , , "ahk_id " CfgHwnd)
+	catch
+		CfgReopenX := "", CfgReopenY := ""
 	V1Do(IniWrite, CfgSimple ? 0 : 1, A_ScriptDir "\dashboard.ini", "view", "settings")
 	Try Cfg.Destroy()
 	CfgHwnd := 0

@@ -827,9 +827,10 @@ DgDeckSet()
 	;(v1: a file that can't be read - blank, ErrorLevel 1; v2 throws)
 	made := V1Try(FileGetTime, file, "M")
 	text := V1FileRead(file)
-	text := RegExReplace(text, "m)^deck\|[^\r\n]*\R?", "")
+	;(v1's newline was `r`n only: in a file with bare `n lines its ^ didn't start a line there - (*CRLF) gives v1's)
+	text := RegExReplace(text, "m)(*CRLF)^deck\|[^\r\n]*\R?", "")
 	if (id != "")
-		text := RegExMatch(text, "m)^name\|") ? RegExReplace(text, "m)^(name\|[^\r\n]*\R?)", "$1deck|" id "`r`n", , 1) : "deck|" id "`r`n" text
+		text := RegExMatch(text, "m)(*CRLF)^name\|") ? RegExReplace(text, "m)(*CRLF)^(name\|[^\r\n]*\R?)", "$1deck|" id "`r`n", , 1) : "deck|" id "`r`n" text
 	;(written as it was read - the ANSI code page, as FileAppend recorded it - and its date kept: the list's Recorded)
 	;(v1's FileOpen gave no object when it couldn't open the file; v2 throws)
 	f := V1Try(FileOpen, file ".tmp", "w", "CP0")

@@ -586,8 +586,10 @@ DashSaveWin(hwnd, section)
 		return false
 	rc := Buffer(16, 0)
 	DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rc.Ptr)
-	x := "", y := ""
+	;(v2's WinGetPos unsets its output variables before it throws - the blanks are set in the catch)
 	try WinGetPos(&x, &y, , , "ahk_id " hwnd)
+	catch
+		x := "", y := ""
 	if (x = "")
 		return false
 	V1Do(IniWrite, x, A_ScriptDir "\dashboard.ini", section, "x")

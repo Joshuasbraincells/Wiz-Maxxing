@@ -322,6 +322,8 @@ KeyListFill()
 ;The picked action's id ("" none)
 KeyPicked()
 	{
+	if (!DashHwnd)
+		return ""  ; (v1: no dashboard - no list, no row picked; Dash is made only by DashInit)
 	;(v1: Gui, Dash:ListView, KeyList and back - v2 names the list)
 	lv := Dash["KeyList"]
 	row := lv.GetNext(0), id := ""
@@ -332,6 +334,9 @@ KeyPicked()
 
 KeySay(text)
 	{
+	;(v1: GuiControl, Dash:, KeyStatus with no dashboard did nothing - Dash is made only by DashInit)
+	if (!DashHwnd)
+		return
 	Dash["KeyStatus"].Value := text
 	}
 
