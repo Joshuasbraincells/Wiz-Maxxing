@@ -131,7 +131,8 @@ QsDungeonMark(zone := "")
 	qWas := QsIni("dungeon")
 	QsIniSet("dungeon", A_Now)
 	QsIniSet("markitems", "")
-	if (qWas = "")
+	;(the mark's kept with quick sell off too - said only with it on)
+	if (qWas = "" && QsMode())
 		QsLog("a dungeon (" (IsObject(DgRun) ? "the run '" DgRun.name "'" : DgRecording ? "being recorded" : "entered through its sigil" (zone != "" ? ": " zone : "")) ")"
 			. (QsAfterDungeon() ? " - its drops sold like any others ('...even with a dungeon's drops in it' is ticked)" : " - the next full backpack is held (its drops are the good gear): you're told, nothing's sold"))
 	}
@@ -407,13 +408,15 @@ QsZoneChange(from, to)
 		qDeep += 1
 	if (to = QsDgOut || to = WkSigilFromZone || qDeep >= 4)
 		{
-		if (qDeep)
+		if (qDeep && QsMode())
 			QsLog("out of the dungeon (" from " -> " to ")" (to = QsDgOut || to = WkSigilFromZone ? "" : " - taken as out after 4 deeper zones"))
 		QsDgZones := {}, QsDgOut := ""
 		return
 		}
 	QsDgZones[to] := 1
-	QsLog("a dungeon's deeper zone: " to " (from " from ") - never quick sold in")
+	;(kept with quick sell off too - said only with it on)
+	if (QsMode())
+		QsLog("a dungeon's deeper zone: " to " (from " from ") - never quick sold in")
 	QsDungeonMark(to)
 	}
 
@@ -595,9 +598,14 @@ QsAfter(r, manual)
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
 		}
-	;(not full by the game's own N/M: no look for 10 minutes - the count may still say full, if its calibration didn't stick)
+	;(not full by the game's own N/M: Zeke's alert not looked at again for 10 minutes (QsLookAt); a full count waits 10
+	;minutes only when the look's /bag (QsLastBag) still counts full with the calibration QsSteps just made - it didn't stick)
 	else if (r.res = "notfull")
-		QsLookAt := now, QsStill := 0, QsTryAt := now + 600000
+		{
+		QsLookAt := now, QsStill := 0
+		if (IsObject(QsLastBag) && QsDecide(QsLastBag, QsState()).full)
+			QsTryAt := now + 600000
+		}
 	;(a rehearsal - quicksell:2 - at most once an hour after battles; the mob loop not stopped for it)
 	else if (r.res = "rehearsed")
 		{
@@ -998,7 +1006,8 @@ QsConfirmOk(nums, pets, gold, pouch, gearMax, petMax, ByRef why, ByRef lost)
 ;when its count is the confirmation's and quicksellpets is on, else No). A Crowns box: nothing clicked, stopped
 QsConfirmSell(nums)
 	{
-	qMark := QsLogMark()
+	;(the sale looked for in the game's log from SELL on; a box's key from its own mark - moved on after a Yes)
+	qMark := QsLogMark(), qBoxMark := qMark
 	g := QsGui("QuickSellConfirmationWindow/SellButton")
 	w := IsObject(g) ? g.win["QuickSellConfirmationWindow/SellButton"] : ""
 	;(the Crown check round it kept tight: the window's own "Crown Equipment" / "Crown Furniture" labels are above it -
@@ -1021,11 +1030,14 @@ QsConfirmSell(nums)
 			return ""
 		if (g.box.shown)
 			{
-			qr := QsAnswerBox(g, "sell", qMark, nums.Pet.n, qSaid)
+			qr := QsAnswerBox(g, "sell", qBoxMark, nums.Pet.n, qSaid)
 			if (IsObject(qr))
 				return qr
 			if (qSaid != "Yes")
 				return QsFail("the box after SELL was answered " qSaid " - not sold")
+			;(a box after this one needs its own fresh key in the game's log - never the box just answered's; the sale's
+			;lines since SELL still count, so qMark stays)
+			qBoxMark := QsLogMark()
 			qt := A_TickCount
 			}
 		}
@@ -1241,6 +1253,9 @@ QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 	if (logKey = "GUI2_00000988" || logKey = "GUI2_00000989")
 		{
 		qN := QsPetsCount(qCap), qLogN := QsPetsCount(logMsg)
+		;(the shown box's own words must be a pets box's - the log's key alone may be an earlier box's: nothing clicked)
+		if (qN = "")
+			return {say: "", why: "a pets box by the game's log, but the shown box's own words aren't a pets box's (""" qCap """)"}
 		if (stage = "sell" && pets && qN != "" && petCount != "" && qN = petCount && (logMsg = "" || qLogN = qN)
 			&& (qCk = "" || qCk = "GUI2_00000988" || qCk = "GUI2_00000989") && QsHasLabel(btns, "Yes") = 1)
 			return {say: "Yes", why: "the pets box (" qN ", as the confirmation counted) - Yes: quicksellpets is on"}
@@ -1249,9 +1264,9 @@ QsBoxAnswer(box, logKey, btns, stage, pets, petCount, logMsg := "")
 				. (petCount != "" ? ", the confirmation " petCount : "") (pets ? "" : ", quicksellpets off") ") - No"}
 		return {say: "", why: "the pets box without one No button"}
 		}
-	;(an OK-only box that's safe to OK)
+	;(an OK-only box that's safe to OK - its own words shown, never the log's key alone)
 	qKey := box.captionKey != "" ? box.captionKey : logKey
-	if (RegExMatch(qKey, "^(GUI_NoQuickSell|GUI_NoQuickSellWhileShopping|GUI_00001109|GUI2_00001002|Housing_18)$") && btns.Length() = 1 && QsHasLabel(btns, "OK") = 1)
+	if (qCap != "" && RegExMatch(qKey, "^(GUI_NoQuickSell|GUI_NoQuickSellWhileShopping|GUI_00001109|GUI2_00001002|Housing_18)$") && btns.Length() = 1 && QsHasLabel(btns, "OK") = 1)
 		return {say: "OK", why: "a message to OK (" qKey ")"}
 	return {say: "", why: "a game message it doesn't know (" (qKey != "" ? qKey : "no key") ")"}
 	}
