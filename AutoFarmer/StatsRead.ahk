@@ -24,17 +24,17 @@ global SrHandsOff, SrStop
 ;set to it. got gets {damage, accuracy, critical, block, pierce}, "" for one that couldn't be read for
 ;sure. Opens the Spellbook (out of battle only), turns to the two stats pages and closes it again.
 ;Returns "" if it got that far, else why not
-StatsRead(ByRef school, ByRef got)
+StatsRead(&school, &got)
 	{
 	got := {}, SrStop := ""
 	SrSchools := ["fire", "ice", "storm", "myth", "life", "death", "balance", "shadow"]
 	s := UiScale, cx := GameLeft + GameW // 2, cy := GameTop + GameH // 2
 	if (school != "" && !SrColumn(school))
-		return "unknown school """ school """"
+		return "unknown school `"" school "`""
 	if (!SrLoadDigits())
 		return "couldn't load resources\stats\digits.txt"
 	;The Spellbook icon (bottom right) only shows out of battle
-	ImageSearch, bookX, bookY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % PicOpt("resources\roundfinish.png")
+	ErrorLevel := !ImageSearch(&bookX, &bookY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundfinish.png"))
 	if (ErrorLevel)
 		return "the Spellbook icon isn't showing (in a battle, or something over it?)"
 	;C opens the book straight at the character page (the game's ToggleCharStats key). If it doesn't (or
@@ -43,10 +43,10 @@ StatsRead(ByRef school, ByRef got)
 	tabNeeded := SrBookOpen(cx, cy)
 	if (!tabNeeded && SrOk())
 		{
-		Send, {c}
-		Loop, 8
+		Send("{c}")
+		Loop 8
 			{
-			Sleep, 300
+			Sleep(300)
 			if (SrBookOpen(cx, cy))
 				break
 			}
@@ -55,9 +55,9 @@ StatsRead(ByRef school, ByRef got)
 		{
 		DebugLog("  stats: C didn't open the book - clicking the Spellbook icon")
 		SrClick(bookX + Round(12 * s), bookY + Round(12 * s))
-		Loop, 10
+		Loop 10
 			{
-			Sleep, 300
+			Sleep(300)
 			if (SrBookOpen(cx, cy))
 				break
 			}
@@ -67,10 +67,10 @@ StatsRead(ByRef school, ByRef got)
 			return "the Spellbook didn't open"
 		tabNeeded := true
 		}
-	Sleep, 500
+	Sleep(500)
 	if (tabNeeded)
 		SrClick(cx + Round(450 * s), cy - Round(325 * s))
-	Sleep, 1000
+	Sleep(1000)
 	;Stats page 1: Damage / Resistance / Accuracy (the book turns its pages slowly, so it retries)
 	if (!SrCategory(cx + Round(20 * s), cy - Round(290 * s), "header_damage", "RESISTANCE", cx, cy))
 		{
@@ -122,12 +122,12 @@ SrOk()
 		return false
 	if (!WinActive("ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe"))
 		SrStop := "Wizard101 isn't the active window any more"
-	else if (SrHandsOff && (IsFunc("UserIdle") ? Func("UserIdle").Call() : A_TimeIdlePhysical) < 500)
+	else if (SrHandsOff && (IsFunc("UserIdle") ? UserIdle.Call() : A_TimeIdlePhysical) < 500)
 		SrStop := "you used the mouse or keyboard"
 	else
 		{
 		;A battle started (its Pass button is up): no more clicks or C
-		ImageSearch, px, py, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % PicOpt("resources\roundstart.png")
+		ErrorLevel := !ImageSearch(&px, &py, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundstart.png"))
 		if (ErrorLevel = 0)
 			SrStop := "a battle started"
 		}
@@ -150,17 +150,17 @@ SrColumn(school)
 StatsWrite(got, school, charID := "")
 	{
 	path := A_ScriptDir "\PlayerStats.txt"
-	FileRead, text, %path%
+	text := FileRead(path)
 	if (ErrorLevel || !InStr(text, ":"))
 		return "Couldn't read PlayerStats.txt, so nothing was changed."
 	lines := StrSplit(StrReplace(text, "`r"), "`n")
-	if (lines.Length() && lines[lines.Length()] = "")
+	if (lines.Length && lines[lines.Length] = "")
 		lines.Pop()
 	heading := "; ---- Read from your stats pages by StatsReader (per school: <school>.damage and .pierce are what the kill check uses for that school's wizard) ----"
 	headAt := 0
 	for i, ln in lines
 		if (InStr(ln, "; ---- Read from your stats page"))
-			headAt := i, lines[i] := heading
+			headAt := i, lines[i] := heading ;  V1toV2: Invalid Index errors?, try 'lines.Push(<val>)'
 	if (!headAt)
 		lines.Push(""), lines.Push(heading)
 	summary := "", failed := ""
@@ -176,7 +176,7 @@ StatsWrite(got, school, charID := "")
 		for i, ln in lines
 			if (RegExMatch(ln, "i)^\s*\Q" key "\E\s*:"))
 				{
-				lines[i] := key ":" val, found := true
+				lines[i] := key ":" val, found := true ;  V1toV2: Invalid Index errors?, try 'lines.Push(<val>)'
 				break
 				}
 		if (!found)
@@ -189,13 +189,13 @@ StatsWrite(got, school, charID := "")
 		for i, ln in lines
 			if (RegExMatch(ln, "i)^\s*\Q" school ".charid\E\s*:"))
 				{
-				lines[i] := school ".charid:" charID, found := true
+				lines[i] := school ".charid:" charID, found := true ;  V1toV2: Invalid Index errors?, try 'lines.Push(<val>)'
 				break
 				}
 		if (!found)
 			lines.Push(school ".charid:" charID)
 		}
-	FormatTime, now,, yyyy-MM-dd HH:mm
+	now := FormatTime(, "yyyy-MM-dd HH:mm")
 	note := "; StatsReader last read your " school " stats on " now
 	noteAt := 0, keepAt := 0
 	for i, ln in lines
@@ -206,18 +206,23 @@ StatsWrite(got, school, charID := "")
 			keepAt := i
 		}
 	if (noteAt)
-		lines[noteAt] := note
+		lines[noteAt] := note ;  V1toV2: Invalid Index errors?, try 'lines.Push(<val>)'
 	else
 		lines.InsertAt(keepAt ? keepAt + 1 : 3, note)
 	out := ""
 	for i, ln in lines
 		out .= ln "`r`n"
 	;A temporary copy first, so a failed write can't leave PlayerStats.txt empty
-	FileDelete, %path%.tmp
-	FileAppend, %out%, %path%.tmp
+	Try FileDelete(path ".tmp")
+	FileAppend(out, path ".tmp")
 	if (ErrorLevel)
 		return "Couldn't write PlayerStats.txt (is it open in another program?). Nothing was changed."
-	FileMove, %path%.tmp, %path%, 1
+	Try {
+		FileMove(path ".tmp", path, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	if (ErrorLevel)
 		return "Couldn't replace PlayerStats.txt (is it open in another program?). Nothing was changed."
 	return "Read the " school " wizard's stats into PlayerStats.txt:" (summary = "" ? "`n   (nothing)" : summary)
@@ -235,18 +240,18 @@ StatsCharID()
 		return charNow
 	readAt := A_TickCount
 	logPath := SrLogPath()
-	FileRead, text, %logPath%
-	at := InStr(text, "MSG_LoginComplete CharID:", false, 0)
-	charNow := (at && RegExMatch(SubStr(text, at, 80), "CharID:(\d+)", m)) ? m1 : ""
+	text := FileRead(logPath)
+	at := InStr(text, "MSG_LoginComplete CharID:", false, -1)
+	charNow := (at && RegExMatch(SubStr(text, (at)<1 ? (at)-1 : (at), 80), "CharID:(\d+)", &m)) ? m[1] : ""
 	return charNow
 	}
 
 SrLogPath()
 	{
-	WinGet, exePath, ProcessPath, ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe
+	exePath := WinGetProcessPath("ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe")
 	if (exePath != "")
 		{
-		SplitPath, exePath,, binDir
+		SplitPath(exePath, , &binDir)
 		if (FileExist(binDir "\WizardClient.log"))
 			return binDir "\WizardClient.log"
 		}
@@ -258,9 +263,9 @@ StatsSchoolOf(charID)
 	{
 	if (charID = "")
 		return ""
-	Loop, Read, %A_ScriptDir%\resources\characters.txt
-		if (RegExMatch(A_LoopReadLine, "^(\d+)\|(\w+)", m) && m1 = charID)
-			return m2
+	Loop Read, A_ScriptDir "\resources\characters.txt"
+		if (RegExMatch(A_LoopReadLine, "^(\d+)\|(\w+)", &m) && m[1] = charID)
+			return m[2]
 	return ""
 	}
 
@@ -276,11 +281,11 @@ StatsNoteSchool(school)
 	if (id = "" || StatsSchoolOf(id) = school)
 		return
 	path := A_ScriptDir "\resources\characters.txt", out := ""
-	Loop, Read, %path%
+	Loop Read, path
 		if (!RegExMatch(A_LoopReadLine, "^" id "\|"))
 			out .= A_LoopReadLine "`r`n"
-	FileDelete, %path%
-	FileAppend, % (out = "" ? "; Wizard101 characters (CharID from the game's log) and the school AutoFarmer saw each fight with`r`n" : out) id "|" school "`r`n", %path%
+	Try FileDelete(path)
+	FileAppend((out = "" ? "; Wizard101 characters (CharID from the game's log) and the school AutoFarmer saw each fight with`r`n" : out) id "|" school "`r`n", path)
 	DebugLog("  (character " id " is a " school " wizard - noted for StatsReader)")
 	}
 
@@ -292,33 +297,33 @@ SrClick(x, y)
 		return
 	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn; StatsReader has none)
 	if (IsFunc("MouseLockOn"))
-		Func("MouseLockOn").Call("stats")
-	MouseMove, x, y, 5
+		MouseLockOn.Call("stats")
+	MouseMove(x, y, 5)
 	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 	if (IsFunc("MouseLockMoved"))
-		Func("MouseLockMoved").Call()
-	Sleep, 120
-	Click
+		MouseLockMoved.Call()
+	Sleep(120)
+	Click()
 	if (IsFunc("MouseLockOff"))
-		Func("MouseLockOff").Call("stats")
-	Sleep, 150
+		MouseLockOff.Call("stats")
+	Sleep(150)
 	}
 
 SrCloseBook(cx, cy)
 	{
 	;The red X tab at the bottom of the book's tabs, else C (it toggles the character page)
-	Loop, 2
+	Loop 2
 		{
 		SrClick(cx + Round(450 * UiScale), cy + Round(322 * UiScale))
-		Sleep, 600
+		Sleep(600)
 		if (!SrBookOpen(cx, cy))
 			return
 		}
 	if (!SrOk())
 		return
 	DebugLog("  stats: the close tab didn't close the book - pressing C")
-	Send, {c}
-	Sleep, 600
+	Send("{c}")
+	Sleep(600)
 	if (SrBookOpen(cx, cy))
 		DebugLog("  stats: the book is still open")
 	}
@@ -327,7 +332,7 @@ SrCloseBook(cx, cy)
 SrBookOpen(cx, cy)
 	{
 	s := UiScale
-	ImageSearch, x, y, cx + Round(380 * s), cy + Round(250 * s), cx + Round(520 * s), cy + Round(400 * s), % PicOpt("resources\stats\tab_close.png", 30)
+	ErrorLevel := !ImageSearch(&x, &y, cx + Round(380 * s), cy + Round(250 * s), cx + Round(520 * s), cy + Round(400 * s), PicOpt("resources\stats\tab_close.png", 30))
 	return (ErrorLevel = 0)
 	}
 
@@ -338,15 +343,15 @@ SrBookOpen(cx, cy)
 SrCategory(x, y, header, word, cx, cy)
 	{
 	s := UiScale, x1 := cx + Round(60 * s), y1 := cy - Round(260 * s), x2 := cx + Round(400 * s), y2 := cy + Round(140 * s)
-	Loop, 3
+	Loop 3
 		{
 		if (!SrOk())
 			return false
 		SrClick(x, y)
-		Loop, 6
+		Loop 6
 			{
-			Sleep, 250
-			ImageSearch, hx, hy, x1, y1, x2, y2, % PicOpt("resources\stats\" header ".png", 30)
+			Sleep(250)
+			ErrorLevel := !ImageSearch(&hx, &hy, x1, y1, x2, y2, PicOpt("resources\stats\" header ".png", 30))
 			if (ErrorLevel = 0)
 				return true
 			if (A_Index >= 3)
@@ -370,7 +375,7 @@ SrGuessSchool(cx, cy)
 	s := UiScale, best := "", bestVal := -1, runnerUp := -1, all := "", missed := 0
 	for i, name in SrSchools
 		{
-		val := SrReadCell(cx + Round((6 + 46 * (i - 1)) * s), cy - Round(124 * s), Round(46 * s), Round(34 * s), score)
+		val := SrReadCell(cx + Round((6 + 46 * (i - 1)) * s), cy - Round(124 * s), Round(46 * s), Round(34 * s), &score)
 		all .= " " name "=" (val = "" ? "?" : val)
 		if (val = "" || score < 0.85)
 			{
@@ -394,7 +399,7 @@ SrGuessSchool(cx, cy)
 ;yet) is taken from OCR when both sizes agree. "" unless sure
 SrNumber(what, x, y, w, h)
 	{
-	pics := SrReadCell(x, y, w, h, score, marks)
+	pics := SrReadCell(x, y, w, h, &score, &marks)
 	t := OcrRect(x, y, w, h, "en", 3, lines, 2)
 	o3 := ErrorLevel ? "" : RegExReplace(t, "\D")
 	t := OcrRect(x, y, w, h, "en", 4, lines, 2)
@@ -420,7 +425,7 @@ SrLoadDigits()
 	if (!IsObject(SrDigitsRaw))
 		{
 		SrDigitsRaw := []
-		Loop, Read, %A_ScriptDir%\resources\stats\digits.txt
+		Loop Read, A_ScriptDir "\resources\stats\digits.txt"
 			{
 			if (SubStr(A_LoopReadLine, 1, 1) = ";" || A_LoopReadLine = "")
 				continue
@@ -428,7 +433,7 @@ SrLoadDigits()
 			SrDigitsRaw.Push({ch: p[1], w: p[2] + 0, h: p[3] + 0, v: StrSplit(p[4], ",")})
 			}
 		}
-	if (!SrDigitsRaw.Length())
+	if (!SrDigitsRaw.Length)
 		return false
 	if (IsObject(SrDigits) && SrDigitsAt = UiScale)
 		return true
@@ -438,10 +443,10 @@ SrLoadDigits()
 		tw := Round(d.w * UiScale), th := Round(d.h * UiScale)
 		vals := SrResample(d.v, d.w, d.h, tw, th)
 		n := tw * th, sum := 0
-		Loop, %n%
+		Loop n
 			sum += vals[A_Index]
 		mean := sum / n, ss := 0
-		Loop, %n%
+		Loop n
 			{
 			vals[A_Index] -= mean
 			ss += vals[A_Index] ** 2
@@ -457,10 +462,10 @@ SrResample(vals, w, h, tw, th)
 	if (tw = w && th = h)
 		return vals.Clone()
 	out := [], rx := w / tw, ry := h / th
-	Loop, %th%
+	Loop th
 		{
 		y0 := (A_Index - 1) * ry, y1 := A_Index * ry
-		Loop, %tw%
+		Loop tw
 			{
 			x0 := (A_Index - 1) * rx, x1 := A_Index * rx, sum := 0, area := 0
 			j := Floor(y0)
@@ -485,7 +490,7 @@ SrResample(vals, w, h, tw, th)
 ;Reads one number cell with the digit pictures. Returns the digits, or "" if it couldn't be read for
 ;sure; score = the weakest chosen digit's match (0..1), marks = how many separate marks of ink (runs of
 ;columns with ink) the digit band has
-SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
+SrReadCell(x, y, w, h, &score := "", &marks := "")
 	{
 	score := 0, marks := 0
 	g := SrInk(x, y, w, h)
@@ -493,11 +498,11 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 		return ""
 	;The digit band: the tallest run of rows with black ink in them
 	bestLen := 0, run := 0, start := 0
-	Loop, % h + 1
+	Loop h + 1
 		{
 		r := A_Index - 1, cnt := 0
 		if (r < h)
-			Loop, %w%
+			Loop w
 				cnt += g.black[r * w + A_Index]
 		if (r < h && cnt >= 2)
 			{
@@ -516,28 +521,28 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 		return ""
 	;Which columns have ink in the band (a digit starts next to one)
 	inkCol := []
-	Loop, %w%
+	Loop w
 		{
 		colX := A_Index - 1, ink := 0, r := b0 - 1
 		while (++r <= b1)
 			if (g.black[r * w + colX + 1])
 				ink := 1
-		inkCol[colX] := ink
+		inkCol[colX] := ink ;  V1toV2: Invalid Index errors?, try 'inkCol.Push(<val>)'
 		if (ink && !(colX && inkCol[colX - 1]))
 			marks += 1
 		}
 	;Sums of the ink (and of its square) over any window: integral images, (h + 1) x (w + 1)
 	iw := w + 1, s1 := [], s2 := []
-	Loop, % iw * (h + 1)
-		s1[A_Index] := 0, s2[A_Index] := 0
-	Loop, %h%
+	Loop iw * (h + 1)
+		s1[A_Index] := 0, s2[A_Index] := 0 ;  V1toV2: Invalid Index errors?, try 's1.Push(<val>)'
+	Loop h
 		{
 		r := A_Index, rowSum := 0, rowSq := 0
-		Loop, %w%
+		Loop w
 			{
 			v := g.gray[(r - 1) * w + A_Index], rowSum += v, rowSq += v * v
-			s1[r * iw + A_Index + 1] := s1[(r - 1) * iw + A_Index + 1] + rowSum
-			s2[r * iw + A_Index + 1] := s2[(r - 1) * iw + A_Index + 1] + rowSq
+			s1[r * iw + A_Index + 1] := s1[(r - 1) * iw + A_Index + 1] + rowSum ;  V1toV2: Invalid Index errors?, try 's1.Push(<val>)'
+			s2[r * iw + A_Index + 1] := s2[(r - 1) * iw + A_Index + 1] + rowSq ;  V1toV2: Invalid Index errors?, try 's2.Push(<val>)'
 			}
 		}
 	;Slide every digit picture across the band and keep the good matches. The pictures are mean-free,
@@ -563,10 +568,10 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 				if (spread <= 0 || d.norm <= 0)
 					continue
 				dot := 0, k := 0
-				Loop, % d.h
+				Loop d.h
 					{
 					base := (ty + A_Index - 1) * w + tx
-					Loop, % d.w
+					Loop d.w
 						dot += g.gray[base + A_Index] * d.v[++k]
 					}
 				ncc := dot / Sqrt(spread * d.norm ** 2)
@@ -577,7 +582,7 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 		}
 	;Best matches first, no two overlapping (1 px allowed)
 	chosen := []
-	while (cands.Length())
+	while (cands.Length)
 		{
 		bi := 1
 		for i, c in cands
@@ -591,7 +596,7 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 			chosen.Push(c)
 		}
 	;Every column with ink in the band must belong to a recognised digit
-	Loop, %w%
+	Loop w
 		{
 		colX := A_Index - 1
 		if (!inkCol[colX])
@@ -605,13 +610,13 @@ SrReadCell(x, y, w, h, ByRef score := "", ByRef marks := "")
 		}
 	;Left to right
 	text := "", used := {}, score := 1
-	Loop, % chosen.Length()
+	Loop chosen.Length
 		{
 		bi := 0
 		for j, k in chosen
 			if (!used[j] && (bi = 0 || k.x < chosen[bi].x))
 				bi := j
-		used[bi] := true, text .= chosen[bi].ch
+		used[bi] := true, text .= chosen[bi].ch ;  V1toV2: Invalid Index errors?, try 'used.Push(<val>)'
 		if (chosen[bi].s < score)
 			score := chosen[bi].s
 		}
@@ -625,11 +630,11 @@ SrInk(x, y, w, h)
 	{
 	hdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", hdc, "Ptr")
-	VarSetCapacity(bi, 40, 0)
-	NumPut(40, bi, 0, "UInt"), NumPut(w, bi, 4, "Int"), NumPut(-h, bi, 8, "Int")
-	NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")
+	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	NumPut("UInt", 40, bi, 0), NumPut("Int", w, bi, 4), NumPut("Int", -h, bi, 8)
+	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	bits := 0
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", &bi, "UInt", 0, "Ptr*", bits, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
 	if (!hbm)
 		{
 		DllCall("DeleteDC", "Ptr", mdc), DllCall("ReleaseDC", "Ptr", 0, "Ptr", hdc)
@@ -639,7 +644,7 @@ SrInk(x, y, w, h)
 	DllCall("BitBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Ptr", hdc, "Int", x, "Int", y, "UInt", 0x00CC0020)
 	DllCall("GdiFlush")
 	gray := [], blk := []
-	Loop, % w * h
+	Loop w * h
 		{
 		c := NumGet(bits + (A_Index - 1) * 4, "UInt")
 		r := (c >> 16) & 0xFF, gr := (c >> 8) & 0xFF, b := c & 0xFF
@@ -658,28 +663,28 @@ SrInk(x, y, w, h)
 SrSnap(what)
 	{
 	dir := A_Temp "\Wizard101 bot rounds"
-	FileCreateDir, %dir%
+	DirCreate(dir)
 	files := ""
-	Loop, Files, %dir%\stats_*.bmp
+	Loop Files, dir "\stats_*.bmp"
 		files .= A_LoopFileTimeModified "|" A_LoopFileName "`n"
-	Sort, files
+	files := Sort(files)
 	list := StrSplit(Trim(files, "`n"), "`n")
-	while (list.Length() >= 8)
-		FileDelete, % dir "\" StrSplit(list.RemoveAt(1), "|")[2]
+	while (list.Length >= 8)
+		Try FileDelete(dir "\" StrSplit(list.RemoveAt(1), "|")[2])
 	w := GameW, h := GameH
 	hdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", hdc, "Ptr")
-	VarSetCapacity(bi, 40, 0)
-	NumPut(40, bi, 0, "UInt"), NumPut(w, bi, 4, "Int"), NumPut(-h, bi, 8, "Int")
-	NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")
+	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	NumPut("UInt", 40, bi, 0), NumPut("Int", w, bi, 4), NumPut("Int", -h, bi, 8)
+	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	bits := 0
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", &bi, "UInt", 0, "Ptr*", bits, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
 	if (hbm)
 		{
 		obm := DllCall("SelectObject", "Ptr", mdc, "Ptr", hbm, "Ptr")
 		DllCall("BitBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Ptr", hdc, "Int", GameLeft, "Int", GameTop, "UInt", 0x00CC0020)
 		DllCall("GdiFlush")
-		FormatTime, stamp,, yyyyMMdd_HHmmss
+		stamp := FormatTime(, "yyyyMMdd_HHmmss")
 		bmp := FileOpen(dir "\stats_" what "_" stamp ".bmp", "w")
 		if (IsObject(bmp))
 			{

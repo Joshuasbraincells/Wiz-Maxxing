@@ -100,17 +100,17 @@ DiscardUnused()
 	if (DiscardedUnused || LastHandAnswer = "" || !Stat("discardunused") || LearnAll)
 		return 0
 	DiscardedUnused := 1
-	if (IsFunc("PlayerActing") && Func("PlayerActing").Call())
+	if (IsFunc("PlayerActing") && PlayerActing.Call())
 		return 0
 	most := StatOr("discardmax", 3) + 0
 	cards := []
-	Loop, Parse, LastHandAnswer, `n, `r
+	Loop Parse, LastHandAnswer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		;(not a card - the deck's back, the timer, a popup where a card should be: never clicked)
-		if (f.Length() < 12 || f[1] != "card" || (f.Length() >= 15 && f[15] = "0"))
+		if (f.Length < 12 || f[1] != "card" || (f.Length >= 15 && f[15] = "0"))
 			continue
-		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, l: f[2] + 0, w: f[4] + 0, tc: f.Length() >= 16 ? f[16] + 0 : 0})
+		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, l: f[2] + 0, w: f[4] + 0, tc: f.Length >= 16 ? f[16] + 0 : 0})
 		}
 	;(where the battle's own search found its cards this round - one of them learned again at another UI size, under
 	;its own name, is still that slot's card)
@@ -122,7 +122,7 @@ DiscardUnused()
 		if (o[1] == 1 && o[2] != "")
 			own.Push(o[2])
 	did := 0, i := 1
-	while (i <= cards.Length() && did < most)
+	while (i <= cards.Length && did < most)
 		{
 		c := cards[i]
 		if (InStr(c.known, "learned/") != 1)
@@ -157,7 +157,7 @@ DiscardUnused()
 			;(nor a bubble - a global - with your school's bubble slot free for it, or one the bot casts at its box by the game's
 			;hand this round - KillCalc.ahk BubbleMatches, LearnBubbleCast; one that doesn't boost your school, or the global
 			;put up already this battle: thrown away as before)
-			|| (lc.type = "bubble" && (LearnSlotFor(lc) != "" || (IsFunc("LearnBubbleCast") && Func("LearnBubbleCast").Call(lc))))
+			|| (lc.type = "bubble" && (LearnSlotFor(lc) != "" || (IsFunc("LearnBubbleCast") && LearnBubbleCast.Call(lc))))
 			;(2026-10-26: nor an absorb the bot casts - Tower Shield on (and useabsorb): its slot free for it, or the game's hand
 			;read (cast at its box on Tower Shield's turns - KillCalc.ahk AbsorbMem); nor a negative aura that adds damage taken
 			;(an Attenuate, flag boost= - a trap before, never thrown away; Starfall and Pathogen go as before); nor a Sharpened
@@ -173,8 +173,8 @@ DiscardUnused()
 			}
 		why := LearnWhyUnused(pid)
 		MoveToCard(Round(c.x), Round(c.y))
-		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
-		Click, right
+		s(Stats.Has("clickwait") ? Stats["clickwait"] : 40)
+		Click("right")
 		did += 1
 		DebugLog("  Discarded learned card " pid " - " why " (right-click at " Round(c.x) - GameLeft "," Round(c.y) - GameTop ")")
 		cards.RemoveAt(i)
@@ -217,10 +217,10 @@ LearnHitCards(answer)
 		return list
 	if (!IsObject(LearnHitFails))
 		LearnHitFails := {}
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 12 || f[1] != "card" || f[8] = 1 || (f.Length() >= 15 && f[15] = "0") || InStr(f[6], "learned/") != 1)
+		if (f.Length < 12 || f[1] != "card" || f[8] = 1 || (f.Length >= 15 && f[15] = "0") || InStr(f[6], "learned/") != 1)
 			continue
 		c := LearnCardOf(SubStr(f[6], 9))
 		if (!LearnIsHit(c))
@@ -228,11 +228,11 @@ LearnHitCards(answer)
 		;(the cost: its pips read - 0 on a hit is X-pip, all you have, at least one)
 		if (PipsNow >= 0 && c.pips != "" && !c.guess && PipsNow < Max(c.pips, 1))
 			continue
-		if (LearnHitFails.HasKey(c.id) && PipsNow <= LearnHitFails[c.id])
+		if (LearnHitFails.Has(c.id) && PipsNow <= LearnHitFails[c.id])
 			continue
 		e := {x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.45, id: c.id, c: c, rank: LearnHitRank(c)}
 		at := 1
-		while (at <= list.Length() && list[at].rank >= e.rank)
+		while (at <= list.Length && list[at].rank >= e.rank)
 			at++
 		list.InsertAt(at, e)
 		}
@@ -309,7 +309,7 @@ LearnName(c)
 	if (c.text != "")
 		{
 		w := StrSplit(c.text, " ")
-		return "(" w[1] (w.Length() > 1 ? " " w[2] : "") (w.Length() > 2 ? " " w[3] : "") ")"
+		return "(" w[1] (w.Length > 1 ? " " w[2] : "") (w.Length > 2 ? " " w[3] : "") ")"
 		}
 	return "?"
 	}
@@ -349,8 +349,8 @@ LearnSure(c)
 	else
 		p := 25, pw := "pips read"
 	if (user)
-		return {pct: k + v + p, why: "set by you" (c.type = "" ? ", kind not known" : "") (v = 0 && c.type != "" ? ", number not known" : "") (p < 25 ? ", " pw : "")}
-	return {pct: k + v + p, why: kw (vw != "" ? ", " vw : "") ", " pw}
+		return (AHKv1v2_Temp := {pct: k + v + p, why: "set by you" (c.type = "" ? ", kind not known" : "") (v = 0 && c.type != "" ? ", number not known" : "") (p < 25 ? ", " pw : "")}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+	return (AHKv1v2_Temp := {pct: k + v + p, why: kw (vw != "" ? ", " vw : "") ", " pw}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	}
 
 ;A card whose icon wasn't one the helper knows (a blade's is a charm's), whose text says it's a blade: "+25% to next
@@ -397,10 +397,10 @@ LearnWhyNot(c)
 	if ((c.type = "blade" || c.type = "trap") && LearnFlag(c, "boost") != "")
 		return "no free slot for a " c.type " that boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) (c.value != "" ? " at " c.value "%" : "")
 	;(a bubble: the slot is your school's - one that doesn't boost its damage isn't cast)
-	if (c.type = "bubble" && !(IsFunc("LearnBubbleFits") && Func("LearnBubbleFits").Call(c)))
+	if (c.type = "bubble" && !(IsFunc("LearnBubbleFits") && LearnBubbleFits.Call(c)))
 		return "a bubble that doesn't boost " (c.sch != "" ? c.sch "'s" : "your school's") " damage" (LearnFlag(c, "boost") != "" ? " (it boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) ")" : "") " - set its kind to Bubble on the Spells tab to use it"
 	;(the slot's learned card another global: only that one is the bubble - KillCalc.ahk BubbleSlotName, the catalog alone)
-	lwnSlot := (c.type = "bubble" && c.sch != "" && IsFunc("BubbleSlotName")) ? Func("BubbleSlotName").Call(c.sch) : ""
+	lwnSlot := (c.type = "bubble" && c.sch != "" && IsFunc("BubbleSlotName")) ? BubbleSlotName.Call(c.sch) : ""
 	if (lwnSlot != "" && lwnSlot != LearnFlag(c, "game") && lwnSlot != Trim(c.name))
 		return "no free slot for it - " c.sch "\bubble is " lwnSlot "'s (only that one is cast)"
 	if (c.type = "bubble")
@@ -414,12 +414,12 @@ LearnWhyNot(c)
 			. (LearnFlag(c, "boost") = "all" ? "damage" : StrReplace(LearnFlag(c, "boost"), "+", ", ") " damage")
 	if (c.type = "absorb")
 		return "no free slot for it (resources\absorb has a picture) - cast at its box by the game's hand on Tower Shield's turns (defending; the filler only one that costs no pips)"
-	lwnWant := ((c.type = "sharpen" || c.type = "potent") && IsFunc("LearnStatOf")) ? Func("LearnStatOf").Call(c.sch, c.type) : ""
+	lwnWant := ((c.type = "sharpen" || c.type = "potent") && IsFunc("LearnStatOf")) ? LearnStatOf.Call(c.sch, c.type) : ""
 	if (c.type = "sharpen" || c.type = "potent")
 		return (c.value != "" && lwnWant != "" && c.value + 0 < lwnWant + 0)
 			? "below the % PlayerStats.txt counts for it (" c.type ": " lwnWant ")" : "no free slot for it (resources\" c.type " has a picture)"
 	if (c.type = "prism")
-		return !(IsFunc("LearnPrismFits") && Func("LearnPrismFits").Call(c)) ? (LearnHasFlag(c, "mem") ? "a prism of another school (" LearnFlag(c, "school") ") - only your school's goes in " (c.sch != "" ? c.sch : "your school") "\convert"
+		return !(IsFunc("LearnPrismFits") && LearnPrismFits.Call(c)) ? (LearnHasFlag(c, "mem") ? "a prism of another school (" LearnFlag(c, "school") ") - only your school's goes in " (c.sch != "" ? c.sch : "your school") "\convert"
 			: "its school isn't sure (read off the card) - set its kind to Prism on the Spells tab to use it as " (c.sch != "" ? c.sch : "your school") "\convert")
 			: "no free slot for it (" c.sch "\convert has a picture)"
 	return "no free slot for it"
@@ -445,7 +445,7 @@ LearnInUse(c)
 ;grows to 620-815 hovered, over its neighbours): cut or read like that, it's learned wrong
 LearnMouseOnHand()
 	{
-	MouseGetPos, mx, my
+	MouseGetPos(&mx, &my)
 	return (Abs(mx - ScreenX) <= HandHalf && my >= ScreenY - Px(95) && my <= ScreenY + Px(85))
 	}
 
@@ -455,8 +455,8 @@ LearnMouseClear()
 	{
 	if (!LearnMouseOnHand())
 		return
-	MouseMove, ScreenX, Min(GameTop + Round(GameH * 0.4), ScreenY - Px(150)), MouseSpeedNow()
-	Sleep, 250
+	MouseMove(ScreenX, Min(GameTop + Round(GameH * 0.4), ScreenY - Px(150)), MouseSpeedNow())
+	Sleep(250)
 	VisionForget()
 	}
 
@@ -467,29 +467,29 @@ LearnAllToggle()
 	LearnAll := !LearnAll
 	if (LearnAll)
 		{
-		LearnAllFrom := LearnedCards.Length(), LearnAllSeen := LearnAllFrom, LearnAllRounds := 0, LearnAllIdle := 0, LearnAllEmpty := 0
+		LearnAllFrom := LearnedCards.Length, LearnAllSeen := LearnAllFrom, LearnAllRounds := 0, LearnAllIdle := 0, LearnAllEmpty := 0
 		DebugLog("Learn every card: on - in a battle it casts nothing (a heal when low), learns the hand, discards what it knows and passes, till the deck is used up")
-		TrayTip, Wizard101 bot, Learn every card: ON. Start a battle (an easy one) with the deck - it casts nothing`, learns each hand`, discards what it knows to draw new cards`, and passes., 10, 1
+		TrayTip("Wizard101 bot", "Learn every card: ON. Start a battle (an easy one) with the deck - it casts nothing, learns each hand, discards what it knows to draw new cards, and passes.", 1)
 		}
 	else
 		LearnAllDone("switched off")
 	if (IsFunc("DashLearnShow"))
-		Func("DashLearnShow").Call(LearnAll)
+		DashLearnShow.Call(LearnAll)
 	}
 
 ;The mode ends: says how many it learned
 LearnAllDone(why)
 	{
 	LearnAll := 0
-	got := (IsObject(LearnedCards) ? LearnedCards.Length() : 0) - LearnAllFrom
+	got := (IsObject(LearnedCards) ? LearnedCards.Length : 0) - LearnAllFrom
 	DebugLog("Learn every card: off (" why ") - " got " new card" (got = 1 ? "" : "s") " learned in " LearnAllRounds " round" (LearnAllRounds = 1 ? "" : "s"))
 	if (why != "switched off")
 		{
-		SoundPlay, *64
-		TrayTip, Wizard101 bot, % "Learn every card: done (" why ") - " got " new card" (got = 1 ? "" : "s") " learned. The bot plays normally again; with the deck used up, finish or flee this battle yourself.", 15, 1
+		SoundPlay("*64")
+		TrayTip("Wizard101 bot", "Learn every card: done (" why ") - " got " new card" (got = 1 ? "" : "s") " learned. The bot plays normally again; with the deck used up, "15, 1")
 		}
 	if (IsFunc("DashLearnShow"))
-		Func("DashLearnShow").Call(0)
+		DashLearnShow.Call(0)
 	}
 
 ;One round of it, after the hand's been read and learned (LastHandAnswer): right-clicks every card it knows
@@ -507,14 +507,14 @@ LearnAllRound()
 		return
 		}
 	cards := []
-	Loop, Parse, LastHandAnswer, `n, `r
+	Loop Parse, LastHandAnswer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 12 || f[1] != "card" || (f.Length() >= 15 && f[15] = "0"))
+		if (f.Length < 12 || f[1] != "card" || (f.Length >= 15 && f[15] = "0"))
 			continue
-		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, tc: (f.Length() >= 16 && f[16] = 1)})
+		cards.Push({x: f[2] + f[4] / 2, y: f[3] + f[5] * 0.6, known: f[6], grey: f[8] + 0, tc: (f.Length >= 16 && f[16] = 1)})
 		}
-	if (!cards.Length())
+	if (!cards.Length)
 		{
 		LearnAllEmpty += 1
 		DebugLog("  learn every card: no cards in hand (" LearnAllEmpty " round" (LearnAllEmpty = 1 ? "" : "s") ")")
@@ -523,7 +523,7 @@ LearnAllRound()
 		return
 		}
 	LearnAllEmpty := 0, did := 0, kept := 0, i := 1
-	while (i <= cards.Length())
+	while (i <= cards.Length)
 		{
 		c := cards[i]
 		;(nor a treasure card - discarding one uses it up - nor one you said never to discard)
@@ -534,8 +534,8 @@ LearnAllRound()
 			continue
 			}
 		MoveToCard(Round(c.x), Round(c.y))
-		s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
-		Click, right
+		s(Stats.Has("clickwait") ? Stats["clickwait"] : 40)
+		Click("right")
 		did += 1
 		cards.RemoveAt(i)
 		for k, o in cards
@@ -545,9 +545,9 @@ LearnAllRound()
 	CenterMouse()
 	;(nothing learned or discarded: the greyed-out ones it keeps aren't coming into colour)
 	before := LearnAllIdle
-	LearnAllIdle := (did = 0 && LearnedCards.Length() = LearnAllSeen) ? LearnAllIdle + 1 : 0
-	LearnAllSeen := LearnedCards.Length()
-	DebugLog("  learn every card: discarded " did ", kept " kept " greyed-out unknown" (kept = 1 ? "" : "s") " - " LearnedCards.Length() - LearnAllFrom " new so far")
+	LearnAllIdle := (did = 0 && LearnedCards.Length = LearnAllSeen) ? LearnAllIdle + 1 : 0
+	LearnAllSeen := LearnedCards.Length
+	DebugLog("  learn every card: discarded " did ", kept " kept " greyed-out unknown" (kept = 1 ? "" : "s") " - " LearnedCards.Length - LearnAllFrom " new so far")
 	if (LearnAllIdle >= 3)
 		LearnAllDone("nothing new for 3 rounds")
 	}
@@ -577,7 +577,7 @@ LearnCards(picFix := 1)
 				learnedPics .= ",learned/" c.id
 			}
 	here := LearnSetDir(false)
-	hereRel := SubStr(here, StrLen(A_WorkingDir) + 2)
+	hereRel := SubStr(here, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2))
 	;(no card zoomed up by the mouse when it's read)
 	LearnMouseClear()
 	answer := VisionGet("/hand?x1=" Round(ScreenX - HandHalf) "&y1=" Round(ScreenY - Px(75)) "&x2=" Round(ScreenX + HandHalf) "&y2=" Round(ScreenY + Px(150)) "&scale=" Round(UiScale, 3) "&pics=" VisionPicList() learnedPics "&learned=" LearnUri(learnedList) "&here=" LearnUri(hereRel) "&thumbs=" LearnUri(A_ScriptDir "\generated\hand"), 3000)
@@ -591,30 +591,30 @@ LearnCards(picFix := 1)
 		LearnSetDir(true)
 	;(the cards as the game's memory has them - read, not guessed - laid on the boxes: LearnMemHand)
 	mem := LearnMemHand(answer)
-	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length(), boxes := 0, notCards := 0, noPips := 0, onHand := 0, enchNew := 0
-	Loop, Parse, answer, `n, `r
+	placed := 0, fresh := 0, greyNew := 0, relook := 0, setsBefore := PicSets.Length, boxes := 0, notCards := 0, noPips := 0, onHand := 0, enchNew := 0
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 12 || f[1] != "card")
+		if (f.Length < 12 || f[1] != "card")
 			continue
 		boxes += 1
 		;(not a card where one should be - the deck's back, the floor, the timer, a popup: never learned, and not
 		;looked at again; vision.py)
-		if (f.Length() >= 15 && f[15] = "0")
+		if (f.Length >= 15 && f[15] = "0")
 			{
 			notCards += 1
 			continue
 			}
 		card := {left: f[2] + 0, top: f[3] + 0, known: f[6], grey: f[8] + 0, type: f[9], pips: f[11], same: f[13] + 0
-			, isCard: (f.Length() >= 16 && f[15] = 1), tc: (f.Length() >= 16 && f[16] = 1), mem: (IsObject(mem) && mem.HasKey(boxes)) ? mem[boxes] : ""}
+			, isCard: (f.Length >= 16 && f[15] = 1), tc: (f.Length >= 16 && f[16] = 1), mem: (IsObject(mem) && mem.Has(boxes)) ? mem[boxes] : ""}
 		;(the game's name of the card on a hit slot's picture - your own cut one too: its heads are read off the game's hand
 		;by it - KillCalc.ahk HitHeads; the newest wins)
-		if (IsObject(card.mem) && RegExMatch(card.known, "^(\w+)/(hit[1-4]|wand)$", lcSg) && lcSg1 = hitschool)
+		if (IsObject(card.mem) && RegExMatch(card.known, "^(\w+)/(hit[1-4]|wand)$", &lcSg) && lcSg[1] = hitschool)
 			{
 			if (!IsObject(SlotGame))
 				SlotGame := {}
 			if (SlotGame[card.known] != LearnMemGame(card.mem))
-				SlotGame[card.known] := LearnMemGame(card.mem), HeadsMemo := {}
+				SlotGame[card.known] := LearnMemGame(card.mem), HeadsMemo := {} ;  V1toV2: Invalid Index errors?, try 'SlotGame.Push(<val>)'
 			}
 		;(a slot's learned picture was just written - made see-through where this copy differs, or cut at
 		;this UI size - so the battle's own search finds the card if the hand's looked at again)
@@ -653,7 +653,7 @@ LearnCards(picFix := 1)
 		}
 	;(the learned cards you named that the game has in hand - any wizard's, never named by the game: put right -
 	;LearnMemNamed)
-	placed += IsFunc("LearnMemNamed") ? Func("LearnMemNamed").Call() : 0
+	placed += IsFunc("LearnMemNamed") ? LearnMemNamed.Call() : 0
 	if (enchNew)
 		DebugLog("  " enchNew " enchanted card(s) in hand the bot doesn't know by their picture - learned when they show up plain")
 	if (boxes && notCards = boxes)
@@ -665,7 +665,7 @@ LearnCards(picFix := 1)
 	if (onHand)
 		DebugLog("  " onHand " new card(s) in hand not learned this round: the mouse is on the hand (a card under it is drawn zoomed up)")
 	;(new pictures in a slot, or a new picture set: the helper and PicPath look again)
-	if (placed || PicSets.Length() != setsBefore)
+	if (placed || PicSets.Length != setsBefore)
 		{
 		PicMade := {}
 		VisionGet("/forget", 3000)
@@ -678,7 +678,7 @@ LearnCards(picFix := 1)
 LearnNew(card)
 	{
 	setDir := LearnSetDir()
-	FormatTime, stamp,, yyMMddHHmmss
+	stamp := FormatTime(, "yyMMddHHmmss")
 	id := "c" stamp "_" Mod(Round(card.left), 10000)
 	cut := Trim(VisionGet("/cut?left=" card.left "&top=" card.top "&scale=" Round(UiScale, 3) "&out=" LearnUri(setDir "\learned\" id), 3000), " `t`r`n")
 	;(only "OK" is a card saved: NOTCARD - the helper looked again and it isn't one - saves nothing)
@@ -702,9 +702,9 @@ LearnNew(card)
 		r.kind := ro.kind, r.value := ro.value, r.extra := ro.extra, r.two := ro.two
 		}
 	if (!fromGame && !r.two && r.text != "")
-		DebugLog("  the new card's text couldn't be read alike twice (""" r.text """) - " (r.kind = "" ? "its kind isn't known" : "its numbers count as unknown"))
+		DebugLog("  the new card's text couldn't be read alike twice (`"" r.text "`") - " (r.kind = "" ? "its kind isn't known" : "its numbers count as unknown"))
 	c := {id: id, sch: hitschool, type: r.kind, pips: fromGame ? r.pips : card.pips, guess: 0, value: r.value, target: (r.kind = "damage") ? 1 : 0, slot: ""
-		, scale: Round(UiScale, 3), dir: SubStr(setDir, StrLen(A_WorkingDir) + 2), when: A_Now, text: r.text, name: fromGame ? r.name : "", flags: "ok"}
+		, scale: Round(UiScale, 3), dir: SubStr(setDir, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)), when: A_Now, text: r.text, name: fromGame ? r.name : "", flags: "ok"}
 	if (card.type != "")
 		LearnSetFlag(c, "icon", card.type)
 	if (fromGame)
@@ -747,7 +747,7 @@ LearnNew(card)
 	LearnSave()
 	where := c.slot != "" ? "using it as " c.slot : "kept, not used (" LearnWhyNot(c) ")"
 	DebugLog("  learned a new card" (fromGame ? " (read from the game)" : "") ": " LearnDescribe(c) " - " where " (picture: " c.dir "\learned\" id ".card.png)")
-	TrayTip, Wizard101 bot, % "New card learned: " LearnDescribe(c) "`n" (c.slot != "" ? "Using it as " c.slot "." : "Kept, not used yet."), 5, 1
+	TrayTip("Wizard101 bot", "New card learned: " LearnDescribe(c) "`n" (c.slot != "" ? "Using it as " c.slot "." : "Kept, not used yet."), 1)
 	return got
 	}
 
@@ -771,7 +771,7 @@ LearnReadCard(card, icon, sch := "")
 		if (r.kind = "" || IsObject(agreed))
 			continue
 		key := r.kind "|" r.value
-		votes[key] := (votes.HasKey(key) ? votes[key] : 0) + 1
+		votes[key] := (votes.Has(key) ? votes[key] : 0) + 1 ;  V1toV2: Invalid Index errors?, try 'votes.Push(<val>)'
 		if (votes[key] >= 2)
 			agreed := r
 		}
@@ -825,10 +825,10 @@ LearnDotMark(text)
 LearnKindOf(text, icon, sch := "")
 	{
 	t := Trim(RegExReplace(RegExReplace(text, "[|/]", " "), "\s+", " "))
-	StringLower, low, t
+	low := StrLower(t)
 	none := {kind: "", value: "", extra: ""}
-	hasPct := RegExMatch(t, "O)([-+])?\s*(?<!\d)(\d{1,2}|100)\s*%", pm)
-	sign := hasPct ? pm.Value(1) : ""
+	hasPct := RegExMatch(t, "([-+])?\s*(?<!\d)(\d{1,2}|100)\s*%", &pm)
+	sign := hasPct ? pm[1] : ""
 	if (RegExMatch(low, "\bs[tl1]un\b") && icon != "damage" && icon != "aoe")
 		return {kind: "stun", value: "", extra: ""}
 	if (RegExMatch(low, "d[il1]spe[l1i]"))
@@ -839,45 +839,45 @@ LearnKindOf(text, icon, sch := "")
 		return {kind: "clear", value: "", extra: ""}
 	;(a global - a bubble: "Global: +25% Ice damage" as the game's memory writes it - never an aura or a blade for its %)
 	if (hasPct && RegExMatch(low, "gl[o0]ba[l1]"))
-		return {kind: "bubble", value: pm.Value(2) + 0, extra: ""}
+		return {kind: "bubble", value: pm[2] + 0, extra: ""}
 	;(a damage enchant - Strong, Giant, Monstrous, Gargantuan, Colossal, Epic: "+175 [fist] to 1 spell" - a number that
 	;isn't a % (OCR: "0175", "t175"), "spell" with no "next" / "all" / "enemies" / range / "per pip": the damage it adds,
 	;when it's one PlayerStats.txt knows (enchantN) - Epic's accuracy % besides is allowed)
 	if (icon != "heal" && icon != "ward" && RegExMatch(low, "\bsp\S{0,2}ll\b") && !RegExMatch(low, "n[eo]?xt|a[l1][l1]\s*(sp|en)|en[e3]m|\d\s*-\s*\d|per\s*p")
-		&& RegExMatch(t, "(?<![\d%])0?(\d{2,3})(?!\s*%|\d)", em) && LearnEnchantLevel(sch, em1 + 0))
-		return {kind: "enchant", value: em1 + 0, extra: ""}
+		&& RegExMatch(t, "(?<![\d%])0?(\d{2,3})(?!\s*%|\d)", &em) && LearnEnchantLevel(sch, em[1] + 0))
+		return {kind: "enchant", value: em[1] + 0, extra: ""}
 	if ((icon = "damage" || icon = "aoe" || icon = "") && !hasPct)
 		{
 		at := RegExMatch(t, "i)over\s*\d|(?<![a-z])o\S{0,2}r\s*\d|\(\s*\S{0,2}\s*\d\s*\)|r[o0]unds?\b|\brds\b")
 		head := at ? SubStr(t, 1, at - 1) : t
 		nums := [], p := 1
-		while (p := RegExMatch(head, "\d{2,}", nm, p))
-			nums.Push(nm + 0), p += StrLen(nm)
+		while (p := RegExMatch(head, "\d{2,}", &nm, (p)<1 ? (p)-1 : (p)))
+			nums.Push((nm&&nm[0]) + 0), p += StrLen((nm&&nm[0]))
 		;(an X-pip hit - "85 per pip", its cost an X: all your pips - a hit, one enemy or all, played as one: 2026-10-24)
 		if (RegExMatch(low, "per\s*p[il1]p"))
-			return {kind: (icon != "") ? icon : RegExMatch(low, "a[l1][l1]\s*enem") ? "aoe" : "damage", value: nums.Length() ? nums[1] : "", extra: "xpip"}
-		if (RegExMatch(head, "O)(\d+)\s*-\s*(\d+)", rm))
+			return (AHKv1v2_Temp := {kind: (icon != "") ? icon : RegExMatch(low, "a[l1][l1]\s*enem") ? "aoe" : "damage", value: nums.Length ? nums[1] : "", extra: "xpip"}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
+		if (RegExMatch(head, "(\d+)\s*-\s*(\d+)", &rm))
 			{
 			kd := (icon != "") ? icon : RegExMatch(low, "a[l1][l1]\s*enem") ? "aoe" : ""
-			return (kd = "") ? none : {kind: kd, value: LearnRangeFix(rm.Value(1), rm.Value(2)), extra: ""}
+			return (kd = "") ? none : {kind: kd, value: LearnRangeFix(rm[1], rm[2]), extra: ""}
 			}
-		if (at && nums.Length() = 1)
+		if (at && nums.Length = 1)
 			return {kind: "dot", value: "", extra: "dot=" nums[1]}
-		if (at && nums.Length() >= 2 && icon != "")
+		if (at && nums.Length >= 2 && icon != "")
 			return {kind: icon, value: nums[1], extra: "dot=" nums[2]}
-		if (!at && nums.Length() && icon != "")
+		if (!at && nums.Length && icon != "")
 			return {kind: icon, value: nums[1], extra: ""}
 		}
 	if (icon = "heal")
-		return {kind: "heal", value: RegExMatch(t, "\d{2,}", nm) ? nm + 0 : "", extra: ""}
+		return (AHKv1v2_Temp := {kind: "heal", value: RegExMatch(t, "\d{2,}", &nm) ? (nm&&nm[0]) + 0 : "", extra: ""}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	if (hasPct)
 		{
-		v := pm.Value(2) + 0
+		v := pm[2] + 0
 		nxt := RegExMatch(low, "n[eo]?xt")
 		if (icon = "ward")
 			return (sign = "-") ? {kind: "ward", value: v, extra: ""} : (sign = "+") ? {kind: "trap", value: v, extra: ""} : none
 		if (icon = "charm" && nxt && !InStr(low, "blade"))
-			return {kind: (sign = "-") ? "weakness" : "blade", value: v, extra: ""}
+			return (AHKv1v2_Temp := {kind: (sign = "-") ? "weakness" : "blade", value: v, extra: ""}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 		if (!nxt && sign != "-" && (RegExMatch(low, "a[l1][l1]\s*sp") || (sch != "" && InStr(low, sch))))
 			return {kind: "aura", value: v, extra: ""}
 		}
@@ -916,16 +916,16 @@ LearnSwaps(ds)
 	;(the digit at each place in "3856" goes with the one at the same place in "8365" - an object's keys "3" etc.
 	;would be numbers, never equal to a parsed character)
 	at := []
-	Loop, Parse, ds
+	Loop Parse, ds
 		if (InStr("3856", A_LoopField))
 			at.Push(A_Index)
 	out := []
-	Loop, % 1 << at.Length()
+	Loop 1 << at.Length
 		{
 		mask := A_Index - 1, s := ds, kk := 0
 		for i, pos in at
 			if (mask & (1 << (i - 1)))
-				s := SubStr(s, 1, pos - 1) SubStr("8365", InStr("3856", SubStr(ds, pos, 1)), 1) SubStr(s, pos + 1), kk += 1
+				s := SubStr(s, 1, pos - 1) SubStr("8365", (InStr("3856", SubStr(ds, (pos)<1 ? (pos)-1 : (pos), 1)))<1 ? (InStr("3856", SubStr(ds, (pos)<1 ? (pos)-1 : (pos), 1)))-1 : (InStr("3856", SubStr(ds, (pos)<1 ? (pos)-1 : (pos), 1))), 1) SubStr(s, (pos + 1)<1 ? (pos + 1)-1 : (pos + 1)), kk += 1
 		out.Push({n: s + 0, k: kk})
 		}
 	return out
@@ -935,18 +935,18 @@ LearnSwaps(ds)
 ;two digits or more ("400 for Self", "-50% to next" -> 50). "" none
 LearnValue(text, type := "")
 	{
-	if (RegExMatch(text, "O)(\d+)\s*-\s*(\d+)", m))
-		return LearnRangeFix(m.Value(1), m.Value(2))
-	if (RegExMatch(text, "\d{2,}", m))
-		return m + 0
+	if (RegExMatch(text, "(\d+)\s*-\s*(\d+)", &m))
+		return LearnRangeFix(m[1], m[2])
+	if (RegExMatch(text, "\d{2,}", &m))
+		return (m&&m[0]) + 0
 	return ""
 	}
 
 ;Flags besides a kind (LearnKindOf's extra) onto learned card c: "dot=<n>", "xpip"
 LearnSetExtra(c, extra)
 	{
-	if (RegExMatch(extra, "dot=(\d+)", m))
-		LearnSetFlag(c, "dot", m1)
+	if (RegExMatch(extra, "dot=(\d+)", &m))
+		LearnSetFlag(c, "dot", m[1])
 	if (InStr(extra, "xpip"))
 		LearnSetFlag(c, "xpip")
 	}
@@ -1006,7 +1006,7 @@ LearnApplyRead(c, r, how)
 		LearnUnplace(c, "it's " LearnKindLabel(c.type) " now (" how ")")
 	else if (c.slot != "" && c.value != oldValue)
 		{
-		if (RegExMatch(c.slot, "\\hit([1-4])$", hn) && !LearnHitFits(c, hn1))
+		if (RegExMatch(c.slot, "\\hit([1-4])$", &hn) && !LearnHitFits(c, hn[1]))
 			LearnUnplace(c, "its numbers now put it out of order with the other hits")
 		else
 			LearnStats(c)
@@ -1058,7 +1058,7 @@ LearnSeenAgain(card)
 			{
 			if (LearnMemWait[c.id] != memR.game)
 				{
-				LearnMemWait[c.id] := memR.game
+				LearnMemWait[c.id] := memR.game ;  V1toV2: Invalid Index errors?, try 'LearnMemWait.Push(<val>)'
 				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): the game says " memR.game " (" LearnKindLabel(memR.kind) ") - put in when it's seen so again")
 				memR := ""
 				}
@@ -1097,15 +1097,15 @@ LearnSeenAgain(card)
 		;(its kind or numbers weren't read for sure when it was learned - e.g. in a small window: read again, once a
 		;run at each UI size, two cards a round at most - never one you set on the Spells tab)
 		rk := c.id "|" Round(UiScale, 2)
-		if (!LearnHasFlag(c, "user") && !LearnHasFlag(c, "mem") && !IsObject(card.mem) && LearnRereadsLeft > 0 && !reread.HasKey(rk)
+		if (!LearnHasFlag(c, "user") && !LearnHasFlag(c, "mem") && !IsObject(card.mem) && LearnRereadsLeft > 0 && !reread.Has(rk)
 			&& (c.type = "" || c.text = "" || ((c.type = "damage" || c.type = "aoe" || c.type = "heal" || c.type = "enchant") && (c.value = "" || !LearnHasFlag(c, "two")))))
 			{
-			reread[rk] := 1, LearnRereadsLeft -= 1
+			reread[rk] := 1, LearnRereadsLeft -= 1 ;  V1toV2: Invalid Index errors?, try 'reread.Push(<val>)'
 			r := LearnReadCard(card, card.type != "" ? card.type : LearnIconOf(c), c.sch)
 			was := LearnDescribe(c)
 			if (LearnApplyRead(c, r, "read again"))
 				{
-				DebugLog("  learned card " c.id " read again (""" r.text """): " was " -> " LearnDescribe(c))
+				DebugLog("  learned card " c.id " read again (`"" r.text "`"): " was " -> " LearnDescribe(c))
 				changed := 1, got := 1
 				}
 			}
@@ -1120,7 +1120,7 @@ LearnSeenAgain(card)
 			}
 		;(a hit in a slot whose numbers changed: still in order with the other hits? Else out of it, and put
 		;where it fits - 1 either way: the pictures changed)
-		if (changed && RegExMatch(c.slot, "\\hit([1-4])$", hn) && !LearnHitFits(c, hn1))
+		if (changed && RegExMatch(c.slot, "\\hit([1-4])$", &hn) && !LearnHitFits(c, hn[1]))
 			{
 			LearnUnplace(c, "its numbers now put it out of order with the other hits")
 			got := 1
@@ -1156,19 +1156,19 @@ LearnMemHand(answer)
 		return ""
 		}
 	lmhBoxes := [], lmhN := 0
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		lmhF := StrSplit(A_LoopField, "|")
-		if (lmhF.Length() < 12 || lmhF[1] != "card")
+		if (lmhF.Length < 12 || lmhF[1] != "card")
 			continue
 		lmhN += 1
-		if (lmhF.Length() >= 15 && lmhF[15] = "0")
+		if (lmhF.Length >= 15 && lmhF[15] = "0")
 			continue
 		lmhBoxes.Push({n: lmhN, known: lmhF[6]})
 		}
-	if (lmhBoxes.Length() != lmhHand.cards.Length())
+	if (lmhBoxes.Length != lmhHand.cards.Length)
 		{
-		DebugLog("  the hand from the game's memory: " lmhHand.cards.Length() " card(s), the helper sees " lmhBoxes.Length() " card box(es) - not used this round")
+		DebugLog("  the hand from the game's memory: " lmhHand.cards.Length " card(s), the helper sees " lmhBoxes.Length " card box(es) - not used this round")
 		return ""
 		}
 	lmhOut := {}, lmhNames := ""
@@ -1181,36 +1181,36 @@ LearnMemHand(answer)
 		;the rest of the hand; said once a card)
 		if (lmhWas != "" && lmhWas != LearnMemGame(lmhM))
 			{
-			if (!saidOff.HasKey(lmhC.id))
-				saidOff[lmhC.id] := 1, DebugLog("  the hand from the game's memory: box " lmhI " is learned card " lmhC.id " (" lmhWas " in the game), the game has " LearnMemGame(lmhM) " there - that box left out (said once)")
+			if (!saidOff.Has(lmhC.id))
+				saidOff[lmhC.id] := 1, DebugLog("  the hand from the game's memory: box " lmhI " is learned card " lmhC.id " (" lmhWas " in the game), the game has " LearnMemGame(lmhM) " there - that box left out (said once)") ;  V1toV2: Invalid Index errors?, try 'saidOff.Push(<val>)'
 			continue
 			}
-		lmhOut[lmhB.n] := lmhM, lmhB.m := lmhM
+		lmhOut[lmhB.n] := lmhM, lmhB.m := lmhM ;  V1toV2: Invalid Index errors?, try 'lmhOut.Push(<val>)'
 		lmhNames .= (lmhNames = "" ? "" : ", ") LearnMemGame(lmhM) (lmhM.ench != "" ? " (" lmhM.ench ")" : "")
 		}
 	;(two or more boxes found as one learned card, the game holding them differently - a pet's or treasure copy with its
 	;own numbers: the memory only on the plain copy, else on none - the card isn't flipped from one to the other)
-	lmhBy := {}
+	lmhBy := map()
 	for lmhI, lmhB in lmhBoxes
 		if (lmhB.known != "" && IsObject(lmhB.m))
 			{
-			if (!lmhBy.HasKey(lmhB.known))
-				lmhBy[lmhB.known] := []
+			if (!lmhBy.Has(lmhB.known))
+				lmhBy[lmhB.known] := [] ;  V1toV2: Invalid Index errors?, try 'lmhBy.Push(<val>)'
 			lmhBy[lmhB.known].Push(lmhB)
 			}
 	for lmhK, lmhL in lmhBy
 		{
-		if (lmhL.Length() < 2)
+		if (lmhL.Length < 2)
 			continue
 		lmhDiff := 0, lmhA := lmhL[1].m
 		for lmhJ, lmhB in lmhL
-			if (lmhB.m.num != lmhA.num || lmhB.m.kind != lmhA.kind || lmhB.m.pips != lmhA.pips || lmhB.m.tc != lmhA.tc || lmhB.m.item != lmhA.item)
+			if (lmhB.m["num"] != lmhA.num || lmhB.m["kind"] != lmhA.kind || lmhB.m["pips"] != lmhA.pips || lmhB.m["tc"] != lmhA.tc || lmhB.m["item"] != lmhA.item)
 				lmhDiff := 1
 		if (!lmhDiff)
 			continue
 		lmhPlain := ""
 		for lmhJ, lmhB in lmhL
-			if (lmhPlain = "" && !lmhB.m.item && !lmhB.m.tc && lmhB.m.ench = "")
+			if (lmhPlain = "" && !lmhB.m["item"] && !lmhB.m["tc"] && lmhB.m["ench"] = "")
 				lmhPlain := lmhB.n
 		for lmhJ, lmhB in lmhL
 			if (lmhB.n != lmhPlain)
@@ -1233,7 +1233,7 @@ LearnMemHand(answer)
 LearnMemNamed()
 	{
 	lmnHand := VisionCards(1500, 3000)
-	if (!IsObject(lmnHand) || !lmnHand.cards.Length() || !IsObject(LearnedCards))
+	if (!IsObject(lmnHand) || !lmnHand.cards.Length || !IsObject(LearnedCards))
 		return 0
 	lmnReads := []
 	for lmnI, lmnM in lmnHand.cards
@@ -1249,7 +1249,7 @@ LearnMemNamed()
 			{
 			if (lmnNm != lmnE.r.name && lmnNm != lmnE.r.game)
 				continue
-			if ((lmnE.m.tc && !LearnHasFlag(lmnC, "tc")) || (lmnE.m.item && !LearnHasFlag(lmnC, "item")))
+			if ((lmnE.m["tc"] && !LearnHasFlag(lmnC, "tc")) || (lmnE.m["item"] && !LearnHasFlag(lmnC, "item")))
 				continue
 			lmnWas := LearnDescribe(lmnC)
 			lmnGot := LearnApplyMem(lmnC, lmnE.r)
@@ -1269,7 +1269,7 @@ LearnMemNamed()
 ;A card's name in the game, as flag game= keeps it: the name on the card (else the spell's own), printable, no , | $ \
 LearnMemGame(m)
 	{
-	return RegExReplace(LearnClean(m.display != "" ? m.display : m.name), "[,|$\\]")
+	return RegExReplace(LearnClean(m["display"] != "" ? m["display"] : m["name"]), "[,|$\\]")
 	}
 
 ;A card as the game's memory has it (VisionCards' card m) in the learner's words: {kind (LearnTypes' - one it doesn't
@@ -1282,22 +1282,19 @@ LearnMemGame(m)
 LearnMemRead(m)
 	{
 	;(no kind from the game - its effects cut short: unknown, not "keep"; sure 0: its kind and numbers aren't the game's)
-	lmrKind := (m.kind = "") ? "" : "keep"
+	lmrKind := (m["kind"] = "") ? "" : "keep"
 	for lmrI, lmrT in LearnTypes()
-		if (lmrT.kind = m.kind && m.kind != "xpip")
-			lmrKind := m.kind
-	lmrValue := InStr(",damage,aoe,heal,ward,blade,trap,aura,weakness,enchant,bubble,absorb,negaura,sharpen,potent,curse,charm,pips,", "," lmrKind ",") ? m.num : ""
-	lmrExtra := ((lmrKind = "damage" || lmrKind = "aoe" || lmrKind = "dot") && m.dot != "") ? "dot=" m.dot : ""
-	if (m.xpip)
+		if (lmrT.kind = m["kind"] && m["kind"] != "xpip")
+			lmrKind := m["kind"]
+	lmrValue := InStr(",damage,aoe,heal,ward,blade,trap,aura,weakness,enchant,bubble,absorb,negaura,sharpen,potent,curse,charm,pips,", "," lmrKind ",") ? m["num"] : ""
+	lmrExtra := ((lmrKind = "damage" || lmrKind = "aoe" || lmrKind = "dot") && m["dot"] != "") ? "dot=" m["dot"] : ""
+	if (m["xpip"])
 		lmrExtra .= (lmrExtra = "" ? "" : ",") "xpip"
 	lmrSch := ""
 	for lmrI, lmrS in LearnSchools()
-		if (lmrS = m.school)
+		if (lmrS = m["school"])
 			lmrSch := lmrS
-	return {kind: lmrKind, value: lmrValue, extra: lmrExtra, two: 0, text: LearnClean(m.text), name: LearnClean(m.display != "" ? m.display : m.name)
-		, game: LearnMemGame(m), school: lmrSch, pips: m.xpip ? 0 : m.pips, xpip: m.xpip ? 1 : 0, tc: m.tc ? 1 : 0, item: m.item ? 1 : 0
-		, sure: (m.kind != "") ? 1 : 0, heads: RegExMatch(m.heads, "^[a-z]+:\d+(,[a-z]+:\d+)*$") ? StrReplace(m.heads, ",", "+") : ""
-		, boost: IsFunc("LearnBoostSchools") ? Func("LearnBoostSchools").Call(m.boosts) : ""}
+	return (AHKv1v2_Temp := {kind: lmrKind, value: lmrValue, extra: lmrExtra, two: 0, text: LearnClean(m["text"]), name: LearnClean(m["display"] != "" ? m["display"] : m["name"]), AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	}
 
 ;What a blade, trap or aura boosts (the game's: /cards' boosts - "ice:35,storm:35,fire:35") as flag boost= keeps it: its
@@ -1308,13 +1305,13 @@ LearnBoostSchools(lbsText)
 	lbsOut := ""
 	if (lbsText = "" || lbsText = "?")
 		return ""
-	Loop, Parse, lbsText, `,
+	Loop Parse, lbsText, ","
 		{
-		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):\d+$", lbsM))
+		if (!RegExMatch(Trim(A_LoopField), "^([a-z]+):\d+$", &lbsM))
 			return ""
-		lbsOut .= (lbsOut = "" ? "" : "`n") lbsM1
+		lbsOut .= (lbsOut = "" ? "" : "`n") lbsM[1]
 		}
-	Sort, lbsOut, U
+	lbsOut := Sort(lbsOut, "U")
 	return InStr("`n" lbsOut "`n", "`nall`n") ? "all" : StrReplace(lbsOut, "`n", "+")
 	}
 
@@ -1379,8 +1376,8 @@ LearnApplyMem(c, r)
 		return 0
 	;(a blade or trap in a slot its schools aren't for - an Ice wizard's Elemental Blade, "+35% to next Ice, Storm, Fire
 	;spell", went in ice\blade: out of it, and put where they say - LearnSeenAgain, LearnBoostSlot)
-	if (!lamUser && c.slot != "" && LearnFlag(c, "boost") != "" && IsFunc("LearnBoostSlotOf") && Func("LearnBoostSlotIs").Call(c.slot)
-		&& Func("LearnBoostSlotOf").Call(c) != c.slot)
+	if (!lamUser && c.slot != "" && LearnFlag(c, "boost") != "" && IsFunc("LearnBoostSlotOf") && LearnBoostSlotIs.Call(c.slot)
+		&& LearnBoostSlotOf.Call(c) != c.slot)
 		return LearnUnplace(c, "the game says it boosts " LearnFlag(c, "boost")) ? 2 : 1
 	;(a Reshuffle stays in its own slot - only a Reshuffle gets it - whatever kind the game gives it: keep before 2026-10-26,
 	;manipulation since)
@@ -1388,7 +1385,7 @@ LearnApplyMem(c, r)
 		return LearnUnplace(c, "the game says it's " LearnKindLabel(c.type)) ? 2 : 1
 	if (c.slot != "" && (c.value != lamValue || c.pips != lamPips))
 		{
-		if (RegExMatch(c.slot, "\\hit([1-4])$", lamHn) && !LearnHitFits(c, lamHn1))
+		if (RegExMatch(c.slot, "\\hit([1-4])$", &lamHn) && !LearnHitFits(c, lamHn[1]))
 			return LearnUnplace(c, "its numbers from the game put it out of order with the other hits") ? 2 : 1
 		LearnStats(c)
 		}
@@ -1413,40 +1410,74 @@ LearnPlace(c)
 		DebugLog("  learned card " c.id ": its picture " src ".png is missing - not put in " slot)
 		return 0
 		}
-	SplitPath, dest,, destDir
-	FileCreateDir, %destDir%
-	FileCreateDir, % A_WorkingDir "\backups"
+	SplitPath(dest, , &destDir)
+	DirCreate(destDir)
+	DirCreate(A_WorkingDir "\backups")
 	;(what was there - only an old placeholder, or the slot would have counted as taken - is kept in backups\)
 	if (FileExist(dest ".png"))
-		FileCopy, %dest%.png, % A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" (c.dir = "" ? "main" : c.dir) ", before learned card " c.id ").png", 1
-	FileCopy, %src%.png, %dest%.png, 1
+	{
+		Try {
+			FileCopy(dest ".png", A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" (c.dir = "" ? "main" : c.dir) ", before learned card " c.id ").png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
+	}
+	Try {
+		FileCopy(src ".png", dest ".png", 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	if (ErrorLevel || !LearnSameFile(src ".png", dest ".png"))
 		{
 		DebugLog("  couldn't copy learned card " c.id " to " dest ".png")
 		return 0
 		}
-	FileCopy, %src%.raw.png, %dest%.raw.png, 1
+	Try {
+		FileCopy(src ".raw.png", dest ".raw.png", 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	;(and in the other picture sets it's been cut in - at another UI size: the slot's picture there too, as the
 	;helper does for a card learned in a slot already; the slot is free in every set, or it wouldn't be here)
-	Loop, Files, % A_WorkingDir "\ui*", D
+	Loop Files, A_WorkingDir "\ui*", "D"
 		{
-		if (A_LoopFileFullPath = setDir || !LearnIsSet(A_LoopFileName) || !FileExist(A_LoopFileFullPath "\learned\" c.id ".png"))
+		if (A_LoopFilePath = setDir || !LearnIsSet(A_LoopFileName) || !FileExist(A_LoopFilePath "\learned\" c.id ".png"))
 			continue
-		other := A_LoopFileFullPath "\" slot
+		other := A_LoopFilePath "\" slot
 		;(a real picture there - cut at that size: an enchant's slot is handed out while one's cut at another size -
 		;stays; the card's own there is used by the helper as its learned picture anyway)
 		if (LearnRealPic(other ".png"))
 			continue
-		SplitPath, other,, otherDir
-		FileCreateDir, %otherDir%
+		SplitPath(other, , &otherDir)
+		DirCreate(otherDir)
 		if (FileExist(other ".png"))
-			FileCopy, %other%.png, % A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" A_LoopFileName ", before learned card " c.id ").png", 1
-		FileCopy, % A_LoopFileFullPath "\learned\" c.id ".png", %other%.png, 1
-		FileCopy, % A_LoopFileFullPath "\learned\" c.id ".raw.png", %other%.raw.png, 1
+		{
+			Try {
+				FileCopy(other ".png", A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" A_LoopFileName ", before learned card " c.id ").png", 1)
+				ErrorLevel := 0
+			} Catch as Err {
+				ErrorLevel := Err.Extra
+			}
+		}
+		Try {
+			FileCopy(A_LoopFileFullPath "\learned\" c.id ".png", other ".png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
+		Try {
+			FileCopy(A_LoopFileFullPath "\learned\" c.id ".raw.png", other ".raw.png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
 		}
 	;(pictures made from what was there before)
-	Loop, Files, % A_WorkingDir "\generated\ui*", D
-		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
+	Loop Files, A_WorkingDir "\generated\ui*", "D"
+		Try FileDelete(A_LoopFilePath "\" slot ".bmp")
 	LearnFreeCache := {}
 	;(numbers you had for the slot are kept too - put back when it's taken out)
 	LearnStatsKeep(c.sch, slot, c.id)
@@ -1474,7 +1505,7 @@ LearnBubbleFits(c)
 		return false
 	if (LearnHasFlag(c, "user"))
 		return true
-	return IsFunc("BubbleHelps") && Func("BubbleHelps").Call(LearnFlag(c, "boost"), c.sch)
+	return IsFunc("BubbleHelps") && BubbleHelps.Call(LearnFlag(c, "boost"), c.sch)
 	}
 
 ;Whether learned bubble c in no slot is one the battle casts at its card box by the game's hand this round (KillCalc.ahk
@@ -1490,10 +1521,10 @@ LearnBubbleCast(c)
 	lbcG := LearnFlag(c, "game"), lbcNm := (lbcG != "") ? lbcG : Trim(c.name)
 	if (BubbleUp != "" && lbcNm = BubbleUp)
 		return false
-	lbcSlot := Func("BubbleSlotName").Call(hitschool)
+	lbcSlot := BubbleSlotName.Call(hitschool)
 	if (lbcSlot != "")
 		return lbcNm = lbcSlot
-	return Func("BubbleHelps").Call(LearnFlag(c, "boost"), hitschool)
+	return BubbleHelps.Call(LearnFlag(c, "boost"), hitschool)
 	}
 
 LearnSlotFor(c)
@@ -1513,7 +1544,7 @@ LearnSlotFor(c)
 			return (!c.guess && (LearnHasFlag(c, "tc") || LearnHasFlag(c, "item")) && !LearnHasFlag(c, "xpip") && LearnFree(sch "\wand")) ? sch "\wand" : ""
 		;(only where it keeps hit1-3 weakest to strongest - the battle casts hit3 first, then hit2, hit1 -
 		;else it's kept out of use rather than cast before a stronger hit; LearnHitFits)
-		Loop, 3
+		Loop 3
 			if (LearnFree(sch "\hit" A_Index) && LearnHitFits(c, A_Index))
 				return sch "\hit" A_Index
 		;(hit4 - cast on bosses only - for a one-enemy hit stronger than all of them: one for all enemies kept
@@ -1526,7 +1557,7 @@ LearnSlotFor(c)
 		{
 		if (c.pips = "")
 			return ""
-		Loop, 2
+		Loop 2
 			if (LearnFree(sch "\heal" A_Index))
 				return sch "\heal" A_Index
 		return ""
@@ -1537,7 +1568,7 @@ LearnSlotFor(c)
 	;your school's damage as the game read it (flag boost=: your school's or every school's), or one you set as a bubble on
 	;the Spells tab; a global that only changes healing or pierce, or boosts another school, is kept, not used)
 	if (kd = "bubble")
-		return (sch != "" && IsFunc("LearnBubbleFits") && Func("LearnBubbleFits").Call(c) && LearnFree(sch "\bubble")) ? sch "\bubble" : ""
+		return (sch != "" && IsFunc("LearnBubbleFits") && LearnBubbleFits.Call(c) && LearnFree(sch "\bubble")) ? sch "\bubble" : ""
 	;(a blade or trap whose schools the game's memory read - flag boost=: the slot they say, LearnBoostSlot - an Elemental
 	;Blade in resources\elementalblade, a pet's Stormblade in storm\blade; not by its text, which put an Ice wizard's
 	;Elemental Blade - "+35% to next Ice, Storm, Fire spell" - in ice\blade)
@@ -1586,7 +1617,7 @@ LearnSlotFor(c)
 		return ((c.value = "" || want = "" || c.value + 0 >= want + 0) && LearnFree("resources\" kd)) ? "resources\" kd : ""
 		}
 	if (kd = "prism")
-		return (sch != "" && IsFunc("LearnPrismFits") && Func("LearnPrismFits").Call(c) && LearnFree(sch "\convert")) ? sch "\convert" : ""
+		return (sch != "" && IsFunc("LearnPrismFits") && LearnPrismFits.Call(c) && LearnFree(sch "\convert")) ? sch "\convert" : ""
 	return ""
 	}
 
@@ -1636,11 +1667,11 @@ LearnBoostSlot(c)
 ;storm.blade being the Storm wizard's own -, else the plain one (KillCalc.ahk BoostPct); none set: any
 LearnBoostPctOk(rel, pct, sch)
 	{
-	SplitPath, rel, lbpName, lbpDir
+	SplitPath(rel, &lbpName, &lbpDir)
 	if (lbpDir = "resources" || lbpDir = sch)
 		lbpWant := LearnStatOf(sch, lbpName)
 	else
-		lbpWant := Stats.HasKey(lbpName "." lbpDir) ? Stats[lbpName "." lbpDir] : LearnStatOf("", lbpName)
+		lbpWant := Stats.Has(lbpName "." lbpDir) ? Stats[lbpName "." lbpDir] : LearnStatOf("", lbpName)
 	return (lbpWant = "" || pct + 0 >= lbpWant + 0)
 	}
 
@@ -1674,9 +1705,9 @@ LearnBoostPicFix(card, f)
 	{
 	static misses := {}, said := {}, lookOf := {}
 	m := card.mem
-	if (!IsObject(m) || (m.kind != "blade" && m.kind != "trap" && m.kind != "ward") || card.grey || !card.isCard || card.tc || m.ench != "" || m.tc || m.item)
+	if (!IsObject(m) || (m["kind"] != "blade" && m["kind"] != "trap" && m["kind"] != "ward") || card.grey || !card.isCard || card.tc || m["ench"] != "" || m["tc"] || m["item"])
 		return 0
-	if (m.kind = "ward")
+	if (m["kind"] = "ward")
 		{
 		if (!TowerMatches([m]).Length())
 			return 0
@@ -1684,10 +1715,10 @@ LearnBoostPicFix(card, f)
 		}
 	else
 		{
-		b := BoostsParse(m.boosts)
+		b := BoostsParse(m["boosts"])
 		if (!IsObject(b))
 			return 0
-		slot := BoostSlotFor(m.kind, b.sch, b.pct, hitschool)
+		slot := BoostSlotFor(m["kind"], b.sch, b.pct, hitschool)
 		if (slot = "" || !LearnBoostPctOk(slot, b.pct, hitschool))
 			return 0
 		}
@@ -1710,21 +1741,21 @@ LearnBoostPicFix(card, f)
 		return 0
 	;(twice running for one box identity - the same picture or learned card known there: two misses on two different boxes
 	;or cards, a pairing that shifted, aren't twice)
-	if (!misses.HasKey(key) || misses[key].known != card.known)
-		misses[key] := {n: 0, known: card.known}
-	lookOf[key] := VisionLookN
+	if (!misses.Has(key) || misses[key].known != card.known)
+		misses[key] := {n: 0, known: card.known} ;  V1toV2: Invalid Index errors?, try 'misses.Push(<val>)'
+	lookOf[key] := VisionLookN ;  V1toV2: Invalid Index errors?, try 'lookOf.Push(<val>)'
 	misses[key].n += 1
 	if (misses[key].n < 2)
 		return 0
 	here := LearnSetDir(false), dest := here "\" slot
-	setName := (here = A_WorkingDir) ? "main" : SubStr(here, StrLen(A_WorkingDir) + 2)
+	setName := (here = A_WorkingDir) ? "main" : SubStr(here, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2))
 	;(the box's card as a learned card: known by its own picture - only one the game named so, and not one the learner is
 	;still waiting to see so again: LearnMemWait -, else the slot's card the game names so)
 	lc := ""
 	if (InStr(card.known, "learned/") = 1)
 		{
 		lc := LearnCardOf(SubStr(card.known, 9))
-		if (!IsObject(lc) || LearnFlag(lc, "game") != name || (IsObject(LearnMemWait) && LearnMemWait.HasKey(lc.id)))
+		if (!IsObject(lc) || LearnFlag(lc, "game") != name || (IsObject(LearnMemWait) && LearnMemWait.Has(lc.id)))
 			lc := ""
 		}
 	else
@@ -1741,9 +1772,9 @@ LearnBoostPicFix(card, f)
 		sow := (IsObject(sow) && LearnFlag(sow, "game") = name && FileExist(here "\learned\" sow.id ".png") && LearnSameCard(dest, here "\learned\" sow.id)) ? sow : ""
 		if ((own && LearnSameCard(dest, here "\learned\" lc.id)) || IsObject(sow))
 			{
-			if (!said.HasKey(slot))
+			if (!said.Has(slot))
 				{
-				said[slot] := 1, sh := LearnShadowSet(slot)
+				said[slot] := 1, sh := LearnShadowSet(slot) ;  V1toV2: Invalid Index errors?, try 'said.Push(<val>)'
 				DebugLog("  " slot ": its picture (" setName ") is the game's " name "'s own, yet the battle's look didn't find it twice running"
 					. (sh != "" ? " - the vision helper matches " sh "'s picture of it instead (it comes first in vision.py Library.masters' order)" : " (the card looks otherwise now and then?)")
 					. "; it's cast at its box by the game's hand")
@@ -1759,25 +1790,51 @@ LearnBoostPicFix(card, f)
 		return 0
 	src := here "\learned\" lc.id
 	back := A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" setName ", before learned card " lc.id ")"
-	SplitPath, dest,, destDir
-	FileCreateDir, %destDir%
-	FileCreateDir, % A_WorkingDir "\backups"
+	SplitPath(dest, , &destDir)
+	DirCreate(destDir)
+	DirCreate(A_WorkingDir "\backups")
 	hadOld := FileExist(dest ".png") ? 1 : 0
 	if (hadOld)
-		FileCopy, %dest%.png, %back%.png, 1
+	{
+		Try {
+			FileCopy(dest ".png", back ".png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
+	}
 	if (FileExist(dest ".raw.png"))
-		FileCopy, %dest%.raw.png, %back%.raw.png, 1
-	FileCopy, %src%.png, %dest%.png, 1
+	{
+		Try {
+			FileCopy(dest ".raw.png", back ".raw.png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
+	}
+	Try {
+		FileCopy(src ".png", dest ".png", 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	if (ErrorLevel || !LearnSameFile(src ".png", dest ".png"))
 		{
 		DebugLog("  couldn't copy learned card " lc.id " to " dest ".png")
 		return 0
 		}
 	if (FileExist(src ".raw.png"))
-		FileCopy, %src%.raw.png, %dest%.raw.png, 1
+	{
+		Try {
+			FileCopy(src ".raw.png", dest ".raw.png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
+	}
 	;(pictures made from what was there before)
-	Loop, Files, % A_WorkingDir "\generated\ui*", D
-		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
+	Loop Files, A_WorkingDir "\generated\ui*", "D"
+		Try FileDelete(A_LoopFilePath "\" slot ".bmp")
 	old := LearnCardInSlot(slot)
 	if (IsObject(old) && old.id != lc.id)
 		{
@@ -1842,9 +1899,9 @@ LearnEnchantLevel(sch, v)
 ;PlayerStats.txt's key for school sch's wizard (<sch>.key), else the plain key - not the school fought as now; "" none
 LearnStatOf(sch, key)
 	{
-	if (sch != "" && Stats.HasKey(sch "." key))
+	if (sch != "" && Stats.Has(sch "." key))
 		return Stats[sch "." key]
-	return Stats.HasKey(key) ? Stats[key] : ""
+	return Stats.Has(key) ? Stats[key] : ""
 	}
 
 ;Learned card c's number when it's sure: two reads agreed on it, you typed it (Spells tab) or it's the game's (flag mem)
@@ -1865,12 +1922,12 @@ LearnHitBase(c)
 	lhbAt := RegExMatch(c.text, "i)over\s*\d|(?<![a-z])o\S{0,2}r\s*\d|\(\s*\S{0,2}\s*\d\s*\)|r[o0]unds?\b|\brds\b")
 	lhbHead := lhbAt ? SubStr(c.text, 1, lhbAt - 1) : c.text
 	lhbSum := 0, lhbN := 0, p := 1
-	while (p := RegExMatch(lhbHead, "O)(\d+)\s*-\s*(\d+)", lhbM, p))
+	while (p := RegExMatch(lhbHead, "(\d+)\s*-\s*(\d+)", &lhbM, (p)<1 ? (p)-1 : (p)))
 		{
-		lhbLo := LearnRangeFix(lhbM.Value(1), lhbM.Value(2))
+		lhbLo := LearnRangeFix(lhbM[1], lhbM[2])
 		if (lhbLo != "")
 			lhbSum += lhbLo, lhbN += 1
-		p += StrLen(lhbM.Value(0))
+		p += StrLen(lhbM[0])
 		}
 	return lhbN > 1 ? lhbSum : known
 	}
@@ -1897,7 +1954,7 @@ LearnHitFits(c, n)
 	{
 	sch := c.sch, val := LearnValueKnown(c), pips := c.guess ? "" : c.pips
 	val := (val != "") ? val + 0 : 0
-	Loop, 4
+	Loop 4
 		{
 		m := A_Index
 		if (m = n || LearnFree(sch "\hit" m))
@@ -1950,14 +2007,21 @@ LearnUnplace(c, why)
 		pic := st.path "\" slot
 		if (!LearnSameCard(pic, st.path "\learned\" c.id))
 			continue
-		FileDelete, %pic%.png
-		FileDelete, %pic%.raw.png
+		Try FileDelete(pic ".png")
+		Try FileDelete(pic ".raw.png")
 		back := A_WorkingDir "\backups\" StrReplace(slot, "\", "_") " (" st.name ", before learned card " c.id ").png"
 		if (FileExist(back))
-			FileCopy, %back%, %pic%.png, 1
+		{
+			Try {
+				FileCopy(back, pic ".png", 1)
+				ErrorLevel := 0
+			} Catch as Err {
+				ErrorLevel := Err.Extra
+			}
 		}
-	Loop, Files, % A_WorkingDir "\generated\ui*", D
-		FileDelete, % A_LoopFileFullPath "\" slot ".bmp"
+		}
+	Loop Files, A_WorkingDir "\generated\ui*", "D"
+		Try FileDelete(A_LoopFilePath "\" slot ".bmp")
 	LearnFreeCache := {}
 	c.slot := ""
 	if (!LearnSlotHasPic(slot))
@@ -1969,7 +2033,7 @@ LearnUnplace(c, why)
 LearnIsSet(name)
 	{
 	sc := SubStr(name, 3)
-	if sc is not number
+	if !isNumber(sc)
 		return false
 	return (SubStr(name, 1, 2) = "ui" && sc >= 0.3 && sc <= 4)
 	}
@@ -1979,9 +2043,9 @@ LearnIsSet(name)
 LearnSets(first := "")
 	{
 	out := [{path: A_WorkingDir, name: "main"}]
-	Loop, Files, % A_WorkingDir "\ui*", D
+	Loop Files, A_WorkingDir "\ui*", "D"
 		if (LearnIsSet(A_LoopFileName))
-			out.Push({path: A_LoopFileFullPath, name: A_LoopFileName})
+			out.Push({path: A_LoopFilePath, name: A_LoopFileName})
 	if (first != "")
 		for i, st in out
 			if (st.name = first)
@@ -1995,14 +2059,14 @@ LearnSets(first := "")
 ;Whether files a and b are the same, byte for byte
 LearnSameFile(a, b)
 	{
-	FileGetSize, sa, %a%
+	sa := FileGetSize(a)
 	if (ErrorLevel || sa = "" || sa = 0)
 		return false
-	FileGetSize, sb, %b%
+	sb := FileGetSize(b)
 	if (ErrorLevel || sb != sa)
 		return false
-	FileRead, da, *c %a%
-	FileRead, db, *c %b%
+	da := FileRead(a, "c")
+	db := FileRead(b, "c")
 	return DllCall("msvcrt\memcmp", "Ptr", &da, "Ptr", &db, "UPtr", sa, "CDecl Int") = 0
 	}
 
@@ -2019,7 +2083,7 @@ LearnRealPic(file)
 	fh := FileOpen(file, "r")
 	if (!IsObject(fh))
 		return false
-	VarSetCapacity(hdr, 24, 0)
+	hdr := Buffer(24, 0) ; V1toV2: if 'hdr' is a UTF-16 string, use 'VarSetStrCapacity(&hdr, 24)' and replace all instances of 'hdr.Ptr' with 'StrPtr(hdr)'
 	got := fh.RawRead(hdr, 24)
 	fh.Close()
 	if (got < 24 || NumGet(hdr, 0, "UInt") != 0x474E5089)
@@ -2045,8 +2109,8 @@ LearnFree(rel)
 	;(asked once a round per slot - LearnCards empties the answers, as does a card put in a slot)
 	if (!IsObject(LearnFreeCache))
 		LearnFreeCache := {}
-	if (!LearnFreeCache.HasKey(rel))
-		LearnFreeCache[rel] := (Trim(VisionGet("/usable?rel=" LearnUri(rel ".png"), 3000)) = "0")
+	if (!LearnFreeCache.Has(rel))
+		LearnFreeCache[rel] := (Trim(VisionGet("/usable?rel=" LearnUri(rel ".png"), 3000)) = "0") ;  V1toV2: Invalid Index errors?, try 'LearnFreeCache.Push(<val>)'
 	return LearnFreeCache[rel]
 	}
 
@@ -2058,7 +2122,7 @@ LearnFree(rel)
 LearnStats(c)
 	{
 	slot := c.slot
-	SplitPath, slot, name
+	SplitPath(slot, &name)
 	key := c.sch "." name, pairs := []
 	if (InStr(name, "hit") = 1 || name = "wand")
 		{
@@ -2067,10 +2131,10 @@ LearnStats(c)
 		if (name != "wand" && c.pips != "")
 			pairs.Push([key "pips", c.pips])
 		pairs.Push([key "target", c.target])
-		lstHh := (v != "" && IsFunc("LearnHitHeads")) ? Func("LearnHitHeads").Call(c) : ""
-		lstMany := IsObject(lstHh) && lstHh.sure && lstHh.total = v && !(lstHh.heads.Count() = 1 && lstHh.heads.HasKey(c.sch))
+		lstHh := (v != "" && IsFunc("LearnHitHeads")) ? LearnHitHeads.Call(c) : ""
+		lstMany := IsObject(lstHh) && lstHh.sure && lstHh.total = v && !(lstHh.heads.Count = 1 && lstHh.heads.Has(c.sch))
 		for lstI, lstS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
-			pairs.Push([key lstS, (lstMany && lstHh.heads.HasKey(lstS)) ? lstHh.heads[lstS] : ""])
+			pairs.Push([key lstS, (lstMany && lstHh.heads.Has(lstS)) ? lstHh.heads[lstS] : ""])
 		}
 	else if (InStr(name, "heal") = 1 && c.pips != "")
 		{
@@ -2078,7 +2142,7 @@ LearnStats(c)
 		;(whether it heals an ally - a party battle's healer finds out: Autofarmer.ahk UseHeal)
 		pairs.Push([key "target", ""])
 		}
-	if (pairs.Length())
+	if (pairs.Length)
 		StatsSet(pairs, LearnStatsNote(c))
 	}
 
@@ -2092,7 +2156,7 @@ LearnStatsNote(c)
 ;(<school>.<hit><head's school>: LearnStats), a heal's pips ([] none)
 LearnSlotKeys(sch, rel)
 	{
-	SplitPath, rel, nm
+	SplitPath(rel, &nm)
 	if (RegExMatch(nm, "^hit\d$") || nm = "wand")
 		{
 		lskOut := (nm = "wand") ? [sch ".wand", sch ".wandtarget"] : [sch "." nm, sch "." nm "pips", sch "." nm "target"]
@@ -2110,7 +2174,7 @@ LearnSlotKeys(sch, rel)
 LearnStatsKeep(sch, rel, id)
 	{
 	keys := LearnSlotKeys(sch, rel)
-	if (!keys.Length())
+	if (!keys.Length)
 		return
 	file := A_WorkingDir "\backups\" StrReplace(rel, "\", "_") " (before learned card " id ").stats.txt"
 	if (FileExist(file))
@@ -2127,13 +2191,13 @@ LearnStatsKeep(sch, rel, id)
 LearnStatsBack(sch, rel, id)
 	{
 	keys := LearnSlotKeys(sch, rel)
-	if (!keys.Length())
+	if (!keys.Length)
 		return
 	file := A_WorkingDir "\backups\" StrReplace(rel, "\", "_") " (before learned card " id ").stats.txt"
 	old := FileExist(file) ? LearnReadLines(file) : ""
 	edits := []
 	for i, kk in keys
-		edits.Push([kk, IsObject(old) && old.HasKey(kk) && old[kk] != "-" ? old[kk] : ""])
+		edits.Push([kk, IsObject(old) && old.Has(kk) && old[kk] != "-" ? old[kk] : ""])
 	LearnStatsWrite(edits)
 	}
 
@@ -2150,7 +2214,7 @@ LearnOutOfBattle()
 		return 0
 	if (!IsObject(LearnRunDone))
 		LearnRunDone := {}
-	if (!LearnRunDone.HasKey("load"))
+	if (!LearnRunDone.Has("load"))
 		{
 		LearnRunDone.load := 1
 		if (!IsObject(LearnedCards))
@@ -2158,7 +2222,7 @@ LearnOutOfBattle()
 		LearnReconcile()
 		LearnRecheckTexts()
 		}
-	if (VisionOn && !LearnRunDone.HasKey("check"))
+	if (VisionOn && !LearnRunDone.Has("check"))
 		{
 		LearnRunDone.check := 1
 		if (LearnCheckCatalog())
@@ -2206,7 +2270,7 @@ LearnCheckCatalog()
 			continue
 			}
 		v := StrSplit(ans, "|")
-		if (v.Length() < 9 || (v[1] != "0" && v[1] != "1"))
+		if (v.Length < 9 || (v[1] != "0" && v[1] != "1"))
 			continue
 		looked += 1
 		if (v[1] = "0")
@@ -2235,7 +2299,7 @@ LearnCheckCatalog()
 				}
 			}
 		}
-	if (junk.Length() && junk.Length() = looked && looked >= 4)
+	if (junk.Length && junk.Length = looked && looked >= 4)
 		{
 		DebugLog("  learned cards checked: none of the " looked " looked like a card - that's the check failing, not the cards: nothing moved")
 		junk := []
@@ -2280,7 +2344,7 @@ LearnJunk(c, why, save := true)
 		LearnUnplace(c, why)
 	n := LearnMoveFiles(c, "learned junk")
 	LearnDrop(c)
-	DebugLog("  learned card " c.id " (" (c.text = "" ? "no text" : """" c.text """") "): " why " - its " n " file(s) moved to backups\learned junk")
+	DebugLog("  learned card " c.id " (" (c.text = "" ? "no text" : "`"" c.text "`"") "): " why " - its " n " file(s) moved to backups\learned junk")
 	if (save)
 		{
 		LearnSave()
@@ -2319,30 +2383,35 @@ LearnForget(c, why)
 LearnMoveFiles(c, folder)
 	{
 	into := A_WorkingDir "\backups\" folder
-	FileCreateDir, %into%
+	DirCreate(into)
 	n := 0
 	for i, st in LearnSets()
 		{
 		found := []
-		Loop, Files, % st.path "\learned\" c.id ".*"
-			found.Push(A_LoopFileFullPath)
-		if (!found.Length())
+		Loop Files, st.path "\learned\" c.id ".*"
+			found.Push(A_LoopFilePath)
+		if (!found.Length)
 			continue
-		FileCreateDir, % into "\" st.name
+		DirCreate(into "\" st.name)
 		for j, fp in found
 			{
-			SplitPath, fp, fn
+			SplitPath(fp, &fn)
 			to := into "\" st.name "\" fn
 			if (FileExist(to))
 				to := into "\" st.name "\" A_Now " " fn
-			FileMove, %fp%, %to%
+			Try {
+				FileMove(fp, to)
+				ErrorLevel := 0
+			} Catch as Err {
+				ErrorLevel := Err.Extra
+			}
 			if (ErrorLevel || !FileExist(to) || FileExist(fp))
 				DebugLog("  couldn't move " fp " to " to)
 			else
 				n += 1
 			}
 		}
-	FileAppend, % LearnLine(c) "`r`n", % into "\cards.txt"
+	FileAppend(LearnLine(c) "`r`n", into "\cards.txt")
 	return n
 	}
 
@@ -2374,7 +2443,7 @@ LearnRecheckTexts()
 		r.two := 0, r.text := ""
 		was := LearnDescribe(c)
 		if (LearnApplyRead(c, r, "its text classified again"))
-			n += 1, DebugLog("  learned card " c.id " (""" c.text """): " was " -> " LearnDescribe(c))
+			n += 1, DebugLog("  learned card " c.id " (`"" c.text "`"): " was " -> " LearnDescribe(c))
 		}
 	if (n)
 		LearnSave()
@@ -2408,12 +2477,22 @@ LearnReconcile()
 				if (!FileExist(own) || !LearnSameFile(pic ".raw.png", own))
 					continue
 				to := A_WorkingDir "\backups\learned strays\" st.name
-				FileCreateDir, %to%
+				DirCreate(to)
 				fn := StrReplace(rel, "\", "_") " (" c.id ")"
 				if (FileExist(to "\" fn ".png") || FileExist(to "\" fn ".raw.png"))
 					fn := fn " " A_Now
-				FileMove, %pic%.png, %to%\%fn%.png
-				FileMove, %pic%.raw.png, %to%\%fn%.raw.png
+				Try {
+					FileMove(pic ".png", to "\" fn ".png")
+					ErrorLevel := 0
+				} Catch as Err {
+					ErrorLevel := Err.Extra
+				}
+				Try {
+					FileMove(pic ".raw.png", to "\" fn ".raw.png")
+					ErrorLevel := 0
+				} Catch as Err {
+					ErrorLevel := Err.Extra
+				}
 				if (FileExist(pic ".raw.png"))
 					{
 					DebugLog("  learned card " c.id ": couldn't move its stray picture " pic ".raw.png")
@@ -2421,16 +2500,23 @@ LearnReconcile()
 					}
 				back := A_WorkingDir "\backups\" StrReplace(rel, "\", "_") " (" st.name ", before learned card " c.id ").png"
 				if (FileExist(back))
-					FileCopy, %back%, %pic%.png, 1
-				strays[rel] := c, moved += 1
+				{
+					Try {
+						FileCopy(back, pic ".png", 1)
+						ErrorLevel := 0
+					} Catch as Err {
+						ErrorLevel := Err.Extra
+					}
+				}
+				strays[rel] := c, moved += 1 ;  V1toV2: Invalid Index errors?, try 'strays.Push(<val>)'
 				DebugLog("  learned card " c.id " (" LearnDescribe(c) "): its picture was also " rel " in " st.name " (its slot: " (c.slot = "" ? "none" : c.slot) ") - moved to backups\learned strays\" st.name)
 				}
 			}
 		}
 	for rel, c in strays
 		{
-		Loop, Files, % A_WorkingDir "\generated\ui*", D
-			FileDelete, % A_LoopFileFullPath "\" rel ".bmp"
+		Loop Files, A_WorkingDir "\generated\ui*", "D"
+			Try FileDelete(A_LoopFilePath "\" rel ".bmp")
 		if (!LearnSlotHasPic(rel))
 			LearnStatsBack(c.sch, rel, c.id)
 		}
@@ -2514,7 +2600,7 @@ LearnQueue(job)
 ;arrangement put back ("u|<id>|<why>"). Out of battle only. Returns how many cards went into or out of a slot
 LearnArrangePending()
 	{
-	if (inbattle = 1 || !IsObject(LearnArrangeQueue) || !LearnArrangeQueue.Length())
+	if (inbattle = 1 || !IsObject(LearnArrangeQueue) || !LearnArrangeQueue.Length)
 		return 0
 	if (!IsObject(LearnedCards))
 		LearnLoad()
@@ -2552,7 +2638,7 @@ LearnArrangeNow(c)
 	{
 	static said := {}
 	sch := c.sch, have := LearnFileStats(), slots := [], free := ""
-	Loop, 3
+	Loop 3
 		{
 		n := A_Index, rel := sch "\hit" n, kk := sch ".hit" n
 		if (!LearnSlotHasPic(rel))
@@ -2561,17 +2647,17 @@ LearnArrangeNow(c)
 				free := n
 			continue
 			}
-		if (!have.HasKey(kk) || !have.HasKey(kk "pips") || Stats[kk "pips"] <= 0 || Stats[kk] <= 0 || (Stats.HasKey(kk "keep") && Stats[kk "keep"] = 1))
+		if (!have.Has(kk) || !have.Has(kk "pips") || Stats[kk "pips"] <= 0 || Stats[kk] <= 0 || (Stats.Has(kk "keep") && Stats[kk "keep"] = 1))
 			continue
 		o := LearnCardInSlot(rel)
-		slots.Push({n: n, from: n, value: Stats[kk] + 0, pips: Stats[kk "pips"] + 0, target: Stats.HasKey(kk "target") ? Stats[kk "target"] + 0 : 0
-			, hasTarget: have.HasKey(kk "target"), card: o, tc: IsObject(o) && LearnHasFlag(o, "tc")})
+		slots.Push({n: n, from: n, value: Stats[kk] + 0, pips: Stats[kk "pips"] + 0, target: Stats.Has(kk "target") ? Stats[kk "target"] + 0 : 0
+			, hasTarget: have.Has(kk "target"), card: o, tc: IsObject(o) && LearnHasFlag(o, "tc")})
 		}
 	nv := LearnValueKnown(c) + 0, np := c.pips + 0, nt := (c.type = "damage") ? 1 : 0
 	victim := "", why := ""
 	if (free = "")
 		{
-		if (!slots.Length())
+		if (!slots.Length)
 			why := "hit1-3 are all taken and none may move (X-pip, kept with hitNkeep:1, or their damage and pips aren't in PlayerStats.txt)"
 		else
 			{
@@ -2596,8 +2682,8 @@ LearnArrangeNow(c)
 			}
 		if (why != "")
 			{
-			if (!said.HasKey(c.id "|" why))
-				said[c.id "|" why] := 1, DebugLog("  learned card " c.id " (" LearnDescribe(c) "): no room made for it - " why)
+			if (!said.Has(c.id "|" why))
+				said[c.id "|" why] := 1, DebugLog("  learned card " c.id " (" LearnDescribe(c) "): no room made for it - " why) ;  V1toV2: Invalid Index errors?, try 'said.Push(<val>)'
 			return 0
 			}
 		}
@@ -2632,22 +2718,22 @@ LearnArrangeNow(c)
 ;Sorts list (of {value}) weakest first, keeping the order of equals
 LearnSortByValue(list)
 	{
-	Loop, % list.Length()
+	Loop list.Length
 		{
 		i := A_Index
 		while (i > 1 && list[i].value < list[i - 1].value)
-			t := list[i], list[i] := list[i - 1], list[i - 1] := t, i -= 1
+			t := list[i], list[i] := list[i - 1], list[i - 1] := t, i -= 1 ;  V1toV2: Invalid Index errors?, try 'list.Push(<val>)'
 		}
 	}
 
 ;Sorts an array of numbers, smallest first
 LearnSortNums(nums)
 	{
-	Loop, % nums.Length()
+	Loop nums.Length
 		{
 		i := A_Index
 		while (i > 1 && nums[i] < nums[i - 1])
-			t := nums[i], nums[i] := nums[i - 1], nums[i - 1] := t, i -= 1
+			t := nums[i], nums[i] := nums[i - 1], nums[i - 1] := t, i -= 1 ;  V1toV2: Invalid Index errors?, try 'nums.Push(<val>)'
 		}
 	}
 
@@ -2661,11 +2747,11 @@ LearnSortNums(nums)
 LearnLayout(c, place, victim)
 	{
 	sch := c.sch
-	FormatTime, stamp,, yyyyMMdd-HHmmss
+	stamp := FormatTime(, "yyyyMMdd-HHmmss")
 	snapName := "hits " sch " " stamp " (" c.id ")"
 	snap := A_WorkingDir "\backups\" snapName
 	sets := LearnSets(), names := ""
-	FileCreateDir, %snap%
+	DirCreate(snap)
 	if (ErrorLevel || !InStr(FileExist(snap), "D"))
 		{
 		DebugLog("  learned card " c.id ": couldn't make " snap " - nothing moved")
@@ -2675,7 +2761,7 @@ LearnLayout(c, place, victim)
 	for i, st in sets
 		{
 		names .= (names = "" ? "" : ",") st.name
-		Loop, 3
+		Loop 3
 			{
 			n := A_Index
 			for j, ext in [".png", ".raw.png"]
@@ -2683,8 +2769,13 @@ LearnLayout(c, place, victim)
 				from := st.path "\" sch "\hit" n ext
 				if (!FileExist(from))
 					continue
-				FileCreateDir, % snap "\" st.name
-				FileCopy, %from%, % snap "\" st.name "\hit" n ext, 1
+				DirCreate(snap "\" st.name)
+				Try {
+					FileCopy(from, snap "\" st.name "\hit" n ext, 1)
+					ErrorLevel := 0
+				} Catch as Err {
+					ErrorLevel := Err.Extra
+				}
 				if (ErrorLevel || !LearnSameFile(from, snap "\" st.name "\hit" n ext))
 					{
 					DebugLog("  learned card " c.id ": couldn't keep " from " in " snap " - nothing moved")
@@ -2696,7 +2787,12 @@ LearnLayout(c, place, victim)
 	keys := LearnHitKeys(sch)
 	before := LearnStatLines(keys)
 	LearnWriteLines(snap "\stats.txt", keys, before)
-	FileCopy, % A_WorkingDir "\PlayerStats.txt", % snap "\PlayerStats.txt", 1
+	Try {
+		FileCopy(A_WorkingDir "\PlayerStats.txt", snap "\PlayerStats.txt", 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	;(2. what goes where, set by set: a card that moves from the snapshot - a 3-way move never loses a file - c from
 	;its learned picture; where a set has no picture of who goes in, that slot's picture there goes - it'd be another
 	;card's - unless it's a placeholder)
@@ -2723,22 +2819,32 @@ LearnLayout(c, place, victim)
 		if (p.from = "")
 			continue
 		toPng := p.to ".png"
-		SplitPath, toPng,, toDir
-		FileCreateDir, %toDir%
-		FileCopy, % p.from ".png", % p.to ".png.arr", 1
+		SplitPath(toPng, , &toDir)
+		DirCreate(toDir)
+		Try {
+			FileCopy(p.from ".png", p.to ".png.arr", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
 		ok := ok && !ErrorLevel && LearnSameFile(p.from ".png", p.to ".png.arr")
 		if (p.raw)
 			{
-			FileCopy, % p.from ".raw.png", % p.to ".raw.png.arr", 1
+			Try {
+				FileCopy(p.from ".raw.png", p.to ".raw.png.arr", 1)
+				ErrorLevel := 0
+			} Catch as Err {
+				ErrorLevel := Err.Extra
+			}
 			ok := ok && !ErrorLevel && LearnSameFile(p.from ".raw.png", p.to ".raw.png.arr")
 			}
 		}
 	if (!ok)
 		{
 		for i, p in plan
-			FileDelete, % p.to ".png.arr"
+			Try FileDelete(p.to ".png.arr")
 		for i, p in plan
-			FileDelete, % p.to ".raw.png.arr"
+			Try FileDelete(p.to ".raw.png.arr")
 		DebugLog("  learned card " c.id ": couldn't write the new pictures - nothing moved")
 		return 0
 		}
@@ -2749,21 +2855,31 @@ LearnLayout(c, place, victim)
 			{
 			;(a placeholder stays - it never counts)
 			if (!p.keepPng)
-				FileDelete, % p.to ".png"
-			FileDelete, % p.to ".raw.png"
+				Try FileDelete(p.to ".png")
+			Try FileDelete(p.to ".raw.png")
 			ok := ok && (p.keepPng || !FileExist(p.to ".png")) && !FileExist(p.to ".raw.png")
 			continue
 			}
-		FileMove, % p.to ".png.arr", % p.to ".png", 1
+		Try {
+			FileMove(p.to ".png.arr", p.to ".png", 1)
+			ErrorLevel := 0
+		} Catch as Err {
+			ErrorLevel := Err.Extra
+		}
 		ok := ok && !ErrorLevel
 		if (p.raw)
 			{
-			FileMove, % p.to ".raw.png.arr", % p.to ".raw.png", 1
+			Try {
+				FileMove(p.to ".raw.png.arr", p.to ".raw.png", 1)
+				ErrorLevel := 0
+			} Catch as Err {
+				ErrorLevel := Err.Extra
+			}
 			ok := ok && !ErrorLevel
 			}
 		else
 			{
-			FileDelete, % p.to ".raw.png"
+			Try FileDelete(p.to ".raw.png")
 			ok := ok && !FileExist(p.to ".raw.png")
 			}
 		}
@@ -2774,9 +2890,9 @@ LearnLayout(c, place, victim)
 		{
 		LearnSnapPut(snap, sch, StrSplit(names, ","))
 		for i, p in plan
-			FileDelete, % p.to ".png.arr"
+			Try FileDelete(p.to ".png.arr")
 		for i, p in plan
-			FileDelete, % p.to ".raw.png.arr"
+			Try FileDelete(p.to ".raw.png.arr")
 		DebugLog("  learned card " c.id ": the new pictures didn't go in right - all put back as it was (" snap ")")
 		return 0
 		}
@@ -2790,7 +2906,7 @@ LearnLayout(c, place, victim)
 		else if (IsObject(occ.card))
 			note := "moved from hit" occ.from " - learned card " occ.card.id
 		else
-			note := "your picture, moved from hit" occ.from (RegExMatch(before[sch ".hit" occ.from], ";\s*(.*)$", cm) ? ": " cm1 : "")
+			note := "your picture, moved from hit" occ.from (RegExMatch(before[sch ".hit" occ.from], ";\s*(.*)$", &cm) ? ": " cm[1] : "")
 		edits.Push([kk, kk ":" occ.value "   `; " note])
 		edits.Push([kk "pips", kk "pips:" occ.pips])
 		edits.Push([kk "target", occ.hasTarget ? kk "target:" occ.target : ""])
@@ -2803,14 +2919,19 @@ LearnLayout(c, place, victim)
 		}
 	;(6. what it's like now - for putting it back: LearnUndoLayout)
 	for i, st in sets
-		Loop, 3
+		Loop 3
 			{
 			n := A_Index
 			for j, ext in [".png", ".raw.png"]
 				if (FileExist(st.path "\" sch "\hit" n ext))
 					{
-					FileCreateDir, % snap "\after\" st.name
-					FileCopy, % st.path "\" sch "\hit" n ext, % snap "\after\" st.name "\hit" n ext, 1
+					DirCreate(snap "\after\" st.name)
+					Try {
+						FileCopy(st.path "\" sch "\hit" n ext, snap "\after\" st.name "\hit" n ext, 1)
+						ErrorLevel := 0
+					} Catch as Err {
+						ErrorLevel := Err.Extra
+					}
 					}
 			}
 	LearnWriteLines(snap "\after_stats.txt", keys, LearnStatLines(keys))
@@ -2834,16 +2955,16 @@ LearnLayout(c, place, victim)
 	;(and the ones it took away - an update would bring back the release's picture of the card that was there)
 	for i, p in plan
 		if (p.from != "")
-			written .= SubStr(p.to, StrLen(A_WorkingDir) + 2) ".png`r`n" (p.raw ? SubStr(p.to, StrLen(A_WorkingDir) + 2) ".raw.png`r`n" : "")
+			written .= SubStr(p.to, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) ".png`r`n" (p.raw ? SubStr(p.to, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) ".raw.png`r`n" : "")
 		else
-			written .= SubStr(p.to, StrLen(A_WorkingDir) + 2) ".png`r`n" SubStr(p.to, StrLen(A_WorkingDir) + 2) ".raw.png`r`n"
-	FileAppend, %lay%, %snap%\layout.txt
-	FileAppend, %written%, %snap%\written.txt
+			written .= SubStr(p.to, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) ".png`r`n" SubStr(p.to, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2)) ".raw.png`r`n"
+	FileAppend(lay, snap "\layout.txt")
+	FileAppend(written, snap "\written.txt")
 	LearnWritten(written, true)
 	;(8. pictures made from what was there, the helper and PicPath look again)
 	for n, occ in place
-		Loop, Files, % A_WorkingDir "\generated\ui*", D
-			FileDelete, % A_LoopFileFullPath "\" sch "\hit" n ".bmp"
+		Loop Files, A_WorkingDir "\generated\ui*", "D"
+			Try FileDelete(A_LoopFilePath "\" sch "\hit" n ".bmp")
 	LearnFreeCache := {}, PicMade := {}
 	LearnSave()
 	if (VisionOn)
@@ -2854,7 +2975,7 @@ LearnLayout(c, place, victim)
 	if (IsObject(victim))
 		said .= "; " (IsObject(victim.card) ? LearnName(victim.card) : "your hit" victim.n " picture") " out"
 	DebugLog("  made room in " sch "\hit1-3 for learned card " c.id " (" LearnDescribe(c) "): " said " - as it was: backups\" snapName)
-	TrayTip, Wizard101 bot, % "Stronger learned hit in use (" sch "): " said ". The old pictures and numbers: backups\" snapName " - forget it or change its kind on the Spells tab to put them back.", 10, 1
+	TrayTip("Wizard101 bot", "Stronger learned hit in use (" sch "): " said ". The old pictures and numbers: backups\" snapName " - forget it or change its kind on the Spells tab to put them back.", 1)
 	return 1
 	}
 
@@ -2862,7 +2983,7 @@ LearnLayout(c, place, victim)
 LearnLayoutText(sch, lines)
 	{
 	out := ""
-	Loop, 3
+	Loop 3
 		{
 		kk := sch ".hit" A_Index
 		o := LearnCardInSlot(sch "\hit" A_Index)
@@ -2879,7 +3000,7 @@ LearnSnapPut(snap, sch, setNames)
 	for i, nm in setNames
 		{
 		path := (nm = "main") ? A_WorkingDir : A_WorkingDir "\" nm
-		Loop, 3
+		Loop 3
 			{
 			n := A_Index
 			for j, ext in [".png", ".raw.png"]
@@ -2887,13 +3008,18 @@ LearnSnapPut(snap, sch, setNames)
 				from := snap "\" nm "\hit" n ext, to := path "\" sch "\hit" n ext
 				if (FileExist(from))
 					{
-					FileCopy, %from%, %to%, 1
+					Try {
+						FileCopy(from, to, 1)
+						ErrorLevel := 0
+					} Catch as Err {
+						ErrorLevel := Err.Extra
+					}
 					if (ErrorLevel || !LearnSameFile(from, to))
 						ok := 0
 					}
 				else if (FileExist(to))
 					{
-					FileDelete, %to%
+					Try FileDelete(to)
 					if (FileExist(to))
 						ok := 0
 					}
@@ -2914,14 +3040,14 @@ LearnUndoLayout(c, why)
 	for i, o in LearnedCards
 		if (LearnFlag(o, "out") = c.id)
 			LearnDropFlag(o, "out")
-	FileRead, lay, %snap%\layout.txt
+	lay := FileRead(snap "\layout.txt")
 	if (ErrorLevel || snapName = "")
 		{
 		DebugLog("  learned card " c.id ": " snap "\layout.txt can't be read - only it comes out of its slot")
 		return 0
 		}
 	sch := "", setNames := [], moves := [], outs := []
-	Loop, Parse, lay, `n, `r
+	Loop Parse, lay, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f[1] = "school")
@@ -2935,7 +3061,7 @@ LearnUndoLayout(c, why)
 		}
 	same := (sch != "")
 	for i, st in LearnSets()
-		Loop, 3
+		Loop 3
 			if (!LearnSameState(snap "\after\" st.name "\hit" A_Index, st.path "\" sch "\hit" A_Index))
 				same := false
 	if (!same)
@@ -2947,7 +3073,7 @@ LearnUndoLayout(c, why)
 	;match; only this card comes out of its slot)
 	keys := LearnHitKeys(sch), now := LearnStatLines(keys), aft := LearnReadLines(snap "\after_stats.txt"), old := LearnReadLines(snap "\stats.txt")
 	for i, kk in keys
-		if (!aft.HasKey(kk) || LearnStatValue(now[kk]) != LearnStatValue(aft[kk]))
+		if (!aft.Has(kk) || LearnStatValue(now[kk]) != LearnStatValue(aft[kk]))
 			{
 			DebugLog("  learned card " c.id ": " sch "\hit1-3's numbers in PlayerStats.txt were changed since room was made for it - only it comes out of its slot; what was there before: backups\" snapName)
 			return 0
@@ -2956,7 +3082,7 @@ LearnUndoLayout(c, why)
 		DebugLog("  learned card " c.id ": not every picture could be put back from backups\" snapName)
 	edits := []
 	for i, kk in keys
-		edits.Push([kk, (!old.HasKey(kk) || old[kk] = "-") ? "" : old[kk]])
+		edits.Push([kk, (!old.Has(kk) || old[kk] = "-") ? "" : old[kk]])
 	LearnStatsWrite(edits)
 	for i, m in moves
 		if (m[2] != "yours" && m[2] != c.id && IsObject(o := LearnCardOf(m[2])))
@@ -2965,12 +3091,12 @@ LearnUndoLayout(c, why)
 		if (m[2] != "yours" && IsObject(o := LearnCardOf(m[2])))
 			o.slot := sch "\hit" m[3], LearnDropFlag(o, "out")
 	c.slot := ""
-	Loop, Files, % A_WorkingDir "\generated\ui*", D
-		Loop, 3
-			FileDelete, % A_LoopFileFullPath "\" sch "\hit" A_Index ".bmp"
-	FileRead, written, %snap%\written.txt
+	Loop Files, A_WorkingDir "\generated\ui*", "D"
+		Loop 3
+			Try FileDelete(A_LoopFilePath "\" sch "\hit" A_Index ".bmp")
+	written := FileRead(snap "\written.txt")
 	LearnWritten(written, false)
-	FileAppend, % "undone|" A_Now "|" why "`r`n", %snap%\layout.txt
+	FileAppend("undone|" A_Now "|" why "`r`n", snap "\layout.txt")
 	LearnFreeCache := {}, PicMade := {}
 	DebugLog("  learned card " c.id " (" LearnDescribe(c) "): " why " - " sch "\hit1-3 put back as they were before it (backups\" snapName ")")
 	return 1
@@ -2997,7 +3123,7 @@ LearnSameState(after, cur)
 LearnHitKeys(sch)
 	{
 	out := []
-	Loop, 3
+	Loop 3
 		{
 		n := A_Index
 		for i, sfx in ["", "pips", "target", "keep"]
@@ -3011,28 +3137,33 @@ LearnHitKeys(sch)
 LearnWritten(paths, add)
 	{
 	file := A_WorkingDir "\learned\slots_written.txt"
-	FileRead, have, %file%
+	have := FileRead(file)
 	list := {}, order := []
-	Loop, Parse, have, `n, `r
-		if (A_LoopField != "" && !list.HasKey(A_LoopField))
-			list[A_LoopField] := 1, order.Push(A_LoopField)
-	Loop, Parse, paths, `n, `r
+	Loop Parse, have, "`n", "`r"
+		if (A_LoopField != "" && !list.Has(A_LoopField))
+			list[A_LoopField] := 1, order.Push(A_LoopField) ;  V1toV2: Invalid Index errors?, try 'list.Push(<val>)'
+	Loop Parse, paths, "`n", "`r"
 		{
 		if (A_LoopField = "")
 			continue
-		if (add && !list.HasKey(A_LoopField))
-			list[A_LoopField] := 1, order.Push(A_LoopField)
+		if (add && !list.Has(A_LoopField))
+			list[A_LoopField] := 1, order.Push(A_LoopField) ;  V1toV2: Invalid Index errors?, try 'list.Push(<val>)'
 		else if (!add)
 			list.Delete(A_LoopField)
 		}
 	out := ""
 	for i, p in order
-		if (list.HasKey(p))
+		if (list.Has(p))
 			out .= p "`r`n"
-	FileCreateDir, % A_WorkingDir "\learned"
-	FileDelete, %file%.tmp
-	FileAppend, %out%, %file%.tmp
-	FileMove, %file%.tmp, %file%, 1
+	DirCreate(A_WorkingDir "\learned")
+	Try FileDelete(file ".tmp")
+	FileAppend(out, file ".tmp")
+	Try {
+		FileMove(file ".tmp", file, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	}
 
 ;---- The Spells tab's (Spells.ahk) - call on the main thread, out of battle ----
@@ -3162,8 +3293,8 @@ LearnEdit(id, name, value, pips, keepGuess := 0, nameOnly := 0)
 	if (c.slot != "")
 		{
 		fits := true
-		if (RegExMatch(c.slot, "\\hit([1-4])$", hn))
-			fits := LearnHitFits(c, hn1)
+		if (RegExMatch(c.slot, "\\hit([1-4])$", &hn))
+			fits := LearnHitFits(c, hn[1])
 		else if ((c.type = "blade" || c.type = "trap" || c.type = "aura") && c.value = "")
 			fits := false
 		;(an enchant's slot goes by its number - the kill check adds that slot's enchantN)
@@ -3211,7 +3342,7 @@ LearnSetSchool(id, s)
 	c := LearnCardOf(id)
 	if (!IsObject(c))
 		return "no learned card " id
-	StringLower, s, s
+	s := StrLower(s)
 	ok := false
 	for i, k in LearnSchools()
 		if (k = s)
@@ -3284,7 +3415,7 @@ LearnDescribe(c)
 		, mutate: "a mutation (turns a spell in hand into another)", polymorph: "a polymorph / shift (Moon)"
 		, shadow: "a shadow form or creature (shadow pips)", minion: "a minion spell" ldTx, pips: "gives pips" (c.value != "" ? " (" c.value ")" : "")
 		, manipulation: "a manipulation spell" ldTx}
-	if (kd != "" && ldMore.HasKey(kd))
+	if (kd != "" && ldMore.Has(kd))
 		return (c.name != "" ? c.name ": " : "") ldMore[kd] ", " pips
 	if (kd = "damage")
 		d := "hits one enemy for " v ot
@@ -3321,7 +3452,7 @@ LearnDescribe(c)
 	else if (kd = "keep")
 		d := (LearnHasFlag(c, "mem") && !LearnHasFlag(c, "user")) ? "a kind the bot doesn't play (" c.text ")" : "not used (your choice)"
 	else
-		d := "type unknown (""" c.text """)"
+		d := "type unknown (`"" c.text "`")"
 	return (c.name != "" ? c.name ": " : "") d ", " pips
 	}
 
@@ -3338,7 +3469,7 @@ LearnSetDir(create := true)
 	dir := A_WorkingDir "\ui" Round(UiScale, 3)
 	if (!create)
 		return dir
-	FileCreateDir, %dir%
+	DirCreate(dir)
 	PicSets.Push({dir: dir, scale: Round(UiScale, 3) + 0, gen: 0})
 	PicMade := {}
 	DebugLog("  new picture set " dir " for the cards learned at this UI size")
@@ -3349,18 +3480,18 @@ LearnSetDir(create := true)
 LearnLoad()
 	{
 	LearnedCards := []
-	FileRead, text, % A_WorkingDir "\learned\cards.txt"
-	Loop, Parse, text, `n, `r
+	text := FileRead(A_WorkingDir "\learned\cards.txt")
+	Loop Parse, text, "`n", "`r"
 		{
 		if (A_LoopField = "" || SubStr(A_LoopField, 1, 1) = ";")
 			continue
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 12)
+		if (f.Length < 12)
 			continue
 		c := {id: f[1], sch: f[2], type: f[3], pips: f[4], guess: f[5] + 0, value: f[6], target: f[7] + 0, slot: f[8], scale: f[9], dir: f[10], when: f[11], text: f[12]
-			, name: f.Length() >= 13 ? f[13] : "", flags: f.Length() >= 14 ? f[14] : ""}
+			, name: f.Length >= 13 ? f[13] : "", flags: f.Length >= 14 ? f[14] : ""}
 		;(a line from before v0.31: a number it holds was one two reads agreed on - the rule then)
-		if (f.Length() < 14 && c.value != "")
+		if (f.Length < 14 && c.value != "")
 			LearnSetFlag(c, "two")
 		;(a blade learned before blades were known by their text: one now - it gets the blade slot when next in hand)
 		if (c.type = "" && LearnLooksBlade(c))
@@ -3406,11 +3537,16 @@ LearnSave()
 		c.text := LearnClean(c.text), c.name := LearnClean(c.name)
 		out .= LearnLine(c) "`r`n"
 		}
-	FileCreateDir, % A_WorkingDir "\learned"
+	DirCreate(A_WorkingDir "\learned")
 	path := A_WorkingDir "\learned\cards.txt"
-	FileDelete, %path%.tmp
-	FileAppend, %out%, %path%.tmp
-	FileMove, %path%.tmp, %path%, 1
+	Try FileDelete(path ".tmp")
+	FileAppend(out, path ".tmp")
+	Try {
+		FileMove(path ".tmp", path, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	;(the Spells tab fills its list again - DashRefresh; never a GUI call from here)
 	SpDirty := 1
 	}
@@ -3426,7 +3562,7 @@ LearnLine(c)
 LearnClean(s)
 	{
 	out := ""
-	Loop, Parse, s
+	Loop Parse, s
 		{
 		o := Ord(A_LoopField)
 		out .= (A_LoopField = "|") ? "/" : (o >= 32 && o <= 126) ? A_LoopField : (o < 32) ? " " : "?"
@@ -3443,7 +3579,7 @@ LearnHasFlag(c, key)
 ;Learned card c's flag key's value ("" none, or a flag without one)
 LearnFlag(c, key)
 	{
-	return RegExMatch("," c.flags ",", "i),\Q" key "\E=([^,]*),", m) ? m1 : ""
+	return RegExMatch("," c.flags ",", "i),\Q" key "\E=([^,]*),", &m) ? m[1] : ""
 	}
 
 ;Sets flag key (val: its value, "" none) on learned card c - where it is when it's there already
@@ -3451,7 +3587,7 @@ LearnSetFlag(c, key, val := "")
 	{
 	item := key (val = "" ? "" : "=" RegExReplace(val, "[,|$\\]"))
 	if (LearnHasFlag(c, key))
-		c.flags := Trim(RegExReplace("," c.flags ",", "i),\Q" key "\E(=[^,]*)?(?=,)", "," item,, 1), ",")
+		c.flags := Trim(RegExReplace("," c.flags ",", "i),\Q" key "\E(=[^,]*)?(?=,)", "," item, , 1), ",")
 	else
 		c.flags := (c.flags = "" ? "" : c.flags ",") item
 	}
@@ -3482,22 +3618,22 @@ LearnStatsWrite(edits)
 	{
 	;(the Settings window's Save doesn't write the file halfway through this: Settings.ahk CfgWrite)
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	path := A_WorkingDir "\PlayerStats.txt"
-	FileRead, text, %path%
+	text := FileRead(path)
 	if (ErrorLevel || !InStr(text, ":"))
 		{
 		DebugLog("  couldn't read PlayerStats.txt - the learned card's numbers weren't written")
 		return CfgUncritical(wasCrit, false)
 		}
 	lines := StrSplit(StrReplace(text, "`r"), "`n")
-	if (lines.Length() && lines[lines.Length()] = "")
+	if (lines.Length && lines[lines.Length] = "")
 		lines.Pop()
 	heading := "; ---- Cards the bot learned by itself (CardLearn.ahk; learned\cards.txt lists them) ----"
 	for each, kv in edits
 		{
 		found := false, i := 1
-		while (i <= lines.Length())
+		while (i <= lines.Length)
 			{
 			if (RegExMatch(lines[i], "i)^\s*\Q" kv[1] "\E\s*:"))
 				{
@@ -3507,7 +3643,7 @@ LearnStatsWrite(edits)
 					continue
 					}
 				if (!found)
-					lines[i] := kv[2], found := true
+					lines[i] := kv[2], found := true ;  V1toV2: Invalid Index errors?, try 'lines.Push(<val>)'
 				}
 			i += 1
 			}
@@ -3524,11 +3660,16 @@ LearnStatsWrite(edits)
 	out := ""
 	for i, ln in lines
 		out .= ln "`r`n"
-	FileDelete, %path%.tmp
-	FileAppend, %out%, %path%.tmp
+	Try FileDelete(path ".tmp")
+	FileAppend(out, path ".tmp")
 	if (ErrorLevel)
 		return CfgUncritical(wasCrit, false)
-	FileMove, %path%.tmp, %path%, 1
+	Try {
+		FileMove(path ".tmp", path, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	if (ErrorLevel)
 		return CfgUncritical(wasCrit, false)
 	LoadStats(true)
@@ -3538,25 +3679,25 @@ LearnStatsWrite(edits)
 ;PlayerStats.txt's lines for keys: {key: the line as it is (its first), or "-" none}
 LearnStatLines(keys)
 	{
-	FileRead, text, % A_WorkingDir "\PlayerStats.txt"
+	text := FileRead(A_WorkingDir "\PlayerStats.txt")
 	out := {}
 	for i, kk in keys
-		out[kk] := "-"
-	Loop, Parse, text, `n, `r
+		out[kk] := "-" ;  V1toV2: Invalid Index errors?, try 'out.Push(<val>)'
+	Loop Parse, text, "`n", "`r"
 		for i, kk in keys
 			if (out[kk] = "-" && RegExMatch(A_LoopField, "i)^\s*\Q" kk "\E\s*:"))
-				out[kk] := A_LoopField
+				out[kk] := A_LoopField ;  V1toV2: Invalid Index errors?, try 'out.Push(<val>)'
 	return out
 	}
 
 ;The keys PlayerStats.txt itself sets (lower case: 1) - not the built-in guesses LoadStats starts from
 LearnFileStats()
 	{
-	FileRead, text, % A_WorkingDir "\PlayerStats.txt"
+	text := FileRead(A_WorkingDir "\PlayerStats.txt")
 	out := {}
-	Loop, Parse, text, `n, `r
-		if (RegExMatch(RegExReplace(A_LoopField, ";.*"), "^\s*([\w.]+)\s*:\s*-?\d", m))
-			out[Format("{:L}", m1)] := 1
+	Loop Parse, text, "`n", "`r"
+		if (RegExMatch(RegExReplace(A_LoopField, ";.*"), "^\s*([\w.]+)\s*:\s*-?\d", &m))
+			out[Format("{:L}", m[1])] := 1 ;  V1toV2: Invalid Index errors?, try 'out.Push(<val>)'
 	return out
 	}
 
@@ -3566,18 +3707,18 @@ LearnWriteLines(file, keys, lines)
 	out := ""
 	for i, kk in keys
 		out .= kk "|" lines[kk] "`r`n"
-	FileDelete, %file%
-	FileAppend, %out%, %file%
+	Try FileDelete(file)
+	FileAppend(out, file)
 	}
 
 ;Reads a LearnWriteLines file: {key: line or "-"}
 LearnReadLines(file)
 	{
 	out := {}
-	FileRead, text, %file%
-	Loop, Parse, text, `n, `r
+	text := FileRead(file)
+	Loop Parse, text, "`n", "`r"
 		if ((at := InStr(A_LoopField, "|")) > 1)
-			out[SubStr(A_LoopField, 1, at - 1)] := SubStr(A_LoopField, at + 1)
+			out[SubStr(A_LoopField, 1, at - 1)] := SubStr(A_LoopField, (at + 1)<1 ? (at + 1)-1 : (at + 1)) ;  V1toV2: Invalid Index errors?, try 'out.Push(<val>)'
 	return out
 	}
 
@@ -3585,7 +3726,7 @@ LearnReadLines(file)
 LearnUri(s)
 	{
 	out := ""
-	Loop, Parse, s
+	Loop Parse, s
 		out .= RegExMatch(A_LoopField, "[A-Za-z0-9_.~-]") ? A_LoopField : "%" Format("{:02X}", Ord(A_LoopField))
 	return out
 	}

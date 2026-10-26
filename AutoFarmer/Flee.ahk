@@ -35,10 +35,10 @@ FleeCheck()
 	;(the game's own hand when it was read this pass - its count, and a hit in it, greyed out or not: a greyed card the
 	;pictures can't place, or one waiting for pips, is still a card and still a hit - 2026-10-25: fled twice holding
 	;greyed Power Novas / Supernovas with 7 cards in hand)
-	mh := IsFunc("VisionCards") ? Func("VisionCards").Call(0, 5000) : "", memHit := ""
+	mh := IsFunc("VisionCards") ? VisionCards.Call(0, 5000) : "", memHit := ""
 	if (IsObject(mh) && IsObject(mh.cards))
 		{
-		cards := mh.cards.Length(), memHit := 0
+		cards := mh.cards.Length, memHit := 0
 		for mc in mh.cards
 			if (mh.cards[mc].kind = "damage" || mh.cards[mc].kind = "aoe" || mh.cards[mc].xpip)
 				memHit := 1
@@ -85,11 +85,11 @@ FleeCheck()
 	if (!CastWentOut())
 		{
 		fx := Round(w.x + w.w / 2), fy := Round(w.y + w.h / 2)
-		MouseMove, %fx%, % fy + Px(70), MouseSpeedNow()
-		Sleep, 150
-		MouseMove, %fx%, %fy%, MouseSpeedNow()
-		Sleep, 80
-		Click
+		MouseMove(fx, fy + Px(70), MouseSpeedNow())
+		Sleep(150)
+		MouseMove(fx, fy, MouseSpeedNow())
+		Sleep(80)
+		Click()
 		FleeConfirm()
 		fled := CastWentOut()
 		DebugLog("  the Flee click didn't take - clicked it again from below: " (fled ? "fled" : "still in the battle - the round goes on"))
@@ -101,7 +101,7 @@ FleeCheck()
 		}
 	;(out of mana as well: a potion after it, whatever else it fled for)
 	FleeWhy := (InStr(why, "mana") || FleeNoMana >= 2) ? "mana" : "cards", FleeNoCards := 0, FleeNoMana := 0, FleeNoHits := 0
-	TrayTip, Wizard101 bot, % "Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), 8, 1
+	TrayTip("Wizard101 bot", "Fled the battle: " why ". " (FleeWhy = "mana" ? "Drinking a potion (or buying some), then trying again." : "Trying again with a full deck."), 1)
 	return true
 	}
 
@@ -110,7 +110,7 @@ FleeCheck()
 ;its Yes clicked where it's read; never with Crowns in sight. True if it was there and Yes was clicked
 FleeConfirm()
 	{
-	Sleep, 400
+	Sleep(400)
 	fcT := OcrRect(Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameW * 0.4), Round(GameH * 0.42), "en", 1, fcLines)
 	if (ErrorLevel || !IsObject(fcLines) || !RegExMatch(fcT, "is)sure.{0,30}flee"))
 		return false
@@ -139,13 +139,13 @@ FleeHandCount()
 	if (LastHandAnswer = "")
 		return -1
 	n := 0, boxes := 0, none := 0
-	Loop, Parse, LastHandAnswer, `n, `r
+	Loop Parse, LastHandAnswer, "`n", "`r"
 		{
 		if (InStr(A_LoopField, "card|") = 1)
 			{
 			boxes += 1
 			f := StrSplit(A_LoopField, "|")
-			if (f.Length() < 15 || f[15] != "0")
+			if (f.Length < 15 || f[15] != "0")
 				n += 1
 			}
 		else if (A_LoopField = "hand|0")
@@ -172,10 +172,10 @@ FleeHandHasHit()
 	if (LastHandAnswer = "")
 		return -1
 	n := 0
-	Loop, Parse, LastHandAnswer, `n, `r
+	Loop Parse, LastHandAnswer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] != "card" || f.Length() < 12 || (f.Length() >= 15 && f[15] = "0"))
+		if (f[1] != "card" || f.Length < 12 || (f.Length >= 15 && f[15] = "0"))
 			continue
 		n += 1, k := f[6]
 		if ((k = "" && f[8] = 1) || RegExMatch(k, "i)/hit[123]$") || (RegExMatch(k, "i)/hit4$") && BossChoosen == 1)
@@ -193,10 +193,10 @@ FleeHandHasHit()
 FleeCheapestHit()
 	{
 	least := ""
-	Loop, 3
+	Loop 3
 		{
 		k := hitschool ".hit" A_Index "pips"
-		if (hitschool != "" && Stats.HasKey(k) && Stats[k] > 0 && (least = "" || Stats[k] < least))
+		if (hitschool != "" && Stats.Has(k) && Stats[k] > 0 && (least = "" || Stats[k] < least))
 			least := Stats[k]
 		}
 	return least
@@ -237,7 +237,7 @@ FleeAfter()
 	if (!FleeRefillMana("after fleeing"))
 		{
 		Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
-		TrayTip, Wizard101 bot, Out of mana and couldn't get potions - the bot has stopped (kept from timing out)., 10, 2
+		TrayTip("Wizard101 bot", "Out of mana and couldn't get potions - the bot has stopped (kept from timing out).", 2)
 		AlertSend("mana", "out of mana", "Fled out of mana, and no potion to be had (none left, and buying didn't work) - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
 		afk("mana")
 		}
@@ -282,8 +282,8 @@ FleeDrinkForMana(before)
 	{
 	ReleaseKeys()
 	hpBefore := PotionGlobes().hp
-	Send, {Blind}^o
-	Sleep, 2500
+	Send("{Blind}^o")
+	Sleep(2500)
 	g := PotionGlobes()
 	if (before != "" && g.mana != "")
 		return g.mana > before

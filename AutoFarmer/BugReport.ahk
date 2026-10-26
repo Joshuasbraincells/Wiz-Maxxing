@@ -1,3 +1,4 @@
+#Warn Unreachable, Off
 ; BugReport.ahk - "Report a bug" (the dashboard's button, the tray menu): a window where you say what went wrong.
 ; Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with the bot's version and setup, what the dashboard's
 ; STATISTICS and WHAT IT SEES show, and the end of debug.log. AHK v1.1, functions and labels only; #Included by
@@ -22,50 +23,61 @@ BugShow()
 		bugPos := ""
 		if (DashHwnd && DashShown)
 			{
-			WinGet, bugMm, MinMax, ahk_id %DashHwnd%
-			WinGetPos, bugDx, bugDy, , , ahk_id %DashHwnd%
+			bugMm := WinGetMinMax("ahk_id " DashHwnd)
+			WinGetPos(&bugDx, &bugDy, , , "ahk_id " DashHwnd)
 			if (bugDx != "" && bugMm != -1)
 				bugPos := "x" bugDx + 60 " y" bugDy + 80 " "
 			}
-		Gui, Bug:Show, % bugPos "AutoSize", % "Wizard101 bot " BotVersion() " - report a bug"
+		Bug := Gui()
+		Bug.OnEvent("Close", BugGuiClose)
+		Bug.OnEvent("Escape", BugGuiEscape)
+		Bug.Title := "Wizard101 bot " BotVersion() " - report a bug"
+		Bug.Show(bugPos "AutoSize")
 		}
 	else
-		Gui, Bug:Show
-	GuiControl, Bug:Focus, BugText
+		Bug.Show()
+	ogcBugText.Focus()
 	}
 
 ;Makes the window (not shown)
 BugBuild()
 	{
-	Gui, Bug:New, +HwndBugHwnd -MaximizeBox, % "Wizard101 bot " BotVersion() " - report a bug"
-	Gui, Bug:Color, 1B1D22, 111317
-	Gui, Bug:Margin, 12, 10
-	Gui, Bug:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, Bug:Add, Text, x12 y12 w560 h18, REPORT A BUG
-	Gui, Bug:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, Bug:Add, Text, x12 y34 w560 h32, What went wrong, and what was the bot doing? Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with the bot's version and what the dashboard shows.
-	Gui, Bug:Font, s9 w400 cDADADA, Segoe UI
-	Gui, Bug:Add, Text, x12 y74 w560 h18, Title (a few words)
-	Gui, Bug:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, Bug:Add, Edit, x12 y94 w560 h24 Limit120 vBugTitle
-	Gui, Bug:Font, s9 w400 cDADADA, Segoe UI
-	Gui, Bug:Add, Text, x12 y128 w560 h18, What happened
-	Gui, Bug:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, Bug:Add, Edit, x12 y148 w560 h220 Multi +VScroll Limit20000 vBugText
-	Gui, Bug:Font, s9 w400 cDADADA, Segoe UI
-	Gui, Bug:Add, Checkbox, x12 y378 w560 h18 Checked vBugAddLog, Add the end of debug.log (the last few hundred lines)
-	Gui, Bug:Font, s9 w400 c000000, Segoe UI
-	Gui, Bug:Add, Button, x12 y406 w90 h26 gBugSend vBugSendBtn, Send
-	Gui, Bug:Add, Button, x+8 yp w90 h26 gBugGuiClose, Close
+	Bug := Gui("-MaximizeBox", "Wizard101 bot " BotVersion() " - report a bug"), BugHwnd := Bug.Hwnd
+	Bug.OnEvent("Close", BugGuiClose)
+	Bug.OnEvent("Escape", BugGuiEscape)
+	Bug.BackColor := "1B1D22"
+	Bug.MarginX := 12, Bug.MarginY := 10
+	Bug.SetFont("s9 w600 c8AB4F8", "Segoe UI")
+	Bug.Add("Text", "x12 y12 w560 h18", "REPORT A BUG")
+	Bug.SetFont("s9 w400 c9AA0A6", "Segoe UI")
+	Bug.Add("Text", "x12 y34 w560 h32", "What went wrong, and what was the bot doing? Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with the bot's version and what the dashboard shows.")
+	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
+	Bug.Add("Text", "x12 y74 w560 h18", "Title (a few words)")
+	Bug.SetFont("s9 w400 cF2F2F2", "Segoe UI")
+	ogcEditBugTitle := Bug.Add("Edit", "x12 y94 w560 h24 Limit120 vBugTitle")
+	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
+	Bug.Add("Text", "x12 y128 w560 h18", "What happened")
+	Bug.SetFont("s9 w400 cF2F2F2", "Segoe UI")
+	ogcEditBugText := Bug.Add("Edit", "x12 y148 w560 h220 Multi +VScroll Limit20000 vBugText")
+	Bug.SetFont("s9 w400 cDADADA", "Segoe UI")
+	ogcCheckboxBugAddLog := Bug.Add("Checkbox", "x12 y378 w560 h18 Checked vBugAddLog", "Add the end of debug.log (the last few hundred lines)")
+	Bug.SetFont("s9 w400 c000000", "Segoe UI")
+	ogcButtonBugSendBtn := Bug.Add("Button", "x12 y406 w90 h26 vBugSendBtn", "Send")
+	ogcButtonBugSendBtn.OnEvent("Click", BugSend.Bind("Normal"))
+	ogcButtonClose := Bug.Add("Button", "x+8 yp w90 h26", "Close")
+	ogcButtonClose.OnEvent("Click", BugGuiClose.Bind("Normal"))
 	;(the status under the buttons, room for three lines - the way to fix the token takes two)
-	Gui, Bug:Font, s9 w400 cB9E2B9, Segoe UI
-	Gui, Bug:Add, Text, x12 y440 w560 h48 vBugStatus
+	Bug.SetFont("s9 w400 cB9E2B9", "Segoe UI")
+	ogcTextBugStatus := Bug.Add("Text", "x12 y440 w560 h48 vBugStatus")
 	}
 
 ;Send: the report written to reports\ and Wiz-Maxxing started to post it; BugPoll waits for its answer
 BugSendNow()
 	{
-	Gui, Bug:Submit, NoHide
+	oSaved := Bug.Submit(0)
+	Try BugAddLog := oSaved.BugAddLog
+	Try BugText := oSaved.BugText
+	Try BugTitle := oSaved.BugTitle
 	if (BugFile != "")
 		return
 	bugWhat := Trim(BugText, " `t`r`n")
@@ -77,25 +89,25 @@ BugSendNow()
 	;(Wiz-Maxxing posts it: the exe - or, run as a script, Wiz-Maxxing.ahk by this AutoHotkey)
 	if (A_IsCompiled && !FileExist(A_ScriptDir "\..\Wiz-Maxxing.exe"))
 		return BugSay("Not sent: Wiz-Maxxing.exe isn't in the bot's folder (it sends the report).")
-	FileCreateDir, %A_ScriptDir%\reports
-	FormatTime, bugStamp, , yyyyMMdd_HHmmss
+	DirCreate(A_ScriptDir "\reports")
+	bugStamp := FormatTime(, "yyyyMMdd_HHmmss")
 	bugF := A_ScriptDir "\reports\report_" bugStamp ".txt"
-	FileDelete, %bugF%.result
+	Try FileDelete(bugF ".result")
 	bugOut := FileOpen(bugF, "w", "UTF-8")
 	if (!IsObject(bugOut))
 		return BugSay("Not sent: couldn't write " bugF)
 	bugOut.Write(BugRedact(StrReplace(bugHead, "`n", " ")) "`n" BugBody(bugWhat, BugAddLog))
 	bugOut.Close()
-	if (!BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/report """ bugF """", A_ScriptDir "\.."))
+	if (!BotRun(A_ScriptDir "\..\Wiz-Maxxing", "/report `"" bugF "`"", A_ScriptDir "\.."))
 		{
 		bugErr := A_LastError
-		FileDelete, %bugF%
+		Try FileDelete(bugF)
 		return BugSay("Not sent: Wiz-Maxxing couldn't be started (error " bugErr ").")
 		}
 	BugFile := bugF, BugSentAt := A_TickCount
-	GuiControl, Bug:Disable, BugSendBtn
+	ogcButtonBugSendBtn.Enabled := false
 	BugSay("Sending...")
-	SetTimer, BugPoll, 500
+	SetTimer(BugPoll,500)
 	}
 
 ;Wiz-Maxxing's answer (BugSendNow's report): "ok|<issue number>|<address>" or "err|<why>" - none in 45 s: given up
@@ -103,7 +115,7 @@ BugPollNow()
 	{
 	if (BugFile = "")
 		{
-		SetTimer, BugPoll, Off
+		SetTimer(BugPoll,0)
 		return
 		}
 	bugAns := ""
@@ -120,16 +132,16 @@ BugPollNow()
 			return
 		bugAns := "err|no answer from Wiz-Maxxing in 45 s"
 		}
-	SetTimer, BugPoll, Off
-	FileDelete, %BugFile%.result
-	FileDelete, %BugFile%
+	SetTimer(BugPoll,0)
+	Try FileDelete(BugFile ".result")
+	Try FileDelete(BugFile)
 	BugFile := ""
-	GuiControl, Bug:Enable, BugSendBtn
+	ogcButtonBugSendBtn.Enabled := true
 	bugP := StrSplit(bugAns, "|", , 3)
 	if (bugP[1] = "ok")
 		{
-		GuiControl, Bug:, BugTitle
-		GuiControl, Bug:, BugText
+		ogcEditBugTitle.Value := ""
+		ogcEditBugText.Value := ""
 		BugSay("Sent: issue #" bugP[2] " on GitHub. Thanks!")
 		DebugLog("Bug report sent: issue #" bugP[2] " on GitHub")
 		return
@@ -142,7 +154,7 @@ BugPollNow()
 ;The window's status line
 BugSay(msg)
 	{
-	GuiControl, Bug:, BugStatus, %msg%
+	ogcTextBugStatus.Value := msg
 	return ""
 	}
 
@@ -154,17 +166,17 @@ BugBody(what, addLog)
 	;(the dashboard hidden: its texts aren't kept up - made now, the window staying hidden)
 	if (DashHwnd && !DashShown && IsFunc("DashRefresh"))
 		{
-		Critical
+		Critical()
 		DashShown := 1
-		Func("DashRefresh").Call()
+		DashRefresh.Call()
 		DashShown := 0
-		Critical, Off
+		Critical("Off")
 		}
-	FormatTime, bugNow, , yyyy-MM-dd HH:mm:ss
+	bugNow := FormatTime(, "yyyy-MM-dd HH:mm:ss")
 	bugB := what "`n`n---`n**" BotVersion() "** - " bugNow " - PC " A_ComputerName " - screen " A_ScreenWidth "x" A_ScreenHeight
 		. " - UI " UiScale " - " (BotOn ? "bot on" : "bot off") (Walking ? ", walking" : "") (school != "" ? " - " school : "") "`n"
-	GuiControlGet, bugStats, Dash:, DashStatText
-	GuiControlGet, bugSees, Dash:, DashSeeText
+	bugStats := ogcDashStatText.Value
+	bugSees := ogcDashSeeText.Value
 	if (Trim(bugStats) != "")
 		bugB .= BugFold("Statistics", bugStats)
 	if (Trim(bugSees) != "")
@@ -174,7 +186,7 @@ BugBody(what, addLog)
 	bugRoom := 64000 - StrLen(bugB) - 300
 	if (addLog && bugRoom > 1000)
 		{
-		bugLog := BugLogTail(Min(bugRoom, 45000), bugLines)
+		bugLog := BugLogTail(Min(bugRoom, 45000), &bugLines)
 		if (bugLog != "")
 			bugB .= BugFold("debug.log, its last " bugLines " lines", bugLog)
 		}
@@ -190,7 +202,7 @@ BugFold(title, text)
 	}
 
 ;The end of debug.log: up to maxBytes, from the start of a line; lines: how many
-BugLogTail(maxBytes, ByRef lines)
+BugLogTail(maxBytes, &lines)
 	{
 	lines := 0
 	bugIn := FileOpen(A_ScriptDir "\debug.log", "r")
@@ -203,9 +215,9 @@ BugLogTail(maxBytes, ByRef lines)
 	bugIn.Close()
 	;(from somewhere in a line: from the next one)
 	if (bugSize > maxBytes)
-		bugT := SubStr(bugT, InStr(bugT, "`n") + 1)
+		bugT := SubStr(bugT, (InStr(bugT, "`n") + 1)<1 ? (InStr(bugT, "`n") + 1)-1 : (InStr(bugT, "`n") + 1))
 	bugT := StrReplace(bugT, "`r", "")
-	StrReplace(Trim(bugT, "`n"), "`n", "`n", lines)
+	StrReplace(Trim(bugT, "`n"), "`n", "`n", , &lines)
 	lines += (Trim(bugT, "`n") != "")
 	return bugT
 	}
@@ -221,15 +233,41 @@ BugRedact(s)
 	}
 
 BugSend:
-	BugSendNow()
+BugSend()
 	return
 
 BugPoll:
-	BugPollNow()
+BugPoll()
 	return
 
 ;(closing it keeps what you typed - and a report on its way is still answered)
 BugGuiClose:
+BugGuiClose()
+return
 BugGuiEscape:
-	Gui, Bug:Hide
+BugGuiEscape()
 	return
+
+;###############  V1toV2 FUNCS  ###############
+BugSend(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
+	BugSendNow()
+	return
+}
+;##############################################
+BugPoll() { ; V1toV2: Lbl->Func
+	global
+	BugPollNow()
+	return
+}
+;##############################################
+BugGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+global
+BugGuiEscape()
+}
+;##############################################
+BugGuiEscape(*) { ; V1toV2: Lbl->Func
+	global
+	Bug.Hide()
+	return
+}

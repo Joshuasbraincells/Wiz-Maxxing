@@ -46,7 +46,7 @@ PartyFollowing()
 ;This PC's party name and (a follower) the leader's address: party.ini
 PartyIni(key)
 	{
-	IniRead, v, %A_ScriptDir%\party.ini, party, %key%, %A_Space%
+	v := IniRead(A_ScriptDir "\party.ini", "party", key, A_Space)
 	return Trim(v)
 	}
 
@@ -88,7 +88,7 @@ PartyTick()
 		}
 	members := []
 	leader := ""
-	Loop, Parse, ans, `n, `r
+	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f[1] = "party")
@@ -111,7 +111,7 @@ PartyTick()
 		}
 	PartyLeader := leader, PartyMembers := members
 	if (IsFunc("DashSee"))
-		Func("DashSee").Call("party", PartyText())
+		DashSee.Call("party", PartyText())
 	}
 
 ;---- Battle roles ----
@@ -120,8 +120,8 @@ PartyTick()
 ;"blader" or "healer"
 PartyBattleSet()
 	{
-	k := (PartyMySchool != "" && Stats.HasKey(PartyMySchool ".partybattle")) ? PartyMySchool ".partybattle" : "partybattle"
-	r := Stats.HasKey(k) ? Stats[k] : 1
+	k := (PartyMySchool != "" && Stats.Has(PartyMySchool ".partybattle")) ? PartyMySchool ".partybattle" : "partybattle"
+	r := Stats.Has(k) ? Stats[k] : 1
 	return r = 2 ? "blader" : r = 3 ? "healer" : "hitter"
 	}
 
@@ -135,8 +135,8 @@ PartySupport()
 PartyKey(name)
 	{
 	if (IsFunc("WalkLetters"))
-		return Func("WalkLetters").Call(name)
-	StringUpper, name, name
+		return WalkLetters.Call(name)
+	name := StrUpper(name)
 	return RegExReplace(name, "[^A-Z]")
 	}
 
@@ -184,15 +184,15 @@ PartyHitter()
 	{
 	phSlots := {}, phTwice := {}, MySlot := 0
 	phMe := PartyKey(OwnName())
-	Loop, 4
+	Loop 4
 		{
 		phS := A_Index + 3
-		if (!IsObject(BlNames) || !BlNames.HasKey(phS))
+		if (!IsObject(BlNames) || !BlNames.Has(phS))
 			continue
 		phK := PartyKey(BlNames[phS])
-		if (phSlots.HasKey(phK))
-			phTwice[phK] := 1
-		phSlots[phK] := phS
+		if (phSlots.Has(phK))
+			phTwice[phK] := 1 ;  V1toV2: Invalid Index errors?, try 'phTwice.Push(<val>)'
+		phSlots[phK] := phS ;  V1toV2: Invalid Index errors?, try 'phSlots.Push(<val>)'
 		if (phK != "" && phK = phMe)
 			MySlot := phS
 		}
@@ -206,7 +206,7 @@ PartyHitter()
 	for each, phC in phAll
 		{
 		phM := phC.m, phK := PartyKey(phM.wiz)
-		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.HasKey(phK) || phTwice.HasKey(phK))
+		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.Has(phK) || phTwice.Has(phK))
 			continue
 		phW := {wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit}
 		if (phC.lead)
@@ -221,7 +221,7 @@ PartyHitter()
 PartySchools(list)
 	{
 	psOut := ","
-	Loop, Parse, list, `,
+	Loop Parse, list, ","
 		{
 		psS := Format("{:L}", Trim(A_LoopField))
 		if (BadgeNumber(psS) && !InStr(psOut, "," psS ","))
@@ -240,28 +240,28 @@ PartyNoteBoosts()
 	if (PartyFlagDuel != BlDuel || !IsObject(PartyFlagRound))
 		PartyFlagDuel := BlDuel, PartyFlagRound := {}, PartyCastRound := "", PartySrcRound := {}
 	if (!IsObject(PartySrcRound))
-		PartySrcRound := {}
-	Loop, 53
+		PartySrcRound := map()
+	Loop 53
 		{
 		n := A_Index - 1
 		if (used%n% = 1)
 			{
-			if (!PartyFlagRound.HasKey(n))
-				PartyFlagRound[n] := PartyCastRound != "" ? PartyCastRound : 0
+			if (!PartyFlagRound.Has(n))
+				PartyFlagRound[n] := PartyCastRound != "" ? PartyCastRound : 0 ;  V1toV2: Invalid Index errors?, try 'PartyFlagRound.Push(<val>)'
 			}
 		else
 			PartyFlagRound.Delete(n)
 		}
 	pnbGone := []
 	for pnbK in PartySrcRound
-		if (!IsObject(BoostSrcUsed) || !BoostSrcUsed.HasKey(pnbK))
+		if (!IsObject(BoostSrcUsed) || !BoostSrcUsed.Has(pnbK))
 			pnbGone.Push(pnbK)
 	for pnbI, pnbK in pnbGone
 		PartySrcRound.Delete(pnbK)
 	if (IsObject(BoostSrcUsed))
 		for pnbK in BoostSrcUsed
-			if (!PartySrcRound.HasKey(pnbK))
-				PartySrcRound[pnbK] := PartyCastRound != "" ? PartyCastRound : 0
+			if (!PartySrcRound.Has(pnbK))
+				PartySrcRound[pnbK] := PartyCastRound != "" ? PartyCastRound : 0 ;  V1toV2: Invalid Index errors?, try 'PartySrcRound.Push(<val>)'
 	;(this round's cast goes out in the log's next round)
 	PartyCastRound := (BlRound ? BlRound : 0) + 1
 	}
@@ -304,12 +304,12 @@ PartyReblade(h)
 	spent := 0, kept := 0
 	;(the schools of its hit, as the hitter read them - "" not known: an older bot, or its heads weren't: every boost spent)
 	prLast := PartySchools(h.lasthit)
-	Loop, 53
+	Loop 53
 		{
 		n := A_Index - 1
 		if (used%n% != 1)
 			continue
-		at := (IsObject(PartyFlagRound) && PartyFlagRound.HasKey(n)) ? PartyFlagRound[n] : 0
+		at := (IsObject(PartyFlagRound) && PartyFlagRound.Has(n)) ? PartyFlagRound[n] : 0
 		if (at > PartyHitsWait || (at = PartyHitsWait && ours && theirs && ours > theirs))
 			kept += 1
 		;(one that boosts none of its hit's schools is still on it: a Storm Blade through the hitter's Power Nova)
@@ -329,7 +329,7 @@ PartyReblade(h)
 		prGone := []
 		for prK in BoostSrcUsed
 			{
-			at := (IsObject(PartySrcRound) && PartySrcRound.HasKey(prK)) ? PartySrcRound[prK] : 0
+			at := (IsObject(PartySrcRound) && PartySrcRound.Has(prK)) ? PartySrcRound[prK] : 0
 			if (at > PartyHitsWait || (at = PartyHitsWait && ours && theirs && ours > theirs))
 				kept += 1
 			else if (prLast = "" || BoostFitsAny(prK, prLast))
@@ -402,7 +402,7 @@ PartyHealAlly()
 	DebugLog("  healer: " PartyLowName " at " PartyLowPct "% (under " limit "%) - a heal on " PartyLowName)
 	for each, hcard in ["heal1", "heal2"]
 		{
-		if (%hcard% != 1 || (Stats.HasKey(hitschool "." hcard "target") && Stats[hitschool "." hcard "target"] = 0))
+		if (%hcard% != 1 || (Stats.Has(hitschool "." hcard "target") && Stats[hitschool "." hcard "target"] = 0))
 			continue
 		if UseHeal(hcard, %hcard%, hitschool, PartyLowX, PartyLowY)
 			return true
@@ -430,7 +430,7 @@ PartyShield()
 		{
 		used19 := 1
 		if (IsFunc("DashCast"))
-			Func("DashCast").Call("tower")
+			DashCast.Call("tower")
 		return true
 		}
 	return false
@@ -439,11 +439,11 @@ PartyShield()
 ;Where a blader's or healer's traps go (no boss picked with Alt+1): the enemy the hitter goes for - the one with the
 ;least health, as its hits pick (Autofarmer.ahk HitTarget); the enemies' plates as read in the last 8 s, else now
 ;(KillCalc.ahk ReadEnemyHealth). False: none read - no traps (nowhere sure to put them)
-PartyTrapTarget(ByRef x, ByRef y)
+PartyTrapTarget(&x, &y)
 	{
 	if (A_TickCount - EnemyPlatesAt > 8000)
 		ReadEnemyHealth()
-	if (!IsObject(EnemyPlates) || !EnemyPlates.Length() || !IsObject(EnemyHP) || EnemyHP.Length() != EnemyPlates.Length())
+	if (!IsObject(EnemyPlates) || !EnemyPlates.Length || !IsObject(EnemyHP) || EnemyHP.Length != EnemyPlates.Length)
 		return false
 	ptPick := 1
 	for ptI, ptE in EnemyHP
@@ -503,7 +503,7 @@ PartyHoldWhy()
 		;(near again: waited for again)
 		if (m.zone = PartyMe.zone && m.dist != "" && m.dist <= far / 2)
 			PartySkip.Delete(key), PartyHeldFrom.Delete(key)
-		if (PartySkip.HasKey(key))
+		if (PartySkip.Has(key))
 			continue
 		w := m.loading = 1 ? key " is loading" : m.zone != PartyMe.zone ? key " is in another zone" : (m.dist != "" && m.dist > far) ? key " is " m.dist " away"
 			: m.ready != 1 ? key " isn't ready (bot off, not walking, or played by hand)" : ""
@@ -512,11 +512,11 @@ PartyHoldWhy()
 			PartyHeldFrom.Delete(key)
 			continue
 			}
-		if (!PartyHeldFrom.HasKey(key))
-			PartyHeldFrom[key] := A_TickCount
+		if (!PartyHeldFrom.Has(key))
+			PartyHeldFrom[key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'PartyHeldFrom.Push(<val>)'
 		if (maxS > 0 && A_TickCount - PartyHeldFrom[key] > maxS * 1000)
 			{
-			PartySkip[key] := 1
+			PartySkip[key] := 1 ;  V1toV2: Invalid Index errors?, try 'PartySkip.Push(<val>)'
 			DebugLog("Party: waited " maxS " s for " key " - walking on without them till they're near again")
 			continue
 			}
@@ -538,8 +538,8 @@ PartyFollowStep()
 			ReleaseKeys()
 		;(Wizard101 behind another window, you away 5 minutes - or Play for me: brought to the front, as the walker does)
 		if (Walking && !GameActive() && inbattle != 1 && IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
-			WkFrontLook := A_TickCount, Func("GameToFront").Call("following the leader", true, true)
-		Sleep, 150
+			WkFrontLook := A_TickCount, GameToFront.Call("following the leader", true, true)
+		Sleep(150)
 		return
 		}
 	L := PartyLeader
@@ -548,7 +548,7 @@ PartyFollowStep()
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		SetStatus("party: waiting for the leader" (PartyWhy != "" ? " - " PartyWhy : ""))
-		Sleep, 300
+		Sleep(300)
 		return
 		}
 	near := Stat("partynear")
@@ -569,7 +569,7 @@ PartyFollowStep()
 				ReleaseKeys()
 			PartyTries := 0, PartyStillAt := 0
 			SetStatus("party: by " (L.name != "" ? L.name : "the leader") " (" L.dist " away)")
-			Sleep, 200
+			Sleep(200)
 			return
 			}
 		}
@@ -580,19 +580,19 @@ PartyFollowStep()
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		SetStatus("party: the leader is in " L.zone " - not a door from here (teleport to friend comes in phase 2)")
-		Sleep, 500
+		Sleep(500)
 		return
 		}
 	;(through the door: walked on the way the leader went, for 4 s)
 	if (tgt.kind = "door" && A_TickCount < PartyPushUntil)
 		tgt := {x: L.dx + 400 * L.ddx, y: L.dy + 400 * L.ddy, z: L.dz, kind: "push", stop: 0}
-	nav := PartyNavTo(tgt, tgt.kind = "leader" || tgt.kind = "door")
+	nav := PartyNavTo(tgt, tgt.kind := "leader" || tgt.kind = "door")
 	if (!IsObject(nav))
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		SetStatus("party: the game's memory can't be read for the way to the leader")
-		Sleep, 300
+		Sleep(300)
 		return
 		}
 	d := Sqrt((nav.x - tgt.x) ** 2 + (nav.y - tgt.y) ** 2)
@@ -605,7 +605,7 @@ PartyFollowStep()
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		Sleep, 150
+		Sleep(150)
 		return
 		}
 	;(stuck: its own place hardly moving for 3 s with W down)
@@ -618,14 +618,14 @@ PartyFollowStep()
 				{
 				ReleaseKeys()
 				SetStatus("party: stuck on the way to the leader - waiting for it to come back near")
-				Sleep, 1000
+				Sleep(1000)
 				return
 				}
 			DebugLog("Party: stuck on the way to the " tgt.kind " (" Round(d) " away) - backing up and turning, try " PartyTries)
 			BackUp(700)
 			DgTurn(PartyTries & 1 ? 90 : -90)
 			HoldW(1)
-			Sleep, 900
+			Sleep(900)
 			return
 			}
 		}
@@ -643,7 +643,7 @@ PartyNavTo(p, avoid)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
 	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f[1] = "pos")
@@ -662,16 +662,16 @@ PartyNavTo(p, avoid)
 PartySetup()
 	{
 	name := PartyIni("name"), leader := PartyIni("leader")
-	InputBox, newName, Party - this wizard's name, % "A name for this wizard in the party (shown on the other PCs' dashboards) - its in-game name is best.`n`nThe role (Off / Leader / Follower) is in Settings > PARTY.", , 420, 190, , , , , % name != "" ? name : A_ComputerName
+	IB := InputBox("A name for this wizard in the party (shown on the other PCs' dashboards) - its in-game name is best.`n`nThe role (Off / Leader / Follower) is in Settings > PARTY.", "Party - this wizard's name", "w420 h190", name != "" ? name : A_ComputerName), newName := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel)
 		return
 	newName := RegExReplace(Trim(newName), "[^\w .'-]")
-	IniWrite, %newName%, %A_ScriptDir%\party.ini, party, name
-	InputBox, newLeader, Party - the leader's PC, % "Followers only: the leader PC's address on your home network - its name (e.g. " A_ComputerName ") or its IP (e.g. 192.168.1.20: on the leader PC, Settings > Network > Properties > IPv4 address).`n`nLeave it empty on the leader.", , 460, 220, , , , , %leader%
+	IniWrite(newName, A_ScriptDir "\party.ini", "party", "name")
+	IB := InputBox("Followers only: the leader PC's address on your home network - its name (e.g. " A_ComputerName ") or its IP (e.g. 192.168.1.20: on the leader PC, Settings > Network > Properties > IPv4 address).`n`nLeave it empty on the leader.", "Party - the leader's PC", "w460 h220", leader), newLeader := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel)
 		return
 	newLeader := RegExReplace(Trim(newLeader), "[^\w.-]")
-	IniWrite, %newLeader%, %A_ScriptDir%\party.ini, party, leader
+	IniWrite(newLeader, A_ScriptDir "\party.ini", "party", "leader")
 	DebugLog("Party: this wizard's name '" newName "'" (newLeader != "" ? ", the leader at " newLeader : ""))
 	}
 

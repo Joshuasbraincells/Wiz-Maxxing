@@ -1,3 +1,4 @@
+#Warn Unreachable, Off
 ; Spells.ahk - the dashboard's Spells tab: every card the bot learned by itself (learned\cards.txt), what it took
 ; each one for and where it uses it - and your corrections. AHK v1.1, functions and labels only; #Included by
 ; Autofarmer.ahk after Dungeons.ahk (Dashboard.ahk makes the tab's controls).
@@ -50,7 +51,8 @@ SpInit()
 	SpDirty := 0, SpNoteText := ""
 	SpKinds := SpKindList()
 	for i, k in SpKinds
-		Menu, SpKindMenu, Add, % SpKindItem(k), SpKindChosen
+		SpKindMenu := Menu()
+		SpKindMenu.Add(SpKindItem(k), SpKindChosen)
 	SpListFill()
 	}
 
@@ -64,12 +66,12 @@ SpKindList()
 	if (IsObject(got))
 		for i, t in got
 			{
-			if (!IsObject(t) || t.kind = "" || (t.HasKey("menu") && !t.menu))
+			if (!IsObject(t) || t.kind = "" || (t.Has("menu") && !t.menu))
 				continue
 			list.Push({kind: t.kind, label: t.label != "" ? t.label : t.kind, played: t.played ? 1 : 0})
 			}
 	;(the learner's own kinds since 2026-10-26 - every battle spell type of the game's: CardLearn.ahk LearnTypes)
-	if (!list.Length())
+	if (!list.Length)
 		for i, t in [["damage", "Hits one enemy"], ["aoe", "Hits all enemies"], ["heal", "Heals you"], ["ward", "Shield (cast on you)"]
 			, ["absorb", "Absorb (soaks N damage - cast on you)"], ["blade", "Blade"], ["trap", "Trap"], ["aura", "Aura"]
 			, ["bubble", "Bubble (a global spell - all of the battle)"], ["negaura", "Negative aura (on an enemy for 4 rounds)"]
@@ -80,7 +82,7 @@ SpKindList()
 			, ["enchantother", "Enchantment, other (accuracy, protect, cloak...)"], ["mutate", "Mutation (turns a spell in hand into another)"]
 			, ["polymorph", "Polymorph / shift (Moon)"], ["shadow", "Shadow form or creature (shadow pips)"], ["minion", "Minion (summons one, or works on yours)"]
 			, ["pips", "Pips (gives you or an ally pips)"], ["manipulation", "Manipulation (steal charm / ward, aggro, push...)"], ["keep", "Not used (stays in the list)"]]
-			list.Push({kind: t[1], label: t[2], played: InStr(",damage,aoe,heal,ward,absorb,blade,trap,aura,bubble,negaura,enchant,sharpen,potent,prism,", "," t[1] ",") ? 1 : 0})
+			list.Push({kind: t[1], label: t[2], played: InStr(",damage,aoe,heal,ward,absorb,blade,trap,aura,bubble,negaura,enchant,sharpen,potent,prism,", "," t[1] ",") ? 1 _INVALID_KEYNAME: 0})
 	return list
 	}
 
@@ -101,7 +103,7 @@ SpSchools()
 SpKindLabel(kind)
 	{
 	if (IsFunc("LearnKindLabel"))
-		return Func("LearnKindLabel").Call(kind)
+		return LearnKindLabel.Call(kind)
 	if (IsObject(SpKinds))
 		for i, k in SpKinds
 			if (k.kind = kind)
@@ -113,7 +115,7 @@ SpKindLabel(kind)
 ;loads whatever the learner's functions are called
 SpL(fn, args*)
 	{
-	return IsFunc(fn) ? Func(fn).Call(args*) : ""
+	return IsFunc(fn) ? %fn%.Call(args*) : ""
 	}
 
 ;---- The list ----
@@ -125,28 +127,28 @@ SpListFill()
 	if (!DashHwnd)
 		return
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	if (!IsObject(LearnedCards))
 		SpL("LearnLoad")
 	prevLV := SpListSelect()
 	keep := {}
 	row := 0
-	while (row := LV_GetNext(row))
+	while (row := LV.GetNext(row))
 		{
-		LV_GetText(id, row, 12)
-		keep[id] := 1
+		id := LV.GetText(row)
+		keep[id] := 1 ;  V1toV2: Invalid Index errors?, try 'keep.Push(<val>)'
 		}
-	GuiControl, Dash:-Redraw, SpList
-	LV_Delete()
+	ogcSpList.Opt("-Redraw")
+	LV.Delete()
 	if (IsObject(LearnedCards))
 		for i, c in LearnedCards
 			{
-			row := LV_Add("", SpName(c), SpKindText(c), SpSchoolText(c), SpPipsText(c), SpValueText(c), SpSureText(c), SpInUse(c), c.text
-				, SpFlag(c, "tc") ? "yes" : "", SpWhen(c.when), c.dir = "" ? "main" : c.dir, c.id)
-			if (keep.HasKey(c.id))
-				LV_Modify(row, "Select")
+			row := LV.Add("", SpName(c), SpKindText(c), SpSchoolText(c), SpPipsText(c), SpValueText(c), SpSureText(c), SpInUse(c), c.text
+, SpFlag(c, "tc") ? "yes" : "", SpWhen(c.when), c.dir = "" ? "main" : c.dir, c.id)
+			if (keep.Has(c.id))
+				LV.Modify(row, "Select")
 			}
-	GuiControl, Dash:+Redraw, SpList
+	ogcSpList.Opt("+Redraw")
 	SpListBack(prevLV)
 	SpDirty := 0
 	SpStatusShow()
@@ -157,16 +159,17 @@ SpListFill()
 ;one that was - SpListBack puts it back, so a DgListFill this interrupted carries on in its own list
 SpListSelect()
 	{
-	Gui, Dash:Default
+	;Gui, Dash:Default ; V1toV2: removed
+	V1toV2_LineFill := true ; remove me after inspection
 	prevLV := A_DefaultListView
-	Gui, Dash:ListView, SpList
+	Gui, Dash:ListView, SpList ; V1toV2: [SpList] not found. Manual edit required.
 	return prevLV
 	}
 
 SpListBack(prevLV)
 	{
 	if (prevLV != "" && prevLV != "SpList")
-		Gui, Dash:ListView, %prevLV%
+		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	}
 
 ;The ids of the spells selected in the list ([] none)
@@ -176,12 +179,12 @@ SpSelectedIds()
 	if (!DashHwnd)
 		return ids
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	prevLV := SpListSelect()
 	row := 0
-	while (row := LV_GetNext(row))
+	while (row := LV.GetNext(row))
 		{
-		LV_GetText(id, row, 12)
+		id := LV.GetText(row)
 		if (id != "")
 			ids.Push(id)
 		}
@@ -202,12 +205,12 @@ SpStatusShow()
 	junk := SpLineCount(A_WorkingDir "\backups\learned junk\cards.txt")
 	if (junk)
 		text .= " | " junk " non-card" (junk = 1 ? "" : "s") " moved away"
-	waiting := IsObject(SpPending) ? SpPending.Length() : 0
+	waiting := IsObject(SpPending) ? SpPending.Length : 0
 	if (waiting)
 		text .= " | " waiting " change" (waiting = 1 ? "" : "s") " waiting (applied out of battle)"
 	;(two lines, each cut to what fits the narrowest window: Consolas 9 is about 7 px a letter)
 	note := StrLen(SpNoteText) > 100 ? SubStr(SpNoteText, 1, 99) "~" : SpNoteText
-	GuiControl, Dash:, SpStatus, % text (note != "" ? "`n" note : "")
+	GuiControl, Dash:, SpStatus, % text (note != "" ? "`n" note : "") ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 ;A line under the counts (what was queued, what was done)
@@ -223,7 +226,7 @@ SpLineCount(file)
 	n := 0
 	if (!FileExist(file))
 		return 0
-	Loop, Read, %file%
+	Loop Read, file
 		if (Trim(A_LoopReadLine) != "" && SubStr(A_LoopReadLine, 1, 1) != ";")
 			n += 1
 	return n
@@ -233,7 +236,7 @@ SpLineCount(file)
 SpName(c)
 	{
 	if (IsFunc("LearnName"))
-		return Func("LearnName").Call(c)
+		return LearnName.Call(c)
 	if (!IsObject(c))
 		return "?"
 	return c.name != "" ? c.name : c.text != "" ? "(" c.text ")" : "?"
@@ -284,16 +287,16 @@ SpSureText(c)
 SpInUse(c)
 	{
 	if (IsFunc("LearnInUse"))
-		return Func("LearnInUse").Call(c)
+		return LearnInUse.Call(c)
 	return c.slot != "" ? c.slot : "kept"
 	}
 
 ;yyyyMMddHHmmss as yyyy-MM-dd HH:mm
 SpWhen(when)
 	{
-	if (!RegExMatch(when, "^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)", w))
+	if (!RegExMatch(when, "^(\d{4})(\d\d)(\d\d)(\d\d)(\d\d)", &w))
 		return when
-	return w1 "-" w2 "-" w3 " " w4 ":" w5
+	return w[1] "-" w[2] "-" w[3] " " w[4] ":" w[5]
 	}
 
 ;Learned spell c's flag key (learned\cards.txt's last field, a comma list: ok, tc, hold, out=<id>...): its value
@@ -304,13 +307,13 @@ SpFlag(c, key)
 		return ""
 	fl := c.flags
 	if (IsObject(fl))
-		return fl.HasKey(key) ? (fl[key] = "" ? 1 : fl[key]) : ""
-	Loop, Parse, fl, `,
+		return fl.Has(key) ? (fl[key] = "" ? 1 : fl[key]) : ""
+	Loop Parse, fl, ","
 		{
 		p := InStr(A_LoopField, "=")
 		k := Trim(p ? SubStr(A_LoopField, 1, p - 1) : A_LoopField)
 		if (k = key)
-			return p ? SubStr(A_LoopField, p + 1) : 1
+			return p ? SubStr(A_LoopField, (p + 1)<1 ? (p + 1)-1 : (p + 1)) : 1
 		}
 	return ""
 	}
@@ -351,23 +354,23 @@ SpAbout(c)
 SpPreviewShow()
 	{
 	ids := SpSelectedIds()
-	c := ids.Length() ? SpL("LearnCardOf", ids[1]) : ""
+	c := ids.Length ? SpL("LearnCardOf", ids[1]) : ""
 	if (!IsObject(c))
 		{
-		GuiControl, Dash:Hide, SpPreview
-		GuiControl, Dash:, SpPreviewTxt, % ids.Length() ? "" : "Pick a spell to see it."
+		ogcSpPreview.Visible := false
+		GuiControl, Dash:, SpPreviewTxt, % ids.Length() ? "" : "Pick a spell to see it." ; V1toV2: Ternary not yet supported (coming soon)
 		return
 		}
 	pic := SpPicPath(c)
 	if (pic != "")
 		{
 		;(the control is sized for 100% display scaling; the picture is loaded at real pixels - as DashHandCard)
-		GuiControl, Dash:, SpPreview, % "*w" Round(140 * A_ScreenDPI / 96) " *h" Round(233 * A_ScreenDPI / 96) " " pic
-		GuiControl, Dash:Show, SpPreview
+		ogcSpPreview.Value := "*w" Round(140 * A_ScreenDPI / 96) " *h" Round(233 * A_ScreenDPI / 96) " " pic
+		ogcSpPreview.Visible := true
 		}
 	else
-		GuiControl, Dash:Hide, SpPreview
-	GuiControl, Dash:, SpPreviewTxt, % SpAbout(c) (ids.Length() > 1 ? "`n(" ids.Length() " selected)" : "")
+		ogcSpPreview.Visible := false
+	GuiControl, Dash:, SpPreviewTxt, % SpAbout(c) (ids.Length() > 1 ? "`n(" ids.Length() " selected)" : "") ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 ;The dashboard on the Spells tab (the tray menu's "Learned spells")
@@ -378,10 +381,10 @@ SpShowTab()
 	if (!DashShown)
 		DashToggle()
 	;(minimised - put away - it's shown again)
-	WinGet, spMinMax, MinMax, ahk_id %DashHwnd%
+	spMinMax := WinGetMinMax("ahk_id " DashHwnd)
 	if (spMinMax = -1)
-		WinRestore, ahk_id %DashHwnd%
-	GuiControl, Dash:Choose, DashTabs, 3
+		WinRestore("ahk_id " DashHwnd)
+	ogcDashTabs.Choose(3)
 	SpDirty := 1
 	DashRefresh()
 	}
@@ -413,11 +416,11 @@ SpPendingEdit(id)
 	{
 	if (!IsObject(SpPending))
 		return ""
-	i := SpPending.Length()
+	i := SpPending.Length
 	while (i >= 1)
 		{
 		job := SpPending[i], i -= 1
-		if (job.op = "edit" && job.ids.Length() = 1 && job.ids[1] = id)
+		if (job.op = "edit" && job.ids.Length = 1 && job.ids[1] = id)
 			return job.arg
 		}
 	return ""
@@ -426,7 +429,7 @@ SpPendingEdit(id)
 ;A correction in words
 SpJobText(op, arg, ids)
 	{
-	n := IsObject(ids) ? ids.Length() : 0
+	n := IsObject(ids) ? ids.Length : 0
 	who := n = 1 ? SpName(SpL("LearnCardOf", ids[1])) : n " spells"
 	if (op = "kind")
 		return who " -> " SpKindLabel(arg)
@@ -451,10 +454,10 @@ SpJobText(op, arg, ids)
 ;moves pictures and tells the vision helper)
 SpApplyPending()
 	{
-	if (!IsObject(SpPending) || !SpPending.Length() || inbattle = 1)
+	if (!IsObject(SpPending) || !SpPending.Length || inbattle = 1)
 		return
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	todo := SpPending, SpPending := []
 	if (!IsObject(LearnedCards))
 		SpL("LearnLoad")
@@ -540,7 +543,7 @@ SpCallLearn(fn, args*)
 		DebugLog("Spells: CardLearn.ahk has no " fn "() - nothing changed")
 		return "not changed (CardLearn.ahk has no " fn ")"
 		}
-	return Func(fn).Call(args*)
+	return fn.Call(args*)
 	}
 
 ;---- The Edit window ----
@@ -549,52 +552,59 @@ SpCallLearn(fn, args*)
 SpEditShow(hidden := false)
 	{
 	ids := SpSelectedIds()
-	c := ids.Length() ? SpL("LearnCardOf", ids[1]) : ""
+	c := ids.Length ? SpL("LearnCardOf", ids[1]) : ""
 	if (!IsObject(c))
 		return SpNote("Pick a spell in the list first")
 	if (SpEdHwnd)
-		Gui, SpEd:Destroy
+		Try SpEd.Destroy()
 	SpEdId := c.id
 	;(an edit still waiting in the queue: shown as it will be)
 	b := SpPendingEdit(c.id), b := IsObject(b) ? b : c
-	Gui, SpEd:New, +OwnerDash +HwndSpEdHwnd -MaximizeBox -MinimizeBox, % "Wizard101 bot " BotVersion() " - edit a learned spell"
-	Gui, SpEd:Color, 1B1D22, 111317
-	Gui, SpEd:Margin, 12, 10
-	Gui, SpEd:Font, s9 w600 c8AB4F8, Segoe UI
-	Gui, SpEd:Add, Text, x12 y12 w380 h18, % SpName(c) " - " SpKindLabel(c.type) " (" c.sch ")"
-	Gui, SpEd:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, SpEd:Add, Text, x12 y34 w380 h62, % "Text read: " (c.text = "" ? "-" : c.text) "`nThe number: a hit's least damage, a heal's amount, the % of a blade, trap, shield, aura or bubble. Blank: not known. What you set is kept - the learner never changes it by itself."
-	Gui, SpEd:Font, s9 w400 cDADADA, Segoe UI
-	Gui, SpEd:Add, Text, x12 y107 w80 h18, Name
-	Gui, SpEd:Add, Text, x12 y137 w80 h18, Number
-	Gui, SpEd:Add, Text, x12 y167 w80 h18, Pips
-	Gui, SpEd:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, SpEd:Add, Edit, x96 y104 w296 h22 Limit40 vSpEdName, % b.name
-	Gui, SpEd:Add, Edit, x96 y134 w80 h22 Number Limit5 vSpEdValue, % b.value
-	Gui, SpEd:Add, Edit, x96 y164 w50 h22 Limit2 vSpEdPips, % SpPipsEditText(c, b)
-	Gui, SpEd:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, SpEd:Add, Text, x156 y167 w236 h18, % c.guess && c.pips != "" ? "(guessed - Save makes it read)" : ""
-	Gui, SpEd:Font, s9 w400 cB9E2B9, Segoe UI
-	Gui, SpEd:Add, Text, x12 y196 w380 h32 vSpEdNote
-	Gui, SpEd:Font, s9 w400 c000000, Segoe UI
-	Gui, SpEd:Add, Button, x12 y234 w90 h26 Default gSpEdSave, Save
-	Gui, SpEd:Add, Button, x110 y234 w90 h26 gSpEdGuiClose, Close
+	SpEd := Gui("+OwnerDash -MaximizeBox -MinimizeBox", "Wizard101 bot " BotVersion() " - edit a learned spell"), SpEdHwnd := SpEd.Hwnd
+	SpEd.OnEvent("Close", SpEdGuiClose)
+	SpEd.OnEvent("Escape", SpEdGuiEscape)
+	SpEd.BackColor := "1B1D22"
+	SpEd.MarginX := 12, SpEd.MarginY := 10
+	SpEd.SetFont("s9 w600 c8AB4F8", "Segoe UI")
+	SpEd.Add("Text", "x12 y12 w380 h18", SpName(c) " - " SpKindLabel(c.type) " (" c.sch ")")
+	SpEd.SetFont("s9 w400 c9AA0A6", "Segoe UI")
+	Gui, SpEd:Add, Text, x12 y34 w380 h62, % "Text read: " (c.text = "" ? "-" : c.text) "`nThe number: a hit's least damage, a heal's amount, the % of a blade, trap, shield, aura or bubble. Blank: not known. What you set is kept - the learner never changes it by itself." ; V1toV2: Ternary not yet supported (coming soon)
+	SpEd.SetFont("s9 w400 cDADADA", "Segoe UI")
+	SpEd.Add("Text", "x12 y107 w80 h18", "Name")
+	SpEd.Add("Text", "x12 y137 w80 h18", "Number")
+	SpEd.Add("Text", "x12 y167 w80 h18", "Pips")
+	SpEd.SetFont("s9 w400 cF2F2F2", "Segoe UI")
+	ogcEditSpEdName := SpEd.Add("Edit", "x96 y104 w296 h22 Limit40 vSpEdName", b.name)
+	ogcEditSpEdValue := SpEd.Add("Edit", "x96 y134 w80 h22 Number Limit5 vSpEdValue", b.value)
+	ogcEditSpEdPips := SpEd.Add("Edit", "x96 y164 w50 h22 Limit2 vSpEdPips", SpPipsEditText(c, b))
+	SpEd.SetFont("s9 w400 c9AA0A6", "Segoe UI")
+	Gui, SpEd:Add, Text, x156 y167 w236 h18, % c.guess && c.pips != "" ? "(guessed - Save makes it read)" : "" ; V1toV2: Ternary not yet supported (coming soon)
+	SpEd.SetFont("s9 w400 cB9E2B9", "Segoe UI")
+	ogcTextSpEdNote := SpEd.Add("Text", "x12 y196 w380 h32 vSpEdNote")
+	SpEd.SetFont("s9 w400 c000000", "Segoe UI")
+	ogcButtonSave := SpEd.Add("Button", "x12 y234 w90 h26 Default", "Save")
+	ogcButtonSave.OnEvent("Click", SpEdSave.Bind("Normal"))
+	ogcButtonClose := SpEd.Add("Button", "x110 y234 w90 h26", "Close")
+	ogcButtonClose.OnEvent("Click", SpEdGuiClose.Bind("Normal"))
 	;(next to the dashboard when it's up, else in the middle of the screen)
 	pos := ""
 	if (DashHwnd && DashShown)
 		{
-		WinGet, mm, MinMax, ahk_id %DashHwnd%
-		WinGetPos, dx, dy, , , ahk_id %DashHwnd%
+		mm := WinGetMinMax("ahk_id " DashHwnd)
+		WinGetPos(&dx, &dy, , , "ahk_id " DashHwnd)
 		if (dx != "" && mm != -1)
 			pos := "x" dx + 30 " y" dy + 60 " "
 		}
-	Gui, SpEd:Show, % pos (hidden ? "Hide " : "") "AutoSize", % "Wizard101 bot " BotVersion() " - edit a learned spell"
+	Gui, SpEd:Show, % pos (hidden ? "Hide " : "") "AutoSize", % "Wizard101 bot " BotVersion() " - edit a learned spell" ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 ;Save: what was typed checked, then queued (the window closes); a note in the window when it can't be
 SpEdSaveNow()
 	{
-	Gui, SpEd:Submit, NoHide
+	oSaved := SpEd.Submit(0)
+	Try SpEdName := oSaved.SpEdName
+	Try SpEdPips := oSaved.SpEdPips
+	Try SpEdValue := oSaved.SpEdValue
 	name := Trim(RegExReplace(SpEdName, "[^\x20-\x7E]|\|", "")), value := Trim(SpEdValue), pips := Trim(SpEdPips)
 	c := SpL("LearnCardOf", SpEdId)
 	if (!IsObject(c))
@@ -611,13 +621,13 @@ SpEdSaveNow()
 	if (name == b.name && value = b.value && pips = b.pips && !(pips != "" && c.guess) && !(pips = "x" && !SpFlag(c, "xpip")) && !(pips != "x" && SpFlag(c, "xpip")))
 		return SpEdSay("Nothing changed.")
 	SpQueue("edit", {name: name, value: value, pips: pips}, [SpEdId])
-	Gui, SpEd:Destroy
+	Try SpEd.Destroy()
 	SpEdHwnd := 0
 	}
 
 SpEdSay(text)
 	{
-	GuiControl, SpEd:, SpEdNote, %text%
+	ogcTextSpEdNote.Value := text
 	}
 
 ;---- A cell edited in the list itself, as in a spreadsheet (you asked, 2026-10-23) ----
@@ -629,19 +639,19 @@ SpCellEdit(row, scMx := "", scMy := "")
 	;(a box still open - another cell double-clicked before the click away was seen: what's typed there kept first)
 	if (SpCellHwnd)
 		SpCellCommit()
-	GuiControlGet, scLv, Dash:Hwnd, SpList
+	scLv := ogcSpList.Hwnd
 	if (!scLv)
 		return SpOpenPic(false)
 	;(where the double-click was - the mouse; tests: given)
 	if (scMx = "")
 		{
-		CoordMode, Mouse, Screen
-		MouseGetPos, scMx, scMy
+		CoordMode("Mouse", "Screen")
+		MouseGetPos(&scMx, &scMy)
 		}
-	VarSetCapacity(scPt, 8, 0), NumPut(scMx, scPt, 0, "Int"), NumPut(scMy, scPt, 4, "Int")
-	DllCall("ScreenToClient", "Ptr", scLv, "Ptr", &scPt)
-	VarSetCapacity(scHt, 24, 0), NumPut(NumGet(scPt, 0, "Int"), scHt, 0, "Int"), NumPut(NumGet(scPt, 4, "Int"), scHt, 4, "Int")
-	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1039, "Ptr", 0, "Ptr", &scHt)       ; LVM_SUBITEMHITTEST
+	scPt := Buffer(8, 0), NumPut("Int", scMx, scPt, 0), NumPut("Int", scMy, scPt, 4) ; V1toV2: if 'scPt' is a UTF-16 string, use 'VarSetStrCapacity(&scPt, 8)' and replace all instances of 'scPt.Ptr' with 'StrPtr(scPt)'
+	DllCall("ScreenToClient", "Ptr", scLv, "Ptr", scPt.Ptr)
+	scHt := Buffer(24, 0), NumPut("Int", NumGet(scPt, 0, "Int"), scHt, 0), NumPut("Int", NumGet(scPt, 4, "Int"), scHt, 4) ; V1toV2: if 'scHt' is a UTF-16 string, use 'VarSetStrCapacity(&scHt, 24)' and replace all instances of 'scHt.Ptr' with 'StrPtr(scHt)'
+	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1039, "Ptr", 0, "Ptr", scHt.Ptr)       ; LVM_SUBITEMHITTEST
 	scItem := NumGet(scHt, 12, "Int"), scSub := NumGet(scHt, 16, "Int")
 	;(the mouse moved off the double-clicked row before this ran - the bot busy: not another row's cell)
 	if (scItem < 0 || scItem + 1 != row)
@@ -656,18 +666,18 @@ SpCellEdit(row, scMx := "", scMy := "")
 ;8 TC - the row scrolled into view and picked; false if there's no such spell
 SpCellOpen(row, scSub)
 	{
-	GuiControlGet, scLv, Dash:Hwnd, SpList
+	scLv := ogcSpList.Hwnd
 	if (!scLv)
 		return false
 	prevLV := SpListSelect()
-	if (row < 1 || row > LV_GetCount())
+	if (row < 1 || row > LV.GetCount())
 		{
 		SpListBack(prevLV)
 		return false
 		}
-	LV_GetText(scId, row, 12)
-	LV_Modify(0, "-Select")
-	LV_Modify(row, "Select Focus Vis")
+	scId := LV.GetText(row)
+	LV.Modify(0, "-Select")
+	LV.Modify(row, "Select Focus Vis")
 	SpListBack(prevLV)
 	scItem := row - 1
 	c := SpL("LearnCardOf", scId)
@@ -677,10 +687,10 @@ SpCellOpen(row, scSub)
 	if (scCol = "")
 		return false
 	;(the cell's place on screen - for column 0 its label's, not the whole row's)
-	VarSetCapacity(scRc, 16, 0), NumPut(scSub, scRc, 4, "Int"), NumPut(scSub = 0 ? 2 : 0, scRc, 0, "Int")
-	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1038, "Ptr", scItem, "Ptr", &scRc)  ; LVM_GETSUBITEMRECT
-	VarSetCapacity(scP, 8, 0), NumPut(NumGet(scRc, 0, "Int"), scP, 0, "Int"), NumPut(NumGet(scRc, 4, "Int"), scP, 4, "Int")
-	DllCall("ClientToScreen", "Ptr", scLv, "Ptr", &scP)
+	scRc := Buffer(16, 0), NumPut("Int", scSub, scRc, 4), NumPut("Int", scSub = 0 ? 2 : 0, scRc, 0) ; V1toV2: if 'scRc' is a UTF-16 string, use 'VarSetStrCapacity(&scRc, 16)' and replace all instances of 'scRc.Ptr' with 'StrPtr(scRc)'
+	DllCall("SendMessage", "Ptr", scLv, "UInt", 0x1038, "Ptr", scItem, "Ptr", scRc.Ptr)  ; LVM_GETSUBITEMRECT
+	scP := Buffer(8, 0), NumPut("Int", NumGet(scRc, 0, "Int"), scP, 0), NumPut("Int", NumGet(scRc, 4, "Int"), scP, 4) ; V1toV2: if 'scP' is a UTF-16 string, use 'VarSetStrCapacity(&scP, 8)' and replace all instances of 'scP.Ptr' with 'StrPtr(scP)'
+	DllCall("ClientToScreen", "Ptr", scLv, "Ptr", scP.Ptr)
 	scX := NumGet(scP, 0, "Int"), scY := NumGet(scP, 4, "Int")
 	scW := NumGet(scRc, 8, "Int") - NumGet(scRc, 0, "Int"), scH := NumGet(scRc, 12, "Int") - NumGet(scRc, 4, "Int")
 	SpCellClose()
@@ -694,16 +704,19 @@ SpCellOpen(row, scSub)
 	SpCellShown := scNow
 	;(DPI: the window's sizes are scaled by Windows - given in 96-dpi pixels)
 	scDpi := A_ScreenDPI / 96
-	Gui, SpCell:New, -Caption +ToolWindow +OwnerDash +Border +HwndSpCellHwnd
-	Gui, SpCell:Margin, 0, 0
-	Gui, SpCell:Color, 111317, 111317
-	Gui, SpCell:Font, s9 w400 cF2F2F2, Segoe UI
-	Gui, SpCell:Add, Edit, % "x0 y0 w" Max(60, Round(scW / scDpi)) " h" Max(20, Round(scH / scDpi) + 4) " -E0x200 vSpCellText" (scCol = "name" ? " Limit40" : scCol = "value" ? " Number Limit5" : " Limit2"), %scNow%
-	Gui, SpCell:Add, Button, x0 y0 w0 h0 Hidden Default gSpCellOk
-	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")
-	SendMessage, 0xB1, 0, -1, Edit1, ahk_id %SpCellHwnd%      ; EM_SETSEL: all of it, to type over
+	SpCell := Gui("-Caption +ToolWindow +OwnerDash +Border"), SpCellHwnd := SpCell.Hwnd
+	SpCell.OnEvent("Close", SpCellGuiClose)
+	SpCell.OnEvent("Escape", SpCellGuiEscape)
+	SpCell.MarginX := 0, SpCell.MarginY := 0
+	SpCell.BackColor := 111317
+	SpCell.SetFont("s9 w400 cF2F2F2", "Segoe UI")
+	Gui, SpCell:Add, Edit, % "x0 y0 w" Max(60, Round(scW / scDpi)) " h" Max(20, Round(scH / scDpi) + 4) " -E0x200 vSpCellText" (scCol = "name" ? " Limit40" : scCol = "value" ? " Number Limit5" : " Limit2"), %scNow% ; V1toV2: Ternary not yet supported (coming soon)
+	ogcButton := SpCell.Add("Button", "x0 y0 w0 h0 Hidden Default")
+	ogcButton.OnEvent("Click", SpCellOk.Bind("Normal"))
+	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "") ; V1toV2: Ternary not yet supported (coming soon)
+	ErrorLevel := SendMessage(0xB1, 0, -1, "Edit1", "ahk_id " SpCellHwnd)      ; EM_SETSEL: all of it, to type over
 	;(clicked away: kept - looked at every 150 ms)
-	SetTimer, SpCellWatch, 150
+	SetTimer(SpCellWatch,150)
 	return true
 	}
 
@@ -737,40 +750,42 @@ SpCellPick(c, col, scX, scY, scW, scH)
 		}
 	SpCellShown := now
 	scDpi := A_ScreenDPI / 96
-	Gui, SpCell:New, -Caption +ToolWindow +OwnerDash +Border +HwndSpCellHwnd
-	Gui, SpCell:Margin, 0, 0
-	Gui, SpCell:Color, 111317, 111317
-	Gui, SpCell:Font, s9 w400 c000000, Segoe UI
+	SpCell := Gui("-Caption +ToolWindow +OwnerDash +Border"), SpCellHwnd := SpCell.Hwnd
+	SpCell.OnEvent("Close", SpCellGuiClose)
+	SpCell.OnEvent("Escape", SpCellGuiEscape)
+	SpCell.MarginX := 0, SpCell.MarginY := 0
+	SpCell.BackColor := 111317
+	SpCell.SetFont("s9 w400 c000000", "Segoe UI")
 	;(every kind shown at once - 29 since 2026-10-26, every spell type of the game's)
-	Gui, SpCell:Add, DropDownList, % "x0 y0 w" Max(90, Round(scW / scDpi)) " R" Min(30, SpCellChoices.Length()) " AltSubmit vSpCellText", %items%
+	ogcDropDownListSpCellText := SpCell.Add("DropDownList", "x0 y0 w" Max(90, Round(scW / scDpi)) " R" Min(30, SpCellChoices.Length) " AltSubmit vSpCellText", StrSplit(items, "|")) ; V1toV2: Ensure DropDownList has correct choose value
 	if (now)
-		GuiControl, SpCell:Choose, SpCellText, %now%
-	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")
-	GuiControlGet, scCb, SpCell:Hwnd, SpCellText
+		ogcDropDownListSpCellText.Choose(%now%)
+	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "") ; V1toV2: Ternary not yet supported (coming soon)
+	scCb := ogcDropDownListSpCellText.Hwnd
 	;(the list as wide as its longest - a Kind's label is longer than the column)
-	SendMessage, 0x160, % Round(260 * scDpi), 0, , ahk_id %scCb%      ; CB_SETDROPPEDWIDTH
+	ErrorLevel := SendMessage(0x160, Round(260 * scDpi), 0, , "ahk_id " scCb)      ; CB_SETDROPPEDWIDTH
 	SpCellDropped := 0
 	if (!SpCellHidden)
 		{
-		SendMessage, 0x14F, 1, 0, , ahk_id %scCb%                      ; CB_SHOWDROPDOWN
+		ErrorLevel := SendMessage(0x14F, 1, 0, , "ahk_id " scCb)                      ; CB_SHOWDROPDOWN
 		SpCellDropped := 1
 		}
-	SetTimer, SpCellWatch, 150
+	SetTimer(SpCellWatch,150)
 	return true
 	}
 
 ;A dropdown cell's value picked now ("" none picked)
 SpCellPicked()
 	{
-	GuiControlGet, pos, SpCell:, SpCellText
-	return (pos >= 1 && IsObject(SpCellChoices) && pos <= SpCellChoices.Length()) ? SpCellChoices[pos] : ""
+	pos := ogcDropDownListSpCellText.Value
+	return (pos >= 1 && IsObject(SpCellChoices) && pos <= SpCellChoices.Length) ? SpCellChoices[pos] : ""
 	}
 
 ;A dropdown cell kept: queued as the Change kind button's, or as a school or treasure card set (applied out of battle),
 ;and shown in the list at once. Left as it was: nothing
 SpCellPickCommit()
 	{
-	GuiControlGet, pos, SpCell:, SpCellText
+	pos := ogcDropDownListSpCellText.Value
 	v := SpCellPicked(), col := SpCellCol, id := SpCellId, was := SpCellShown
 	SpCellClose()
 	if (v = "" || pos = was)
@@ -785,12 +800,12 @@ SpCellPickCommit()
 	else
 		SpQueue("tc", v, [id]), show := v ? "yes" : "", n := 9
 	prevLV := SpListSelect()
-	Loop, % LV_GetCount()
+	Loop LV.GetCount()
 		{
-		LV_GetText(rowId, A_Index, 12)
+		rowId := LV.GetText(A_Index)
 		if (rowId = id)
 			{
-			LV_Modify(A_Index, "Col" n, show " *")
+			LV.Modify(A_Index, "Col" n, show " *")
 			break
 			}
 		}
@@ -809,31 +824,31 @@ SpCellMove(dRow, dCol)
 		SpCellPickCommit()
 	else
 		{
-		SendMessage, 0xB8, 0, 0, Edit1, ahk_id %SpCellHwnd%      ; EM_GETMODIFY: typed in
+		ErrorLevel := SendMessage(0xB8, 0, 0, "Edit1", "ahk_id " SpCellHwnd)      ; EM_GETMODIFY: typed in
 		typedIn := ErrorLevel != "FAIL" && ErrorLevel
 		SpCellCommit(typedIn)
 		}
 	prevLV := SpListSelect()
 	row := 0
-	Loop, % LV_GetCount()
+	Loop LV.GetCount()
 		{
-		LV_GetText(rowId, A_Index, 12)
+		rowId := LV.GetText(A_Index)
 		if (rowId = id)
 			{
 			row := A_Index
 			break
 			}
 		}
-	n := LV_GetCount()
+	n := LV.GetCount()
 	SpListBack(prevLV)
 	if (!row)
 		return
 	cols := [0, 1, 2, 3, 4, 8], at := col = "name" ? 1 : col = "kind" ? 2 : col = "school" ? 3 : col = "pips" ? 4 : col = "value" ? 5 : 6
 	at += dCol, row += dRow
-	if (at > cols.Length())
+	if (at > cols.Length)
 		at := 1, row += 1
 	else if (at < 1)
-		at := cols.Length(), row -= 1
+		at := cols.Length, row -= 1
 	if (row >= 1 && row <= n)
 		SpCellOpen(row, cols[at])
 	}
@@ -847,7 +862,8 @@ SpCellCommit(byEnter := false)
 		return
 	if (SpCellCol = "kind" || SpCellCol = "school" || SpCellCol = "tc")
 		return SpCellPickCommit()
-	Gui, SpCell:Submit, NoHide
+	oSaved := SpCell.Submit(0)
+	Try SpCellText := oSaved.SpCellText
 	typed := Trim(SpCellText), col := SpCellCol
 	SpCellClose()
 	if (!byEnter && typed == Trim(SpCellShown))
@@ -886,12 +902,12 @@ SpCellCommit(byEnter := false)
 	SpQueue("edit", {name: name, value: value, pips: pips, cols: cols}, [SpCellId])
 	;(the list shows it now - the bot's loop applies it out of battle and fills the list again)
 	prevLV := SpListSelect()
-	Loop, % LV_GetCount()
+	Loop LV.GetCount()
 		{
-		LV_GetText(rowId, A_Index, 12)
+		rowId := LV.GetText(A_Index)
 		if (rowId = SpCellId)
 			{
-			LV_Modify(A_Index, "Col" (col = "name" ? 1 : col = "value" ? 5 : 4), (col = "name" ? name : col = "value" ? value : pips) " *")
+			LV.Modify(A_Index, "Col" (col = "name" ? 1 : col = "value" ? 5 : 4), (col = "name" ? name : col = "value" ? value : pips) " *")
 			break
 			}
 		}
@@ -901,9 +917,9 @@ SpCellCommit(byEnter := false)
 ;The cell's box gone (nothing kept)
 SpCellClose()
 	{
-	SetTimer, SpCellWatch, Off
+	SetTimer(SpCellWatch,0)
 	if (SpCellHwnd)
-		Gui, SpCell:Destroy
+		Try SpCell.Destroy()
 	SpCellHwnd := 0
 	}
 
@@ -913,9 +929,9 @@ SpCellClose()
 SpForgetAsk()
 	{
 	ids := SpSelectedIds()
-	if (!ids.Length())
+	if (!ids.Length)
 		return SpNote("Pick one or more spells in the list first")
-	n := ids.Length()
+	n := ids.Length
 	if (SpAsk("Forget " (n = 1 ? SpName(SpL("LearnCardOf", ids[1])) : n " spells") "? Their pictures go to backups\learned forgotten. A real card is learned again the next time it is in hand - to keep one out of use, change its kind to 'Not used' instead.") != "Yes")
 		return
 	SpQueue("forget", "", ids)
@@ -926,8 +942,8 @@ SpAsk(text)
 	{
 	if (SpAskAnswer != "")
 		return SpAskAnswer
-	MsgBox, 262436, Learned spells, %text%
-	IfMsgBox, Yes
+	msgResult := MsgBox(text, "Learned spells", 262436)
+	if (msgResult = "Yes")
 		return "Yes"
 	return "No"
 	}
@@ -936,7 +952,7 @@ SpAsk(text)
 SpHoldToggle()
 	{
 	ids := SpSelectedIds()
-	if (!ids.Length())
+	if (!ids.Length)
 		return SpNote("Pick one or more spells in the list first")
 	holdOn := 0
 	for i, id in ids
@@ -949,7 +965,7 @@ SpHoldToggle()
 SpKindPick(pos)
 	{
 	ids := SpSelectedIds()
-	if (!ids.Length() || !IsObject(SpKinds) || !SpKinds.HasKey(pos))
+	if (!ids.Length || !IsObject(SpKinds) || !SpKinds.Has(pos))
 		return
 	SpQueue("kind", SpKinds[pos].kind, ids)
 	}
@@ -958,19 +974,19 @@ SpKindPick(pos)
 SpOpenPic(folder)
 	{
 	ids := SpSelectedIds()
-	c := ids.Length() ? SpL("LearnCardOf", ids[1]) : ""
+	c := ids.Length ? SpL("LearnCardOf", ids[1]) : ""
 	pic := IsObject(c) ? SpPicPath(c) : ""
 	if (folder && pic != "")
-		Run, % "explorer.exe /select,""" pic """"
+		Run("explorer.exe /select, "`"`"`" pic `"`"`"`"")
 	else if (folder)
 		{
-		FileCreateDir, %A_WorkingDir%\learned
-		Run, % "explorer.exe """ A_WorkingDir "\learned"""
+		DirCreate(A_WorkingDir "\learned")
+		Run("explorer.exe `"" A_WorkingDir "\learned`"")
 		}
 	else if (pic != "")
-		Run, % """" pic """"
+		Run("`"" pic "`"")
 	else
-		SpNote(ids.Length() ? "That spell's picture isn't there any more" : "Pick a spell in the list first")
+		SpNote(ids.Length ? "That spell's picture isn't there any more" : "Pick a spell in the list first")
 	}
 
 ;The Moved away menu: the folders in backups\ with what was taken out of use - non-cards, forgotten spells, stray
@@ -981,68 +997,171 @@ SpMovedMenu(show := true)
 	static made := 0
 	SpMovedPaths := []
 	if (made)
-		Menu, SpMovedMenu, DeleteAll
+		SpMovedMenu := Menu()
+		SpMovedMenu.Delete()
 	back := A_WorkingDir "\backups"
 	items := []
 	for i, f in [["learned junk", "Non-cards taken out of the list"], ["learned forgotten", "Spells you forgot"], ["learned strays", "Stray copies of learned pictures"]]
 		if (InStr(FileExist(back "\" f[1]), "D"))
 			items.Push([f[2] " (backups\" f[1] ")", back "\" f[1]])
 	snaps := ""
-	Loop, Files, % back "\hits *", D
+	Loop Files, back "\hits *", "D"
 		snaps .= A_LoopFileTimeCreated "`t" A_LoopFileName "`n"
-	Sort, snaps, R
-	Loop, Parse, snaps, `n
+	snaps := Sort(snaps, "R")
+	Loop Parse, snaps, "`n"
 		{
 		if (A_LoopField = "" || A_Index > 10)
 			continue
-		f := SubStr(A_LoopField, InStr(A_LoopField, "`t") + 1)
+		f := SubStr(A_LoopField, (InStr(A_LoopField, "`t") + 1)<1 ? (InStr(A_LoopField, "`t") + 1)-1 : (InStr(A_LoopField, "`t") + 1))
 		items.Push(["Hits moved to make room: " f, back "\" f])
 		}
 	if (InStr(FileExist(back), "D"))
 		items.Push(["The backups folder", back])
-	if (!items.Length())
+	if (!items.Length)
 		{
 		SpNote("Nothing has been moved away yet")
 		return 0
 		}
 	for i, it in items
 		{
-		Menu, SpMovedMenu, Add, % StrReplace(it[1], "&", "and"), SpMovedChosen
+		SpMovedMenu.Add(StrReplace(it[1], "&", "and"), SpMovedChosen)
 		SpMovedPaths.Push(it[2])
 		}
 	made := 1
 	if (show)
-		Menu, SpMovedMenu, Show
-	return items.Length()
+		SpMovedMenu.Show()
+	return items.Length
 	}
 
 ;---- The tab's buttons (labels run in the global scope: Sp-named variables only) ----
 
 SpListEvent:
-	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
-		SetTimer, SpPreviewTick, -60
-	else if (A_GuiEvent = "DoubleClick" && A_EventInfo)
-		SpCellEdit(A_EventInfo)
+SpListEvent()
 	return
 
 ;(the cell's box: Enter keeps what's typed, Esc doesn't, clicking away keeps it)
 SpCellOk:
-	SpCellMove(1, 0)
+SpCellOk()
 	return
 
 SpCellGuiEscape:
+SpCellGuiEscape()
+return
 SpCellGuiClose:
-	SpCellClose()
+SpCellGuiClose()
 	return
 
 SpCellWatch:
+SpCellWatch()
+	return
+
+;(after a moment: a select-all doesn't load the picture once per row)
+SpPreviewTick:
+SpPreviewTick()
+	return
+
+SpKindClick:
+SpKindClick()
+	return
+
+SpKindChosen:
+SpKindChosen()
+	return
+
+SpEditClick:
+SpEditClick()
+	return
+
+SpEdSave:
+SpEdSave()
+	return
+
+SpEdGuiClose:
+SpEdGuiClose()
+return
+SpEdGuiEscape:
+SpEdGuiEscape()
+	return
+
+SpForgetClick:
+SpForgetClick()
+	return
+
+SpHoldClick:
+SpHoldClick()
+	return
+
+SpPicClick:
+SpPicClick()
+	return
+
+SpFolderClick:
+SpFolderClick()
+	return
+
+SpMovedClick:
+SpMovedClick()
+	return
+
+SpMovedChosen:
+SpMovedChosen()
+	return
+
+;(learned\cards.txt read again - by the bot's loop, out of battle - and the list filled now)
+SpRefreshClick:
+SpRefreshClick()
+	return
+
+;The cell's keys while its box is in front: Tab / Shift+Tab right and left, Enter / Shift+Enter down and up (SpCellMove)
+#HotIf SpCellHwnd && WinActive("ahk_id " SpCellHwnd)
+Tab::HK1_Tab()
+	return
++Tab::HK2_Tab()
+	return
+Enter::
+NumpadEnter::HK4_NumpadEnter()
+	return
++Enter::
++NumpadEnter::HK6_NumpadEnter()
+	return
+#HotIf
+
+;###############  V1toV2 FUNCS  ###############
+SpListEvent() { ; V1toV2: Lbl->Func
+	global
+	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S"))
+		SetTimer(SpPreviewTick,-60)
+	else if (A_GuiEvent = "DoubleClick" && A_EventInfo)
+		SpCellEdit(A_EventInfo)
+	return
+}
+;##############################################
+SpCellOk(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
+	SpCellMove(1, 0)
+	return
+}
+;##############################################
+SpCellGuiEscape(*) { ; V1toV2: Lbl->Func
+global
+SpCellGuiClose()
+}
+;##############################################
+SpCellGuiClose(*) { ; V1toV2: Lbl->Func
+	global
+	SpCellClose()
+	return
+}
+;##############################################
+SpCellWatch() { ; V1toV2: Lbl->Func
+	global
 	;(a dropdown cell: its list was down and is up now with another value picked - a click on it: kept, as Enter would)
 	if (SpCellHwnd && (SpCellCol = "kind" || SpCellCol = "school" || SpCellCol = "tc"))
 		{
-		GuiControlGet, scWCb, SpCell:Hwnd, SpCellText
-		SendMessage, 0x157, 0, 0, , ahk_id %scWCb%      ; CB_GETDROPPEDSTATE
+		scWCb := ogcDropDownListSpCellText.Hwnd
+		ErrorLevel := SendMessage(0x157, 0, 0, , "ahk_id " scWCb)      ; CB_GETDROPPEDSTATE
 		scWDown := ErrorLevel != "FAIL" && ErrorLevel
-		GuiControlGet, scWPos, SpCell:, SpCellText
+		scWPos := ogcDropDownListSpCellText.Value
 		if (SpCellDropped && !scWDown && scWPos != SpCellShown)
 			{
 			SpCellPickCommit()
@@ -1054,87 +1173,122 @@ SpCellWatch:
 	;up for a round, or you in another window: the box waits, nothing half-typed kept)
 	if (SpCellHwnd && !WinActive("ahk_id " SpCellHwnd))
 		{
-		WinGet, scActPid, PID, A
+		scActPid := WinGetPID("A")
 		if (scActPid = DllCall("GetCurrentProcessId"))
 			SpCellCommit()
 		}
 	return
-
-;(after a moment: a select-all doesn't load the picture once per row)
-SpPreviewTick:
+}
+;##############################################
+SpPreviewTick() { ; V1toV2: Lbl->Func
+	global
 	SpPreviewShow()
 	return
-
-SpKindClick:
+}
+;##############################################
+SpKindClick() { ; V1toV2: Lbl->Func
+	global
 	if (!SpSelectedIds().Length())
 		SpNote("Pick one or more spells in the list first")
 	else
-		Menu, SpKindMenu, Show
+		SpKindMenu.Show()
 	return
-
-SpKindChosen:
+}
+;##############################################
+SpKindChosen(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+	global
 	SpKindPick(A_ThisMenuItemPos)
 	return
-
-SpEditClick:
+}
+;##############################################
+SpEditClick() { ; V1toV2: Lbl->Func
+	global
 	SpEditShow()
 	return
-
-SpEdSave:
+}
+;##############################################
+SpEdSave(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
 	SpEdSaveNow()
 	return
-
-SpEdGuiClose:
-SpEdGuiEscape:
-	Gui, SpEd:Destroy
+}
+;##############################################
+SpEdGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+global
+SpEdGuiEscape()
+}
+;##############################################
+SpEdGuiEscape(*) { ; V1toV2: Lbl->Func
+	global
+	Try SpEd.Destroy()
 	SpEdHwnd := 0
 	return
-
-SpForgetClick:
+}
+;##############################################
+SpForgetClick() { ; V1toV2: Lbl->Func
+	global
 	SpForgetAsk()
 	return
-
-SpHoldClick:
+}
+;##############################################
+SpHoldClick() { ; V1toV2: Lbl->Func
+	global
 	SpHoldToggle()
 	return
-
-SpPicClick:
+}
+;##############################################
+SpPicClick() { ; V1toV2: Lbl->Func
+	global
 	SpOpenPic(false)
 	return
-
-SpFolderClick:
+}
+;##############################################
+SpFolderClick() { ; V1toV2: Lbl->Func
+	global
 	SpOpenPic(true)
 	return
-
-SpMovedClick:
+}
+;##############################################
+SpMovedClick() { ; V1toV2: Lbl->Func
+	global
 	SpMovedMenu()
 	return
-
-SpMovedChosen:
-	if (IsObject(SpMovedPaths) && SpMovedPaths.HasKey(A_ThisMenuItemPos))
-		Run, % "explorer.exe """ SpMovedPaths[A_ThisMenuItemPos] """"
+}
+;##############################################
+SpMovedChosen(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; V1toV2: Lbl->Func
+	global
+	if (IsObject(SpMovedPaths) && SpMovedPaths.Has(A_ThisMenuItemPos))
+		Run("explorer.exe `"" SpMovedPaths[A_ThisMenuItemPos] "`"")
 	return
-
-;(learned\cards.txt read again - by the bot's loop, out of battle - and the list filled now)
-SpRefreshClick:
+}
+;##############################################
+SpRefreshClick() { ; V1toV2: Lbl->Func
+	global
 	SpQueue("reload", "", [])
 	SpListFill()
 	return
-
-;The cell's keys while its box is in front: Tab / Shift+Tab right and left, Enter / Shift+Enter down and up (SpCellMove)
-#If SpCellHwnd && WinActive("ahk_id " SpCellHwnd)
-Tab::
+}
+;##############################################
+HK1_Tab() { ; V1toV2: HK->Func
+	global
 	SpCellMove(0, 1)
 	return
-+Tab::
+}
+;##############################################
+HK2_Tab() { ; V1toV2: HK->Func
+	global
 	SpCellMove(0, -1)
 	return
-Enter::
-NumpadEnter::
+}
+;##############################################
+HK4_NumpadEnter() { ; V1toV2: HK->Func
+	global
 	SpCellMove(1, 0)
 	return
-+Enter::
-+NumpadEnter::
+}
+;##############################################
+HK6_NumpadEnter() { ; V1toV2: HK->Func
+	global
 	SpCellMove(-1, 0)
 	return
-#If
+}

@@ -1,4 +1,5 @@
-﻿; Hotkeys.ahk - the bot's keys, yours to change (the dashboard's Keys tab, asked 2026-10-24). Each action's key is kept in
+﻿#Warn Unreachable, Off
+; Hotkeys.ahk - the bot's keys, yours to change (the dashboard's Keys tab, asked 2026-10-24). Each action's key is kept in
 ; dashboard.ini [hotkeys] (<id>=<AutoHotkey key name>; none: switched off; not there: its default) and made with the
 ; Hotkey command at start and whenever it's changed - not hotkey labels in the script any more. Keys the bot presses in
 ; the game (W A S D, X, Space, Ctrl+O, Ctrl+1-9, Cheat Engine's F13-F24) and plain letters and digits can't be taken.
@@ -54,7 +55,7 @@ HkKeyOf(id)
 	a := HkAction(id)
 	if (!IsObject(a))
 		return ""
-	IniRead, k, %A_ScriptDir%\dashboard.ini, hotkeys, %id%, %A_Space%
+	k := IniRead(A_ScriptDir "\dashboard.ini", "hotkeys", id, A_Space)
 	k := Trim(k)
 	if (k = "none")
 		return ""
@@ -64,9 +65,9 @@ HkKeyOf(id)
 ;A key name the Hotkey command takes: modifiers (# ^ ! +) and one key
 HkValid(k)
 	{
-	if (!RegExMatch(k, "^([#^!+]*)(.+)$", m) || m2 = "")
+	if (!RegExMatch(k, "^([#^!+]*)(.+)$", &m) || m[2] = "")
 		return false
-	return GetKeyVK(m2) || GetKeySC(m2)
+	return GetKeyVK(m[2]) || GetKeySC(m[2])
 	}
 
 ;A key name in words: "#!d" -> "Windows+Alt+D", "" -> "(none)"
@@ -74,11 +75,11 @@ HkName(k)
 	{
 	if (k = "")
 		return "(none)"
-	RegExMatch(k, "^([#^!+]*)(.+)$", m)
+	RegExMatch(k, "^([#^!+]*)(.+)$", &m)
 	t := ""
-	Loop, Parse, m1
+	Loop Parse, m[1]
 		t .= A_LoopField = "#" ? "Windows+" : A_LoopField = "^" ? "Ctrl+" : A_LoopField = "!" ? "Alt+" : "Shift+"
-	key := m2 = "Escape" ? "Esc" : m2
+	key := m[2] = "Escape" ? "Esc" : m[2]
 	return t (StrLen(key) = 1 ? Format("{:U}", key) : Format("{:T}", SubStr(key, 1, 1)) SubStr(key, 2))
 	}
 
@@ -93,9 +94,9 @@ HkRefuse(k, id)
 	{
 	if (!HkValid(k))
 		return "that isn't a key the bot can use"
-	RegExMatch(k, "^([#^!+]*)(.+)$", m)
-	mods := m1, key := m2
-	StringLower, low, key
+	RegExMatch(k, "^([#^!+]*)(.+)$", &m)
+	mods := m[1], key := m[2]
+	low := StrLower(key)
 	if (RegExMatch(low, "^f(1[3-9]|2[0-4])$"))
 		return HkName(k) " is Cheat Engine's speedhack's (F13-F24)"
 	if (InStr(mods, "^") && !InStr(mods, "!") && !InStr(mods, "#") && (low = "o" || RegExMatch(low, "^[1-9]$")))
@@ -116,7 +117,7 @@ HkRefuse(k, id)
 		return HkName(k) " stops the recording going on now - finish it first"
 	for i, a in HkActions()
 		if (a.id != id && HkSame(HkKeyOf(a.id), k))
-			return HkName(k) " is already the key for """ a.label """ - change that one first"
+			return HkName(k) " is already the key for `"" a.label "`" - change that one first"
 	return ""
 	}
 
@@ -130,10 +131,10 @@ HkSame(a, b)
 
 HkNorm(k)
 	{
-	RegExMatch(k, "^([#^!+]*)(.+)$", m)
-	mods := (InStr(m1, "#") ? "#" : "") (InStr(m1, "^") ? "^" : "") (InStr(m1, "!") ? "!" : "") (InStr(m1, "+") ? "+" : "")
-	n := GetKeyName(m2)
-	StringLower, n, n
+	RegExMatch(k, "^([#^!+]*)(.+)$", &m)
+	mods := (InStr(m[1], "#") ? "#" : "") (InStr(m[1], "^") ? "^" : "") (InStr(m[1], "!") ? "!" : "") (InStr(m[1], "+") ? "+" : "")
+	n := GetKeyName(m[2])
+	n := StrLower(n)
 	return mods n
 	}
 
@@ -157,43 +158,43 @@ HkApply()
 	{
 	static ctx := ""
 	if (!IsObject(ctx))
-		ctx := {game: Func("HkCtxGame"), on: Func("HkCtxOn")}
+		ctx := {game: HkCtxGame, on: HkCtxOn}
 	if (!IsObject(HkOn))
 		HkOn := {}
 	want := {}
 	for i, a in HkActions()
 		if (a.ctx != "rec")
-			want[a.id] := HkKeyOf(a.id)
+			want[a.id] := HkKeyOf(a.id) ;  V1toV2: Invalid Index errors?, try 'want.Push(<val>)'
 	for i, a in HkActions()
 		{
-		if (a.ctx = "rec" || !HkOn.HasKey(a.id) || HkOn[a.id] = "" || HkSame(HkOn[a.id], want[a.id]))
+		if (a.ctx = "rec" || !HkOn.Has(a.id) || HkOn[a.id] = "" || HkSame(HkOn[a.id], want[a.id]))
 			continue
 		if (a.ctx != "")
-			Hotkey, If, % ctx[a.ctx]
+			HotIf(% ctx[a.ctx])
 		else
-			Hotkey, If
+			HotIf()
 		k := HkOn[a.id]
-		Hotkey, $%k%, Off, UseErrorLevel
-		HkOn[a.id] := ""
+		Hotkey("$" k, "Off") ; V1toV2: Removed UseErrorLevel
+		HkOn[a.id] := "" ;  V1toV2: Invalid Index errors?, try 'HkOn.Push(<val>)'
 		}
 	for i, a in HkActions()
 		{
-		if (a.ctx = "rec" || want[a.id] = "" || (HkOn.HasKey(a.id) && HkSame(HkOn[a.id], want[a.id])))
+		if (a.ctx = "rec" || want[a.id] = "" || (HkOn.Has(a.id) && HkSame(HkOn[a.id], want[a.id])))
 			continue
 		if (a.ctx != "")
-			Hotkey, If, % ctx[a.ctx]
+			HotIf(% ctx[a.ctx])
 		else
-			Hotkey, If
+			HotIf()
 		k := want[a.id], run := a.run
-		Hotkey, $%k%, %run%, On UseErrorLevel
+		Hotkey("$" k, run, "On") ; V1toV2: Removed UseErrorLevel
 		if (ErrorLevel)
 			{
 			DebugLog("Keys: " HkName(k) " couldn't be made " a.label "'s key (" ErrorLevel ") - it has none")
 			continue
 			}
-		HkOn[a.id] := k
+		HkOn[a.id] := k ;  V1toV2: Invalid Index errors?, try 'HkOn.Push(<val>)'
 		}
-	Hotkey, If
+	HotIf()
 	HkMenuRename()
 	}
 
@@ -201,7 +202,7 @@ HkApply()
 HkIsAny(hk, ids)
 	{
 	hk := RegExReplace(hk, "^[$~*]+")
-	Loop, Parse, ids, `,, %A_Space%
+	Loop Parse, ids, ",", A_Space
 		if (HkSame(HkKeyOf(A_LoopField), hk))
 			return true
 	return false
@@ -214,8 +215,8 @@ HkMenu(id)
 	{
 	if (!IsObject(HkMenuNames))
 		HkMenuNames := {}
-	if (!HkMenuNames.HasKey(id))
-		HkMenuNames[id] := HkMenuText(id)
+	if (!HkMenuNames.Has(id))
+		HkMenuNames[id] := HkMenuText(id) ;  V1toV2: Invalid Index errors?, try 'HkMenuNames.Push(<val>)'
 	return HkMenuNames[id]
 	}
 
@@ -247,10 +248,11 @@ HkMenuRename()
 		now := HkMenuText(id)
 		if (now == was)
 			continue
-		Menu, Tray, UseErrorLevel
-		Menu, Tray, Rename, %was%, %now%
-		Menu, Tray, UseErrorLevel, Off
-		HkMenuNames[id] := now
+		; V1toV2: Removed UseErrorLevel from Menu Tray
+		Tray := A_TrayMenu
+		Tray.Rename(was, now)
+		; V1toV2: Removed UseErrorLevel from Menu Tray
+		HkMenuNames[id] := now ;  V1toV2: Invalid Index errors?, try 'HkMenuNames.Push(<val>)'
 		}
 	}
 
@@ -261,44 +263,46 @@ KeyListFill()
 	{
 	if (!DashHwnd)
 		return
-	Gui, Dash:Default
+	;Gui, Dash:Default ; V1toV2: removed
+	V1toV2_LineFill := true ; remove me after inspection
 	prevLV := A_DefaultListView
-	Gui, Dash:ListView, KeyList
-	row := LV_GetNext(0), keep := ""
+	Gui, Dash:ListView, KeyList ; V1toV2: [KeyList] not found. Manual edit required.
+	row := LV.GetNext(0), keep := ""
 	if (row)
-		LV_GetText(keep, row, 5)
-	GuiControl, Dash:-Redraw, KeyList
-	LV_Delete()
+		keep := LV.GetText(row)
+	ogcKeyList.Opt("-Redraw")
+	LV.Delete()
 	for i, a in HkActions()
 		{
 		when := a.ctx = "game" ? "the bot on, or in Wizard101" : a.ctx = "on" ? "the bot on" : a.ctx = "rec" ? "while recording" : "always"
 		k := HkKeyOf(a.id)
-		r := LV_Add("", a.label, HkName(k), HkName(a.def) (HkSame(k, a.def) ? "" : "  (changed)"), when, a.id)
+		r := LV.Add("", a.label, HkName(k), HkName(a.def) (HkSame(k, a.def) ? "" : "  (changed)"), when, a.id)
 		if (a.id = keep)
-			LV_Modify(r, "Select Focus")
+			LV.Modify(r, "Select Focus")
 		}
-	GuiControl, Dash:+Redraw, KeyList
+	ogcKeyList.Opt("+Redraw")
 	if (prevLV != "" && prevLV != "KeyList")
-		Gui, Dash:ListView, %prevLV%
+		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	}
 
 ;The picked action's id ("" none)
 KeyPicked()
 	{
-	Gui, Dash:Default
+	;Gui, Dash:Default ; V1toV2: removed
+	V1toV2_LineFill := true ; remove me after inspection
 	prevLV := A_DefaultListView
-	Gui, Dash:ListView, KeyList
-	row := LV_GetNext(0), id := ""
+	Gui, Dash:ListView, KeyList ; V1toV2: [KeyList] not found. Manual edit required.
+	row := LV.GetNext(0), id := ""
 	if (row)
-		LV_GetText(id, row, 5)
+		id := LV.GetText(row)
 	if (prevLV != "" && prevLV != "KeyList")
-		Gui, Dash:ListView, %prevLV%
+		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	return id
 	}
 
 KeySay(text)
 	{
-	GuiControl, Dash:, KeyStatus, %text%
+	ogcKeyStatus.Value := text
 	}
 
 ;Action id's key set (k: a key name, "none" switched off, "" its default) - kept in dashboard.ini and made now
@@ -308,23 +312,23 @@ KeySet(id, k)
 	if (!IsObject(a))
 		return
 	if (k = "")
-		IniDelete, %A_ScriptDir%\dashboard.ini, hotkeys, %id%
+		IniDelete(A_ScriptDir "\dashboard.ini", "hotkeys", id)
 	else
-		IniWrite, %k%, %A_ScriptDir%\dashboard.ini, hotkeys, %id%
+		IniWrite(k, A_ScriptDir "\dashboard.ini", "hotkeys", id)
 	HkApply()
 	KeyListFill()
 	now := HkKeyOf(id)
 	;(Open with Wizard101's shortcut names the bot's key: made again)
-	if (id = "bot" && IsFunc("WatchIsOn") && Func("WatchIsOn").Call() && IsFunc("WatchSet"))
+	if (id = "bot" && IsFunc("WatchIsOn") && WatchIsOn.Call() && IsFunc("WatchSet"))
 		{
-		SplitPath, A_ScriptDir, , root
-		Func("WatchSet").Call(root, true)
+		SplitPath(A_ScriptDir, , &root)
+		WatchSet.Call(root, true)
 		}
 	KeySay(a.label ": " HkName(now) (k = "" ? " (its default)" : ""))
 	DebugLog("Keys: " a.label " - " HkName(now) (k = "" ? " (its default)" : ""))
 	;(the dashboard's texts that name a key: with the new one)
 	if (IsFunc("DashKeysChanged"))
-		Func("DashKeysChanged").Call()
+		DashKeysChanged.Call()
 	}
 
 ;Change...: the next key pressed (with Ctrl, Alt, Shift or Windows) caught - 8 s, Esc: not changed. The bot's keys are
@@ -342,7 +346,7 @@ KeyCapStart(id)
 		}
 	HkCapId := id
 	KeySay("Press the new key for " a.label " - with Ctrl, Alt, Shift or Windows if you like (Esc: leave it as it is)...")
-	Suspend, On
+	Suspend(true)
 	;(I: the bot's own Send keys - Cheat Engine's F13-F24, W, X - go by, not caught or held back)
 	ih := InputHook("T8 I")
 	ih.KeyOpt("{All}", "ES")
@@ -350,9 +354,9 @@ KeyCapStart(id)
 	HkCapMods := {0x1D: GetKeyState("LControl", "P"), 0x11D: GetKeyState("RControl", "P"), 0x38: GetKeyState("LAlt", "P"), 0x138: GetKeyState("RAlt", "P")
 		, 0x2A: GetKeyState("LShift", "P"), 0x36: GetKeyState("RShift", "P"), 0x15B: GetKeyState("LWin", "P"), 0x15C: GetKeyState("RWin", "P")}
 	ih.KeyOpt("{LCtrl}{RCtrl}{LAlt}{RAlt}{LShift}{RShift}{LWin}{RWin}", "-E+N")
-	ih.OnKeyDown := Func("KeyCapMod").Bind(1)
-	ih.OnKeyUp := Func("KeyCapMod").Bind(0)
-	ih.OnEnd := Func("KeyCapEnd")
+	ih.OnKeyDown := KeyCapMod.Bind(1)
+	ih.OnKeyUp := KeyCapMod.Bind(0)
+	ih.OnEnd := KeyCapEnd
 	HkCapHook := ih
 	ih.Start()
 	}
@@ -361,7 +365,7 @@ KeyCapStart(id)
 KeyCapMod(down, ih, vk, sc)
 	{
 	if (ih == HkCapHook && IsObject(HkCapMods))
-		HkCapMods[sc] := down
+		HkCapMods[sc] := down ;  V1toV2: Invalid Index errors?, try 'HkCapMods.Push(<val>)'
 	}
 
 ;The key caught: the modifiers held (as the keyboard has them) and the key - refused if it's one the bot or the game
@@ -373,7 +377,7 @@ KeyCapEnd(ih)
 		return
 	m := IsObject(HkCapMods) ? HkCapMods : {}
 	win := m[0x15B] || m[0x15C], ctrl := m[0x1D] || m[0x11D], alt := m[0x38] || m[0x138], shift := m[0x2A] || m[0x36]
-	Suspend, Off
+	Suspend(false)
 	HkCapHook := ""
 	id := HkCapId, HkCapId := ""
 	a := HkAction(id)
@@ -394,10 +398,35 @@ KeyCapEnd(ih)
 	}
 
 KeyChangeClick:
-	KeyCapStart(KeyPicked())
+KeyChangeClick()
 	return
 
 KeyDefaultClick:
+KeyDefaultClick()
+	return
+
+KeyNoneClick:
+KeyNoneClick()
+	return
+
+KeyAllClick:
+KeyAllClick()
+	return
+
+;(a double-click: Change...)
+KeyListEvent:
+KeyListEvent()
+	return
+
+;###############  V1toV2 FUNCS  ###############
+KeyChangeClick() { ; V1toV2: Lbl->Func
+	global
+	KeyCapStart(KeyPicked())
+	return
+}
+;##############################################
+KeyDefaultClick() { ; V1toV2: Lbl->Func
+	global
 	KeyId := KeyPicked()
 	if (KeyId = "")
 		{
@@ -412,8 +441,10 @@ KeyDefaultClick:
 		}
 	KeySet(KeyId, "")
 	return
-
-KeyNoneClick:
+}
+;##############################################
+KeyNoneClick() { ; V1toV2: Lbl->Func
+	global
 	KeyId := KeyPicked()
 	if (KeyId = "")
 		{
@@ -427,22 +458,26 @@ KeyNoneClick:
 		}
 	KeySet(KeyId, "none")
 	return
-
-KeyAllClick:
-	MsgBox, 262180, Keys, Put every key back to its default (F6, F8, Alt+1...)?
-	IfMsgBox, No
+}
+;##############################################
+KeyAllClick() { ; V1toV2: Lbl->Func
+	global
+	msgResult := MsgBox("Put every key back to its default (F6, F8, Alt+1...)?", "Keys", 262180)
+	if (msgResult = "No")
 		return
-	IniDelete, %A_ScriptDir%\dashboard.ini, hotkeys
+	IniDelete(A_ScriptDir "\dashboard.ini", "hotkeys")
 	HkApply()
 	KeyListFill()
 	KeySay("Every key back to its default")
 	DebugLog("Keys: every key back to its default")
 	if (IsFunc("DashKeysChanged"))
-		Func("DashKeysChanged").Call()
+		DashKeysChanged.Call()
 	return
-
-;(a double-click: Change...)
-KeyListEvent:
+}
+;##############################################
+KeyListEvent() { ; V1toV2: Lbl->Func
+	global
 	if (A_GuiEvent = "DoubleClick" && A_EventInfo)
 		KeyCapStart(KeyPicked())
 	return
+}

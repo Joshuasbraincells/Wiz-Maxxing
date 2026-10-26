@@ -63,12 +63,12 @@ BattleLogRead(force := false)
 	blChunk := blFile.Read(blSize - BlPos)
 	blFile.Close()
 	;(a line still being written is read next time)
-	blNl := InStr(blChunk, "`n", false, 0)
+	blNl := InStr(blChunk, "`n", false, -1)
 	if (!blNl)
 		return
 	blChunk := SubStr(blChunk, 1, blNl)
 	BlPos += StrLen(blChunk)
-	Loop, Parse, blChunk, `n, `r
+	Loop Parse, blChunk, "`n", "`r"
 		BattleLogLine(A_LoopField)
 	}
 
@@ -102,60 +102,60 @@ BattleLogLine(blLine)
 			DebugLog("Defeated: the wizard was knocked out of the battle (the game's log: taken out of duel " BlDuel " without fleeing)")
 		BlPhase := "", BlPhaseAt := 0, BlFled := 0
 		}
-	if (RegExMatch(blLine, "Duel (\d+): MSG_CombatPhase\((kPhase_\w+)\)", blM))
+	if (RegExMatch(blLine, "Duel (\d+): MSG_CombatPhase\((kPhase_\w+)\)", &blM))
 		{
-		BlPhase := blM2, BlPhaseAt := A_TickCount
-		if (blM1 != BlDuel)
-			BlDuel := blM1, BlNames := {}, BlCasts := [], BlRound := 0, BlSub := ""
+		BlPhase := blM[2], BlPhaseAt := A_TickCount
+		if (blM[1] != BlDuel)
+			BlDuel := blM[1], BlNames := {}, BlCasts := [], BlRound := 0, BlSub := ""
 		;(each planning phase names those still in the circle - one that died isn't: the names afresh)
-		else if (blM2 = "kPhase_Planning")
+		else if (blM[2] = "kPhase_Planning")
 			BlNames := {}, BlSub := ""
 		;(a new round: no flee chosen in it yet)
-		if (blM2 = "kPhase_Planning")
+		if (blM[2] = "kPhase_Planning")
 			BlFled := 0
 		;(the planning over: one wizard on your side - that's you)
-		else if (blM2 = "kPhase_Execution" && IsObject(BlNames))
+		else if (blM[2] = "kPhase_Execution" && IsObject(BlNames))
 			{
 			blOne := "", blN := 0
-			Loop, 4
-				if (BlNames.HasKey(A_Index + 3))
+			Loop 4
+				if (BlNames.Has(A_Index + 3))
 					blN += 1, blOne := BlNames[A_Index + 3]
 			if (blN = 1 && blOne != "" && blOne != BlMe)
 				{
 				BlMe := blOne, BlMeChar := StatsCharID()
-				IniWrite, %blOne%, %A_ScriptDir%\party.ini, me, name
-				IniWrite, %BlMeChar%, %A_ScriptDir%\party.ini, me, char
+				IniWrite(blOne, A_ScriptDir "\party.ini", "me", "name")
+				IniWrite(BlMeChar, A_ScriptDir "\party.ini", "me", "char")
 				DebugLog("Battle log: this wizard is " blOne " (the only one on your side)")
 				}
 			}
 		return
 		}
-	if (RegExMatch(blLine, "CombatPlanningP\s+Subcircle (\d+)\s*$", blM))
+	if (RegExMatch(blLine, "CombatPlanningP\s+Subcircle (\d+)\s*$", &blM))
 		{
-		BlSub := blM1 + 0
+		BlSub := blM[1] + 0
 		return
 		}
-	if (BlSub != "" && RegExMatch(blLine, "CombatantDataControl(?:Small)?, name:(.*?)\s*$", blM))
+	if (BlSub != "" && RegExMatch(blLine, "CombatantDataControl(?:Small)?, name:(.*?)\s*$", &blM))
 		{
 		if (!IsObject(BlNames))
 			BlNames := {}
-		BlNames[BlSub] := blM1, BlSub := ""
+		BlNames[BlSub] := blM[1], BlSub := "" ;  V1toV2: Invalid Index errors?, try 'BlNames.Push(<val>)'
 		return
 		}
-	if (RegExMatch(blLine, "ResolveCombatRound\. Duel ID:\d+ Round:(\d+) Caster:(\d+) Spell:(.*?)\s*$", blM))
+	if (RegExMatch(blLine, "ResolveCombatRound\. Duel ID:\d+ Round:(\d+) Caster:(\d+) Spell:(.*?)\s*$", &blM))
 		{
 		if (!IsObject(BlCasts))
 			BlCasts := []
-		blSlot := blM2 + 0, blRnd := blM1 + 0
+		blSlot := blM[2] + 0, blRnd := blM[1] + 0
 		;(a second line for the same caster in a round - a pet's may-cast - isn't the enemy's own choice)
 		for each, blC in BlCasts
 			if (blC.round = blRnd && blC.slot = blSlot)
 				return
-		BlCasts.Push({round: blRnd, slot: blSlot, spell: blM3})
+		BlCasts.Push({round: blRnd, slot: blSlot, spell: blM[3]})
 		BlRound := Max(BlRound ? BlRound : 0, blRnd)
 		;(an enemy's: counted for its creature - the odds learn)
-		if (blSlot <= 3 && IsObject(BlNames) && BlNames.HasKey(blSlot) && VisionOn)
-			VisionGet("/enemyseen?name=" NavUri(BlNames[blSlot]) "&spell=" NavUri(blM3) "&round=" blRnd, 600, true)
+		if (blSlot <= 3 && IsObject(BlNames) && BlNames.Has(blSlot) && VisionOn)
+			VisionGet("/enemyseen?name=" NavUri(BlNames[blSlot]) "&spell=" NavUri(blM[3]) "&round=" blRnd, 600, true)
 		}
 	}
 
@@ -164,8 +164,8 @@ BattleTeam()
 	{
 	n := 0
 	if (IsObject(BlNames))
-		Loop, 4
-			n += BlNames.HasKey(A_Index + 3) ? 1 : 0
+		Loop 4
+			n += BlNames.Has(A_Index + 3) ? 1 : 0
 	return n
 	}
 
@@ -176,17 +176,17 @@ OwnName()
 	cid := StatsCharID()
 	if (BlMe != "" && (BlMeChar = "" || cid = "" || BlMeChar = cid))
 		return BlMe
-	IniRead, n, %A_ScriptDir%\party.ini, me, name, %A_Space%
-	IniRead, nChar, %A_ScriptDir%\party.ini, me, char, %A_Space%
+	n := IniRead(A_ScriptDir "\party.ini", "me", "name", A_Space)
+	nChar := IniRead(A_ScriptDir "\party.ini", "me", "char", A_Space)
 	if (Trim(n) = "" || (nChar != "" && cid != "" && nChar != cid))
-		IniRead, n, %A_ScriptDir%\party.ini, party, name, %A_Space%
+		n := IniRead(A_ScriptDir "\party.ini", "party", "name", A_Space)
 	return Trim(n)
 	}
 
 ;Your plate when more than one wizard is on your side: the name pictures (player.png...) would find whichever of your
 ;wizards' plates comes first - so your side's plates are read (ReadSidePlates) and yours (OwnName) picked. x, y: where
 ;its name starts (as the name picture's match would be). False: not a team battle, no name known, or not read
-PlayerPlateByName(ByRef x, ByRef y)
+PlayerPlateByName(&x, &y)
 	{
 	if (BattleTeam() < 2 || OwnName() = "")
 		return false
@@ -213,7 +213,7 @@ ReadSidePlates()
 	{
 	rsKey := BlDuel "|" roundnumber "|" BattleTeam()
 	if (rsKey = SidePlatesKey && IsObject(SidePlates))
-		return SidePlates.Count()
+		return SidePlates.Count
 	SidePlatesKey := rsKey, SidePlates := {}, MySlot := 0
 	if (BattleTeam() < 2 || !IsFunc("WalkLetters"))
 		return 0
@@ -224,29 +224,29 @@ ReadSidePlates()
 	for each, rsLine in rsLines
 		for each, rsW in rsLine.words
 			{
-			rsK := Func("WalkLetters").Call(rsW.text)
+			rsK := WalkLetters.Call(rsW.text)
 			if (StrLen(rsK) >= 3)
 				rsWords.Push({k: rsK, x: rsW.x, y: rsW.y, caps: StrLen(RegExReplace(rsW.text, "[^A-Z]")) >= StrLen(RegExReplace(rsW.text, "[^a-z]")), used: 0})
 			}
-	rsMe := Func("WalkLetters").Call(OwnName())
+	rsMe := WalkLetters.Call(OwnName())
 	rsLike := IsFunc("WalkNameLike") && IsFunc("WalkEditDist")
 	;(round 1: capitals only - the row the plates are in comes from the first found; round 2: any word, in that row.
 	;Pass 1 the same letters, 2 alike, 3 - capitals in the row only - half the first word's letters)
 	rsRowY := ""
-	Loop, 2
+	Loop 2
 		{
 		rsRound := A_Index
-		Loop, 3
+		Loop 3
 			{
 			rsPass := A_Index
 			if ((rsRound = 2 && rsPass = 3) || (rsPass > 1 && !rsLike))
 				continue
-			Loop, 4
+			Loop 4
 				{
 				rsSlot := A_Index + 3
-				if (!IsObject(BlNames) || !BlNames.HasKey(rsSlot) || SidePlates.HasKey(rsSlot))
+				if (!IsObject(BlNames) || !BlNames.Has(rsSlot) || SidePlates.Has(rsSlot))
 					continue
-				rsName := Func("WalkLetters").Call(BlNames[rsSlot]), rsFirst := Func("WalkLetters").Call(StrSplit(Trim(BlNames[rsSlot]), " ")[1])
+				rsName := WalkLetters.Call(BlNames[rsSlot]), rsFirst := WalkLetters.Call(StrSplit(Trim(BlNames[rsSlot]), " ")[1])
 				if (StrLen(rsName) < 3 || (rsPass = 3 && StrLen(rsFirst) < 4))
 					continue
 				rsBest := 0, rsBestScore := ""
@@ -257,10 +257,10 @@ ReadSidePlates()
 					if (rsPass = 1)
 						rsD := (rsW.k = rsName || rsW.k = rsFirst) ? 0 : ""
 					else if (rsPass = 2)
-						rsD := (Func("WalkNameLike").Call(rsW.k, rsName) || Func("WalkNameLike").Call(rsW.k, rsFirst)) ? Min(Func("WalkEditDist").Call(rsW.k, rsName), Func("WalkEditDist").Call(rsW.k, rsFirst)) : ""
+						rsD := (WalkNameLike.Call(rsW.k, rsName) || WalkNameLike.Call(rsW.k, rsFirst)) ? Min(WalkEditDist.Call(rsW.k, rsName), WalkEditDist.Call(rsW.k, rsFirst)) : ""
 					else
 						{
-						rsD := Func("WalkEditDist").Call(rsW.k, rsFirst)
+						rsD := WalkEditDist.Call(rsW.k, rsFirst)
 						rsD := (rsD <= StrLen(rsFirst) // 2) ? rsD : ""
 						}
 					if (rsD = "")
@@ -285,7 +285,7 @@ ReadSidePlates()
 				if (rsBest)
 					{
 					rsWords[rsBest].used := 1
-					SidePlates[rsSlot] := {name: BlNames[rsSlot], x: rsWords[rsBest].x, y: rsWords[rsBest].y, me: rsName = rsMe}
+					SidePlates[rsSlot] := {name: BlNames[rsSlot], x: rsWords[rsBest].x, y: rsWords[rsBest].y, me: rsName = rsMe} ;  V1toV2: Invalid Index errors?, try 'SidePlates.Push(<val>)'
 					if (rsName = rsMe)
 						MySlot := rsSlot
 					if (rsWords[rsBest].caps && rsRowY = "")
@@ -298,7 +298,7 @@ ReadSidePlates()
 	for rsSlot, rsP in SidePlates
 		rsSaid .= (rsSaid = "" ? "" : ", ") rsP.name (rsP.me ? " (you)" : "") " at " rsP.x - GameLeft "," rsP.y - GameTop
 	DebugLog("  your side's plates: " (rsSaid = "" ? "none read" : rsSaid) " (" BattleTeam() " wizards in the log)")
-	return SidePlates.Count()
+	return SidePlates.Count
 	}
 
 ;This round's odds - the enemies' likely spells and the chance their hits kill the wizard: logged, on the dashboard
@@ -313,16 +313,16 @@ EnemyDanger()
 	edNames := "", edSlots := [], edTeam := 0
 	if (!IsObject(BlNames))
 		return false
-	Loop, 4
+	Loop 4
 		{
 		edS := A_Index - 1
-		if (BlNames.HasKey(edS))
+		if (BlNames.Has(edS))
 			edNames .= (edNames = "" ? "" : "|") NavUri(BlNames[edS]), edSlots.Push(edS)
 		}
-	Loop, 4
-		if (BlNames.HasKey(A_Index + 3))
+	Loop 4
+		if (BlNames.Has(A_Index + 3))
 			edTeam += 1
-	if (!edSlots.Length())
+	if (!edSlots.Length)
 		return false
 	;(your health: read this round already - the heal check - or now, quietly)
 	if (!(OwnHpCur != "" && OwnHpRound = roundnumber && A_TickCount - OwnHpAt < 20000 && OwnHpWin = WinExist("A")) && playerX != "" && !(playerX = 0 && playerY = 0))
@@ -341,7 +341,7 @@ EnemyDanger()
 	if (edAns = "")
 		return false
 	edText := "", edDash := "", edLethal := ""
-	Loop, Parse, edAns, `n, `r
+	Loop Parse, edAns, "`n", "`r"
 		{
 		edF := StrSplit(A_LoopField, "|")
 		if (edF[1] = "lethal")
@@ -363,10 +363,10 @@ EnemyDanger()
 	edRisk := edLethal = "" ? "your health unknown" : Round(edLethal * 100) "% chance their hits kill you this round"
 	DebugLog("  enemy spells: " edText " - " edRisk)
 	if (IsFunc("DashSee"))
-		Func("DashSee").Call("threat", edDash (edLethal = "" ? "" : " - " Round(edLethal * 100) "% lethal"))
+		DashSee.Call("threat", edDash (edLethal = "" ? "" : " - " Round(edLethal * 100) "% lethal"))
 	;(the Cards tab: every spell of each enemy and its chance)
 	if (IsFunc("DashFoesSeen"))
-		Func("DashFoesSeen").Call(edAns, edLethal, edHealth, BlRound + 1)
+		DashFoesSeen.Call(edAns, edLethal, edHealth, BlRound + 1)
 	edAt := Stat("defendat")
 	return edLethal != "" && edAt > 0 && edLethal * 100 >= edAt
 	}
@@ -395,20 +395,20 @@ EnemyDefend()
 		if (tower == 1 && CastWentOut())
 			{
 			if (IsFunc("DashCast"))
-				Func("DashCast").Call("tower")
+				DashCast.Call("tower")
 			return true
 			}
 		}
 	;(no Tower Shield went: an absorb - it soaks N damage - on you, whatever it costs: by its picture (resources\absorb), else
 	;at its card box by the game's hand - KillCalc.ahk AbsorbMem, 2026-10-26)
-	if (absorb == 1 && IsFunc("AbsorbOn") && Func("AbsorbOn").Call())
+	if (absorb == 1 && IsFunc("AbsorbOn") && AbsorbOn.Call())
 		{
 		DebugLog(edWhy " - an absorb")
 		UseOnSelf("absorb", absorb, "resources")
 		if (absorb == 1 && CastWentOut())
 			{
 			if (IsFunc("DashCast"))
-				Func("DashCast").Call("absorb")
+				DashCast.Call("absorb")
 			return true
 			}
 		}

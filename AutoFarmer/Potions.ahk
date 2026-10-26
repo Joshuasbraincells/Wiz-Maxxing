@@ -1,3 +1,4 @@
+#Warn Unreachable, Off
 ; Potions.ahk - out of battle: drinks a potion when your health is low, and when there are none left goes
 ; to buy more with gold (never Crowns): Recall to your Mark at the potion seller and the buying you
 ; recorded there once. AHK v1.1, functions only; #Included by Autofarmer.ahk. Needs the vision helper
@@ -92,7 +93,7 @@ PotionCheck()
 	most := PotionMost()
 	if (hp > most)
 		PotionNoteMax(hp, false), most := hp
-	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
+	limit := Stats.Has("potionat") ? Stats["potionat"] : 40
 	pct := most ? 100 * hp / most : 100
 	;(resting: on again once health is back over the limit + 20 %, or after 10 minutes all the same)
 	if (PotionResting && (pct >= limit + 20 || A_TickCount - PotionRestFrom > 600000))
@@ -140,7 +141,7 @@ PotionRestCheck()
 	lookAt := A_TickCount + 4000
 	hp := (VisionOn && GameActive()) ? PotionHealth() : ""
 	most := PotionMost()
-	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
+	limit := Stats.Has("potionat") ? Stats["potionat"] : 40
 	pct := (hp != "" && most) ? 100 * hp / most : ""
 	if ((pct != "" && pct >= limit + 20) || (PotionRestFrom && A_TickCount - PotionRestFrom > 600000))
 		{
@@ -156,7 +157,7 @@ PotionRestCheck()
 PotionHealth()
 	{
 	a := PotionGlobes()
-	Sleep, 250
+	Sleep(250)
 	b := PotionGlobes()
 	return (a.hp != "" && a.hp = b.hp) ? a.hp + 0 : ""
 	}
@@ -165,19 +166,19 @@ PotionHealth()
 PotionGlobes()
 	{
 	answer := VisionGet("/globes?left=" GameLeft "&bottom=" GameTop + GameH "&scale=" Round(UiScale, 3), 1500)
-	RegExMatch(answer, "health\|(\d*)", h), RegExMatch(answer, "mana\|(\d*)", m)
+	RegExMatch(answer, "health\|(\d*)", &h), RegExMatch(answer, "mana\|(\d*)", &m)
 	;(for the dashboard)
-	if (h1 != "")
-		DashSee("hp", h1 (PotionMost() ? "/" PotionMost() " (" Round(100 * h1 / PotionMost()) "%)" : ""))
-	if (m1 != "")
-		DashSee("mana", m1)
-	return {hp: h1, mana: m1}
+	if (h[1] != "")
+		DashSee("hp", h[1] (PotionMost() ? "/" PotionMost() " (" Round(100 * h[1] / PotionMost()) "%)" : ""))
+	if (m[1] != "")
+		DashSee("mana", m[1])
+	return {hp: h[1], mana: m[1]}
 	}
 
 ;Your most health: the name plate's max (battle) for this school's wizard, else the most the globe showed
 PotionMost()
 	{
-	if (school != "" && Stats.HasKey(school ".maxhealth"))
+	if (school != "" && Stats.Has(school ".maxhealth"))
 		return Max(Stats[school ".maxhealth"], PotionMaxHp)
 	return PotionMaxHp
 	}
@@ -199,8 +200,8 @@ PotionNoteMax(n, exact := true)
 PotionDrink(before)
 	{
 	ReleaseKeys()
-	Send, {Blind}^o
-	Sleep, 2500
+	Send("{Blind}^o")
+	Sleep(2500)
 	after := PotionHealth()
 	if (after != "" && after > before + Max(5, PotionMost() // 50))
 		{
@@ -229,10 +230,10 @@ PotionRun()
 	;1. Mark here (unless a run that stopped half way already did)
 	if (!(PotionMarkZone != "" && A_TickCount - PotionMarkAt < 15 * 60000))
 		{
-		Send, {Blind}{PgDn}
+		Send("{Blind}{PgDn}")
 		PotionMarkZone := startZone, PotionMarkAt := A_TickCount
 		DebugLog("Potions: marked this spot (Page Down) in " startZone)
-		Sleep, 1500
+		Sleep(1500)
 		}
 	;2. Home (or this world's Commons)
 	if (!PotionTeleport(PotionStartKey(), PotionStartName()))
@@ -242,7 +243,7 @@ PotionRun()
 	if (!FileExist(route))
 		{
 		DebugLog("Potions: no potion route recorded from " commons " - going back (tray menu 'Record potion buying...')")
-		TrayTip, Wizard101 bot, % "Out of potions, and there's no route to the potion seller from " commons ".`nRecord one: tray menu 'Record potion buying...'", 10, 2
+		TrayTip("Wizard101 bot", "Out of potions, "10, 2")
 		AlertSend("potions", "out of potions", "No route to the potion seller from " commons " - record one (tray menu: Record potion buying...).")
 		PotionRecall()
 		return false
@@ -262,7 +263,7 @@ PotionRun()
 ;Whether your Mark is at the potion seller (potionmark:1, the default) - else potionmark:0, the route way
 PotionByMark()
 	{
-	return !(Stats.HasKey("potionmark") && !Stats["potionmark"])
+	return !(Stats.Has("potionmark") && !Stats["potionmark"])
 	}
 
 ;The Mark way: Recall to the seller, the buying recorded there, drink, carry on from there. True if it
@@ -275,12 +276,12 @@ PotionRunMark()
 	if (route = "")
 		{
 		DebugLog("Potions: out of potions, but no buying recorded at this wizard's Mark yet - not recalling. Leave a Mark (Page Down) right next to the potion seller (Hilda Brewer), then tray menu 'Record potion buying...'")
-		TrayTip, Wizard101 bot, % "Out of potions. To buy more: leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons), then tray menu 'Record potion buying...' (once for each wizard).", 10, 2
+		TrayTip("Wizard101 bot", "Out of potions. To buy more: leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons), "10, 2")
 		AlertSend("potions", "out of potions", "Nothing set up to buy more: leave a Mark (Page Down) in Wizard City's Commons.")
 		return false
 		}
 	marksOff := PotionOff()
-	if (marksOff.HasKey(who))
+	if (marksOff.Has(who))
 		{
 		DebugLog("Potions: out of potions - not recalling: this wizard's Mark was in " marksOff[who] ", not at the potion seller (Mark next to her again, then restart the bot - " HkText("restart") ")")
 		return false
@@ -292,11 +293,11 @@ PotionRunMark()
 		{
 		g := PotionGlobes()
 		DebugLog("Potions: Recall (Page Up) to your Mark at the potion seller")
-		if (!PotionTeleport("{PgUp}", "your Mark", Func("PotionArrived").Bind(rec, g.mana)))
+		if (!PotionTeleport("{PgUp}", "your Mark", PotionArrived.Bind(rec, g.mana)))
 			{
 			low := (g.mana != "" && g.mana < 10)
 			DebugLog("Potions: no Recall - " (low ? "mana is " g.mana ", and a Recall costs up to 10" : "no Mark, or too little mana for it? The Mark goes right next to the potion seller (Hilda Brewer)"))
-			TrayTip, Wizard101 bot, % "Out of potions, and Page Up (Recall) went nowhere.`n" (low ? "Mana is " g.mana " - a Recall costs up to 10." : "No Mark, or too little mana for the Recall. The Mark goes right next to the potion seller (Hilda Brewer)."), 10, 2
+			TrayTip("Wizard101 bot", "Out of potions, "10, 2")
 			AlertSend("potions", "out of potions", "The Recall to your Mark went nowhere - " (low ? "mana is " g.mana "." : "no Mark, or too little mana."))
 			return false
 			}
@@ -307,13 +308,13 @@ PotionRunMark()
 		{
 		t0 := A_TickCount
 		while (!(there := PotionAtSeller(rec)) && A_TickCount - t0 < 4000)
-			Sleep, 500
+			Sleep(500)
 		}
 	if (!there)
 		{
-		marksOff[who] := shop
+		marksOff[who] := shop ;  V1toV2: Invalid Index errors?, try 'marksOff.Push(<val>)'
 		DebugLog("Potions: this wizard's Mark is in " shop (shop = rec.zone ? " but not by " rec.prompt " (no prompt with that name)" : ", but the buying was recorded in " rec.zone) " - the Mark isn't at the potion seller. Nothing clicked; no more recalls till you Mark (Page Down) next to her again and restart the bot (" HkText("restart") "), or record the buying again")
-		TrayTip, Wizard101 bot, % "This wizard's Mark isn't at the potion seller (it's in " shop ").`nMark (Page Down) right next to Hilda Brewer again, then restart the bot (" HkText("restart") ").", 10, 2
+		TrayTip("Wizard101 bot", "This wizard's Mark isn't at the potion seller (it's in " shop ").`nMark (Page Down) right next to Hilda Brewer again, "10, 2")
 		AlertSend("potions", "out of potions", "This wizard's Mark isn't at the potion seller (it's in " shop ") - Mark next to Hilda Brewer again and restart the bot.")
 		PotionCarryOn(false)
 		return false
@@ -341,7 +342,7 @@ PotionOff()
 ;its own Mark, so its own recording
 PotionWho()
 	{
-	id := IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""
+	id := IsFunc("StatsCharID") ? StatsCharID.Call() : ""
 	return id = "" ? "anyone" : id
 	}
 
@@ -357,9 +358,13 @@ PotionMarkFile(who, forSave := false)
 ;{zone, prompt} off a Mark recording's start line (start|zone|scale|size|mark|prompt)
 PotionMarkInfo(file)
 	{
-	FileReadLine, line, %file%, 2
+	Try {
+		Global ErrorLevel := 0, line := StrSplit(FileRead(file),"`n","`r")[2]
+	} Catch {
+		line := "", ErrorLevel := 1
+	}
 	f := StrSplit(line, "|")
-	return {zone: f[1] = "start" ? f[2] : "", prompt: f[1] = "start" ? f[6] : ""}
+	return (AHKv1v2_Temp := {zone: f[1] = "start" ? f[2] : "", prompt: f[1] = "start" ? f[6] : ""}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	}
 
 ;The name on the "Press X to ..." prompt showing now (the walker's reading of it, letters only), "" if none
@@ -367,7 +372,7 @@ PotionPrompt()
 	{
 	if (!IsFunc("InteractPrompt"))
 		return ""
-	return Func("InteractPrompt").Call() = "press" ? WkPromptDest : ""
+	return InteractPrompt.Call() = "press" ? WkPromptDest : ""
 	}
 
 ;The prompt's name read the same twice running ("" if not: a reading that changes each time - no title line,
@@ -375,9 +380,9 @@ PotionPrompt()
 PotionPromptSteady()
 	{
 	a := PotionPrompt()
-	Loop, 3
+	Loop 3
 		{
-		Sleep, 400
+		Sleep(400)
 		b := PotionPrompt()
 		if (a != "" && a = b)
 			return a
@@ -395,7 +400,7 @@ PotionArrived(rec, manaBefore)
 	if (manaBefore = "")
 		return false
 	a := PotionGlobes().mana
-	Sleep, 250
+	Sleep(250)
 	b := PotionGlobes().mana
 	return (a != "" && a = b && a < manaBefore)
 	}
@@ -411,7 +416,7 @@ PotionAtSeller(rec)
 		return false
 	if (now = rec.prompt)
 		return true
-	return IsFunc("WalkEditDistance") && Func("WalkEditDistance").Call(now, rec.prompt) <= Max(1, StrLen(rec.prompt) // 5)
+	return IsFunc("WalkEditDistance") && WalkEditDistance.Call(now, rec.prompt) <= Max(1, StrLen(rec.prompt) // 5)
 	}
 
 ;After buying: drinks if health is still under potionat %. False if that drink didn't work - nothing was
@@ -419,7 +424,7 @@ PotionAtSeller(rec)
 PotionAfterBuy(useOne := false)
 	{
 	hp := PotionHealth(), most := PotionMost()
-	limit := Stats.HasKey("potionat") ? Stats["potionat"] : 40
+	limit := Stats.Has("potionat") ? Stats["potionat"] : 40
 	;(useOne: one drunk after buying, whatever the health - unless it's nearly full: then it'd only be wasted)
 	limit := useOne ? 90 : limit
 	if (hp = "")
@@ -452,11 +457,11 @@ PotionCarryOn(bought)
 			}
 		DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - the shop's window is still open" (wasWalking ? ": walking stopped" : ""))
 		if (IsFunc("SetStatus"))
-			Func("SetStatus").Call("stopped - the potion shop's window is still open: close it" (wasWalking ? " and press " HkText("walk") : ""))
+			SetStatus.Call("stopped - the potion shop's window is still open: close it" (wasWalking ? " and press " HkText("walk") : ""))
 		if (IsFunc("WalkNotify"))
-			Func("WalkNotify").Call("shop", "Potion shop still open", "The potion shop's window couldn't be closed. Close it (its red X, bottom right)" (wasWalking ? " and press " HkText("walk") " to walk on." : "."))
+			WalkNotify.Call("shop", "Potion shop still open", "The potion shop's window couldn't be closed. Close it (its red X, bottom right)" (wasWalking ? " and press " HkText("walk") " to walk on." : "."))
 		else
-			TrayTip, Wizard101 bot, The potion shop's window couldn't be closed. Close it (its red X)., 10, 2
+			TrayTip("Wizard101 bot", "The potion shop's window couldn't be closed. Close it (its red X).", 2)
 		return
 		}
 	if (Walking && !afk && !loopmode && !loremode)
@@ -467,7 +472,7 @@ PotionCarryOn(bought)
 	why := afk ? "afk farming" : loopmode ? "mob-loop farming" : loremode ? "lore farming" : ""
 	DebugLog("Potions: " (bought ? "bought" : "didn't buy") " - staying at your Mark (" (why = "" ? "walking is off - " HkText("walk") : why " has no way back to its spot yet") ")")
 	if (bought)
-		TrayTip, Wizard101 bot, % "Bought potions - you're at the potion seller. " (why = "" ? "Walking is off (" HkText("walk") "), so the bot stays there." : "The bot can't get back to your " why " spot yet, so take it back yourself."), 10, 1
+		TrayTip("Wizard101 bot", "Bought potions - you're at the potion seller. " (why = "" ? "Walking is off (" HkText("walk") "), so the bot stays there." : "The bot can't get back to your " why " spot yet, so take it back yourself."), 1)
 	}
 
 ;The walker starts afresh, and presses no X at a prompt for a while (DialogQuiet): it's standing by the
@@ -476,7 +481,7 @@ PotionWalkFresh()
 	{
 	if (!IsFunc("WalkReset"))
 		return
-	Func("WalkReset").Call()
+	WalkReset.Call()
 	WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
 	}
 
@@ -487,7 +492,7 @@ PotionRecall()
 		return
 	DebugLog("Potions: back to the mark (Page Up)")
 	g := PotionGlobes()
-	if (!PotionTeleport("{PgUp}", "the mark", Func("PotionArrivedMana").Bind(g.mana)))
+	if (!PotionTeleport("{PgUp}", "the mark", PotionArrivedMana.Bind(g.mana)))
 		{
 		;(kept: the next run goes back to it once it has bought)
 		DebugLog("Potions: the recall didn't work (mana " (g.mana = "" ? "?" : g.mana) " - a Recall takes up to 10) - the mark is kept for the next run")
@@ -505,17 +510,17 @@ PotionRecall()
 PotionTeleport(key, what, arrived := "")
 	{
 	before := WalkZone(true)
-	Send, {Blind}%key%
+	Send("{Blind}" key)
 	t0 := A_TickCount, started := false
 	while (A_TickCount - t0 < 60000)
 		{
-		Sleep, 250
+		Sleep(250)
 		WalkZone(true)
 		if (WkLoading)
 			started := true
 		if (!WkLoading && WkLoadedAt > t0 + 500)
 			{
-			Sleep, 2500
+			Sleep(2500)
 			DebugLog("Potions: at " what " (" WalkZone(true) ")")
 			return true
 			}
@@ -526,7 +531,7 @@ PotionTeleport(key, what, arrived := "")
 			DebugLog("Potions: at " what " - no loading screen (" WalkZone(true) ")")
 			return true
 			}
-		ImageSearch, bx, by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % PicOpt("resources\roundstart.png")
+		ErrorLevel := !ImageSearch(&bx, &by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundstart.png"))
 		if (ErrorLevel = 0)
 			{
 			DebugLog("Potions: a battle started instead of " key " for " what " - stopping")
@@ -534,7 +539,7 @@ PotionTeleport(key, what, arrived := "")
 			}
 		if (A_TickCount - t0 > 15000)
 			{
-			ImageSearch, bx, by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % PicOpt("resources\roundfinish.png")
+			ErrorLevel := !ImageSearch(&bx, &by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundfinish.png"))
 			if (ErrorLevel = 0)
 				break
 			}
@@ -546,7 +551,7 @@ PotionTeleport(key, what, arrived := "")
 ;Where routes start: Home (the Home key; potionfromhome:1, the default) or the world's Commons (End)
 PotionStartKey()
 	{
-	return (Stats.HasKey("potionfromhome") && !Stats["potionfromhome"]) ? "{End}" : "{Home}"
+	return (Stats.Has("potionfromhome") && !Stats["potionfromhome"]) ? "{End}" : "{Home}"
 	}
 
 PotionStartName()
@@ -563,13 +568,13 @@ PotionRouteFile(zone)
 ;Replays a recorded route. False if it was stopped (a battle, your hands, a Crown, a load that didn't come)
 PotionReplay(route)
 	{
-	FileRead, text, %route%
+	text := FileRead(route)
 	t0 := A_TickCount, ok := true, down := {}
 	DebugLog("Potions: replaying " route)
-	Loop, Parse, text, `n, `r
+	Loop Parse, text, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 3 || f[1] = "start" || SubStr(A_LoopField, 1, 1) = ";")
+		if (f.Length < 3 || f[1] = "start" || SubStr(A_LoopField, 1, 1) = ";")
 			continue
 		;(wait for the event's time, watching for trouble)
 		while (A_TickCount - t0 < f[1])
@@ -579,7 +584,7 @@ PotionReplay(route)
 				ok := false
 				break
 				}
-			Sleep, 10
+			Sleep(10)
 			}
 		if (!ok)
 			break
@@ -593,8 +598,8 @@ PotionReplay(route)
 					DebugLog("Potions: " name " in the recording - skipped")
 				continue
 				}
-			Send, % "{Blind}{" name (f[4] = "down" ? " down" : " up") "}"
-			down[name] := (f[4] = "down")
+			Send("{Blind}{" name (f[4] = "down" ? " down" : " up") "}")
+			down[name] := (f[4] = "down") ;  V1toV2: Invalid Index errors?, try 'down.Push(<val>)'
 			}
 		else if (f[2] = "click")
 			{
@@ -609,10 +614,10 @@ PotionReplay(route)
 			;(your mouse locked meanwhile - Settings.ahk MouseLockOn; its clicks too, once the pointer's on the game -
 			;MouseLockMoved)
 			MouseLockOn("route")
-			MouseMove, %x%, %y%, 3
+			MouseMove(x, y, 3)
 			MouseLockMoved()
-			Sleep, 120
-			Click
+			Sleep(120)
+			Click()
 			if (ownGrab)
 				MouseLetGo()
 			MouseLockOff("route")
@@ -630,7 +635,7 @@ PotionReplay(route)
 					ok := false
 					break
 					}
-				Sleep, 50
+				Sleep(50)
 				}
 			if (!ok)
 				break
@@ -639,7 +644,7 @@ PotionReplay(route)
 		}
 	for name, isDown in down
 		if (isDown)
-			Send, % "{Blind}{" name " up}"
+			Send("{Blind}{" name " up}")
 	ReleaseKeys()
 	DebugLog("Potions: route " (ok ? "done" : "stopped"))
 	return ok
@@ -650,7 +655,7 @@ PotionOk(watchHands := true, since := 0)
 	{
 	;(Wizard101 behind another window: brought to the front if "Bring Wizard101 to the front" is on - without waiting for
 	;you to leave the keyboard alone: the run's under way)
-	if (!GameActive() && !(IsFunc("GameToFront") && Func("GameToFront").Call("the potion run is under way", false)))
+	if (!GameActive() && !(IsFunc("GameToFront") && GameToFront.Call("the potion run is under way", false)))
 		{
 		DebugLog("Potions: Wizard101 isn't the active window - stopping")
 		return false
@@ -662,7 +667,7 @@ PotionOk(watchHands := true, since := 0)
 		DebugLog("Potions: you touched the mouse or keyboard - stopping (the bot leaves it to you)")
 		return false
 		}
-	ImageSearch, bx, by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % PicOpt("resources\roundstart.png")
+	ErrorLevel := !ImageSearch(&bx, &by, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, PicOpt("resources\roundstart.png"))
 	if (ErrorLevel = 0)
 		{
 		DebugLog("Potions: a battle started - stopping the run (the next one won't mark again)")
@@ -693,8 +698,8 @@ NoCrownsNear(x, y, r := "", logAs := "Potions", who := "The potion run", where :
 	if (RegExMatch(text, "i)cr[o0]wn"))
 		{
 		DebugLog(logAs ": ""Crown"" on screen by the next click - not clicking, stopping (gold only): " RegExReplace(text, "\s+", " "))
-		TrayTip, Wizard101 bot, % who " saw ""Crowns"" on screen and stopped (" how ").", 10, 2
-		AlertSend("crowns", alertTitle, """Crowns"" on screen " where " - it stopped without clicking (" how ").")
+		TrayTip("Wizard101 bot", who " saw `"Crowns`" on screen and stopped (" how ").", 2)
+		AlertSend("crowns", alertTitle, "`"Crowns`" on screen " where " - it stopped without clicking (" how ").")
 		return false
 		}
 	return true
@@ -705,7 +710,7 @@ NoCrownsNear(x, y, r := "", logAs := "Potions", who := "The potion run", where :
 ;potionwalk in PlayerStats.txt (the Settings window), on unless it's 0
 PotionWalkOn()
 	{
-	return !(Stats.HasKey("potionwalk") && !Stats["potionwalk"])
+	return !(Stats.Has("potionwalk") && !Stats["potionwalk"])
 	}
 
 ;The potion seller placed in zone ({name, x, y, z}), from the zone's own file (the vision helper's /seller), or ""
@@ -714,23 +719,23 @@ PotionSellerIn(zone)
 	static seen := {}
 	if (zone = "")
 		return ""
-	if (seen.HasKey(zone))
+	if (seen.Has(zone))
 		return seen[zone]
 	answer := VisionGet("/seller?zone=" LearnUri(zone), 5000, true)
 	;(no answer, or the zone's file not read: asked again next time)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
 	s := ""
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "seller" && f.Length() >= 5)
+		if (f[1] = "seller" && f.Length >= 5)
 			{
 			s := {name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, zone: zone}
 			break
 			}
 		}
-	seen[zone] := s
+	seen[zone] := s ;  V1toV2: Invalid Index errors?, try 'seen.Push(<val>)'
 	return s
 	}
 
@@ -743,7 +748,7 @@ PotionNavTo(s)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
 	nav := {x: "", y: "", z: "", yaw: "", ax: "", ay: "", left: "", why: "", zone: ""}
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
 		if (f[1] = "pos")
@@ -764,12 +769,12 @@ PotionHoldW(on)
 	if (on && !HeldW && GameActive())
 		{
 		KeysDown := 1
-		Send, {Blind}{w down}
+		Send("{Blind}{w down}")
 		HeldW := 1
 		}
 	else if (!on && HeldW)
 		{
-		Send, {Blind}{w up}
+		Send("{Blind}{w up}")
 		HeldW := 0
 		}
 	}
@@ -783,9 +788,9 @@ PotionTurnBy(h)
 	ms := Round(Abs(h) / (TurnRate > 0 ? TurnRate : 0.15))
 	ms := ms < 30 ? 30 : ms > 800 ? 800 : ms
 	KeysDown := 1
-	Send, {Blind}{%key% down}
-	Sleep, %ms%
-	Send, {Blind}{%key% up}
+	Send("{Blind}{" key " down}")
+	Sleep(ms)
+	Send("{Blind}{" key " up}")
 	}
 
 ;Walks to the potion seller s by the zone's map: steering at the route's aim (a point ahead on it, round walls)
@@ -822,7 +827,7 @@ PotionWalkTo(s, since := 0, door := false)
 			misses += 1
 			if (misses < 3)
 				{
-				Sleep, 300
+				Sleep(300)
 				continue
 				}
 			ReleaseKeys()
@@ -873,9 +878,9 @@ PotionWalkTo(s, since := 0, door := false)
 				}
 			DebugLog("Potions: no closer in 6 s (" Round(d) " away) - backing up and turning")
 			PotionHoldW(0)
-			Send, {Blind}{s down}
-			Sleep, 700
-			Send, {Blind}{s up}
+			Send("{Blind}{s down}")
+			Sleep(700)
+			Send("{Blind}{s up}")
 			PotionTurnBy(Mod(unstuck, 2) ? 90 : -90)
 			if (!PotionOk(true, since))
 				{
@@ -883,7 +888,7 @@ PotionWalkTo(s, since := 0, door := false)
 				return false
 				}
 			PotionHoldW(1)
-			Sleep, 900
+			Sleep(900)
 			bestAt := A_TickCount
 			continue
 			}
@@ -902,7 +907,7 @@ PotionWalkTo(s, since := 0, door := false)
 			if (Abs(h) > 12)
 				PotionTurnBy(h)
 			}
-		Sleep, 60
+		Sleep(60)
 		}
 	}
 
@@ -921,11 +926,11 @@ PotionThrough(zone, t0, sure := false)
 		now := WalkZone(true)
 		if (!WkLoading && now != "" && now != zone)
 			{
-			Sleep, 2500
+			Sleep(2500)
 			DebugLog("Potions: through the way out - in " WalkZone(true))
 			return 1
 			}
-		Sleep, 250
+		Sleep(250)
 		}
 	DebugLog("Potions: walked into the way out, but still in " zone " a minute on - stopping")
 	return -1
@@ -941,10 +946,10 @@ PotionDoor(zone, want)
 		return ""
 	here := PotionNavTo({x: 0, y: 0, z: 0})
 	best := "", bestD := ""
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] != "vol" || f.Length() < 6 || !RegExMatch(f[2], want) || InStr(f[2], "Activator"))
+		if (f[1] != "vol" || f.Length < 6 || !RegExMatch(f[2], want) || InStr(f[2], "Activator"))
 			continue
 		d := IsObject(here) ? Sqrt((here.x - f[3]) ** 2 + (here.y - f[4]) ** 2) : 0
 		if (bestD = "" || d < bestD)
@@ -990,9 +995,9 @@ PotionToCommons(since)
 	}
 ;The shop's BUY button when the whole window's read missed it: under COST (its cost line), read in a box just below it
 ;at 3x - a word ending in UY there ("C)UY", "BUY"). {x, y} of its middle, or ""; seen: what was read added to it
-PotionFindBuy(ByRef seen)
+PotionFindBuy(&seen)
 	{
-	c := PotionFindWords("i)^cost$", "", costSeen, false)
+	c := PotionFindWords("i)^cost$", "", &costSeen, false)
 	if (!IsObject(c))
 		return ""
 	bx := c.x - Round(40 * UiScale), by := c.y + Round(30 * UiScale)
@@ -1004,7 +1009,7 @@ PotionFindBuy(ByRef seen)
 		for j, w in line.words
 			if (RegExMatch(Trim(w.text), "i)^.{0,3}uy[.!]?$"))
 				{
-				DebugLog("Potions: BUY read under COST (as """ Trim(w.text) """)")
+				DebugLog("Potions: BUY read under COST (as `"" Trim(w.text) "`")")
 				return {x: Round(w.x + w.w / 2), y: Round(w.y + w.h / 2)}
 				}
 	return ""
@@ -1012,7 +1017,7 @@ PotionFindBuy(ByRef seen)
 
 ;The words firstRe (and nextRe right after it, if given) in the middle of the game window, by OCR: {x, y} (screen)
 ;of their middle, or "" - the first found, or with rightmost the one furthest right. text: what was read there
-PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false, rightmost := false)
+PotionFindWords(firstRe, nextRe := "", &text := "", lone := false, rightmost := false)
 	{
 	text := OcrRect(Round(GameLeft + GameW * 0.12), Round(GameTop + GameH * 0.08), Round(GameW * 0.76), Round(GameH * 0.84), "en", 1, lines)
 	if (ErrorLevel || !IsObject(lines))
@@ -1025,12 +1030,12 @@ PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false, rightmos
 			continue
 		for j, w in ws
 			{
-			if (!RegExMatch(Trim(w.text), firstRe) || (lone && ws.Length() != 1))
+			if (!RegExMatch(Trim(w.text), firstRe) || (lone && ws.Length != 1))
 				continue
 			at := ""
 			if (nextRe = "")
 				at := {x: Round(w.x + w.w / 2), y: Round(w.y + w.h / 2)}
-			else if (j < ws.Length() && RegExMatch(Trim(ws[j + 1].text), nextRe))
+			else if (j < ws.Length && RegExMatch(Trim(ws[j + 1].text), nextRe))
 				{
 				v := ws[j + 1]
 				at := {x: Round((w.x + v.x + v.w) / 2), y: Round(w.y + w.h / 2)}
@@ -1048,7 +1053,7 @@ PotionFindWords(firstRe, nextRe := "", ByRef text := "", lone := false, rightmos
 ;UI scale 1; Fill All is greyed once the potions are full) - or "" when neither is read. The rightmost: once Fill All is
 ;picked its name shows on the left too, over the cost and BUY - not a button. shopSeen: the shop's own words read at
 ;all (its title, a Fill button)
-PotionShopAnchor(ByRef shopSeen := "")
+PotionShopAnchor(&shopSeen := "")
 	{
 	shopText := OcrRect(Round(GameLeft + GameW * 0.12), Round(GameTop + GameH * 0.08), Round(GameW * 0.76), Round(GameH * 0.84), "en", 1, shopLines)
 	shopSeen := !ErrorLevel && RegExMatch(shopText, "i)mystical|mixtures|\bfill\b")
@@ -1062,7 +1067,7 @@ PotionShopAnchor(ByRef shopSeen := "")
 			continue
 		for j, w in ws
 			{
-			if (j >= ws.Length() || !RegExMatch(Trim(w.text), "i)^fill$"))
+			if (j >= ws.Length || !RegExMatch(Trim(w.text), "i)^fill$"))
 				continue
 			v := ws[j + 1], mid := Round((w.x + v.x + v.w) / 2)
 			if (RegExMatch(Trim(v.text), "i)^all[.!]?$") && (!IsObject(fillAll) || mid > fillAll.x))
@@ -1077,15 +1082,15 @@ PotionShopAnchor(ByRef shopSeen := "")
 ;The potion shop's close button - the red X at its bottom right corner, (235, 359) from Fill All at UI scale 1,
 ;measured on the live game - found by its colour in a small box round there (nothing else in the shop is that red),
 ;its middle checked to be that red too (not a red robe or mount passing the corner): true and its middle in x, y
-PotionShopXFind(anchor, ByRef x, ByRef y)
+PotionShopXFind(anchor, &x, &y)
 	{
 	shopX := anchor.x + Round(235 * UiScale), shopY := anchor.y + Round(359 * UiScale), shopR := Round(32 * UiScale)
-	PixelSearch, x, y, Max(GameLeft, shopX - shopR), Max(GameTop, shopY - shopR), Min(GameLeft + GameW - 1, shopX + shopR), Min(GameTop + GameH - 1, shopY + shopR), 0xD20805, 40, Fast RGB
+	ErrorLevel := !PixelSearch(&x, &y, Max(GameLeft, shopX - shopR), Max(GameTop, shopY - shopR), Min(GameLeft + GameW - 1, shopX + shopR), Min(GameTop + GameH - 1, shopY + shopR), 0xD20805, 40)
 	;(not there - the anchor read off the left panel's "Fill All" title, the button not read: 2026-10-23 08:43, the X looked
 	;for 570 px left of it - the close button's picture, the red X in its brown ring, looked for in the window's lower right)
 	if (ErrorLevel)
 		{
-		ImageSearch, x, y, Round(GameLeft + GameW * 0.45), Round(GameTop + GameH * 0.5), Round(GameLeft + GameW * 0.9), Round(GameTop + GameH * 0.92), % PicOpt("resources\closewin.png", 50)
+		ErrorLevel := !ImageSearch(&x, &y, Round(GameLeft + GameW * 0.45), Round(GameTop + GameH * 0.5), Round(GameLeft + GameW * 0.9), Round(GameTop + GameH * 0.92), PicOpt("resources\closewin.png", 50))
 		if (ErrorLevel)
 			return false
 		x += Round(30 * UiScale / 1.144), y += Round(30 * UiScale / 1.144)
@@ -1093,7 +1098,7 @@ PotionShopXFind(anchor, ByRef x, ByRef y)
 		}
 	;(the first red pixel is near the top of its cross: its middle is a little right of and below that)
 	x += Round(5 * UiScale), y += Round(13 * UiScale)
-	PixelSearch, midX, midY, x - 4, y - 4, x + 4, y + 4, 0xD20805, 50, Fast RGB
+	ErrorLevel := !PixelSearch(&midX, &midY, x - 4, y - 4, x + 4, y + 4, 0xD20805, 50)
 	return !ErrorLevel
 	}
 
@@ -1102,22 +1107,22 @@ PotionShopXFind(anchor, ByRef x, ByRef y)
 ;off, the game isn't in front)
 PotionShopX(anchor, from)
 	{
-	if (!PotionShopXFind(anchor, redX, redY))
+	if (!PotionShopXFind(anchor, &redX, &redY))
 		{
 		DebugLog("Potions: the shop's close button (its red X) wasn't found by " anchor.x + Round(235 * UiScale) - GameLeft "," anchor.y + Round(359 * UiScale) - GameTop)
 		return false
 		}
 	if (!PotionNoCrowns(redX, redY))
 		return false
-	Critical
+	Critical()
 	if (!WalkMenuMayAct(false, from))
 		{
-		Critical, Off
+		Critical("Off")
 		return -1
 		}
 	DebugLog("Potions: closing the shop with its X at " redX - GameLeft "," redY - GameTop)
 	TargetClick(redX, redY)
-	Critical, Off
+	Critical("Off")
 	return 1
 	}
 
@@ -1125,7 +1130,7 @@ PotionShopX(anchor, from)
 ;words, else Fill All's place read before it was clicked (known) while some of the shop's words are read; or ""
 PotionShopUp(known := "")
 	{
-	shop := PotionShopAnchor(shopSeen)
+	shop := PotionShopAnchor(&shopSeen)
 	if (IsObject(shop))
 		return shop
 	return (shopSeen && IsObject(known)) ? known : ""
@@ -1148,7 +1153,7 @@ PotionCloseShop(since := 0, known := "")
 		if (xGot != 1)
 			break
 		xClicks += 1
-		Sleep, 1000
+		Sleep(1000)
 		shop := PotionShopUp(known)
 		}
 	if (IsObject(shop))
@@ -1166,17 +1171,17 @@ PotionCloseShop(since := 0, known := "")
 	if (!xClicks)
 		{
 		;(no shop seen: X opened something else - a dialogue - or nothing: Escape, as ever)
-		Critical
+		Critical()
 		if (!WalkMenuMayAct(false, from))
 			{
-			Critical, Off
+			Critical("Off")
 			DebugLog("Potions: not closing what's open (Wizard101 isn't in front, the bot is off or you've taken over)")
 			return true
 			}
 		DebugLog("Potions: no shop's window seen - Escape")
-		Send, {Blind}{Escape}
-		Critical, Off
-		Sleep, 800
+		Send("{Blind}{Escape}")
+		Critical("Off")
+		Sleep(800)
 		}
 	menuNow := WalkCloseGameMenu(false, menuSeen, from)
 	if (menuNow = 1)
@@ -1197,7 +1202,7 @@ PotionBuyHere(s, since := 0)
 	ReleaseKeys()
 	t0 := A_TickCount
 	while ((name := PotionPrompt()) = "" && A_TickCount - t0 < 2500)
-		Sleep, 300
+		Sleep(300)
 	;(no prompt yet: a step closer - she may stand behind her stall)
 	if (name = "")
 		{
@@ -1207,11 +1212,11 @@ PotionBuyHere(s, since := 0)
 			{
 			PotionTurnBy(h)
 			PotionHoldW(1)
-			Sleep, 500
+			Sleep(500)
 			PotionHoldW(0)
 			t0 := A_TickCount
 			while ((name := PotionPrompt()) = "" && A_TickCount - t0 < 2000)
-				Sleep, 300
+				Sleep(300)
 			}
 		}
 	if (name = "")
@@ -1222,16 +1227,16 @@ PotionBuyHere(s, since := 0)
 	if (!PotionOk(true, since))
 		return false
 	DebugLog("Potions: " name "'s prompt - X")
-	Send, {Blind}x
-	Sleep, 1800
+	Send("{Blind}x")
+	Sleep(1800)
 	;(the right panel's Fill All - the rightmost: once picked, its name shows on the left too)
-	w := PotionFindWords("i)^fill$", "i)^all[.!]?$", seen, false, true)
+	w := PotionFindWords("i)^fill$", "i)^all[.!]?$", &seen, false, true)
 	;(Crowns anywhere in the window: nothing clicked)
 	if (IsObject(w) && RegExMatch(seen, "i)cr[o0]wn"))
 		{
 		DebugLog("Potions: ""Crown"" in the shop's window - not clicking, stopping (gold only): " SubStr(RegExReplace(seen, "\s+", " "), 1, 160))
-		TrayTip, Wizard101 bot, The potion run saw "Crowns" on screen and stopped (it only buys with gold)., 10, 2
-		AlertSend("crowns", "potion run stopped", """Crowns"" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
+		TrayTip("Wizard101 bot", "The potion run saw `"Crowns`" on screen and stopped (it only buys with gold).", 2)
+		AlertSend("crowns", "potion run stopped", "`"Crowns`" on screen by the potion seller - it stopped without clicking (it only buys with gold).")
 		PotionCloseShop(since, w)
 		return false
 		}
@@ -1248,32 +1253,32 @@ PotionBuyHere(s, since := 0)
 		}
 	DebugLog("Potions: Fill All at " w.x - GameLeft "," w.y - GameTop " - clicking")
 	ClickAt(w.x, w.y, 300)
-	Sleep, 1000
+	Sleep(1000)
 	;(Fill All only picks what to buy: its BUY button - on the left, under the cost - buys it, with gold. Only with no
 	;Crown anywhere in the window nor round the button)
-	b := PotionFindWords("i)^buy[.!]?$", "", seen, true)
+	b := PotionFindWords("i)^buy[.!]?$", "", &seen, true)
 	;(not read - yellow on red reads badly at 1:1, 2026-10-23 08:43: "C)UY", or nothing - the box under COST read 3x)
 	if (!IsObject(b))
-		b := PotionFindBuy(seen)
+		b := PotionFindBuy(&seen)
 	if (!IsObject(b) || RegExMatch(seen, "i)cr[o0]wn") || !PotionNoCrowns(b.x, b.y) || !PotionOk(true, since))
 		{
 		DebugLog("Potions: " (!IsObject(b) ? "no BUY button after Fill All" : RegExMatch(seen, "i)cr[o0]wn") ? """Crown"" in the shop's window - BUY not clicked" : "BUY not clicked") " (read: " SubStr(RegExReplace(seen, "\s+", " "), 1, 160) ") - not bought")
 		PotionCloseShop(since, w)
 		return false
 		}
-	RegExMatch(seen, "i)cost\s*(\d[\d,]*)", cost)
-	DebugLog("Potions: BUY at " b.x - GameLeft "," b.y - GameTop (cost1 != "" ? " (cost " cost1 " gold)" : "") " - clicking")
+	RegExMatch(seen, "i)cost\s*(\d[\d,]*)", &cost)
+	DebugLog("Potions: BUY at " b.x - GameLeft "," b.y - GameTop (cost[1] != "" ? " (cost " cost[1] " gold)" : "") " - clicking")
 	ClickAt(b.x, b.y, 300)
-	Sleep, 1200
+	Sleep(1200)
 	;(a box asking to pay with gold: its OK / Yes - only with "gold" in it and no Crown round it)
-	c := PotionFindWords("i)^(ok|okay|yes)[.!]?$", "", seen, true)
+	c := PotionFindWords("i)^(ok|okay|yes)[.!]?$", "", &seen, true)
 	;(what's on screen after it - the shop still up, a box asking to pay, or nothing: for debug.log)
 	DebugLog("Potions: after BUY, read: " (seen = "" ? "(nothing)" : SubStr(RegExReplace(seen, "\s+", " "), 1, 200)))
 	if (IsObject(c) && RegExMatch(seen, "i)gold") && !RegExMatch(seen, "i)cr[o0]wn") && PotionOk(true, since) && PotionNoCrowns(c.x, c.y))
 		{
 		DebugLog("Potions: a box asking to pay with gold - OK")
 		ClickAt(c.x, c.y, 300)
-		Sleep, 1000
+		Sleep(1000)
 		}
 	PotionCloseShop(since, w)
 	return true
@@ -1293,9 +1298,9 @@ PotionRunWalk()
 	;(potionmark:0's route way is always there to try - it says so itself when there's no route)
 	recorded := PotionByMark() ? PotionMarkFile(who) != "" : true
 	;(the map walk needs the game's memory - on, its heading checked by the walker, readable now)
-	if ((Stats.HasKey("navmem") && !Stats["navmem"]) || (!WkNavChecked && !WkNavTrusted))
+	if ((Stats.Has("navmem") && !Stats["navmem"]) || (!WkNavChecked && !WkNavTrusted))
 		{
-		DebugLog("Potions: no walking to the potion seller by the map (the game's memory " ((Stats.HasKey("navmem") && !Stats["navmem"]) ? "is off: navmem:0" : "hasn't been checked against the quest arrow yet - it is after a minute of walking a quest") ") - the recorded ways")
+		DebugLog("Potions: no walking to the potion seller by the map (the game's memory " ((Stats.Has("navmem") && !Stats["navmem"]) ? "is off: navmem:0" : "hasn't been checked against the quest arrow yet - it is after a minute of walking a quest") ") - the recorded ways")
 		return ""
 		}
 	zone := WalkZone(true)
@@ -1338,15 +1343,15 @@ PotionRunWalk()
 		else
 			{
 			g := PotionGlobes()
-			Send, {Blind}{PgDn}
-			Sleep, 1500
+			Send("{Blind}{PgDn}")
+			Sleep(1500)
 			;(the globe's number given a moment more to go down)
 			took := (g.mana = "")
-			Loop, 4
+			Loop 4
 				{
 				if (took || (took := PotionArrivedMana(g.mana)))
 					break
-				Sleep, 500
+				Sleep(500)
 				}
 			if (took)
 				{
@@ -1393,7 +1398,7 @@ PotionRunWalk()
 		if (!IsObject(s))
 			{
 			DebugLog("Potions: no potion seller in " WalkZone(true) " after Home and the Commons - back to the mark. (Only Wizard City's Commons has one: is your house in another world?)")
-			TrayTip, Wizard101 bot, % "Out of potions - Home and the Commons (End) didn't lead to the potion seller (" WalkZone(true) ").`nThe bot went back to where it was. Is your house in Wizard City?", 10, 2
+			TrayTip("Wizard101 bot", "Out of potions - Home and the Commons (End) didn't lead to the potion seller (" WalkZone(true) ").`nThe bot went back to where it was. Is your house in Wizard City?", 2)
 			AlertSend("potions", "out of potions", "Home and the Commons didn't lead to Wizard City's potion seller (" WalkZone(true) ") - back to where it was. Is your house in Wizard City?")
 			PotionRecall()
 			PotionCarryOn(false)
@@ -1422,7 +1427,7 @@ PotionRunWalk()
 	if (ok && !PotionShopLeft && PotionOk(true, since))
 		{
 		DebugLog("Potions: filling up again after drinking one")
-		Sleep, 800
+		Sleep(800)
 		PotionBuyHere(s, since)
 		}
 	if (marked && !PotionShopLeft)
@@ -1455,7 +1460,7 @@ PotionArrivedMana(manaBefore)
 	if (manaBefore = "")
 		return false
 	a := PotionGlobes().mana
-	Sleep, 250
+	Sleep(250)
 	b := PotionGlobes().mana
 	return (a != "" && a = b && a < manaBefore)
 	}
@@ -1468,58 +1473,58 @@ PotionRecordStart()
 		return
 	if (DgRecording)
 		{
-		MsgBox, 262192, Record potion buying, % "A dungeon run is being recorded - finish that first (" HkName(DgRecKey) ")."
+		msgResult := MsgBox("A dungeon run is being recorded - finish that first (" HkName(DgRecKey) ").", "Record potion buying", 262192)
 		return
 		}
 	if (!VisionOn)
 		{
-		MsgBox, 48, Record potion buying, % "The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (" HkText("restart") ") and try again."
+		msgResult := MsgBox("The vision helper isn't running, so the bot can't follow loading screens. Restart the bot (" HkText("restart") ") and try again.", "Record potion buying", 48)
 		return
 		}
 	;(its only way to stop: the Stop recording key)
 	if (HkKeyOf("record") = "")
 		{
-		MsgBox, 48, Record potion buying, Stop recording has no key - give it one on the dashboard's Keys tab first.
+		msgResult := MsgBox("Stop recording has no key - give it one on the dashboard's Keys tab first.", "Record potion buying", 48)
 		return
 		}
 	atMark := PotionByMark()
 	if (atMark)
-		MsgBox, 65, Record potion buying, % "First leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons) - the bot recalls you there every time you're out of potions. Each wizard has its own Mark: do this once for each.`n`nThe bot now recalls you to your Mark (Page Up). Once its ""Recording"" message shows, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ". (Not right by her? Walk there and press Page Down - the recording starts over from there.)`n`nYou stay at the seller afterwards."
+		msgResult := MsgBox("First leave a Mark (Page Down) right next to the potion seller (Hilda Brewer, Wizard City's Commons) - the bot recalls you there every time you're out of potions. Each wizard has its own Mark: do this once for each.`n`nThe bot now recalls you to your Mark (Page Up). Once its `"Recording`" message shows, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ". (Not right by her? Walk there and press Page Down - the recording starts over from there.)`n`nYou stay at the seller afterwards.", "Record potion buying", 65)
 	else
-		MsgBox, 65, Record potion buying, % "The bot will mark your spot (Page Down) and take you to " PotionStartName() ".`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ".`n`nUse the mount you'll farm with. The bot recalls you back afterwards."
-	IfMsgBox, Cancel
+		msgResult := MsgBox("The bot will mark your spot (Page Down) and take you to " PotionStartName() ".`n`nThen walk to the potion seller (Hilda Brewer) with the KEYBOARD only, press X to talk, click Fill All with GOLD (and close the window), and press " HkText("record") ".`n`nUse the mount you'll farm with. The bot recalls you back afterwards.", "Record potion buying", 65)
+	if (msgResult = "Cancel")
 		return
-	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
-	Sleep, 500
+	WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+	Sleep(500)
 	PotionRecording := 1
 	ReleaseKeys()
 	if (atMark)
 		{
 		;(never Page Down here: your Mark stays at the seller)
 		g := PotionGlobes()
-		if (!PotionTeleport("{PgUp}", "your Mark", Func("PotionArrived").Bind({prompt: ""}, g.mana)))
+		if (!PotionTeleport("{PgUp}", "your Mark", PotionArrived.Bind({prompt: ""}, g.mana)))
 			{
 			;(a Recall in the Mark's own zone may not show a loading screen)
-			MsgBox, 36, Record potion buying, % "Page Up (Recall) showed no loading screen - in the Mark's own zone it may not.`n`nAre you standing at your Mark, right next to the potion seller?`n`nYes: record here. No: stop (leave a Mark there first, with some mana for the Recall)."
-			IfMsgBox, No
+			msgResult := MsgBox("Page Up (Recall) showed no loading screen - in the Mark's own zone it may not.`n`nAre you standing at your Mark, right next to the potion seller?`n`nYes: record here. No: stop (leave a Mark there first, with some mana for the Recall).", "Record potion buying", 36)
+			if (msgResult = "No")
 				{
 				PotionRecording := 0
 				return
 				}
-			WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
-			Sleep, 500
+			WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+			Sleep(500)
 			}
 		}
 	else
 		{
 		startZone := WalkZone(true)
-		Send, {Blind}{PgDn}
+		Send("{Blind}{PgDn}")
 		PotionMarkZone := startZone, PotionMarkAt := A_TickCount
-		Sleep, 1500
+		Sleep(1500)
 		if (!PotionTeleport(PotionStartKey(), PotionStartName()))
 			{
 			PotionRecording := 0
-			MsgBox, 48, Record potion buying, % "The teleport to " PotionStartName() " didn't happen (no loading screen) - nothing recorded."
+			msgResult := MsgBox("The teleport to " PotionStartName() " didn't happen (no loading screen) - nothing recorded.", "Record potion buying", 48)
 			return
 			}
 		}
@@ -1529,18 +1534,18 @@ PotionRecordStart()
 	PotionRecAtMark := atMark, PotionRecRestart := 0
 	PotionHook := InputHook("V L0")
 	PotionHook.KeyOpt("{All}", "N")
-	PotionHook.OnKeyDown := Func("PotionRecKey").Bind(1)
-	PotionHook.OnKeyUp := Func("PotionRecKey").Bind(0)
-	Hotkey, ~*LButton, PotionRecClick, On
+	PotionHook.OnKeyDown := PotionRecKey.Bind(1)
+	PotionHook.OnKeyUp := PotionRecKey.Bind(0)
+	Hotkey("~*LButton", PotionRecClick, "On")
 	;(the key that stops it - the Keys tab's, F9 out of the box - as it was when the recording began)
 	PotionStopKey := HkKeyOf("record")
 	if (PotionStopKey != "")
-		Hotkey, $%PotionStopKey%, PotionRecF9, On UseErrorLevel
+		Hotkey("$" PotionStopKey, PotionRecF9, "On") ; V1toV2: Removed UseErrorLevel
 	if (PotionStopKey = "" || ErrorLevel)
 		DebugLog("Potions: the Stop recording key " HkName(PotionStopKey) " couldn't be made (" ErrorLevel ") - the recording stops by itself after 15 minutes")
 	PotionRecT0 := A_TickCount
 	PotionHook.Start()
-	TrayTip, Wizard101 bot, % "Recording " (atMark ? "at your Mark in " commons ": X to talk" : "from " commons ": walk to the potion seller") ", buy Fill All, then press " HkName(PotionStopKey) ".", 10, 1
+	TrayTip("Wizard101 bot", "Recording " (atMark ? "at your Mark in " commons ": X to talk" : "from " commons ": walk to the potion seller") ", "then press `" HkName(PotionStopKey) `".`", 10, 1")
 	DebugLog("Potions: recording " (atMark ? "the buying at your Mark in " : "a route from ") commons)
 	;(the seller's prompt, read while the recording already runs - an X meanwhile is kept)
 	if (atMark)
@@ -1549,7 +1554,7 @@ PotionRecordStart()
 	;(a loading screen on the way: noted when it's done, as replaying waits for that and goes on from there)
 	while (!PotionRecStop && A_TickCount - t0 < 15 * 60000)
 		{
-		Sleep, 50
+		Sleep(50)
 		z := WalkZone(true)
 		if (z != lastZone && !WkLoading)
 			PotionRec .= (A_TickCount - PotionRecT0) "|zone|" z "`r`n", lastZone := z
@@ -1559,14 +1564,14 @@ PotionRecordStart()
 			{
 			PotionRecRestart := 0, commons := lastZone
 			DebugLog("Potions: Page Down - your Mark is here now (" commons "): recording again from here")
-			TrayTip, Wizard101 bot, % "Your Mark is here now - the recording starts again from here. X to talk, Fill All, then " HkName(PotionStopKey) ".", 10, 1
+			TrayTip("Wizard101 bot", "Your Mark is here now - the recording starts again from here. X to talk, "then `" HkName(PotionStopKey) `".`", 10, 1")
 			prompt := PotionPromptSteady()
 			}
 		}
 	PotionHook.Stop()
-	Hotkey, ~*LButton, Off
+	Hotkey("~*LButton", "Off")
 	if (PotionStopKey != "")
-		Hotkey, $%PotionStopKey%, Off, UseErrorLevel
+		Hotkey("$" PotionStopKey, "Off") ; V1toV2: Removed UseErrorLevel
 	PotionRecording := 0, PotionRecAtMark := 0
 	if (atMark)
 		{
@@ -1578,34 +1583,34 @@ PotionRecordStart()
 		missing := (RegExMatch(PotionRec, "im)^\d+\|key\|x\|down") ? "" : "no X press (to talk to her)") (InStr(PotionRec, "|click|") ? "" : (RegExMatch(PotionRec, "im)^\d+\|key\|x\|down") ? "" : " and ") "no click (Fill All)")
 		if (missing != "")
 			{
-			MsgBox, 308, Record potion buying, % "The recording has " missing ".`n`nThe bot couldn't buy with it. Save it anyway?`n`n(No: nothing saved - record again, and press X once the ""Recording"" message shows.)"
-			IfMsgBox, No
+			msgResult := MsgBox("The recording has " missing ".`n`nThe bot couldn't buy with it. Save it anyway?`n`n(No: nothing saved - record again, and press X once the `"Recording`" message shows.)", "Record potion buying", 308)
+			if (msgResult = "No")
 				{
 				DebugLog("Potions: buying not saved (" missing ")")
-				WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
+				WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
 				PotionWalkFresh()
 				return
 				}
 			}
 		}
-	FileCreateDir, % A_WorkingDir "\routes"
+	DirCreate(A_WorkingDir "\routes")
 	who := PotionWho()
 	file := atMark ? PotionMarkFile(who, true) : PotionRouteFile(commons)
 	head := "start|" commons "|" Round(UiScale, 3) "|" GameW "x" GameH (atMark ? "|mark|" prompt : "")
-	FileDelete, %file%
-	FileAppend, % "; Potion " (atMark ? "buying at your Mark in " : "route from ") commons ", recorded " A_YYYY "-" A_MM "-" A_DD " " A_Hour ":" A_Min " (Potions.ahk): ms|key|name|down/up, ms|click|x|y (UI px from the window's middle), ms|zone|<zone after a loading screen>`r`n" head "`r`n" PotionRec, %file%
+	Try FileDelete(file)
+	FileAppend("; Potion " (atMark ? "buying at your Mark in " : "route from ") commons ", recorded " A_YYYY "-" A_MM "-" A_DD " " A_Hour ":" A_Min " (Potions.ahk): ms|key|name|down/up, ms|click|x|y (UI px from the window's middle), ms|zone|<zone after a loading screen>`r`n" head "`r`n" PotionRec, file)
 	DebugLog("Potions: " (atMark ? "buying" : "route") " saved: " file)
 	if (atMark)
 		{
 		PotionOff().Delete(who), PotionOff().Delete("anyone")
-		MsgBox, 64, Record potion buying, % "Saved the buying at this wizard's Mark in " commons (prompt = "" ? "" : " (by " prompt ")") ".`n`nOut of potions, the bot recalls here, buys, and walks on from here. Keep the Mark here (don't Page Down anywhere else)." (prompt = "" ? "`n`n(No ""Press X"" prompt was read here, so a run can't check it's at the seller - better to record standing where her prompt shows.)" : "")
-		WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
+		msgResult := MsgBox("Saved the buying at this wizard's Mark in " commons (prompt = "" ? "" : " (by " prompt ")") ".`n`nOut of potions, the bot recalls here, buys, and walks on from here. Keep the Mark here (don't Page Down anywhere else)." (prompt = "" ? "`n`n(No `"Press X`" prompt was read here, so a run can't check it's at the seller - better to record standing where her prompt shows.)" : ""), "Record potion buying", 64)
+		WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
 		PotionWalkFresh()
 		return
 		}
-	MsgBox, 64, Record potion buying, % "Saved the route from " commons ".`n`nThe bot now recalls you to where you were (Page Up)."
-	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
-	Sleep, 500
+	msgResult := MsgBox("Saved the route from " commons ".`n`nThe bot now recalls you to where you were (Page Up).", "Record potion buying", 64)
+	WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
+	Sleep(500)
 	PotionRecall()
 	}
 
@@ -1632,17 +1637,30 @@ PotionRecKey(isDown, hook, vk, sc)
 		return
 	if (!isDown && !PotionRecDown[name])
 		return
-	PotionRecDown[name] := isDown
+	PotionRecDown[name] := isDown ;  V1toV2: Invalid Index errors?, try 'PotionRecDown.Push(<val>)'
 	PotionRec .= (A_TickCount - PotionRecT0) "|key|" name "|" (isDown ? "down" : "up") "`r`n"
 	}
 
 PotionRecClick:
-	CoordMode, Mouse, Screen
-	MouseGetPos, mx, my
-	if (GameActive())
-		PotionRec .= (A_TickCount - PotionRecT0) "|click|" Round((mx - GameLeft - GameW / 2) / UiScale, 1) "|" Round((my - GameTop - GameH / 2) / UiScale, 1) "`r`n"
+PotionRecClick()
 	return
 
 PotionRecF9:
+PotionRecF9()
+	return
+
+;###############  V1toV2 FUNCS  ###############
+PotionRecClick(ThisHotkey:="") { ; V1toV2: Lbl->Func
+	global
+	CoordMode("Mouse", "Screen")
+	MouseGetPos(&mx, &my)
+	if (GameActive())
+		PotionRec .= (A_TickCount - PotionRecT0) "|click|" Round((mx - GameLeft - GameW / 2) / UiScale, 1) "|" Round((my - GameTop - GameH / 2) / UiScale, 1) "`r`n"
+	return
+}
+;##############################################
+PotionRecF9(ThisHotkey:="") { ; V1toV2: Lbl->Func
+	global
 	PotionRecStop := 1
 	return
+}

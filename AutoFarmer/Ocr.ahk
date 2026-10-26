@@ -32,7 +32,7 @@
 ;        ToolTip, %ErrorLevel%
 ;    digits := RegExReplace(txt, "[^0-9]")   ; OCR may drop/alter "," and "/"
 ; ==============================================================================
-OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 0)
+OcrRect(x, y, w, h, lang := "en", scale := 1, &lineRects := "", redOnly := 0)
 {
     static Init := 0, OcrStatics := 0, LangFactory := 0, SbFactory := 0, MaxDim := 0
          , Engine := 0, EngineLang := "", Busy := 0, Pad := 8
@@ -53,7 +53,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
 
     try
     {
-        Loop, 1   ; single pass - "break" jumps straight to the cleanup section
+        Loop 1   ; single pass - "break" jumps straight to the cleanup section
         {
             ; ---------------- one-time WinRT setup ----------------
             if (!Init)
@@ -75,7 +75,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                     break
                 }
                 ; IOcrEngineStatics::get_MaxImageDimension (vtbl 6)
-                DllCall(_OcrVT(OcrStatics, 6), "Ptr", OcrStatics, "UInt*", MaxDim, "Int")
+                DllCall(_OcrVT(OcrStatics, 6), "Ptr", OcrStatics, "UInt*", &MaxDim, "Int")
                 if (!MaxDim)
                     MaxDim := 10000
                 Init := 1
@@ -92,24 +92,24 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                 if (lang = "")
                 {
                     ; IOcrEngineStatics::TryCreateFromUserProfileLanguages (vtbl 10)
-                    DllCall(_OcrVT(OcrStatics, 10), "Ptr", OcrStatics, "Ptr*", Engine, "Int")
+                    DllCall(_OcrVT(OcrStatics, 10), "Ptr", OcrStatics, "Ptr*", &Engine, "Int")
                 }
                 else
                 {
                     hLang := _OcrHStr(lang), oLang := 0
                     ; ILanguageFactory::CreateLanguage (vtbl 6)
-                    DllCall(_OcrVT(LangFactory, 6), "Ptr", LangFactory, "Ptr", hLang, "Ptr*", oLang, "Int")
+                    DllCall(_OcrVT(LangFactory, 6), "Ptr", LangFactory, "Ptr", hLang, "Ptr*", &oLang, "Int")
                     DllCall("combase\WindowsDeleteString", "Ptr", hLang)
                     if (oLang)
                     {
                         ; IOcrEngineStatics::TryCreateFromLanguage (vtbl 9) - returns S_OK + NULL if unsupported
-                        DllCall(_OcrVT(OcrStatics, 9), "Ptr", OcrStatics, "Ptr", oLang, "Ptr*", Engine, "Int")
+                        DllCall(_OcrVT(OcrStatics, 9), "Ptr", OcrStatics, "Ptr", oLang, "Ptr*", &Engine, "Int")
                         ObjRelease(oLang)
                     }
                 }
                 if (!Engine)
                 {
-                    err := "OcrRect: no OCR engine for language """ lang """ (add that language's OCR feature in Windows Settings > Time & language)"
+                    err := "OcrRect: no OCR engine for language `"" lang "`" (add that language's OCR feature in Windows Settings > Time & language)"
                     break
                 }
                 EngineLang := lang
@@ -122,7 +122,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                 err := "OcrRect: empty rectangle"
                 break
             }
-            if scale is not number
+            if !isNumber(scale)
                 scale := 1
             if (scale <= 0)
                 scale := 1
@@ -137,12 +137,12 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             }
             ox := (bw - sw) // 2, oy := (bh - sh) // 2
 
-            VarSetCapacity(bi, 40, 0)                                        ; BITMAPINFOHEADER
-            NumPut(40, bi, 0, "UInt"), NumPut(bw, bi, 4, "Int"), NumPut(-bh, bi, 8, "Int")   ; -height = top-down
-            NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")        ; 1 plane, 32 bpp, BI_RGB
+            bi := Buffer(40, 0)                                        ; BITMAPINFOHEADER ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+            NumPut("UInt", 40, bi, 0), NumPut("Int", bw, bi, 4), NumPut("Int", -bh, bi, 8)   ; -height = top-down
+            NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)        ; 1 plane, 32 bpp, BI_RGB
             hdcScreen := DllCall("GetDC", "Ptr", 0, "Ptr")                   ; virtual-screen DC: source coords = screen coords
             hdcMem := DllCall("CreateCompatibleDC", "Ptr", hdcScreen, "Ptr")
-            hbm := DllCall("CreateDIBSection", "Ptr", hdcMem, "Ptr", &bi, "UInt", 0, "Ptr*", pBits, "Ptr", 0, "UInt", 0, "Ptr")
+            hbm := DllCall("CreateDIBSection", "Ptr", hdcMem, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", &pBits, "Ptr", 0, "UInt", 0, "Ptr")
             if (!hdcScreen || !hdcMem || !hbm || !pBits)
             {
                 err := "OcrRect: GDI capture setup failed"
@@ -152,19 +152,19 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             if (redOnly)
             {
                 ; keep only reddish pixels, as black text on white: capture 1:1, filter, then scale into the OCR bitmap
-                VarSetCapacity(bi1, 40, 0)
-                NumPut(40, bi1, 0, "UInt"), NumPut(w, bi1, 4, "Int"), NumPut(-h, bi1, 8, "Int")
-                NumPut(1, bi1, 12, "UShort"), NumPut(32, bi1, 14, "UShort")
+                bi1 := Buffer(40, 0) ; V1toV2: if 'bi1' is a UTF-16 string, use 'VarSetStrCapacity(&bi1, 40)' and replace all instances of 'bi1.Ptr' with 'StrPtr(bi1)'
+                NumPut("UInt", 40, bi1, 0), NumPut("Int", w, bi1, 4), NumPut("Int", -h, bi1, 8)
+                NumPut("UShort", 1, bi1, 12), NumPut("UShort", 32, bi1, 14)
                 pBits1 := 0, obm1 := 0
                 hdc1 := DllCall("CreateCompatibleDC", "Ptr", hdcScreen, "Ptr")
-                hbm1 := hdc1 ? DllCall("CreateDIBSection", "Ptr", hdc1, "Ptr", &bi1, "UInt", 0, "Ptr*", pBits1, "Ptr", 0, "UInt", 0, "Ptr") : 0
+                hbm1 := hdc1 ? DllCall("CreateDIBSection", "Ptr", hdc1, "Ptr", bi1.Ptr, "UInt", 0, "Ptr*", &pBits1, "Ptr", 0, "UInt", 0, "Ptr") : 0
                 if (hbm1 && pBits1)
                 {
                     obm1 := DllCall("SelectObject", "Ptr", hdc1, "Ptr", hbm1, "Ptr")
                     DllCall("BitBlt", "Ptr", hdc1, "Int", 0, "Int", 0, "Int", w, "Int", h
-                          , "Ptr", hdcScreen, "Int", x, "Int", y, "UInt", 0x00CC0020)
+, "Ptr", hdcScreen, "Int", x, "Int", y, "UInt", 0x00CC0020)
                     DllCall("GdiFlush")
-                    Loop, % w * h
+                    Loop w * h
                     {
                         px := pBits1 + (A_Index - 1) * 4, c := NumGet(px + 0, "UInt")
                         cr := (c >> 16) & 0xFF, cg := (c >> 8) & 0xFF, cb := c & 0xFF
@@ -173,13 +173,13 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                               : (redOnly = 4) ? (cr > 170 && cg > 140 && cb < 130 && cr - cb > 70)
                               : (redOnly = 5) ? (cg > 170 && cg - cr > 70 && cg - cb > 70)
                               : (cr > 100 && cr - cg > 45 && cr - cb > 30)
-                        NumPut(keep ? 0 : 0xFFFFFF, px + 0, "UInt")
+                        NumPut("UInt", keep ? 0 : 0xFFFFFF, px + 0)
                     }
                     DllCall("PatBlt", "Ptr", hdcMem, "Int", 0, "Int", 0, "Int", bw, "Int", bh, "UInt", 0x00FF0062)   ; WHITENESS
                     DllCall("SetStretchBltMode", "Ptr", hdcMem, "Int", 4)                    ; HALFTONE
                     DllCall("SetBrushOrgEx", "Ptr", hdcMem, "Int", 0, "Int", 0, "Ptr", 0)
                     DllCall("StretchBlt", "Ptr", hdcMem, "Int", ox, "Int", oy, "Int", sw, "Int", sh
-                          , "Ptr", hdc1, "Int", 0, "Int", 0, "Int", w, "Int", h, "UInt", 0x00CC0020)
+, "Ptr", hdc1, "Int", 0, "Int", 0, "Int", w, "Int", h, "UInt", 0x00CC0020)
                     DllCall("SelectObject", "Ptr", hdc1, "Ptr", obm1, "Ptr")
                 }
                 if (hbm1)
@@ -196,16 +196,16 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             {
                 ; margin: stretch the rectangle's top-left pixel over the whole bitmap (background-coloured border)
                 DllCall("StretchBlt", "Ptr", hdcMem, "Int", 0, "Int", 0, "Int", bw, "Int", bh
-                      , "Ptr", hdcScreen, "Int", x, "Int", y, "Int", 1, "Int", 1, "UInt", 0x00CC0020)   ; SRCCOPY
+, "Ptr", hdcScreen, "Int", x, "Int", y, "Int", 1, "Int", 1, "UInt", 0x00CC0020)   ; SRCCOPY
                 if (sw = w && sh = h)
                     DllCall("BitBlt", "Ptr", hdcMem, "Int", ox, "Int", oy, "Int", w, "Int", h
-                          , "Ptr", hdcScreen, "Int", x, "Int", y, "UInt", 0x00CC0020)
+, "Ptr", hdcScreen, "Int", x, "Int", y, "UInt", 0x00CC0020)
                 else
                 {
                     DllCall("SetStretchBltMode", "Ptr", hdcMem, "Int", 4)                    ; HALFTONE
                     DllCall("SetBrushOrgEx", "Ptr", hdcMem, "Int", 0, "Int", 0, "Ptr", 0)   ; required after HALFTONE
                     DllCall("StretchBlt", "Ptr", hdcMem, "Int", ox, "Int", oy, "Int", sw, "Int", sh
-                          , "Ptr", hdcScreen, "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x00CC0020)
+, "Ptr", hdcScreen, "Int", x, "Int", y, "Int", w, "Int", h, "UInt", 0x00CC0020)
                 }
             }
             DllCall("GdiFlush")                                   ; finish GDI work before reading pBits
@@ -214,34 +214,34 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             ; ---------------- copy pixels into a WinRT SoftwareBitmap ----------------
             ; ISoftwareBitmapFactory::CreateWithAlpha (vtbl 7): BitmapPixelFormat.Bgra8 = 87,
             ; BitmapAlphaMode.Ignore = 2 (HALFTONE writes alpha = 0, so alpha must be ignored)
-            hr := DllCall(_OcrVT(SbFactory, 7), "Ptr", SbFactory, "Int", 87, "Int", bw, "Int", bh, "Int", 2, "Ptr*", sbmp, "Int")
+            hr := DllCall(_OcrVT(SbFactory, 7), "Ptr", SbFactory, "Int", 87, "Int", bw, "Int", bh, "Int", 2, "Ptr*", &sbmp, "Int")
             if (hr < 0 || !sbmp)
             {
                 err := "OcrRect: SoftwareBitmap.CreateWithAlpha failed " _OcrHex(hr)
                 break
             }
             ; ISoftwareBitmap::LockBuffer (vtbl 15): BitmapBufferAccessMode.Write = 2
-            hr := DllCall(_OcrVT(sbmp, 15), "Ptr", sbmp, "Int", 2, "Ptr*", bbuf, "Int")
+            hr := DllCall(_OcrVT(sbmp, 15), "Ptr", sbmp, "Int", 2, "Ptr*", &bbuf, "Int")
             if (hr < 0 || !bbuf)
             {
                 err := "OcrRect: SoftwareBitmap.LockBuffer failed " _OcrHex(hr)
                 break
             }
             ; IBitmapBuffer::GetPlaneDescription(0) (vtbl 7) -> {Int32 StartIndex, Width, Height, Stride}
-            VarSetCapacity(pd, 16, 0)
-            DllCall(_OcrVT(bbuf, 7), "Ptr", bbuf, "Int", 0, "Ptr", &pd, "Int")
+            pd := Buffer(16, 0) ; V1toV2: if 'pd' is a UTF-16 string, use 'VarSetStrCapacity(&pd, 16)' and replace all instances of 'pd.Ptr' with 'StrPtr(pd)'
+            DllCall(_OcrVT(bbuf, 7), "Ptr", bbuf, "Int", 0, "Ptr", pd.Ptr, "Int")
             rowBytes := bw * 4
             start := NumGet(pd, 0, "Int"), stride := NumGet(pd, 12, "Int")
             if (stride < rowBytes)
                 start := 0, stride := rowBytes
             pDst := 0, cap := 0
-            if (_OcrQI(bbuf, IID_IMemoryBuffer, mbuf) >= 0 && mbuf)                       ; IUnknown::QueryInterface
+            if (_OcrQI(bbuf, IID_IMemoryBuffer, &mbuf) >= 0 && mbuf)                       ; IUnknown::QueryInterface
             {
                 ; IMemoryBuffer::CreateReference (vtbl 6)
-                if (DllCall(_OcrVT(mbuf, 6), "Ptr", mbuf, "Ptr*", mref, "Int") >= 0 && mref)
+                if (DllCall(_OcrVT(mbuf, 6), "Ptr", mbuf, "Ptr*", &mref, "Int") >= 0 && mref)
                 {
-                    if (_OcrQI(mref, IID_IMemoryBufferByteAccess, bya) >= 0 && bya)
-                        DllCall(_OcrVT(bya, 3), "Ptr", bya, "Ptr*", pDst, "UInt*", cap, "Int")   ; IMemoryBufferByteAccess::GetBuffer (vtbl 3)
+                    if (_OcrQI(mref, IID_IMemoryBufferByteAccess, &bya) >= 0 && bya)
+                        DllCall(_OcrVT(bya, 3), "Ptr", bya, "Ptr*", &pDst, "UInt*", &cap, "Int")   ; IMemoryBufferByteAccess::GetBuffer (vtbl 3)
                 }
             }
             if (!pDst || cap < start + stride * (bh - 1) + rowBytes)
@@ -252,9 +252,9 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             if (stride = rowBytes)
                 DllCall("RtlMoveMemory", "Ptr", pDst + start, "Ptr", pBits, "Ptr", rowBytes * bh)
             else
-                Loop, % bh
+                Loop bh
                     DllCall("RtlMoveMemory", "Ptr", pDst + start + (A_Index - 1) * stride
-                          , "Ptr", pBits + (A_Index - 1) * rowBytes, "Ptr", rowBytes)
+, "Ptr", pBits + (A_Index - 1) * rowBytes, "Ptr", rowBytes)
             ; unlock: drop the byte view, Close+Release the reference, then Close+Release the BitmapBuffer
             ObjRelease(bya), bya := 0
             _OcrClose(mref), ObjRelease(mref), mref := 0
@@ -263,13 +263,13 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
 
             ; ---------------- recognize ----------------
             ; IOcrEngine::RecognizeAsync (vtbl 6) -> IAsyncOperation<OcrResult>
-            hr := DllCall(_OcrVT(Engine, 6), "Ptr", Engine, "Ptr", sbmp, "Ptr*", op, "Int")
+            hr := DllCall(_OcrVT(Engine, 6), "Ptr", Engine, "Ptr", sbmp, "Ptr*", &op, "Int")
             if (hr < 0 || !op)
             {
                 err := "OcrRect: RecognizeAsync failed " _OcrHex(hr)
                 break
             }
-            hr := _OcrAwait(op, res, opRunning)
+            hr := _OcrAwait(op, &res, &opRunning)
             if (opRunning)
             {
                 ; the canceled operation never left "Started": it may still hold/use the bitmap and
@@ -282,7 +282,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                 break
             }
             ; IOcrResult::get_Lines (vtbl 6) -> IVectorView<OcrLine>
-            hr := DllCall(_OcrVT(res, 6), "Ptr", res, "Ptr*", lines, "Int")
+            hr := DllCall(_OcrVT(res, 6), "Ptr", res, "Ptr*", &lines, "Int")
             if (hr < 0)
             {
                 err := "OcrRect: OcrResult.Lines failed " _OcrHex(hr)
@@ -290,34 +290,34 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             }
             n := 0
             if (lines)
-                DllCall(_OcrVT(lines, 7), "Ptr", lines, "UInt*", n, "Int")              ; IVectorView::get_Size
+                DllCall(_OcrVT(lines, 7), "Ptr", lines, "UInt*", &n, "Int")              ; IVectorView::get_Size
             ; lineRects (optional out): [{text, x, y, w, h}, ...] per line, in SCREEN coordinates
             lineRects := []
             fx := w / sw, fy := h / sh                                                 ; bitmap px -> screen px
-            VarSetCapacity(wr, 16, 0)
-            Loop, % n
+            wr := Buffer(16, 0) ; V1toV2: if 'wr' is a UTF-16 string, use 'VarSetStrCapacity(&wr, 16)' and replace all instances of 'wr.Ptr' with 'StrPtr(wr)'
+            Loop n
             {
                 line := 0, hTxt := 0
-                DllCall(_OcrVT(lines, 6), "Ptr", lines, "UInt", A_Index - 1, "Ptr*", line, "Int")   ; IVectorView::GetAt
+                DllCall(_OcrVT(lines, 6), "Ptr", lines, "UInt", A_Index - 1, "Ptr*", &line, "Int")   ; IVectorView::GetAt
                 if (!line)
                     continue
-                DllCall(_OcrVT(line, 7), "Ptr", line, "Ptr*", hTxt, "Int")             ; IOcrLine::get_Text (HSTRING)
+                DllCall(_OcrVT(line, 7), "Ptr", line, "Ptr*", &hTxt, "Int")             ; IOcrLine::get_Text (HSTRING)
                 lineText := _OcrHStrTake(hTxt)
                 text .= (text = "" ? "" : "`n") . lineText
                 ; union of the line's word boxes: IOcrLine::get_Words (vtbl 6) -> IVectorView<OcrWord>
                 words := 0, nw := 0, x1 := "", y1 := "", x2 := "", y2 := "", wordRects := []
-                DllCall(_OcrVT(line, 6), "Ptr", line, "Ptr*", words, "Int")
+                DllCall(_OcrVT(line, 6), "Ptr", line, "Ptr*", &words, "Int")
                 if (words)
                 {
-                    DllCall(_OcrVT(words, 7), "Ptr", words, "UInt*", nw, "Int")
-                    Loop, % nw
+                    DllCall(_OcrVT(words, 7), "Ptr", words, "UInt*", &nw, "Int")
+                    Loop nw
                     {
                         word := 0
-                        DllCall(_OcrVT(words, 6), "Ptr", words, "UInt", A_Index - 1, "Ptr*", word, "Int")
+                        DllCall(_OcrVT(words, 6), "Ptr", words, "UInt", A_Index - 1, "Ptr*", &word, "Int")
                         if (!word)
                             continue
                         ; IOcrWord::get_BoundingRect (vtbl 6) -> Windows.Foundation.Rect {float X, Y, Width, Height}
-                        if (DllCall(_OcrVT(word, 6), "Ptr", word, "Ptr", &wr, "Int") >= 0)
+                        if (DllCall(_OcrVT(word, 6), "Ptr", word, "Ptr", wr.Ptr, "Int") >= 0)
                         {
                             rx := NumGet(wr, 0, "Float"), ry := NumGet(wr, 4, "Float")
                             rx2 := rx + NumGet(wr, 8, "Float"), ry2 := ry + NumGet(wr, 12, "Float")
@@ -326,7 +326,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
                             ; IOcrWord::get_Text (vtbl 7): each word's own box too (two buttons on one row
                             ; can come back as one line)
                             hWord := 0
-                            DllCall(_OcrVT(word, 7), "Ptr", word, "Ptr*", hWord, "Int")
+                            DllCall(_OcrVT(word, 7), "Ptr", word, "Ptr*", &hWord, "Int")
                             wordRects.Push({text: _OcrHStrTake(hWord), x: Round(x + (rx - ox) * fx), y: Round(y + (ry - oy) * fy)
                                 , w: Round((rx2 - rx) * fx), h: Round((ry2 - ry) * fy)})
                         }
@@ -341,7 +341,7 @@ OcrRect(x, y, w, h, lang := "en", scale := 1, ByRef lineRects := "", redOnly := 
             }
         }
     }
-    catch e
+    Catch Error as e
         err := "OcrRect: " (IsObject(e) ? e.Message " (" e.What ")" : e)
 
     ; ---------------- cleanup (runs on every path) ----------------
@@ -385,19 +385,19 @@ _OcrVT(p, i)   ; address of vtable slot i of interface pointer p
     return NumGet(NumGet(p + 0, 0, "Ptr"), i * A_PtrSize, "Ptr")
 }
 
-_OcrQI(p, iid, ByRef out)   ; IUnknown::QueryInterface (vtbl 0) -> HRESULT; out = new reference
+_OcrQI(p, iid, &out)   ; IUnknown::QueryInterface (vtbl 0) -> HRESULT; out = new reference
 {
     out := 0
-    VarSetCapacity(guid, 16, 0)
-    DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", &guid, "Int")
-    return DllCall(_OcrVT(p, 0), "Ptr", p, "Ptr", &guid, "Ptr*", out, "Int")
+    guid := Buffer(16, 0) ; V1toV2: if 'guid' is a UTF-16 string, use 'VarSetStrCapacity(&guid, 16)' and replace all instances of 'guid.Ptr' with 'StrPtr(guid)'
+    DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", guid.Ptr, "Int")
+    return DllCall(_OcrVT(p, 0), "Ptr", p, "Ptr", guid.Ptr, "Ptr*", &out, "Int")
 }
 
 _OcrClose(p)   ; Windows.Foundation.IClosable::Close (vtbl 6)
 {
     static IID_IClosable := "{30D5A829-7FA4-4026-83BB-D75BAE4EA99E}"
     c := 0
-    if (_OcrQI(p, IID_IClosable, c) >= 0 && c)
+    if (_OcrQI(p, IID_IClosable, &c) >= 0 && c)
     {
         DllCall(_OcrVT(c, 6), "Ptr", c, "Int")
         ObjRelease(c)
@@ -406,11 +406,11 @@ _OcrClose(p)   ; Windows.Foundation.IClosable::Close (vtbl 6)
 
 _OcrFactory(className, iid)   ; RoGetActivationFactory -> statics/factory interface, or 0
 {
-    VarSetCapacity(guid, 16, 0)
-    if (DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", &guid, "Int") != 0)
+    guid := Buffer(16, 0) ; V1toV2: if 'guid' is a UTF-16 string, use 'VarSetStrCapacity(&guid, 16)' and replace all instances of 'guid.Ptr' with 'StrPtr(guid)'
+    if (DllCall("ole32\CLSIDFromString", "WStr", iid, "Ptr", guid.Ptr, "Int") != 0)
         return 0
     hCls := _OcrHStr(className), fac := 0
-    hr := DllCall("combase\RoGetActivationFactory", "Ptr", hCls, "Ptr", &guid, "Ptr*", fac, "Int")
+    hr := DllCall("combase\RoGetActivationFactory", "Ptr", hCls, "Ptr", guid.Ptr, "Ptr*", &fac, "Int")
     DllCall("combase\WindowsDeleteString", "Ptr", hCls)
     return (hr = 0 && fac) ? fac : 0
 }
@@ -419,7 +419,7 @@ _OcrHStr(str)   ; new HSTRING - caller must WindowsDeleteString it
 {
     h := 0
     len := StrPut(str, "UTF-16") - 1          ; UTF-16 code units (correct on ANSI and Unicode builds)
-    DllCall("combase\WindowsCreateString", "WStr", str, "UInt", len, "Ptr*", h, "Int")
+    DllCall("combase\WindowsCreateString", "WStr", "str", "UInt", len, "Ptr*", &h, "Int")
     return h
 }
 
@@ -428,7 +428,7 @@ _OcrHStrTake(h)   ; read an HSTRING returned by a WinRT getter, then free it
     if (!h)
         return ""
     len := 0
-    p := DllCall("combase\WindowsGetStringRawBuffer", "Ptr", h, "UInt*", len, "Ptr")
+    p := DllCall("combase\WindowsGetStringRawBuffer", "Ptr", h, "UInt*", &len, "Ptr")
     s := (p && len) ? StrGet(p, len, "UTF-16") : ""
     DllCall("combase\WindowsDeleteString", "Ptr", h)
     return s
@@ -436,17 +436,17 @@ _OcrHStrTake(h)   ; read an HSTRING returned by a WinRT getter, then free it
 
 ; wait for an IAsyncOperation<T>, then GetResults.
 ; running (out) = 1 if the op was canceled after a timeout but never left the Started state.
-_OcrAwait(op, ByRef result, ByRef running := 0, timeoutMs := 5000)
+_OcrAwait(op, &result, &running := 0, timeoutMs := 5000)
 {
     static IID_IAsyncInfo := "{00000036-0000-0000-C000-000000000046}"
     result := 0, running := 0, info := 0, status := 0
-    hr := _OcrQI(op, IID_IAsyncInfo, info)
+    hr := _OcrQI(op, IID_IAsyncInfo, &info)
     if (hr < 0 || !info)
         return (hr < 0) ? hr : -2147467259                                 ; E_FAIL
     t0 := A_TickCount, canceled := 0
     Loop
     {
-        DllCall(_OcrVT(info, 7), "Ptr", info, "UInt*", status, "Int")     ; IAsyncInfo::get_Status
+        DllCall(_OcrVT(info, 7), "Ptr", info, "UInt*", &status, "Int")     ; IAsyncInfo::get_Status
         if (status != 0)                                                    ; 0 = Started
             break
         if (!canceled && A_TickCount - t0 > timeoutMs)
@@ -456,15 +456,15 @@ _OcrAwait(op, ByRef result, ByRef running := 0, timeoutMs := 5000)
         }
         else if (canceled && A_TickCount - t0 > timeoutMs)
             break
-        Sleep, 1
+        Sleep(1)
     }
     if (status = 1)                                                         ; 1 = Completed
-        hr := DllCall(_OcrVT(op, 8), "Ptr", op, "Ptr*", result, "Int")     ; IAsyncOperation<T>::GetResults
+        hr := DllCall(_OcrVT(op, 8), "Ptr", op, "Ptr*", &result, "Int")     ; IAsyncOperation<T>::GetResults
     else
     {
         hr := 0
         if (status = 3)                                                     ; 3 = Error
-            DllCall(_OcrVT(info, 8), "Ptr", info, "Int*", hr, "Int")        ; IAsyncInfo::get_ErrorCode
+            DllCall(_OcrVT(info, 8), "Ptr", info, "Int*", &hr, "Int")        ; IAsyncInfo::get_ErrorCode
         if (hr >= 0)
             hr := -2147467260                                               ; E_ABORT: canceled / timed out
     }

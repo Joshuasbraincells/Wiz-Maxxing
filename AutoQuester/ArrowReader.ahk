@@ -21,12 +21,12 @@
 ;    scaling). All sizes here are for a 1920x1080 window at UI Size Small, times ArrowScale().scale,
 ;    which ReadArrow works out from the size of the arrow itself whenever it matches poorly
 
-#Include %A_LineFile%\..\..\AutoFarmer\Ocr.ahk
+#Include "%A_LineFile%\..\..\AutoFarmer\Ocr.ahk"
 
 ;Heading of the quest arrow: 0 = straight ahead, negative = to the left, positive = to the right
 ;(-180..180). Returns "" when no arrow is on screen. dist = the distance printed on it ("" if
 ;unreadable), score = how well the shape matched (0..1)
-ReadArrow(ByRef dist := "", ByRef score := "")
+ReadArrow(&dist := "", &score := "")
 	{
 	dist := "", score := ""
 	if (!IsObject(ArrowRefs(0)))
@@ -95,7 +95,7 @@ ArrowClampScale(s)
 ArrowFindSize(res)
 	{
 	best := res, last := res, tried := [res.scale], probes := [1.3, 0.85]
-	Loop, 4
+	Loop 4
 		{
 		if (best.score >= 0.85)
 			break
@@ -104,7 +104,7 @@ ArrowFindSize(res)
 			next := ArrowClampScale(last.clipped ? (last.est > last.scale ? last.est : last.scale) * 1.15 : last.est)
 		if (next != "" && ArrowTried(tried, next))
 			next := ""
-		while (next = "" && best.score < 0.75 && probes.Length())
+		while (next = "" && best.score < 0.75 && probes.Length)
 			{
 			p := probes.RemoveAt(1)
 			if (!ArrowTried(tried, p))
@@ -155,12 +155,12 @@ ArrowFind(scale)
 ArrowAt(bx, by, scale)
 	{
 	bw := Round(220 * scale)
-	if (!ArrowCapture(bx, by, bw, Round(135 * scale), pix))
+	if (!ArrowCapture(bx, by, bw, Round(135 * scale), &pix))
 		return ""
-	res := ArrowShape(pix, bx, by, 0, scale, bw)
+	res := ArrowShape(&pix, bx, by, 0, scale, bw)
 	if (!IsObject(res) || res.score < 0.75)
 		{
-		shade := ArrowShape(pix, bx, by, 1, scale, bw)
+		shade := ArrowShape(&pix, bx, by, 1, scale, bw)
 		if (IsObject(shade) && (!IsObject(res) || shade.score > res.score))
 			res := shade
 		}
@@ -168,7 +168,7 @@ ArrowAt(bx, by, scale)
 	if (!IsObject(res) || res.score < 0.75)
 		{
 		;(the loosest colour test, so only a close match counts: olive scenery mustn't pass for the arrow)
-		wet := ArrowShape(pix, bx, by, 2, scale, bw)
+		wet := ArrowShape(&pix, bx, by, 2, scale, bw)
 		if (IsObject(wet) && wet.score >= 0.8 && (!IsObject(res) || wet.score > res.score))
 			res := wet
 		}
@@ -192,7 +192,7 @@ ArrowYellow(c, mode)
 ;(every 2nd pixel at scale 1), so the shape comes out the size of the reference shapes at any UI size.
 ;Returns {h, score, pvx, pvy, mode, boxY, scale, est} or "". est = the UI size the arrow's area points
 ;at (the area changes a little with the heading, so it's only a few percent accurate)
-ArrowShape(ByRef pix, bx, by, mode, scale, bw)
+ArrowShape(&pix, bx, by, mode, scale, bw)
 	{
 	static OFF := 70, GridW := 141, HoleDX := [0.25, 0.10, 0.10], HoleDY := [-5.95, -5.74, -5.74], TypicalN := [970, 1180, 1180]
 	refs := ArrowRefs(mode)
@@ -202,39 +202,39 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 
 	;Arrow-yellow pixels on the grid
 	colAt := []
-	Loop, % w2
+	Loop w2
 		colAt.Push(Round((A_Index - 1) * step) * 4)
-	VarSetCapacity(mask, cells, 0)
-	Loop, % h2
+	mask := Buffer(cells, 0) ; V1toV2: if 'mask' is a UTF-16 string, use 'VarSetStrCapacity(&mask, cells)' and replace all instances of 'mask.Ptr' with 'StrPtr(mask)'
+	Loop h2
 		{
 		j := A_Index - 1, row := Round(j * step) * bw * 4
-		Loop, % w2
+		Loop w2
 			{
 			if (ArrowYellow(NumGet(pix, row + colAt[A_Index], "UInt"), mode))
-				NumPut(1, mask, j * w2 + A_Index - 1, "UChar")
+				NumPut("UChar", 1, mask, j * w2 + A_Index - 1)
 			}
 		}
 
 	;Largest 4-connected yellow blob is the arrow (the quest text under it is thin, separate glyphs)
-	VarSetCapacity(lab, cells * 2, 0), VarSetCapacity(stack, cells * 4, 0)
+	lab := Buffer(cells * 2, 0), stack := Buffer(cells * 4, 0) ; V1toV2: if 'stack' is a UTF-16 string, use 'VarSetStrCapacity(&stack, cells * 4)' and replace all instances of 'stack.Ptr' with 'StrPtr(stack)'
 	cur := 0, best := 0, bestN := 0
-	Loop, % cells
+	Loop cells
 		{
 		p := A_Index - 1
 		if (!NumGet(mask, p, "UChar") || NumGet(lab, p * 2, "UShort"))
 			continue
 		cur++, n := 0
-		NumPut(cur, lab, p * 2, "UShort"), NumPut(p, stack, 0, "UInt"), sp := 1
+		NumPut("UShort", cur, lab, p * 2), NumPut("UInt", p, stack, 0), sp := 1
 		while (sp)
 			{
 			sp--, q := NumGet(stack, sp * 4, "UInt"), n++
 			qx := Mod(q, w2), qy := q // w2
-			Loop, 4
+			Loop 4
 				{
 				nb := ArrowNeighbour(A_Index, q, qx, qy, w2, h2)
 				if (nb >= 0 && NumGet(mask, nb, "UChar") && !NumGet(lab, nb * 2, "UShort"))
 					{
-					NumPut(cur, lab, nb * 2, "UShort"), NumPut(nb, stack, sp * 4, "UInt"), sp++
+					NumPut("UShort", cur, lab, nb * 2), NumPut("UInt", nb, stack, sp * 4), sp++
 					}
 				}
 			}
@@ -248,30 +248,30 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 		return {h: "", score: 0, pvx: "", pvy: "", mode: mode, boxY: by, scale: scale, est: scale * Sqrt(bestN / TypicalN[mode + 1])}
 
 	;Fill the hole the distance number leaves: background reachable from the border stays background
-	VarSetCapacity(outside, cells, 0), sp := 0
-	Loop, % cells
+	outside := Buffer(cells, 0), sp := 0 ; V1toV2: if 'outside' is a UTF-16 string, use 'VarSetStrCapacity(&outside, cells)' and replace all instances of 'outside.Ptr' with 'StrPtr(outside)'
+	Loop cells
 		{
 		p := A_Index - 1, px := Mod(p, w2), py := p // w2
 		if (px = 0 || py = 0 || px = w2 - 1 || py = h2 - 1) && (NumGet(lab, p * 2, "UShort") != best)
 			{
-			NumPut(1, outside, p, "UChar"), NumPut(p, stack, sp * 4, "UInt"), sp++
+			NumPut("UChar", 1, outside, p), NumPut("UInt", p, stack, sp * 4), sp++
 			}
 		}
 	while (sp)
 		{
 		sp--, q := NumGet(stack, sp * 4, "UInt")
 		qx := Mod(q, w2), qy := q // w2
-		Loop, 4
+		Loop 4
 			{
 			nb := ArrowNeighbour(A_Index, q, qx, qy, w2, h2)
 			if (nb >= 0 && !NumGet(outside, nb, "UChar") && NumGet(lab, nb * 2, "UShort") != best)
 				{
-				NumPut(1, outside, nb, "UChar"), NumPut(nb, stack, sp * 4, "UInt"), sp++
+				NumPut("UChar", 1, outside, nb), NumPut("UInt", nb, stack, sp * 4), sp++
 				}
 			}
 		}
 	n := 0, sx := 0, sy := 0, holeN := 0, hsx := 0, hsy := 0, edge := 0
-	Loop, % cells
+	Loop cells
 		{
 		p := A_Index - 1
 		if (NumGet(outside, p, "UChar"))
@@ -286,8 +286,8 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 	cx := sx / n, cy := sy / n
 
 	;The shape relative to its centre, as a grid
-	VarSetCapacity(obs, GridW * GridW, 0), nObs := 0
-	Loop, % cells
+	obs := Buffer(GridW * GridW, 0), nObs := 0 ; V1toV2: if 'obs' is a UTF-16 string, use 'VarSetStrCapacity(&obs, GridW * GridW)' and replace all instances of 'obs.Ptr' with 'StrPtr(obs)'
+	Loop cells
 		{
 		p := A_Index - 1
 		if (NumGet(outside, p, "UChar"))
@@ -297,7 +297,7 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 			continue
 		idx := (dy + OFF) * GridW + dx + OFF
 		if (!NumGet(obs, idx, "UChar"))
-			NumPut(1, obs, idx, "UChar"), nObs++
+			NumPut("UChar", 1, obs, idx), nObs++
 		}
 
 	;Turning point: just under the distance number's hole. Without a believable hole, where the
@@ -321,7 +321,7 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 		{
 		if (Abs(ArrowWrap(ref.h - rough)) > 82.5)
 			continue
-		iou := ArrowIoU(ref.v[6], obs, nObs)
+		iou := ArrowIoU(ref.v[6], &obs, nObs)
 		if (iou > firstIoU)
 			runnerUp := first, runnerUpIoU := firstIoU, first := i, firstIoU := iou
 		else if (iou > runnerUpIoU)
@@ -333,19 +333,19 @@ ArrowShape(ByRef pix, bx, by, mode, scale, bw)
 		if (!i)
 			continue
 		ref := refs[i]
-		Loop, 11
+		Loop 11
 			{
 			h := ref.h - 15 + 2.5 * A_Index
 			if (Abs(ArrowWrap(h - rough)) > 70)
 				continue
-			iou := ArrowIoU(ref.v[A_Index], obs, nObs)
+			iou := ArrowIoU(ref.v[A_Index], &obs, nObs)
 			if (iou > bestIoU)
 				bestIoU := iou, bestH := h
 			}
 		}
 	;The UI size the arrow's area points at, going by the best reference near the rough heading
 	est := first ? scale * Sqrt(nObs / refs[first].v[6].n) : ""
-	return {h: ArrowWrap(bestH), score: (bestIoU < 0 ? 0 : bestIoU), pvx: pvx, pvy: pvy, mode: mode, boxY: by, scale: scale, est: est, clipped: (edge >= 3)}
+	return (AHKv1v2_Temp := {h: ArrowWrap(bestH), score: (bestIoU < 0 ? 0 : bestIoU), pvx: pvx, pvy: pvy, mode: mode, boxY: by, scale: scale, est: est, clipped: (edge >= 3)}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	}
 
 ;Screen y of an arrow box (135 px tall at scale 1) around the densest arrow-yellow area between 560
@@ -355,18 +355,18 @@ ArrowLocate(scale)
 	{
 	lx := Round(GameLeft + GameW / 2 - 110 * scale), ly := Round(GameTop + GameH - 560 * scale)
 	lw := Round(220 * scale), lh := Round(500 * scale)
-	if (!ArrowCapture(lx, ly, lw, lh, pix))
+	if (!ArrowCapture(lx, ly, lw, lh, &pix))
 		return ""
 	rows := lh // 4, cols := lw // 4, rowCount := []
-	Loop, % rows
+	Loop rows
 		{
 		j := A_Index - 1, row := j * 4 * lw * 4, cnt := 0
-		Loop, % cols
+		Loop cols
 			cnt += ArrowYellow(NumGet(pix, row + (A_Index - 1) * 16, "UInt"), 1)
 		rowCount.Push(cnt)
 		}
 	win := Round(34 * scale), sum := 0, bestSum := 0, bestTop := 0
-	Loop, % rows
+	Loop rows
 		{
 		sum += rowCount[A_Index]
 		if (A_Index > win)
@@ -378,7 +378,7 @@ ArrowLocate(scale)
 		return ""
 	;Middle of the yellow in that window, so the box doesn't cut the arrow off
 	wsum := 0
-	Loop, % win
+	Loop win
 		wsum += rowCount[bestTop + A_Index] * (bestTop + A_Index - 1)
 	return Round(ly + (wsum / bestSum) * 4 - 80 * scale)
 	}
@@ -393,7 +393,7 @@ AqDir()
 	if (dir != "")
 		return dir
 	if (!A_IsCompiled)
-		SplitPath, A_LineFile,, dir
+		SplitPath(A_LineFile, , &dir)
 	else if (FileExist(A_ScriptDir "\resources\arrow_refs.txt"))
 		dir := A_ScriptDir
 	else
@@ -404,36 +404,36 @@ AqDir()
 ArrowRefs(mode := 0)
 	{
 	static cache := {}, OFF := 70, GridW := 141
-	if (cache.HasKey(mode))
+	if (cache.Has(mode))
 		return cache[mode]
-	cache[mode] := ""
+	cache[mode] := "" ;  V1toV2: Invalid Index errors?, try 'cache.Push(<val>)'
 	dir := AqDir()
-	FileRead, text, % dir "\resources\" (mode >= 1 ? "arrow_refs_hue.txt" : "arrow_refs.txt")
+	text := FileRead(dir "\resources\" (mode >= 1 ? "arrow_refs_hue.txt" : "arrow_refs.txt"))
 	if (ErrorLevel)
 		return ""
 	list := []
-	Loop, Parse, text, `n, `r
+	Loop Parse, text, "`n", "`r"
 		{
 		line := Trim(A_LoopField)
 		if (line = "" || SubStr(line, 1, 1) = ";")
 			continue
 		parts := StrSplit(line, "|")
-		if (parts.Length() != 2)
+		if (parts.Length != 2)
 			continue
 		pts := [], ptsText := parts[2]
-		Loop, Parse, ptsText, %A_Space%
+		Loop Parse, ptsText, A_Space
 			{
 			xy := StrSplit(A_LoopField, ",")
-			if (xy.Length() = 2)
+			if (xy.Length = 2)
 				pts.Push([xy[1] + 0, xy[2] + 0])
 			}
 		ref := {h: parts[1] + 0, v: []}
-		Loop, 11
+		Loop 11
 			{
 			t := (-15 + 2.5 * A_Index) * 0.01745329252, c := Cos(t), s := Sin(t)
-			VarSetCapacity(seen, GridW * GridW, 0)
+			seen := Buffer(GridW * GridW, 0) ; V1toV2: if 'seen' is a UTF-16 string, use 'VarSetStrCapacity(&seen, GridW * GridW)' and replace all instances of 'seen.Ptr' with 'StrPtr(seen)'
 			v := {n: 0}
-			v.SetCapacity("idx", pts.Length() * 4)
+			v.SetCapacity("idx", pts.Length * 4)
 			addr := v.GetAddress("idx"), cnt := 0
 			for each, pt in pts
 				{
@@ -443,15 +443,15 @@ ArrowRefs(mode := 0)
 				idx := (ry + OFF) * GridW + rx + OFF
 				if (NumGet(seen, idx, "UChar"))
 					continue
-				NumPut(1, seen, idx, "UChar"), NumPut(idx, addr + 0, cnt * 4, "UInt"), cnt++
+				NumPut("UChar", 1, seen, idx), NumPut("UInt", idx, addr + 0, cnt * 4), cnt++
 				}
 			v.n := cnt
 			ref.v.Push(v)
 			}
 		list.Push(ref)
 		}
-	if (list.Length())
-		cache[mode] := list
+	if (list.Length)
+		cache[mode] := list ;  V1toV2: Invalid Index errors?, try 'cache.Push(<val>)'
 	return cache[mode]
 	}
 
@@ -463,10 +463,10 @@ ArrowInfo()
 	}
 
 ;Overlap (intersection over union) of one pre-rotated reference with the shape on screen
-ArrowIoU(v, ByRef obs, nObs)
+ArrowIoU(v, &obs, nObs)
 	{
 	p := v.GetAddress("idx"), n := v.n, inter := 0
-	Loop, % n
+	Loop n
 		inter += NumGet(obs, NumGet(p + 0, (A_Index - 1) * 4, "UInt"), "UChar")
 	return inter / (nObs + n - inter)
 	}
@@ -484,22 +484,22 @@ ArrowNeighbour(k, q, qx, qy, w, h)
 	}
 
 ;Copies a screen rectangle into pix as 32-bit BGRA pixels, top row first
-ArrowCapture(x, y, w, h, ByRef pix)
+ArrowCapture(x, y, w, h, &pix)
 	{
-	VarSetCapacity(bi, 40, 0)
-	NumPut(40, bi, 0, "UInt"), NumPut(w, bi, 4, "Int"), NumPut(-h, bi, 8, "Int")
-	NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")
+	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	NumPut("UInt", 40, bi, 0), NumPut("Int", w, bi, 4), NumPut("Int", -h, bi, 8)
+	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	sdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", sdc, "Ptr")
 	bits := 0, ok := false
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", &bi, "UInt", 0, "Ptr*", bits, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
 	if (hbm && bits)
 		{
 		obm := DllCall("SelectObject", "Ptr", mdc, "Ptr", hbm, "Ptr")
 		ok := DllCall("BitBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", w, "Int", h, "Ptr", sdc, "Int", x, "Int", y, "UInt", 0x00CC0020)
 		DllCall("GdiFlush")
-		VarSetCapacity(pix, w * h * 4, 0)
-		DllCall("RtlMoveMemory", "Ptr", &pix, "Ptr", bits, "Ptr", w * h * 4)
+		pix := Buffer(w * h * 4, 0) ; V1toV2: if 'pix' is a UTF-16 string, use 'VarSetStrCapacity(&pix, w * h * 4)' and replace all instances of 'pix.Ptr' with 'StrPtr(pix)'
+		DllCall("RtlMoveMemory", "Ptr", pix.Ptr, "Ptr", bits, "Ptr", w * h * 4)
 		DllCall("SelectObject", "Ptr", mdc, "Ptr", obm, "Ptr")
 		DllCall("DeleteObject", "Ptr", hbm)
 		}

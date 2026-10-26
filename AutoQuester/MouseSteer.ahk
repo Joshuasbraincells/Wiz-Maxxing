@@ -31,7 +31,7 @@ global MsStandGot
 ;The setting (mousesteer, on unless 0) and the game's memory there to read the facing by
 MouseSteerOn()
 	{
-	return IsFunc("NavRead") && !(IsObject(Stats) && Stats.HasKey("mousesteer") && !Stats["mousesteer"])
+	return IsFunc("NavRead") && !(IsObject(Stats) && Stats.Has("mousesteer") && !Stats["mousesteer"])
 	}
 
 ;Whether a mouse turn may go now: why not ("" it may). needW: W held already (false: about to be). byMem false: a
@@ -80,9 +80,9 @@ MouseSteerWindowClear()
 		MsWinWhy := "the middle of the game couldn't be read", MsWinAt := A_TickCount
 		return 0
 		}
-	if (RegExMatch(mwT, "i)cr[o0]wn|\bshop|\bbuy\b|\bsell\b|purchase|accept|decline|\bquest|reward|\btrade|upgrade|member|recipe|reagent|\bgold\b|friend|okay|\bok\b|cancel|confirm|\bclose\b", mwM))
+	if (RegExMatch(mwT, "i)cr[o0]wn|\bshop|\bbuy\b|\bsell\b|purchase|accept|decline|\bquest|reward|\btrade|upgrade|member|recipe|reagent|\bgold\b|friend|okay|\bok\b|cancel|confirm|\bclose\b", &mwM))
 		{
-		MsWinWhy := "a window over the game (""" mwM """)", MsWinAt := A_TickCount
+		MsWinWhy := "a window over the game (`"" (mwM&&mwM[0]) "`")", MsWinAt := A_TickCount
 		return 0
 		}
 	MsWinOk := 1, MsWinAt := A_TickCount
@@ -91,7 +91,7 @@ MouseSteerWindowClear()
 
 ;Where the right button's pressed: the middle of the scene, a little high - not the hand, the arrow, the prompt or any
 ;corner's buttons
-MouseSteerPoint(ByRef x, ByRef y)
+MouseSteerPoint(&x, &y)
 	{
 	x := Round(GameLeft + GameW * 0.5), y := Round(GameTop + GameH * 0.3)
 	}
@@ -101,7 +101,7 @@ MouseSteerPoint(ByRef x, ByRef y)
 MouseSteerYaw()
 	{
 	mwWait := NavWait, mwUntil := NavWaitUntil, mwWhy := NavWhy
-	nav := Func("NavRead").Call(120)
+	nav := NavRead.Call(120)
 	NavWait := mwWait, NavWaitUntil := mwUntil, NavWhy := mwWhy
 	return (IsObject(nav) && nav.yaw != "") ? nav.yaw : ""
 	}
@@ -129,7 +129,7 @@ MouseSteerMove(c)
 ;call would look like yours to it (Settings.ahk MouseLockKeys)
 MouseSteerButton(down)
 	{
-	Send, % "{Blind}{RButton " (down ? "down" : "up") "}"
+	Send("{Blind}{RButton " (down ? "down" : "up") "}")
 	MsHeld := down ? 1 : 0
 	}
 
@@ -148,8 +148,8 @@ MouseSteerYours(from)
 ;Where the cursor is and whether it shows: "x,y shown" / "x,y hidden" (screen), "?" not known
 MouseSteerCursor()
 	{
-	VarSetCapacity(ci, 16 + A_PtrSize, 0), NumPut(16 + A_PtrSize, ci, 0, "UInt")
-	if (!DllCall("GetCursorInfo", "Ptr", &ci))
+	ci := Buffer(16 + A_PtrSize, 0), NumPut("UInt", 16 + A_PtrSize, ci, 0) ; V1toV2: if 'ci' is a UTF-16 string, use 'VarSetStrCapacity(&ci, 16 + A_PtrSize)' and replace all instances of 'ci.Ptr' with 'StrPtr(ci)'
+	if (!DllCall("GetCursorInfo", "Ptr", ci.Ptr))
 		return "?"
 	return NumGet(ci, 8 + A_PtrSize, "Int") "," NumGet(ci, 12 + A_PtrSize, "Int") (NumGet(ci, 4, "UInt") & 1 ? " shown" : " hidden")
 	}
@@ -185,28 +185,28 @@ MouseTurn(h, byMem := true)
 	if (yaw0 = "")
 		return ""
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	;(the window and the read let other threads run: F6, F8, you - looked at again before anything's pressed)
 	if (!Walking || !HeldW || inbattle || !GameActive() || PlayerActive || UserIdle() < 3000)
 		{
 		if (!wasCrit)
-			Critical, Off
+			Critical("Off")
 		return ""
 		}
-	MouseGetPos, msX0, msY0
-	MouseSteerPoint(msPx, msPy)
+	MouseGetPos(&msX0, &msY0)
+	MouseSteerPoint(&msPx, &msPy)
 	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn; your keys still end the turn)
 	if (IsFunc("MouseLockOn"))
-		Func("MouseLockOn").Call("turn")
-	MouseMove, %msPx%, %msPy%, 0
+		MouseLockOn.Call("turn")
+	MouseMove(msPx, msPy, 0)
 	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved: no tick runs in this Critical)
 	if (IsFunc("MouseLockMoved"))
-		Func("MouseLockMoved").Call()
+		MouseLockMoved.Call()
 	sent := 0, turned := 0, probed := false, msUser := false, msFrom := A_TickCount
 	try
 		{
 		MouseSteerButton(1)
-		Sleep, 60
+		Sleep(60)
 		;(where the cursor is and whether it shows, before the slide and after: the game hiding it or putting it back
 		;says it took the drag - for debug.log when the mouse doesn't turn him)
 		msCur0 := MouseSteerCursor()
@@ -219,7 +219,7 @@ MouseTurn(h, byMem := true)
 				{
 				msC := h > 0 ? msC : -msC
 				MouseSteerMove(msC), sent += msC
-				Sleep, 40
+				Sleep(40)
 				msY := MouseSteerYaw()
 				if (MouseSteerYours(msFrom))
 					{
@@ -247,7 +247,7 @@ MouseTurn(h, byMem := true)
 				}
 			}
 		if (MsK != "" && !msUser)
-			Loop, 5
+			Loop 5
 				{
 				if (MouseSteerYours(msFrom))
 					{
@@ -266,7 +266,7 @@ MouseTurn(h, byMem := true)
 				if (msC = 0)
 					break
 				MouseSteerMove(msC), sent += msC
-				Sleep, 35
+				Sleep(35)
 				msY := MouseSteerYaw()
 				if (MouseSteerYours(msFrom))
 					{
@@ -307,14 +307,14 @@ MouseTurn(h, byMem := true)
 	finally
 		{
 		MouseSteerButton(0)
-		Sleep, 20
+		Sleep(20)
 		;(the mouse back where it was - not if you've taken it meanwhile)
 		if (!MouseSteerYours(msFrom))
-			MouseMove, %msX0%, %msY0%, 0
+			MouseMove(msX0, msY0, 0)
 		if (IsFunc("MouseLockOff"))
-			Func("MouseLockOff").Call("turn")
+			MouseLockOff.Call("turn")
 		if (!wasCrit)
-			Critical, Off
+			Critical("Off")
 		}
 	;(you took over: what it got to - not "", or the walker would turn him with A/D against you)
 	if (msUser)
@@ -372,62 +372,62 @@ MouseStandTurn(h)
 		return ""
 	MsTriedAt := A_TickCount
 	wasCrit := A_IsCritical
-	Critical
+	Critical()
 	if (!Walking || inbattle || !GameActive() || PlayerActive || UserIdle() < 3000)
 		{
 		if (!wasCrit)
-			Critical, Off
+			Critical("Off")
 		return ""
 		}
-	MouseGetPos, msX0, msY0
-	MouseSteerPoint(msPx, msPy)
+	MouseGetPos(&msX0, &msY0)
+	MouseSteerPoint(&msPx, &msPy)
 	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn)
 	if (IsFunc("MouseLockOn"))
-		Func("MouseLockOn").Call("turn")
-	MouseMove, %msPx%, %msPy%, 0
+		MouseLockOn.Call("turn")
+	MouseMove(msPx, msPy, 0)
 	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved)
 	if (IsFunc("MouseLockMoved"))
-		Func("MouseLockMoved").Call()
+		MouseLockMoved.Call()
 	yaw1 := ""
 	try
 		{
 		MouseSteerButton(1)
-		Sleep, 60
+		Sleep(60)
 		;(the counts for h in looks of 90 degrees' worth at most, a third of the game's width at most each)
 		want := Round(h / MsK), most := Min(Round(90 / Abs(MsK)), Round(GameW * 0.3))
 		while (want != 0)
 			{
 			c := want > most ? most : want < -most ? -most : want
 			MouseSteerMove(c), want -= c
-			Sleep, 35
+			Sleep(35)
 			}
-		Sleep, 40
+		Sleep(40)
 		;(W tapped here, inside the Critical - HoldW lets other threads in, with the button and W down - a short step at
 		;any speed)
 		KeysDown := 1
-		Send, {Blind}{w down}
+		Send("{Blind}{w down}")
 		HeldW := 1, WkWalkFrom := A_TickCount
-		Sleep, % Max(40, Round(120 / (SpeedNow ? SpeedNow : 1)))
-		Send, {Blind}{w up}
+		Sleep(Max(40, Round(120 / (SpeedNow ? SpeedNow : 1))))
+		Send("{Blind}{w up}")
 		HeldW := 0
-		Sleep, 40
+		Sleep(40)
 		yaw1 := MouseSteerYaw()
 		if (yaw1 = "")
 			{
-			Sleep, 60
+			Sleep(60)
 			yaw1 := MouseSteerYaw()
 			}
 		}
 	finally
 		{
 		MouseSteerButton(0)
-		Sleep, 20
+		Sleep(20)
 		if (!MouseSteerYours(A_TickCount - 1000))
-			MouseMove, %msX0%, %msY0%, 0
+			MouseMove(msX0, msY0, 0)
 		if (IsFunc("MouseLockOff"))
-			Func("MouseLockOff").Call("turn")
+			MouseLockOff.Call("turn")
 		if (!wasCrit)
-			Critical, Off
+			Critical("Off")
 		}
 	turned := yaw1 != "" ? MouseSteerTurned(yaw1, yaw0) : ""
 	;(off from h by the wrap - a turn of 180 reads -180 as often as 180)

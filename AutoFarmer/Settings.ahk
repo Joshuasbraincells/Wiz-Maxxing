@@ -1,3 +1,4 @@
+#Warn Unreachable, Off
 ; Settings.ahk - the Settings window (the dashboard's Settings button, or the tray menu): the mouse and the bot's
 ; waits, and how it plays its cards. AHK v1.1, functions and labels only; #Included by Autofarmer.ahk.
 ;
@@ -182,7 +183,7 @@ CfgSimpleKeys()
 		keys := {}
 		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
-			keys[k] := 1
+			keys[k] := 1 ;  V1toV2: Invalid Index errors?, try 'keys.Push(<val>)'
 		}
 	return keys
 	}
@@ -198,7 +199,7 @@ CfgViewList()
 		{
 		if (s.key = "-")
 			head := s
-		else if (s.key != "|" && keys.HasKey(s.key))
+		else if (s.key != "|" && keys.Has(s.key))
 			{
 			if (IsObject(head))
 				out.Push(head), head := ""
@@ -212,8 +213,8 @@ CfgViewList()
 ;made once, the window afresh each time it opens)
 CfgKeyWords(text)
 	{
-	while (RegExMatch(text, "\{key:(\w+)\}", m))
-		text := StrReplace(text, m, HkText(m1))
+	while (RegExMatch(text, "\{key:(\w+)\}", &m))
+		text := StrReplace(text, (m&&m[0]), HkText(m[1]))
 	return text
 	}
 
@@ -223,17 +224,19 @@ CfgShow()
 	static hooked := 0
 	if (CfgHwnd && WinExist("ahk_id " CfgHwnd))
 		{
-		WinActivate, ahk_id %CfgHwnd%
+		WinActivate("ahk_id " CfgHwnd)
 		return
 		}
 	;(the help line follows the mouse: WM_MOUSEMOVE)
 	if (!hooked)
-		OnMessage(0x200, Func("CfgHover")), hooked := 1
+		OnMessage(0x200, CfgHover), hooked := 1
 	CfgCtls := {}, CfgShownVals := {}, CfgHelps := {}, CfgHelpShown := ""
 	CfgSimple := ViewSimple("settings")
-	Gui, Cfg:New, +HwndCfgHwnd -MaximizeBox, % "Wizard101 bot " BotVersion() " - settings"
-	Gui, Cfg:Color, 1B1D22, 111317
-	Gui, Cfg:Margin, 12, 10
+	Cfg := Gui("-MaximizeBox", "Wizard101 bot " BotVersion() " - settings"), CfgHwnd := Cfg.Hwnd
+	Cfg.OnEvent("Close", CfgGuiClose)
+	Cfg.OnEvent("Escape", CfgGuiEscape)
+	Cfg.BackColor := "1B1D22"
+	Cfg.MarginX := 12, Cfg.MarginY := 10
 	;(next to the dashboard when it's up, else in the middle of the main monitor - all of it on that monitor: the
 	;settings in columns (CfgPlace) as tall and as many as fit it, with the help line and the buttons under them; more
 	;columns than fit its width: a tab for each heading, its settings in columns inside it)
@@ -241,8 +244,8 @@ CfgShow()
 	if (DashHwnd && DashShown)
 		{
 		;(not a minimised dashboard's place: -32000)
-		WinGet, cfgMm, MinMax, ahk_id %DashHwnd%
-		WinGetPos, cfgDx, cfgDy, , , ahk_id %DashHwnd%
+		cfgMm := WinGetMinMax("ahk_id " DashHwnd)
+		WinGetPos(&cfgDx, &cfgDy, , , "ahk_id " DashHwnd)
 		if (cfgDx != "" && cfgMm != -1)
 			cfgPos := "x" cfgDx + 30 " y" cfgDy + 60 " ", cfgAtX := cfgDx + 30, cfgAtY := cfgDy + 60
 		}
@@ -260,7 +263,7 @@ CfgShow()
 		;window's width: a narrow window (one column on a 1920x1080 screen) wraps them to 2 or 3 rows, so the settings
 		;start under the last row, measured (CfgTabsTop) - not under the first, hidden behind the others)
 		cfgTop := 44
-		Loop, 4
+		Loop 4
 			{
 			cfgPlan := CfgPlace(cfgMaxY - 10 - (cfgTop - 44), true, cfgTop)
 			cfgTabNames := ""
@@ -271,8 +274,8 @@ CfgShow()
 				break
 			cfgTop := cfgNeed
 			}
-		Gui, Cfg:Font, s9 w600 cF2F2F2, Segoe UI
-		Gui, Cfg:Add, Tab3, % "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", %cfgTabNames%
+		Cfg.SetFont("s9 w600 cF2F2F2", "Segoe UI")
+		Tab := Cfg.Add("Tab3", "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", StrSplit(cfgTabNames, "|")) ; V1toV2: Ensure Tab3 has correct choose value
 		}
 	cfgTab := 0
 	for each, cfgAt in cfgPlan.items
@@ -281,76 +284,81 @@ CfgShow()
 		if (cfgAt.tab != cfgTab)
 			{
 			cfgTab := cfgAt.tab
-			Gui, Cfg:Tab, %cfgTab%
+			Tab.UseTab(cfgTab)
 			}
 		if (cfgS.key = "-")
 			{
-			Gui, Cfg:Font, s9 w600 c8AB4F8, Segoe UI
-			Gui, Cfg:Add, Text, % "x" cfgX " y" cfgY " w410 h18", % cfgS.label
+			Cfg.SetFont("s9 w600 c8AB4F8", "Segoe UI")
+			Cfg.Add("Text", "x" cfgX " y" cfgY " w410 h18", cfgS.label)
 			continue
 			}
-		cfgV := Stats.HasKey(cfgS.key) ? Stats[cfgS.key] : cfgS.def
+		cfgV := Stats.Has(cfgS.key) ? Stats[cfgS.key] : cfgS.def
 		;(a wizard's own value - storm.killmargin... - is used when it fights as that school; the window doesn't
 		;change it, so the help says where it is)
 		cfgHelp := CfgKeyWords(cfgS.help)
 		for each, cfgSch in ["storm", "fire", "ice", "life", "death", "myth", "balance"]
-			if (Stats.HasKey(cfgSch "." cfgS.key))
+			if (Stats.Has(cfgSch "." cfgS.key))
 				cfgHelp .= "  Your " cfgSch " wizard has its own: " cfgSch "." cfgS.key ":" Stats[cfgSch "." cfgS.key] " in PlayerStats.txt (change it there)."
 		;(a label the mouse can be over - SS_NOTIFY - and its control right of it)
 		cfgW := (cfgS.kind = "pick") ? 90 : 300
-		Gui, Cfg:Font, s9 w400 cDADADA, Segoe UI
-		Gui, Cfg:Add, Text, % "x" cfgX " y" cfgY + 3 " w" cfgW " h18 +0x100 HwndcfgL", % cfgS.label
+		Cfg.SetFont("s9 w400 cDADADA", "Segoe UI")
+		ogccfgSlabelcfgL := Cfg.Add("Text", "x" cfgX " y" cfgY + 3 " w" cfgW " h18 +0x100", cfgS.label), cfgL := ogccfgSlabelcfgL.hwnd
 		cfgCx := cfgX + cfgW + 8
 		;(a change not saved before the view was switched: shown, still to be saved - cfgV stays what's in use)
-		cfgNew := (IsObject(CfgPending) && CfgPending.HasKey(cfgS.key)) ? CfgPending[cfgS.key] : ""
+		cfgNew := (IsObject(CfgPending) && CfgPending.Has(cfgS.key)) ? CfgPending[cfgS.key] : ""
 		if (cfgS.kind = "check")
 			{
 			cfgV := cfgV ? 1 : 0
-			Gui, Cfg:Add, Checkbox, % "x" cfgCx " y" cfgY + 3 " w18 h18 HwndcfgC Checked" (cfgNew != "" ? cfgNew : cfgV)
+			Gui, Cfg:Add, Checkbox, % "x" cfgCx " y" cfgY + 3 " w18 h18 HwndcfgC Checked" (cfgNew != "" ? cfgNew : cfgV) ; V1toV2: Ternary not yet supported (coming soon)
 			}
 		else if (cfgS.kind = "pick")
 			{
-			cfgV := Max(1, Min(cfgS.picks.Length(), Round(cfgV)))
+			cfgV := Max(1, Min(cfgS.picks.Length, Round(cfgV)))
 			cfgList := ""
 			for each, cfgP in cfgS.picks
 				cfgList .= (cfgList = "" ? "" : "|") cfgP
-			Gui, Cfg:Add, DropDownList, % "x" cfgCx " y" cfgY " w312 AltSubmit HwndcfgC Choose" (cfgNew != "" ? cfgNew : cfgV), %cfgList%
+			Gui, Cfg:Add, DropDownList, % "x" cfgCx " y" cfgY " w312 AltSubmit HwndcfgC Choose" (cfgNew != "" ? cfgNew : cfgV), %cfgList% ; V1toV2: Ternary not yet supported (coming soon)
 			}
 		else
 			{
 			cfgV := Round(cfgV)
-			Gui, Cfg:Add, Edit, % "x" cfgCx " y" cfgY " w70 h22 Number Right HwndcfgC", % cfgNew != "" ? cfgNew : cfgV
+			Gui, Cfg:Add, Edit, % "x" cfgCx " y" cfgY " w70 h22 Number Right HwndcfgC", % cfgNew != "" ? cfgNew : cfgV ; V1toV2: Ternary not yet supported (coming soon)
 			;(0x80: no thousands commas)
-			Gui, Cfg:Add, UpDown, % "Range" cfgS.lo "-" cfgS.hi " 0x80 HwndcfgU", % cfgNew != "" ? cfgNew : cfgV
-			CfgHelps[cfgU + 0] := cfgHelp
+			Gui, Cfg:Add, UpDown, % "Range" cfgS.lo "-" cfgS.hi " 0x80 HwndcfgU", % cfgNew != "" ? cfgNew : cfgV ; V1toV2: Ternary not yet supported (coming soon)
+			CfgHelps[cfgU + 0] := cfgHelp ;  V1toV2: Invalid Index errors?, try 'CfgHelps.Push(<val>)'
 			}
-		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV
-		CfgHelps[cfgL + 0] := cfgHelp, CfgHelps[cfgC + 0] := cfgHelp
+		CfgCtls[cfgS.key] := cfgC, CfgShownVals[cfgS.key] := cfgV ;  V1toV2: Invalid Index errors?, try 'CfgCtls.Push(<val>)'
+		CfgHelps[cfgL + 0] := cfgHelp, CfgHelps[cfgC + 0] := cfgHelp ;  V1toV2: Invalid Index errors?, try 'CfgHelps.Push(<val>)'
 		}
 	if (cfgTab)
-		Gui, Cfg:Tab
+		Tab.UseTab()
 	cfgY := cfgPlan.bottom + (cfgTab ? 14 : 6)
-	Gui, Cfg:Font, s9 w400 c9AA0A6, Segoe UI
+	Cfg.SetFont("s9 w400 c9AA0A6", "Segoe UI")
 	cfgHelpW := 432 * cfgPlan.cols - 32
 	CfgPending := ""
-	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, % "Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart." (CfgSimple ? " These are the most used ones - All settings shows the rest." : "")
+	Gui, Cfg:Add, Text, x12 y%cfgY% w%cfgHelpW% h36 vCfgHelpText, % "Point at a setting to see what it does. Each is a line in PlayerStats.txt: Save writes them there and the bot uses them at once - no restart." (CfgSimple ? " These are the most used ones - All settings shows the rest." : "") ; V1toV2: Ternary not yet supported (coming soon)
 	cfgY += 44
-	Gui, Cfg:Font, s9 w400 c000000, Segoe UI
-	Gui, Cfg:Add, Button, x12 y%cfgY% w90 h26 Default gCfgSave, Save
-	Gui, Cfg:Add, Button, x+8 yp w90 h26 gCfgDefaults, Defaults
-	Gui, Cfg:Add, Button, x+8 yp w150 h26 gCfgOpenFile, Open PlayerStats.txt
-	Gui, Cfg:Add, Button, x+8 yp w90 h26 gCfgGuiClose, Close
-	Gui, Cfg:Add, Button, x+8 yp w110 h26 gCfgViewToggle, % CfgSimple ? "All settings" : "Fewer settings"
-	Gui, Cfg:Font, s9 w400 cB9E2B9, Segoe UI
-	Gui, Cfg:Add, Text, x+14 yp+5 w370 h18 vCfgNote
-	Gui, Cfg:Show, % cfgPos "AutoSize", % "Wizard101 bot " BotVersion() " - settings"
+	Cfg.SetFont("s9 w400 c000000", "Segoe UI")
+	ogcButtonSave := Cfg.Add("Button", "x12 y" . cfgY . " w90 h26 Default", "Save")
+	ogcButtonSave.OnEvent("Click", CfgSave.Bind("Normal"))
+	ogcButtonDefaults := Cfg.Add("Button", "x+8 yp w90 h26", "Defaults")
+	ogcButtonDefaults.OnEvent("Click", CfgDefaults.Bind("Normal"))
+	ogcButtonOpenPlayerStatstxt := Cfg.Add("Button", "x+8 yp w150 h26", "Open PlayerStats.txt")
+	ogcButtonOpenPlayerStatstxt.OnEvent("Click", CfgOpenFile.Bind("Normal"))
+	ogcButtonClose := Cfg.Add("Button", "x+8 yp w90 h26", "Close")
+	ogcButtonClose.OnEvent("Click", CfgGuiClose.Bind("Normal"))
+	Gui, Cfg:Add, Button, x+8 yp w110 h26 gCfgViewToggle, % CfgSimple ? "All settings" : "Fewer settings" ; V1toV2: Ternary not yet supported (coming soon)
+	Cfg.SetFont("s9 w400 cB9E2B9", "Segoe UI")
+	ogcTextCfgNote := Cfg.Add("Text", "x+14 yp+5 w370 h18 vCfgNote")
+	Cfg.Title := "Wizard101 bot " BotVersion() " - settings"
+	Cfg.Show(cfgPos "AutoSize")
 	;(all of it on that monitor - its Save button too: moved up and left as far as it needs)
-	WinGetPos, cfgWx, cfgWy, cfgWw, cfgWh, ahk_id %CfgHwnd%
+	WinGetPos(&cfgWx, &cfgWy, &cfgWw, &cfgWh, "ahk_id " CfgHwnd)
 	if (cfgWx != "")
 		{
 		cfgNx := Max(cfgML, Min(cfgWx, cfgMR - cfgWw)), cfgNy := Max(cfgMT, Min(cfgWy, cfgMB - cfgWh))
 		if (cfgNx != cfgWx || cfgNy != cfgWy)
-			WinMove, ahk_id %CfgHwnd%, , %cfgNx%, %cfgNy%
+			WinMove(cfgNx, cfgNy, , , "ahk_id " CfgHwnd)
 		}
 	}
 
@@ -375,7 +383,7 @@ CfgPlace(maxY, tabbed, top := "")
 		if (s.key = "-" && tabbed)
 			{
 			name := s.label
-			StringLower, name, name
+			name := StrLower(name)
 			plan.tabs.Push(Format("{:U}", SubStr(name, 1, 1)) SubStr(name, 2)), x := 12, y := top, col := 1
 			continue
 			}
@@ -384,7 +392,7 @@ CfgPlace(maxY, tabbed, top := "")
 		;(a gap above a heading that isn't the first)
 		if (s.key = "-" && y > top)
 			y += 8
-		plan.items.Push({s: s, x: x, y: y, tab: plan.tabs.Length()})
+		plan.items.Push({s: s, x: x, y: y, tab: plan.tabs.Length})
 		y += (s.key = "-") ? 26 : 28
 		plan.bottom := Max(plan.bottom, y), plan.cols := Max(plan.cols, col)
 		}
@@ -395,17 +403,19 @@ CfgPlace(maxY, tabbed, top := "")
 ;width w with those names, its buttons' rows measured - they wrap when the names don't fit one row. 44 for one row
 CfgTabsTop(w, names)
 	{
-	Gui, CfgM:New
-	Gui, CfgM:Font, s9 w600, Segoe UI
-	Gui, CfgM:Add, Tab3, % "x6 y8 w" w " h200 +Buttons -Theme HwndctTab", %names%
+	CfgM := Gui()
+	CfgM.SetFont("s9 w600", "Segoe UI")
+	Tab := ogcnamesctTab := CfgM.Add("Tab3", "x6 y8 w" w " h200 +Buttons -Theme", StrSplit(names, "|")) ; V1toV2: Ensure Tab3 has correct choose value
+	ctTab := ogcnamesctTab.hwnd
 	;(TCM_GETITEMCOUNT, then each button's rect - TCM_GETITEMRECT - in the control's own pixels)
 	ctN := DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x1304, "Ptr", 0, "Ptr", 0, "Ptr"), ctBottom := 0
-	VarSetCapacity(ctRect, 16, 0)
-	Loop, %ctN%
-		if (DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x130A, "Ptr", A_Index - 1, "Ptr", &ctRect, "Ptr"))
+	ctRect := Buffer(16, 0) ; V1toV2: if 'ctRect' is a UTF-16 string, use 'VarSetStrCapacity(&ctRect, 16)' and replace all instances of 'ctRect.Ptr' with 'StrPtr(ctRect)'
+	Loop ctN
+		if (DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x130A, "Ptr", A_Index - 1, "Ptr", ctRect.Ptr, "Ptr"))
 			ctBottom := Max(ctBottom, NumGet(ctRect, 12, "Int"))
-	Gui, CfgM:Destroy
-	Gui, Cfg:Default
+	Try CfgM.Destroy()
+	;Gui, Cfg:Default ; V1toV2: removed, but applied
+	V1toV2_LineFill := true ; remove me after inspection
 	;(pixels to the window's units - 96 a inch, as Gui positions are given)
 	return Max(44, 8 + Ceil(ctBottom * 96 / A_ScreenDPI) + 8)
 	}
@@ -415,11 +425,11 @@ CfgHover(wParam, lParam, msg, hwnd)
 	{
 	if (A_Gui != "Cfg" || !IsObject(CfgHelps))
 		return
-	cfgT := CfgHelps.HasKey(hwnd + 0) ? CfgHelps[hwnd + 0] : ""
+	cfgT := CfgHelps.Has(hwnd + 0) ? CfgHelps[hwnd + 0] : ""
 	if (cfgT = "" || cfgT == CfgHelpShown)
 		return
 	CfgHelpShown := cfgT
-	GuiControl, Cfg:, CfgHelpText, %cfgT%
+	ogcCfgHelpText.Value := cfgT
 	}
 
 ;Writes the settings changed in the window to PlayerStats.txt and reads them all again (used from now on).
@@ -429,33 +439,33 @@ CfgSaveNow()
 	cfgPairs := [], cfgSaid := "", cfgFixed := ""
 	for each, cfgS in CfgList()
 		{
-		if (!CfgCtls.HasKey(cfgS.key))
+		if (!CfgCtls.Has(cfgS.key))
 			continue
 		cfgC := CfgCtls[cfgS.key]
-		GuiControlGet, cfgV, Cfg:, %cfgC%
+		cfgV := ogc%cfgC%.Value
 		if (cfgS.kind = "num")
 			{
 			cfgV := Trim(cfgV)
-			if cfgV is not integer
+			if !isInteger(cfgV)
 				{
 				cfgFixed .= ", " cfgS.key " (not a number - left as it was)"
-				GuiControl, Cfg:, %cfgC%, % CfgShownVals[cfgS.key]
+				ogc%cfgC%.Value := CfgShownVals[cfgS.key]
 				continue
 				}
 			if (cfgV < cfgS.lo || cfgV > cfgS.hi)
 				{
 				cfgV := Max(cfgS.lo, Min(cfgS.hi, cfgV))
 				cfgFixed .= ", " cfgS.key " (" cfgS.lo " to " cfgS.hi ": " cfgV ")"
-				GuiControl, Cfg:, %cfgC%, %cfgV%
+				ogc%cfgC%.Value := cfgV
 				}
 			}
 		cfgV += 0
 		if (cfgV != CfgShownVals[cfgS.key])
 			cfgPairs.Push([cfgS.key, cfgV]), cfgSaid .= ", " cfgS.key " " CfgShownVals[cfgS.key] " -> " cfgV
 		}
-	if (!cfgPairs.Length())
+	if (!cfgPairs.Length)
 		{
-		GuiControl, Cfg:, CfgNote, % "Nothing changed" (cfgFixed = "" ? "" : " - " SubStr(cfgFixed, 3))
+		GuiControl, Cfg:, CfgNote, % "Nothing changed" (cfgFixed = "" ? "" : " - " SubStr(cfgFixed, 3)) ; V1toV2: Ternary not yet supported (coming soon)
 		return
 		}
 	;(the mobs' reach you set yourself: the least the shrink after quiet walking comes back down to - Vision.ahk
@@ -465,7 +475,7 @@ CfgSaveNow()
 			cfgPairs.Push([cfgKv[1] "floor", cfgKv[2]])
 	if (!CfgWrite(cfgPairs))
 		{
-		GuiControl, Cfg:, CfgNote, Couldn't write PlayerStats.txt - nothing was saved
+		ogcTextCfgNote.Value := "Couldn't write PlayerStats.txt - nothing was saved"
 		DebugLog("Settings: couldn't write PlayerStats.txt - nothing was saved")
 		return
 		}
@@ -474,7 +484,7 @@ CfgSaveNow()
 	;(the tray menu's tick and the dashboard's Wait for me button)
 	HandsOffShow()
 	DebugLog("Settings saved (used from now on): " SubStr(cfgSaid, 3) (cfgFixed = "" ? "" : " | " SubStr(cfgFixed, 3)))
-	GuiControl, Cfg:, CfgNote, % "Saved " cfgPairs.Length() " change" (cfgPairs.Length() = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")")
+	GuiControl, Cfg:, CfgNote, % "Saved " cfgPairs.Length() " change" (cfgPairs.Length() = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")") ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 ;Every setting's default in the window (saved only with Save)
@@ -482,15 +492,15 @@ CfgFillDefaults()
 	{
 	for each, cfgS in CfgList()
 		{
-		if (!CfgCtls.HasKey(cfgS.key))
+		if (!CfgCtls.Has(cfgS.key))
 			continue
 		cfgC := CfgCtls[cfgS.key]
 		if (cfgS.kind = "pick")
-			GuiControl, Cfg:Choose, %cfgC%, % cfgS.def
+			ogc%cfgC%.Choose(% cfgS.def)
 		else
-			GuiControl, Cfg:, %cfgC%, % cfgS.def
+			ogc%cfgC%.Value := cfgS.def
 		}
-	GuiControl, Cfg:, CfgNote, Defaults filled in - Save to use them
+	ogcTextCfgNote.Value := "Defaults filled in - Save to use them"
 	}
 
 ;Sets key:value lines in PlayerStats.txt - in their own lines (every one, if a key is in more than one), their
@@ -499,25 +509,25 @@ CfgFillDefaults()
 CfgWrite(pairs)
 	{
 	cfgWas := A_IsCritical
-	Critical
+	Critical()
 	cfgPath := A_WorkingDir "\PlayerStats.txt"
 	cfgText := ""
 	if (FileExist(cfgPath))
 		{
-		FileRead, cfgText, %cfgPath%
+		cfgText := FileRead(cfgPath)
 		if (ErrorLevel)
 			return CfgUncritical(cfgWas, false)
 		}
 	cfgLines := StrSplit(StrReplace(cfgText, "`r"), "`n")
-	if (cfgLines.Length() && cfgLines[cfgLines.Length()] = "")
+	if (cfgLines.Length && cfgLines[cfgLines.Length] = "")
 		cfgLines.Pop()
 	cfgHead := "; ---- Set in the Settings window (the dashboard's Settings button) ----"
 	for each, cfgKv in pairs
 		{
 		cfgFound := false
 		for cfgI, cfgLn in cfgLines
-			if (RegExMatch(cfgLn, "i)^(\s*\Q" cfgKv[1] "\E\s*:\s*)[^;\s]*(.*)$", cfgM))
-				cfgLines[cfgI] := cfgM1 cfgKv[2] cfgM2, cfgFound := true
+			if (RegExMatch(cfgLn, "i)^(\s*\Q" cfgKv[1] "\E\s*:\s*)[^;\s]*(.*)$", &cfgM))
+				cfgLines[cfgI] := cfgM[1] cfgKv[2] cfgM[2], cfgFound := true ;  V1toV2: Invalid Index errors?, try 'cfgLines.Push(<val>)'
 		if (cfgFound)
 			continue
 		cfgHas := false
@@ -531,11 +541,16 @@ CfgWrite(pairs)
 	cfgOut := ""
 	for cfgI, cfgLn in cfgLines
 		cfgOut .= cfgLn "`r`n"
-	FileDelete, %cfgPath%.tmp
-	FileAppend, %cfgOut%, %cfgPath%.tmp
+	Try FileDelete(cfgPath ".tmp")
+	FileAppend(cfgOut, cfgPath ".tmp")
 	if (ErrorLevel)
 		return CfgUncritical(cfgWas, false)
-	FileMove, %cfgPath%.tmp, %cfgPath%, 1
+	Try {
+		FileMove(cfgPath ".tmp", cfgPath, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	if (ErrorLevel)
 		return CfgUncritical(cfgWas, false)
 	LoadStats(true)
@@ -546,7 +561,7 @@ CfgWrite(pairs)
 CfgUncritical(wasOn, result)
 	{
 	if (!wasOn)
-		Critical, Off
+		Critical("Off")
 	return result
 	}
 
@@ -560,7 +575,7 @@ MouseGrab()
 	;(one taken over 10 minutes ago and never given back is stale: taken afresh)
 	if ((MouseHomeSet && A_TickCount - MouseHomeAt < 600000) || !Stat("mousereturn"))
 		return false
-	MouseGetPos, MouseHomeX, MouseHomeY
+	MouseGetPos(&MouseHomeX, &MouseHomeY)
 	MouseHomeSet := 1, MouseHomeAt := A_TickCount
 	return true
 	}
@@ -577,16 +592,16 @@ MouseLetGo()
 		return 0
 	if (UserIdle() < A_TickCount - MouseHomeAt)
 		return -1
-	MouseGetPos, mouseNowX, mouseNowY
+	MouseGetPos(&mouseNowX, &mouseNowY)
 	;(on the game, going off it: over the scene first - Wizard101 keeps showing the button the mouse last left it from
 	;as hovered (Pass: white, and the next round's Pass isn't known by its picture)
 	if ((mouseNowX != MouseHomeX || mouseNowY != MouseHomeY) && MouseOnGame(mouseNowX, mouseNowY) && !MouseOnGame(MouseHomeX, MouseHomeY))
 		{
-		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
-		Sleep, 60
+		MouseMove(ScreenX, GameTop + Round(GameH * 0.4), 0)
+		Sleep(60)
 		}
 	if (mouseNowX != MouseHomeX || mouseNowY != MouseHomeY)
-		MouseMove, MouseHomeX, MouseHomeY, 0
+		MouseMove(MouseHomeX, MouseHomeY, 0)
 	return 1
 	}
 
@@ -632,7 +647,7 @@ MouseLockInit()
 	MouseLockFrom := 0, MouseLockTo := 0, MouseLockPre := 0, MouseLockSpan := 0, MouseLockHold := 0, MouseLockSaid := {}
 	MouseLockWhy := "", MouseLockOnAt := 0, MouseLockTicking := 0, MouseLockOwnAt := {}, MouseLockOwnTtl := {}, MouseLockRenewAt := 0
 	OnExit("MouseLockOnExit", -1)
-	OnError("MouseLockOnError", -1)
+	OnError(MouseLockOnError, -1)
 	}
 
 ;The bot takes the mouse for why ("round", "click", "turn"... - MouseLockWhat): your mouse held off it while it's held.
@@ -642,9 +657,9 @@ MouseLockOn(why := "bot", ttl := 15000)
 	MouseLockInit()
 	;(its own hold's taking and ttl too - the watchdog lets go of it alone if it isn't renewed, whoever else takes the
 	;mouse; counted on the same line as its times are set, so the watchdog's tick never sees it counted with old ones)
-	mlHeld := MouseLockOwners.HasKey(why) ? MouseLockOwners[why] : 0
-	mlTtl := mlHeld > 0 && MouseLockOwnTtl.HasKey(why) ? Max(MouseLockOwnTtl[why], ttl) : ttl
-	MouseLockOwnTtl[why] := mlTtl, MouseLockOwnAt[why] := A_TickCount, MouseLockAt := A_TickCount, MouseLockTtl := Max(MouseLockTtl, ttl), MouseLockOwners[why] := mlHeld + 1
+	mlHeld := MouseLockOwners.Has(why) ? MouseLockOwners[why] : 0
+	mlTtl := mlHeld > 0 && MouseLockOwnTtl.Has(why) ? Max(MouseLockOwnTtl[why], ttl) : ttl
+	MouseLockOwnTtl[why] := mlTtl, MouseLockOwnAt[why] := A_TickCount, MouseLockAt := A_TickCount, MouseLockTtl := Max(MouseLockTtl, ttl), MouseLockOwners[why] := mlHeld + 1 ;  V1toV2: Invalid Index errors?, try 'MouseLockOwnTtl.Push(<val>)'
 	if (MouseLockWhy = "")
 		MouseLockWhy := why
 	;(started once - SetTimer again would start its countdown over, and clicks a moment apart would keep it from ever
@@ -652,7 +667,7 @@ MouseLockOn(why := "bot", ttl := 15000)
 	if (!MouseLockTicking)
 		{
 		MouseLockTicking := 1
-		SetTimer, MouseLockTick, 250
+		SetTimer(MouseLockTick,250)
 		}
 	MouseLockApply(why)
 	}
@@ -660,16 +675,16 @@ MouseLockOn(why := "bot", ttl := 15000)
 ;Gives back one MouseLockOn(why) - none held by why (let go already: a failsafe, the watchdog): nothing
 MouseLockOff(why := "bot")
 	{
-	if (!IsObject(MouseLockOwners) || !MouseLockOwners.HasKey(why))
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Has(why))
 		return
 	MouseLockOwners[why] -= 1
 	if (MouseLockOwners[why] <= 0)
 		MouseLockOwners.Delete(why)
-	if (!MouseLockOwners.Count())
+	if (!MouseLockOwners.Count)
 		MouseLockTtl := 15000
 	MouseLockApply(why)
 	;(who has it now, for the log: one still holding it, or nobody)
-	if (!MouseLockOwners.HasKey(MouseLockWhy))
+	if (!MouseLockOwners.Has(MouseLockWhy))
 		{
 		MouseLockWhy := ""
 		for mlWho in MouseLockOwners
@@ -695,7 +710,7 @@ MouseLockRelease(because)
 ;swallowed (MouseLockMoved)
 MouseLockRenew()
 	{
-	if (IsObject(MouseLockOwners) && MouseLockOwners.Count())
+	if (IsObject(MouseLockOwners) && MouseLockOwners.Count)
 		MouseLockAt := A_TickCount, MouseLockRenewAt := A_TickCount
 	MouseLockMoved()
 	}
@@ -719,10 +734,10 @@ MouseLockPause(pause)
 	}
 
 ;Whether your mouse is to be held off now; whyNot: why not ("free" - nobody has it)
-MouseLockWanted(ByRef whyNot)
+MouseLockWanted(&whyNot)
 	{
 	whyNot := ""
-	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count())
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count)
 		whyNot := "free"
 	else if (MouseLockHold > 0)
 		whyNot := "your pick"
@@ -744,10 +759,10 @@ MouseLockWanted(ByRef whyNot)
 MouseLockApply(why := "", because := "")
 	{
 	;(not interrupted half done - by the watchdog's tick, F6; Critical's SetBatchLines -1 put back after)
-	mlCrit := A_IsCritical, mlBatch := A_BatchLines
-	Critical
+	mlCrit := A_IsCritical, mlBatch := -1
+	Critical()
 	MouseLockInit()
-	mlWant := MouseLockWanted(mlNot)
+	mlWant := MouseLockWanted(&mlNot)
 	mlClicks := mlWant && MouseLockOverGame()
 	if (mlWant && !MouseLocked)
 		{
@@ -787,17 +802,17 @@ MouseLockApply(why := "", because := "")
 	if (!mlWant && MouseLockSpan && MouseLockHold <= 0)
 		MouseLockSpan := 0, MouseLockTo := A_TickCount
 	if (!mlCrit)
-		Critical, Off
-	SetBatchLines, %mlBatch%
+		Critical("Off")
+; V1toV2: Removed 	SetBatchLines, %mlBatch%
 	}
 
 ;Four times a second while anyone has it: Wizard101 still in front, the pointer still over it, the watchdog. Stops itself
 ;once nobody has it
 MouseLockTick()
 	{
-	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count())
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count)
 		{
-		SetTimer, MouseLockTick, Off
+		SetTimer(MouseLockTick,0)
 		MouseLockTicking := 0
 		MouseLockApply()
 		return
@@ -814,21 +829,21 @@ MouseLockTick()
 	mlStale := [], mlList := ""
 	for mlWho, mlN in MouseLockOwners
 		{
-		mlOwn := Max(MouseLockOwnAt.HasKey(mlWho) ? MouseLockOwnAt[mlWho] : MouseLockAt, MouseLockRenewAt ? MouseLockRenewAt : 0)
-		if (A_TickCount - mlOwn > (MouseLockOwnTtl.HasKey(mlWho) ? MouseLockOwnTtl[mlWho] : 15000))
+		mlOwn := Max(MouseLockOwnAt.Has(mlWho) ? MouseLockOwnAt[mlWho] : MouseLockAt, MouseLockRenewAt ? MouseLockRenewAt : 0)
+		if (A_TickCount - mlOwn > (MouseLockOwnTtl.Has(mlWho) ? MouseLockOwnTtl[mlWho] : 15000))
 			mlStale.Push(mlWho), mlList .= (mlList = "" ? "" : ", ") MouseLockWhat(mlWho) (mlN > 1 ? " x" mlN : "") " (" Round((A_TickCount - mlOwn) / 1000) " s)"
 		}
-	if (mlStale.Length())
+	if (mlStale.Length)
 		{
 		mlMsg := "the watchdog let go of " mlList ": not renewed, never given back"
-		if (mlStale.Length() = MouseLockOwners.Count())
+		if (mlStale.Length = MouseLockOwners.Count)
 			{
 			MouseLockRelease(mlMsg)
 			return
 			}
 		DebugLog("Mouse lock: " mlMsg " - the others still hold it")
 		for mlI, mlWho in mlStale
-			MouseLockOwners[mlWho] := 1, MouseLockOff(mlWho)
+			MouseLockOwners[mlWho] := 1, MouseLockOff(mlWho) ;  V1toV2: Invalid Index errors?, try 'MouseLockOwners.Push(<val>)'
 		}
 	MouseLockApply()
 	}
@@ -837,34 +852,34 @@ MouseLockTick()
 MouseLockBlock(on)
 	{
 	if (on)
-		BlockInput, MouseMove
+		BlockInput("MouseMove")
 	else
-		BlockInput, MouseMoveOff
+		BlockInput("MouseMoveOff")
 	}
 
 ;Your mouse's buttons and wheel swallowed while Wizard101 is in front (on) - hook hotkeys (the hook decides, not the busy
 ;script) made the first time - or let through again. (A wheel spun hard is many hotkeys a second: the "hotkeys received"
 ;warning box only past 1000 in 2 s)
-#MaxHotkeysPerInterval 1000
+A_MaxHotkeysPerInterval := 1000
 MouseLockKeys(on)
 	{
 	static made := 0, failSaid := 0
 	if (!on && !made)
 		return
-	Hotkey, IfWinActive, ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe
+	HotIfWinActive("ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe")
 	for mlI, mlKey in MouseLockKeyList()
 		{
 		if (on)
 			{
-			Hotkey, %mlKey%, MouseLockSwallow, On UseErrorLevel
+			Hotkey(mlKey, MouseLockSwallow, "On") ; V1toV2: Removed UseErrorLevel
 			;(one the Hotkey command won't make: said once a run - that button isn't swallowed, the rest are)
 			if (ErrorLevel && !failSaid)
 				failSaid := 1, DebugLog("Mouse lock: " mlKey " couldn't be made a hotkey (ErrorLevel " ErrorLevel ") - that button isn't held off")
 			}
 		else
-			Hotkey, %mlKey%, Off, UseErrorLevel
+			Hotkey(mlKey, "Off") ; V1toV2: Removed UseErrorLevel
 		}
-	Hotkey, IfWinActive
+	HotIfWinActive()
 	made := 1
 	}
 
@@ -888,7 +903,7 @@ MouseLockSwallow()
 ;other windows get them)
 MouseLockOverGame()
 	{
-	MouseGetPos, mlX, mlY
+	MouseGetPos(&mlX, &mlY)
 	return MouseOnGame(mlX, mlY)
 	}
 
@@ -919,15 +934,15 @@ MouseLockWhat(why)
 	mlNames := {round: "a battle round", click: "a click", turn: "a mouse turn while walking", route: "the potion route's click"
 		, login: "a login click", walker: "a walker click", stats: "a click in the spellbook", lore: "lore farming"
 		, dev: "dev mode's loop", quicksell: "quick selling the backpack"}
-	return mlNames.HasKey(why) ? mlNames[why] : why
+	return mlNames.Has(why) ? mlNames[why] : why
 	}
 
 ;A line in debug.log - each kind at most once in every ms (0: each time)
 MouseLockSay(kind, msg, every := 0)
 	{
-	if (every && MouseLockSaid.HasKey(kind) && A_TickCount - MouseLockSaid[kind] < every)
+	if (every && MouseLockSaid.Has(kind) && A_TickCount - MouseLockSaid[kind] < every)
 		return
-	MouseLockSaid[kind] := A_TickCount
+	MouseLockSaid[kind] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'MouseLockSaid.Push(<val>)'
 	DebugLog(msg (every ? " (said once a minute)" : ""))
 	}
 
@@ -936,8 +951,8 @@ MouseLockOnExit(reason, code)
 	{
 	if (MouseLocked)
 		MouseLockRelease("the bot is closing")
-	BlockInput, MouseMoveOff
-	BlockInput, Off
+	BlockInput("MouseMoveOff")
+	BlockInput("Off")
 	}
 
 ;An error the script didn't expect (OnError): your mouse let go before its box shows (and the bot's thread stops)
@@ -947,8 +962,8 @@ MouseLockOnError(e)
 		MouseLockRelease("an error in the script (" (IsObject(e) ? e.Message " at line " e.Line : e) ")")
 	else if (IsObject(MouseLockOwners))
 		MouseLockOwners := {}, MouseLockHold := 0
-	BlockInput, MouseMoveOff
-	BlockInput, Off
+	BlockInput("MouseMoveOff")
+	BlockInput("Off")
 	if (MouseLockClicks)
 		MouseLockKeys(0), MouseLockClicks := 0
 	return 0
@@ -1056,9 +1071,9 @@ DiscardSwitchedOff()
 			did += DiscardOffOne("potent", "resources")
 		}
 	if (!Stat("usebubble") && bubble == 1)
-		did += DiscardOffOne("bubble", hitschool)
+		did := DateAdd((did != "" ? did : A_Now), DiscardOffOne("bubble", 'hitschool'))
 	if (!Stat("useaura") && aura == 1)
-		did += DiscardOffOne("aura", hitschool)
+		did := DateAdd((did != "" ? did : A_Now), DiscardOffOne("aura", 'hitschool'))
 	if (!Stat("usetower") && tower == 1)
 		did += DiscardOffOne("tower", "resources")
 	if (!Stat("usereshuffle") && reshuffle == 1)
@@ -1079,28 +1094,59 @@ DiscardOffOne(title, dir)
 	}
 
 CfgSave:
-	;(not halfway through while the bot writes PlayerStats.txt itself: StatsSet is Critical too)
-	Critical
-	CfgSaveNow()
+CfgSave()
 	return
 
 CfgDefaults:
-	CfgFillDefaults()
+CfgDefaults()
 	return
 
 CfgOpenFile:
-	Run, notepad.exe "%A_WorkingDir%\PlayerStats.txt"
+CfgOpenFile()
 	return
 
 ;Simple / all settings (dashboard.ini [view] settings): the window made again in the other view, where it was - changes
 ;not saved yet kept (CfgPending), still to be saved
 CfgViewToggle:
-	CfgPending := {}
+CfgViewToggle()
+	return
+
+CfgGuiClose:
+CfgGuiClose()
+return
+CfgGuiEscape:
+CfgGuiEscape()
+	return
+
+;###############  V1toV2 FUNCS  ###############
+CfgSave(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
+	;(not halfway through while the bot writes PlayerStats.txt itself: StatsSet is Critical too)
+	Critical()
+	CfgSaveNow()
+	return
+}
+;##############################################
+CfgDefaults(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
+	CfgFillDefaults()
+	return
+}
+;##############################################
+CfgOpenFile(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+	global
+	Run("notepad.exe `"" A_WorkingDir "\PlayerStats.txt`"")
+	return
+}
+;##############################################
+CfgViewToggle() { ; V1toV2: Lbl->Func
+	global
+	CfgPending := map()
 	for CfgVKey, CfgVC in CfgCtls
 		{
-		GuiControlGet, CfgVVal, Cfg:, %CfgVC%
+		CfgVVal := ogc%CfgVC%.Value
 		if (CfgVVal != CfgShownVals[CfgVKey])
-			CfgPending[CfgVKey] := CfgVVal
+			CfgPending[CfgVKey] := CfgVVal ;  V1toV2: Invalid Index errors?, try 'CfgPending.Push(<val>)'
 		}
 	;(to the simple view with changes to settings it doesn't show: saved or undone first - they'd be lost)
 	CfgVHid := 0
@@ -1109,22 +1155,29 @@ CfgViewToggle:
 			CfgVHid += CfgSimpleKeys().HasKey(CfgVKey) ? 0 : 1
 	if (CfgVHid)
 		{
-		GuiControl, Cfg:, CfgNote, % "Save first - " CfgVHid " change(s) to settings the simple view doesn't show"
+		ogcTextCfgNote.Value := "Save first - " CfgVHid " change(s) to settings the simple view doesn't show"
 		CfgPending := ""
 		return
 		}
-	CfgVCount := CfgPending.Count()
-	WinGetPos, CfgReopenX, CfgReopenY, , , ahk_id %CfgHwnd%
-	IniWrite, % CfgSimple ? 0 : 1, %A_ScriptDir%\dashboard.ini, view, settings
-	Gui, Cfg:Destroy
+	CfgVCount := CfgPending.Count
+	WinGetPos(&CfgReopenX, &CfgReopenY, , , "ahk_id " CfgHwnd)
+	IniWrite(CfgSimple ? 0 : 1, A_ScriptDir "\dashboard.ini", "view", "settings")
+	Try Cfg.Destroy()
 	CfgHwnd := 0
 	CfgShow()
 	if (CfgVCount)
-		GuiControl, Cfg:, CfgNote, % CfgVCount " change(s) not saved yet - Save to use them"
+		ogcTextCfgNote.Value := CfgVCount " change(s) not saved yet - Save to use them"
 	return
-
-CfgGuiClose:
-CfgGuiEscape:
-	Gui, Cfg:Destroy
+}
+;##############################################
+CfgGuiClose(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; V1toV2: Lbl->Func
+global
+CfgGuiEscape()
+}
+;##############################################
+CfgGuiEscape(*) { ; V1toV2: Lbl->Func
+	global
+	Try Cfg.Destroy()
 	CfgHwnd := 0
 	return
+}

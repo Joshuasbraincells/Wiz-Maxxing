@@ -62,10 +62,10 @@ DeckKeyInfo(key)
 	static own := ""
 	if (!IsObject(own))
 		own := {usehit1: "Plays hit1", usehit2: "Plays hit2", usehit3: "Plays hit3", usehit4: "Plays hit4", useheal: "Plays its heals (heal1, heal2)"}
-	if (own.HasKey(key))
+	if (own.Has(key))
 		return {key: key, label: own[key], kind: "check", def: 1}
 	if (IsFunc("CfgList"))
-		for i, s in Func("CfgList").Call()
+		for i, s in CfgList.Call()
 			if (s.key = key)
 				return s
 	return {key: key, label: key, kind: "num", def: 0}
@@ -74,15 +74,15 @@ DeckKeyInfo(key)
 ;The decks read from the folder (DeckList) - the two to start with made if there are none
 DeckLoadAll()
 	{
-	FileCreateDir, % DeckDir()
+	DirCreate(DeckDir())
 	list := []
-	Loop, Files, % DeckDir() "\*.txt"
+	Loop Files, DeckDir() "\*.txt"
 		{
-		d := DeckLoad(A_LoopFileFullPath)
+		d := DeckLoad(A_LoopFilePath)
 		if (IsObject(d))
 			list.Push(d)
 		}
-	if (!list.Length())
+	if (!list.Length)
 		{
 		for i, s in [["small", "Small deck", "default,collect"], ["large", "Large deck", "boss"]]
 			{
@@ -102,8 +102,8 @@ DeckLoadAll()
 	for j, d in list
 		if (d.id != "small" && d.id != "large")
 			{
-			at := order.Length() + 1
-			Loop, % order.Length()
+			at := order.Length + 1
+			Loop order.Length
 				if (order[A_Index].id != "small" && order[A_Index].id != "large" && d.id < order[A_Index].id)
 					{
 					at := A_Index
@@ -116,7 +116,7 @@ DeckLoadAll()
 	if (DashHwnd)
 		DeckButtonsShow()
 	if (DashHwnd && IsFunc("DgDeckShow"))
-		Func("DgDeckShow").Call()
+		DgDeckShow.Call()
 	;(the one in use, read afresh - or none if it's gone; not in a battle: the round goes on as it was planned, the edit
 	;from the next battle - DeckTick picks afresh out of battle)
 	if (IsObject(DeckNow) && inbattle != 1)
@@ -140,45 +140,45 @@ DeckIndexOf(id)
 DeckWhenOf(text)
 	{
 	w := {}
-	Loop, Parse, text, `,, %A_Space%
+	Loop Parse, text, ",", A_Space
 		if (RegExMatch(A_LoopField, "^(default|collect|boss|dungeon|farm)$"))
-			w[A_LoopField] := 1
+			w[A_LoopField] := 1 ;  V1toV2: Invalid Index errors?, try 'w.Push(<val>)'
 	return w
 	}
 
 ;One deck's file read ("" if it isn't one): field|value lines, then key:value settings - only those a deck may set
 DeckLoad(file)
 	{
-	SplitPath, file, , , , id
-	d := {id: id, file: file, name: id, school: "any", eqset: 0, when: {}, priority: 0, vals: {}}
+	SplitPath(file, , , , &id)
+	d := map("id", id, "file", file, "name", id, "school", "any", "eqset", 0, "when", {), priority: 0, vals: {}}
 	allowed := {}
 	for i, k in DeckKeys()
-		allowed[k] := 1
+		allowed[k] := 1 ;  V1toV2: Invalid Index errors?, try 'allowed.Push(<val>)'
 	dropped := ""
-	Loop, Read, %file%
+	Loop Read, file
 		{
 		line := Trim(RegExReplace(A_LoopReadLine, "\s;.*$"))
 		if (line = "" || SubStr(line, 1, 1) = ";")
 			continue
-		if (RegExMatch(line, "^(\w+)\|(.*)$", m))
+		if (RegExMatch(line, "^(\w+)\|(.*)$", &m))
 			{
-			if (m1 = "name")
-				d.name := Trim(SubStr(RegExReplace(m2, "[^\x20-\x7E]|\|", ""), 1, 30))
-			else if (m1 = "school")
-				d.school := RegExMatch(Trim(m2), "i)^(storm|fire|myth|balance|ice|life|death)$") ? Format("{:L}", Trim(m2)) : "any"
-			else if (m1 = "eqset")
-				d.eqset := RegExMatch(Trim(m2), "^[0-9]$") ? Trim(m2) + 0 : 0
-			else if (m1 = "when")
-				d.when := DeckWhenOf(m2)
-			else if (m1 = "priority")
-				d.priority := RegExMatch(Trim(m2), "^-?\d{1,3}$") ? Trim(m2) + 0 : 0
+			if (m[1] = "name")
+				d.name := Trim(SubStr(RegExReplace(m[2], "[^\x20-\x7E]|\|", ""), 1, 30))
+			else if (m[1] = "school")
+				d.school := RegExMatch(Trim(m2), "i)^(storm|fire|myth|balance|ice|life|death)$") ? Format("{:L}", Trim(m[2])) : "any"
+			else if (m[1] = "eqset")
+				d.eqset := RegExMatch(Trim(m2), "^[0-9]$") ? Trim(m[2]) + 0 : 0
+			else if (m[1] = "when")
+				d.when := DeckWhenOf(m[2])
+			else if (m[1] = "priority")
+				d.priority := RegExMatch(Trim(m2), "^-?\d{1,3}$") ? Trim(m[2]) + 0 : 0
 			continue
 			}
-		if (RegExMatch(line, "^([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?$", m))
+		if (RegExMatch(line, "^([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?$", &m))
 			{
-			StringLower, k, m1
-			if (allowed.HasKey(k))
-				d.vals[k] := m2 + 0
+			k := StrLower(m[1])
+			if (allowed.Has(k))
+				d.vals[k] := m[2] + 0 ;  V1toV2: Invalid Index errors?, try 'd.vals.Push(<val>)'
 			else
 				dropped .= (dropped = "" ? "" : ", ") k
 			}
@@ -199,15 +199,20 @@ DeckSave(d)
 	text := "; Wiz-Maxxing deck (the dashboard's Cards tab). A setting not here: your Settings' (your school's, then the plain one)`r`n"
 		. "name|" d.name "`r`nschool|" d.school "`r`neqset|" d.eqset "`r`nwhen|" w "`r`npriority|" d.priority "`r`n"
 	for i, k in DeckKeys()
-		if (d.vals.HasKey(k))
+		if (d.vals.Has(k))
 			text .= k ":" d.vals[k] "`r`n"
-	FileCreateDir, % DeckDir()
+	DirCreate(DeckDir())
 	f := FileOpen(d.file ".tmp", "w", "UTF-8-RAW")
 	if (!IsObject(f))
 		return false
 	f.Write(text)
 	f.Close()
-	FileMove, % d.file ".tmp", % d.file, 1
+	Try {
+		FileMove(d.file ".tmp", d.file, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	return !ErrorLevel
 	}
 
@@ -231,16 +236,16 @@ DeckById(id)
 ;there were no boss (the deck an Elite is measured against - DeckBestHit)
 DeckPick(inBattle, noBoss := false)
 	{
-	if (!IsObject(DeckList) || !DeckList.Length())
+	if (!IsObject(DeckList) || !DeckList.Length)
 		return {deck: "", why: "no decks"}
-	sch := inBattle && hitschool != "" ? hitschool : IsFunc("StatsSchoolOf") ? Func("StatsSchoolOf").Call(Func("StatsCharID").Call()) : ""
+	sch := inBattle && hitschool != "" ? hitschool : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	if (IsObject(DgRun) && DgRun.deck != "")
 		{
 		d := DeckById(DgRun.deck)
 		if (IsObject(d))
 			return {deck: d, why: "the dungeon run " DgRun.name "'s"}
 		}
-	IniRead, pin, %A_ScriptDir%\dashboard.ini, decks, pin, %A_Space%
+	pin := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (pin != "")
 		{
 		d := DeckById(pin)
@@ -277,12 +282,12 @@ DeckPick(inBattle, noBoss := false)
 			;(no Equipment Set: it puts no cards on - the deck for what this battle is)
 			if (!best.eqset)
 				continue
-			IniRead, onSet, %A_ScriptDir%\dashboard.ini, decks, % "eqset" (IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""), %A_Space%
+			onSet := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (IsFunc("StatsCharID") ? StatsCharID.Call() : ""), A_Space)
 			if (onSet != "" && onSet != best.eqset)
 				continue
 			}
 		if (IsObject(best))
-			return {deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0}
+			return (AHKv1v2_Temp := {deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 		}
 	return {deck: "", why: "no deck for this"}
 	}
@@ -351,8 +356,8 @@ DeckRound()
 	;DeckTick): pressed at the battle's start or under a dialog, maybe not taken)
 	if (drNew && DeckEqAt && BookSeenAt < DeckEqAt + 500)
 		{
-		drWho := IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""
-		IniDelete, %A_ScriptDir%\dashboard.ini, decks, eqset%drWho%
+		drWho := IsFunc("StatsCharID") ? StatsCharID.Call() : ""
+		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "eqset" drWho)
 		}
 	drFoe := 0
 	if (!DeckFoeKnown && DeckFoeTries < 3 && DeckBossWanted())
@@ -378,24 +383,24 @@ DeckRound()
 DeckEquip(d, soon := false)
 	{
 	static at := {}
-	secs := Stats.HasKey("handsoff") ? Stats["handsoff"] : 3
-	if (!d.eqset || !BotOn || inbattle = 1 || WkLoading || (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call())
+	secs := Stats.Has("handsoff") ? Stats["handsoff"] : 3
+	if (!d.eqset || !BotOn || inbattle = 1 || WkLoading || (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
 		|| !GameActive() || UserIdle() < Max(3, secs) * 1000 || (DeckEqAt && A_TickCount - DeckEqAt < (soon ? 10000 : 60000)))
 		return false
-	who := IsFunc("StatsCharID") ? Func("StatsCharID").Call() : ""
-	IniRead, was, %A_ScriptDir%\dashboard.ini, decks, eqset%who%, %A_Space%
-	if (was = d.eqset && at.HasKey(who) && A_TickCount - at[who] < 900000)
+	who := IsFunc("StatsCharID") ? StatsCharID.Call() : ""
+	was := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" who, A_Space)
+	if (was = d.eqset && at.Has(who) && A_TickCount - at[who] < 900000)
 		return false
-	at[who] := A_TickCount
+	at[who] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'at.Push(<val>)'
 	DeckEqAt := A_TickCount
 	if (KeysDown || HeldW)
 		ReleaseKeys()
-	Sleep, 150
+	Sleep(150)
 	key := d.eqset
-	Send, {Blind}^%key%
-	IniWrite, % d.eqset, %A_ScriptDir%\dashboard.ini, decks, eqset%who%
+	Send("{Blind}^" key)
+	IniWrite(d.eqset, A_ScriptDir "\dashboard.ini", "decks", "eqset" who)
 	DebugLog("Deck: " d.name "'s in-game deck put on - Equipment Set " d.eqset " (Ctrl+" d.eqset ")" (was = d.eqset ? " again" : ""))
-	Sleep, 400
+	Sleep(400)
 	return true
 	}
 
@@ -405,28 +410,28 @@ DeckFilterHand()
 	if (!IsObject(DeckNow))
 		return
 	v := DeckNow.vals
-	if (v.HasKey("usehit1") && !v.usehit1)
+	if (v.Has("usehit1") && !v.usehit1)
 		hit1 := 0
-	if (v.HasKey("usehit2") && !v.usehit2)
+	if (v.Has("usehit2") && !v.usehit2)
 		hit2 := 0
-	if (v.HasKey("usehit3") && !v.usehit3)
+	if (v.Has("usehit3") && !v.usehit3)
 		hit3 := 0
-	if (v.HasKey("usehit4") && !v.usehit4)
+	if (v.Has("usehit4") && !v.usehit4)
 		hit4 := 0
-	if (v.HasKey("useheal") && !v.useheal)
+	if (v.Has("useheal") && !v.useheal)
 		heal1 := 0, heal2 := 0
-	if (v.HasKey("usewand") && !v.usewand)
+	if (v.Has("usewand") && !v.usewand)
 		wand := 0
 	}
 
 ;A setting as deck d has it for school sch: its own, else your school's, else the plain one (0 none)
 DeckStatFor(d, sch, key)
 	{
-	if (IsObject(d) && d.vals.HasKey(key))
+	if (IsObject(d) && d.vals.Has(key))
 		return d.vals[key]
-	if (sch != "" && Stats.HasKey(sch "." key))
+	if (sch != "" && Stats.Has(sch "." key))
 		return Stats[sch "." key]
-	return Stats.HasKey(key) ? Stats[key] : 0
+	return Stats.Has(key) ? Stats[key] : 0
 	}
 
 ;What a hit of deck d can deal, as a range (you asked 2026-10-24): {lo, hi, hiNoCrit, loName, hiName, boosts, guess, none,
@@ -439,7 +444,7 @@ DeckStatFor(d, sch, key)
 ;none: no hit known for it
 DeckDamage(d)
 	{
-	sch := (IsObject(d) && d.school != "any") ? d.school : IsFunc("StatsSchoolOf") ? Func("StatsSchoolOf").Call(Func("StatsCharID").Call()) : ""
+	sch := (IsObject(d) && d.school != "any") ? d.school : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	out := {lo: "", hi: "", loName: "", hiName: "", boosts: "", guess: false, none: true, school: sch}
 	if (sch = "")
 		return out
@@ -447,42 +452,42 @@ DeckDamage(d)
 	;(the slots' hits it plays)
 	for i, slot in ["hit1", "hit2", "hit3", "hit4"]
 		{
-		if (!DeckStatFor(d, sch, "use" slot) && (IsObject(d) && d.vals.HasKey("use" slot)))
+		if (!DeckStatFor(d, sch, "use" slot) && (IsObject(d) && d.vals.Has("use" slot)))
 			continue
-		lo := Stats.HasKey(sch "." slot) ? Stats[sch "." slot] : 0
+		lo := Stats.Has(sch "." slot) ? Stats[sch "." slot] : 0
 		;(none: its heads typed one line a head - balance.hit3fire, .hit3ice, .hit3storm for a Hydra - added up, as the kill
 		;check counts them: KillCalc.ahk HitHeadsFind)
 		if (lo <= 0)
 			for ddI, ddS in ["balance", "death", "fire", "ice", "life", "myth", "storm"]
-				lo += Stats.HasKey(sch "." slot ddS) ? Stats[sch "." slot ddS] : 0
+				lo += Stats.Has(sch "." slot ddS) ? Stats[sch "." slot ddS] : 0
 		if (lo <= 0)
 			continue
 		hi := DeckSlotHigh(sch, slot)
-		name := IsFunc("DashShortName") ? Func("DashShortName").Call(slot, sch) : slot
+		name := IsFunc("DashShortName") ? DashShortName.Call(slot, sch) : slot
 		;(an X-pip hit - its pips 0: its number a pip's - 1 pip at the least, 14 at the most: 7 power pips)
-		if (Stats.HasKey(sch "." slot "pips") && Stats[sch "." slot "pips"] = 0 && slot != "wand")
-			hits.Push({lo: lo, hi: (hi != "" ? hi : lo) * 14, guess: hi = "", name: name " (X pips)"})
+		if (Stats.Has(sch "." slot "pips") && Stats[sch "." slot "pips"] = 0 && slot != "wand")
+			hits.Push({lo: lo, hi: (hi != "" ? hi : lo) * 14, guess: hi := "", name: name " (X pips)"})
 		else
-			hits.Push({lo: lo, hi: hi != "" ? hi : lo, guess: hi = "", name: name})
+			hits.Push({lo: lo, hi: hi != "" ? hi : lo, guess: hi := "", name: name})
 		}
 	;(learned hits in no slot, when it casts them: learnedhits)
 	if (DeckStatFor(d, sch, "learnedhits") != 0 && IsObject(LearnedCards))
 		for i, c in LearnedCards
 			if ((c.type = "damage" || c.type = "aoe") && c.sch = sch && c.slot = "" && !LearnHasFlag(c, "skip"))
 				{
-				lo := IsFunc("LearnHitBase") ? Func("LearnHitBase").Call(c) : c.value
+				lo := IsFunc("LearnHitBase") ? LearnHitBase.Call(c) : c.value
 				if (lo = "" || lo <= 0)
 					continue
 				hi := DeckRangeTop(c.text)
 				hi := hi != "" && hi >= lo ? hi : lo
 				xp := LearnHasFlag(c, "xpip")
-				hits.Push({lo: lo, hi: xp ? hi * 14 : hi, guess: hi = lo, name: (c.name != "" ? c.name : "a learned hit") (xp ? " (X pips)" : "")})
+				hits.Push({lo: lo, hi: xp ? hi * 14 : hi, guess: hi := lo, name: (c.name != "" ? c.name : "a learned hit") (xp ? " (X pips)" : "")})
 				}
-	if (!hits.Length())
+	if (!hits.Length)
 		return out
-	dmgPct := Stats.HasKey(sch ".damage") ? Stats[sch ".damage"] : Stats.HasKey("damage") ? Stats.damage : 0
-	critR := Stats.HasKey(sch ".critical") ? Stats[sch ".critical"] : Stats.HasKey("critical") ? Stats.critical : 0
-	mult := IsFunc("DamageMultiplier") ? Func("DamageMultiplier").Call(dmgPct) : 1
+	dmgPct := Stats.Has(sch ".damage") ? Stats[sch ".damage"] : Stats.Has("damage") ? Stats.damage : 0
+	critR := Stats.Has(sch ".critical") ? Stats[sch ".critical"] : Stats.Has("critical") ? Stats.critical : 0
+	mult := IsFunc("DamageMultiplier") ? DamageMultiplier.Call(dmgPct) : 1
 	weak := "", strong := ""
 	for i, h in hits
 		{
@@ -496,7 +501,7 @@ DeckDamage(d)
 	;for balance. Balance's own blade and trap are Balanceblade and Hex - blade3, trap3: counted once, as the kill check
 	;does - KillCalc.ahk BoostKey)
 	boost := 1, names := ""
-	grp := IsFunc("SchoolGroup") ? Func("SchoolGroup").Call(sch) : ""
+	grp := IsFunc("SchoolGroup") ? SchoolGroup.Call(sch) : ""
 	b2 := grp = "elemental" ? "elementalblade" : grp = "spirit" ? "spiritblade" : ""
 	t2 := grp = "elemental" ? "elementaltrap" : grp = "spirit" ? "spirittrap" : ""
 	ddB := (sch = "balance") ? [b2, "blade3", "blade4"] : ["blade", b2, "blade3", "blade4"]
@@ -557,11 +562,11 @@ DeckRangeTop(text)
 	at := RegExMatch(text, "i)over\s*\d|r[o0]unds?\b")
 	head := at ? SubStr(text, 1, at - 1) : text
 	sum := 0, n := 0, p := 1
-	while (p := RegExMatch(head, "O)(\d+)\s*-\s*(\d+)", m, p))
+	while (p := RegExMatch(head, "(\d+)\s*-\s*(\d+)", &m, (p)<1 ? (p)-1 : (p)))
 		{
-		if (m.Value(2) + 0 >= m.Value(1) + 0)
-			sum += m.Value(2) + 0, n += 1
-		p += StrLen(m.Value(0))
+		if (m[2] + 0 >= m[1] + 0)
+			sum += m[2] + 0, n += 1
+		p += StrLen(m[0])
 		}
 	return n ? sum : ""
 	}
@@ -607,7 +612,7 @@ DeckBossLook()
 	{
 	;(the zone from the game's log now: WkZoneAt and WkLoading up to date before the mobs are read)
 	if (IsFunc("WalkZone"))
-		Func("WalkZone").Call(true)
+		WalkZone.Call(true)
 	;(the bot off, or another zone since it was last found ahead: let go - not kept for a fight it won't be in)
 	if (IsObject(DeckBoss) && (!BotOn || (WkZoneAt && WkZoneAt > DeckBoss.seenAt)))
 		{
@@ -616,7 +621,7 @@ DeckBossLook()
 		}
 	if (!DeckBossWanted() || !BotOn || inbattle = 1 || WkLoading || !IsFunc("NavMobs"))
 		return
-	if (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call())
+	if (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call())
 		return
 	dblNow := A_TickCount
 	;(a battle over while it was on - the boss's, or one the game's memory couldn't name: let go now unless it's still
@@ -628,7 +633,7 @@ DeckBossLook()
 		DeckBoss.battled := 0, DeckBoss.battlesAt := battles, DeckBoss.inBattle := "", DeckBoss.seenAt := dblNow
 		}
 	dblGoal := (WkGoalLineAt && dblNow - WkGoalLineAt < 30000) ? WkGoalLine : ""
-	dblMobs := Func("NavMobs").Call(dblGoal)
+	dblMobs := NavMobs.Call(dblGoal)
 	;(not read - the helper busy, an ERR, navmem off: as it is - no switching on a missed reading; 60 in a row, about 2
 	;minutes - the helper stopped for good: let go)
 	if (!IsObject(dblMobs))
@@ -688,7 +693,7 @@ DeckBossFind(dbfMobs, holdKey := "")
 	for dbfI, dbfM in dbfMobs
 		{
 		dbfNote := ""
-		dbfKind := DeckMobKind(dbfM.boss, dbfM.title, dbfM.health, dbfNote)
+		dbfKind := DeckMobKind(dbfM.boss, dbfM.title, dbfM.health, &dbfNote)
 		if (dbfKind = "")
 			continue
 		dbfKey := DeckLetters(dbfM.name)
@@ -725,7 +730,7 @@ DeckBossIn(dbiMobs, dbiB)
 ;What a mob is for the decks: "boss" (the game's own boss flag, or its title Boss), "elite" (its title Elite and its max
 ;health takes 3 or more of your best hits - DeckBestHit: note says how many), else "" (an Elite under 3 hits, or your best
 ;hit not known: not counted)
-DeckMobKind(dmkBoss, dmkTitle, dmkHealth, ByRef dmkNote := "")
+DeckMobKind(dmkBoss, dmkTitle, dmkHealth, &dmkNote := "")
 	{
 	dmkNote := ""
 	if (dmkBoss = 1 || dmkTitle = "Boss")
@@ -750,7 +755,7 @@ DeckBestHit()
 	if (dbhAt && A_TickCount - dbhAt < 30000)
 		return dbhKeep
 	dbhAt := A_TickCount
-	dbhP := DeckPick(inbattle = 1, true)
+	dbhP := DeckPick(inbattle := 1, true)
 	dbhR := DeckDamage(dbhP.deck)
 	dbhKeep := (dbhR.none || dbhR.hiNoCrit = "") ? "" : dbhR.hiNoCrit
 	return dbhKeep
@@ -766,8 +771,8 @@ DeckBossText(dbtName, dbtRank, dbtKind, dbtNote := "")
 DeckLetters(dlText)
 	{
 	if (IsFunc("WalkLetters"))
-		return Func("WalkLetters").Call(dlText)
-	StringUpper, dlText, dlText
+		return WalkLetters.Call(dlText)
+	dlText := StrUpper(dlText)
 	return RegExReplace(dlText, "[^A-Z]")
 	}
 
@@ -778,10 +783,10 @@ DeckDgAhead(ddaM)
 	if (!IsObject(DgRun) || !IsObject(DgRun.steps) || ddaM.x = "" || ddaM.y = "")
 		return false
 	ddaI := DgRun.i >= 1 ? DgRun.i : 1
-	if (ddaI > DgRun.steps.Length())
+	if (ddaI > DgRun.steps.Length)
 		return false
 	ddaZone := DgRun.steps[ddaI].zone
-	while (ddaI <= DgRun.steps.Length() && DgRun.steps[ddaI].zone = ddaZone)
+	while (ddaI <= DgRun.steps.Length && DgRun.steps[ddaI].zone = ddaZone)
 		{
 		ddaS := DgRun.steps[ddaI]
 		if ((ddaS.x - ddaM.x) ** 2 + (ddaS.y - ddaM.y) ** 2 <= 1000000)
@@ -797,7 +802,7 @@ DeckDgAhead(ddaM)
 ;again next round)
 DeckFoeLook()
 	{
-	dflB := IsFunc("NavBattle") ? Func("NavBattle").Call() : ""
+	dflB := IsFunc("NavBattle") ? NavBattle.Call() : ""
 	if (!IsObject(dflB))
 		{
 		if (IsObject(DeckBoss))
@@ -816,7 +821,7 @@ DeckFoeLook()
 		dflSaid .= (dflSaid = "" ? "" : ", ") (dflF.name != "" ? dflF.name : "?") " (" (dflF.title != "" ? dflF.title : dflF.boss = 1 ? "boss" : "?")
 			. (dflF.rank != "" ? " rank " dflF.rank : "") ", " dflF.health "/" dflF.max ")"
 		dflNote := ""
-		dflKind := DeckMobKind(dflF.boss, dflF.title, dflF.max, dflNote)
+		dflKind := DeckMobKind(dflF.boss, dflF.title, dflF.max, &dflNote)
 		if (dflKind = "")
 			continue
 		if (IsObject(dflBest) && (dflKind != dflBest.kind ? dflKind != "boss" : (dflF.max = "" || (dflBest.max != "" && dflF.max <= dflBest.max))))
@@ -825,7 +830,7 @@ DeckFoeLook()
 		}
 	DeckFoe := dflBest
 	;(known: a boss among them, or every one's title read - else looked at again next round, its first 3 at most)
-	DeckFoeKnown := (IsObject(dflBest) && dflBest.kind = "boss") || (dflAll && dflB.foes.Length()) ? 1 : 0
+	DeckFoeKnown := (IsObject(dflBest) && dflBest.kind = "boss") || (dflAll && dflB.foes.Length) ? 1 : 0
 	DebugLog("  Deck: the battle's enemies (the game's memory): " (dflSaid != "" ? dflSaid : "none read") (IsObject(dflBest) ? " - a " dflBest.kind ": " dflBest.name : "")
 		. (DeckFoeKnown ? "" : " (not all known yet - looked at again next round)"))
 	if (IsObject(DeckBoss))
@@ -846,17 +851,17 @@ DeckButtonsShow()
 	{
 	if (!DashHwnd || !IsObject(DeckList))
 		return
-	Loop, 6
+	Loop 6
 		{
-		if (A_Index <= DeckList.Length())
+		if (A_Index <= DeckList.Length)
 			{
-			GuiControl, Dash:Text, DeckView%A_Index%, % SubStr(DeckList[A_Index].name, 1, 14)
-			GuiControl, Dash:Show, DeckView%A_Index%
+			ogcDeckView%A_Index%.Text := SubStr(DeckList[A_Index].name, 1, 14)
+			ogcDeckView%A_Index%.Visible := true
 			}
 		else
-			GuiControl, Dash:Hide, DeckView%A_Index%
+			ogcDeckView%A_Index%.Visible := false
 		}
-	GuiControl, % "Dash:" (DeckList.Length() >= 6 ? "Hide" : "Show"), DeckAddBtn
+	GuiControl, % "Dash:" (DeckList.Length() >= 6 ? "Hide" : "Show"), DeckAddBtn ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 DeckHandCtrls()
@@ -878,20 +883,20 @@ DeckViewShow(n)
 		return
 	if (!IsObject(DeckList))
 		DeckLoadAll()
-	if (n > DeckList.Length())
+	if (n > DeckList.Length)
 		n := 0
 	DeckView := n
-	GuiControl, Dash:, DeckView%n%, 1
+	ogcDeckView%n%.Value := 1
 	for i, c in DeckHandCtrls()
-		GuiControl, % "Dash:" (n ? "Hide" : "Show"), %c%
-	Loop, 7
+		GuiControl, % "Dash:" (n ? "Hide" : "Show"), %c% ; V1toV2: Ternary not yet supported (coming soon)
+	Loop 7
 		{
 		p := IsObject(DashCardWant) && DashCardWant["p" A_Index], t := IsObject(DashCardWant) && DashCardWant["t" A_Index]
-		GuiControl, % "Dash:" (!n && p ? "Show" : "Hide"), DashCardPic%A_Index%
-		GuiControl, % "Dash:" (!n && t ? "Show" : "Hide"), DashCardTxt%A_Index%
+		GuiControl, % "Dash:" (!n && p ? "Show" : "Hide"), DashCardPic%A_Index% ; V1toV2: Ternary not yet supported (coming soon)
+		GuiControl, % "Dash:" (!n && t ? "Show" : "Hide"), DashCardTxt%A_Index% ; V1toV2: Ternary not yet supported (coming soon)
 		}
 	for i, c in DeckFormCtrls()
-		GuiControl, % "Dash:" (n ? "Show" : "Hide"), %c%
+		GuiControl, % "Dash:" (n ? "Show" : "Hide"), %c% ; V1toV2: Ternary not yet supported (coming soon)
 	if (n)
 		DeckFormFill(DeckCopy(DeckList[n]))
 	}
@@ -908,17 +913,17 @@ DeckCopy(d)
 DeckFormFill(d)
 	{
 	DeckEdit := d
-	GuiControl, Dash:, DeckFName, % d.name
-	GuiControl, Dash:ChooseString, DeckFSchool, % d.school
-	GuiControl, Dash:, DeckFSet, % d.eqset
-	GuiControl, Dash:, DeckFPri, % d.priority
+	ogcDeckFName.Value := d.name
+	ogcDeckFSchool.Choose(d.school)
+	ogcDeckFSet.Value := d.eqset
+	ogcDeckFPri.Value := d.priority
 	for k, c in {default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"}
-		GuiControl, Dash:, %c%, % d.when[k] ? 1 : 0
-	IniRead, pin, %A_ScriptDir%\dashboard.ini, decks, pin, %A_Space%
-	GuiControl, Dash:, DeckFPin, % pin = d.id ? 1 : 0
-	GuiControl, Dash:, DeckFDmg, % DeckDamageText(d)
+		GuiControl, Dash:, %c%, % d.when[k] ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
+	pin := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
+	GuiControl, Dash:, DeckFPin, % pin = d.id ? 1 : 0 ; V1toV2: Ternary not yet supported (coming soon)
+	ogcDeckFDmg.Value := DeckDamageText(d)
 	DeckListFill(d)
-	GuiControl, Dash:, DeckFNote, % IsObject(DeckNow) && DeckNow.id = d.id ? "In use now (" DeckWhy ")" : ""
+	GuiControl, Dash:, DeckFNote, % IsObject(DeckNow) && DeckNow.id = d.id ? "In use now (" DeckWhy ")" : "" ; V1toV2: Ternary not yet supported (coming soon)
 	}
 
 ;A setting's value in words: on/off, a pick's name, a number
@@ -928,7 +933,7 @@ DeckValText(s, v)
 		return ""
 	if (s.kind = "check")
 		return v ? "on" : "off"
-	if (s.kind = "pick" && IsObject(s.picks) && s.picks.HasKey(v))
+	if (s.kind = "pick" && IsObject(s.picks) && s.picks.Has(v))
 		return v " - " s.picks[v]
 	return v
 	}
@@ -937,35 +942,37 @@ DeckValText(s, v)
 ;the plain one)
 DeckListFill(d)
 	{
-	Gui, Dash:Default
+	;Gui, Dash:Default ; V1toV2: removed
+	V1toV2_LineFill := true ; remove me after inspection
 	prevLV := A_DefaultListView
-	Gui, Dash:ListView, DeckFList
-	GuiControl, Dash:-Redraw, DeckFList
-	LV_Delete()
-	sch := d.school != "any" ? d.school : IsFunc("StatsSchoolOf") ? Func("StatsSchoolOf").Call(Func("StatsCharID").Call()) : ""
+	Gui, Dash:ListView, DeckFList ; V1toV2: [DeckFList] not found. Manual edit required.
+	ogcDeckFList.Opt("-Redraw")
+	LV.Delete()
+	sch := d.school != "any" ? d.school : IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	for i, k in DeckKeys()
 		{
 		s := DeckKeyInfo(k)
-		mine := d.vals.HasKey(k) ? DeckValText(s, d.vals[k]) : ""
-		other := (sch != "" && Stats.HasKey(sch "." k)) ? Stats[sch "." k] : Stats.HasKey(k) ? Stats[k] : s.def
-		LV_Add("", s.label, mine, DeckValText(s, other), k)
+		mine := d.vals.Has(k) ? DeckValText(s, d.vals[k]) : ""
+		other := (sch != "" && Stats.Has(sch "." k)) ? Stats[sch "." k] : Stats.Has(k) ? Stats[k] : s.def
+		LV.Add("", s.label, mine, DeckValText(s, other), k)
 		}
-	GuiControl, Dash:+Redraw, DeckFList
+	ogcDeckFList.Opt("+Redraw")
 	if (prevLV != "" && prevLV != "DeckFList")
-		Gui, Dash:ListView, %prevLV%
+		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	}
 
 ;The key of the setting picked in the list ("" none)
-DeckListKey(ByRef row := 0)
+DeckListKey(&row := 0)
 	{
-	Gui, Dash:Default
+	;Gui, Dash:Default ; V1toV2: removed
+	V1toV2_LineFill := true ; remove me after inspection
 	prevLV := A_DefaultListView
-	Gui, Dash:ListView, DeckFList
-	row := LV_GetNext(0), key := ""
+	Gui, Dash:ListView, DeckFList ; V1toV2: [DeckFList] not found. Manual edit required.
+	row := LV.GetNext(0), key := ""
 	if (row)
-		LV_GetText(key, row, 4)
+		key := LV.GetText(row)
 	if (prevLV != "" && prevLV != "DeckFList")
-		Gui, Dash:ListView, %prevLV%
+		Gui, Dash:ListView, %prevLV% ; V1toV2: [%prevLV%] not found. Manual edit required.
 	return key
 	}
 
@@ -975,28 +982,28 @@ DeckFormRead()
 	d := DeckEdit
 	if (!IsObject(d))
 		return ""
-	GuiControlGet, v, Dash:, DeckFName
+	v := ogcDeckFName.Value
 	d.name := Trim(SubStr(RegExReplace(v, "[^\x20-\x7E]|\|", ""), 1, 30))
 	d.name := d.name != "" ? d.name : d.id
-	GuiControlGet, v, Dash:, DeckFSchool
+	v := ogcDeckFSchool.Value
 	d.school := v != "" ? v : "any"
-	GuiControlGet, v, Dash:, DeckFSet
+	v := ogcDeckFSet.Value
 	d.eqset := RegExMatch(v, "^[0-9]$") ? v + 0 : 0
-	GuiControlGet, v, Dash:, DeckFPri
+	v := ogcDeckFPri.Value
 	d.priority := RegExMatch(v, "^-?\d{1,3}$") ? v + 0 : 0
 	d.when := {}
 	for k, c in {default: "DeckFWDefault", collect: "DeckFWCollect", boss: "DeckFWBoss", dungeon: "DeckFWDungeon", farm: "DeckFWFarm"}
 		{
-		GuiControlGet, v, Dash:, %c%
+		v := ogc%c%.Value
 		if (v)
-			d.when[k] := 1
+			d.when[k] := 1 ;  V1toV2: Invalid Index errors?, try 'd.when.Push(<val>)'
 		}
 	return d
 	}
 
 DeckSay(text)
 	{
-	GuiControl, Dash:, DeckFNote, %text%
+	ogcDeckFNote.Value := text
 	}
 
 ;A new deck's id (its file's name): when it was made - never a deleted deck's (a dungeon run naming that one would take
@@ -1004,7 +1011,7 @@ DeckSay(text)
 DeckNewId()
 	{
 	id := "deck" A_Now
-	Loop, 99
+	Loop 99
 		{
 		if (!FileExist(DeckDir() "\" id ".txt"))
 			return id
@@ -1022,7 +1029,7 @@ DeckListEvent:
 	if (A_GuiEvent = "I" && InStr(ErrorLevel, "S") && IsObject(DeckEdit))
 		{
 		DeckKey := DeckListKey()
-		GuiControl, Dash:, DeckFVal, % DeckKey != "" && DeckEdit.vals.HasKey(DeckKey) ? DeckEdit.vals[DeckKey] : ""
+		GuiControl, Dash:, DeckFVal, % DeckKey != "" && DeckEdit.vals.HasKey(DeckKey) ? DeckEdit.vals[DeckKey] : "" ; V1toV2: Ternary not yet supported (coming soon)
 		}
 	return
 
@@ -1038,31 +1045,31 @@ DeckValClear:
 		DeckEdit.vals.Delete(DeckKey), DeckSay(DeckKey ": not set by this deck - Save to keep it")
 	else
 		{
-		GuiControlGet, DeckV, Dash:, DeckFVal
+		DeckV := ogcDeckFVal.Value
 		DeckS := DeckKeyInfo(DeckKey)
 		DeckV := Trim(DeckV)
-		DeckLo := DeckS.kind = "check" ? 0 : DeckS.kind = "pick" ? 1 : DeckS.lo, DeckHi := DeckS.kind = "check" ? 1 : DeckS.kind = "pick" ? DeckS.picks.Length() : DeckS.hi
+		DeckLo := DeckS.kind = "check" ? 0 : DeckS.kind = "pick" ? 1 : DeckS.lo, DeckHi := DeckS.kind = "check" ? 1 : DeckS.kind = "pick" ? DeckS.picks.Length : DeckS.hi
 		if (!RegExMatch(DeckV, "^-?\d+(\.\d+)?$") || (DeckLo != "" && DeckV < DeckLo) || (DeckHi != "" && DeckV > DeckHi))
 			{
 			DeckSay(DeckS.label ": " (DeckS.kind = "check" ? "1 (on) or 0 (off)" : DeckLo " to " DeckHi))
 			return
 			}
-		DeckEdit.vals[DeckKey] := DeckV + 0, DeckSay(DeckKey " " DeckV + 0 " for this deck - Save to keep it")
+		DeckEdit.vals[DeckKey] := DeckV + 0, DeckSay(DeckKey " " DeckV + 0 " for this deck - Save to keep it") ;  V1toV2: Invalid Index errors?, try 'DeckEdit.vals.Push(<val>)'
 		}
 	DeckListFill(DeckEdit)
-	GuiControl, Dash:, DeckFDmg, % DeckDamageText(DeckEdit)
+	ogcDeckFDmg.Value := DeckDamageText(DeckEdit)
 	return
 
 DeckSaveClick:
 	DeckD := DeckFormRead()
 	if (!IsObject(DeckD))
 		return
-	GuiControlGet, DeckPinOn, Dash:, DeckFPin
-	IniRead, DeckPinWas, %A_ScriptDir%\dashboard.ini, decks, pin, %A_Space%
+	DeckPinOn := ogcDeckFPin.Value
+	DeckPinWas := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (DeckPinOn)
-		IniWrite, % DeckD.id, %A_ScriptDir%\dashboard.ini, decks, pin
+		IniWrite(DeckD.id, A_ScriptDir "\dashboard.ini", "decks", "pin")
 	else if (DeckPinWas = DeckD.id)
-		IniDelete, %A_ScriptDir%\dashboard.ini, decks, pin
+		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "pin")
 	if (DeckSave(DeckD))
 		{
 		;(read again from the files at once - the deck in use too - and the pick made afresh out of battle: DeckTick)
@@ -1082,7 +1089,7 @@ DeckCopyClick:
 DeckAddClick:
 	if (!IsObject(DeckList))
 		DeckLoadAll()
-	if (DeckList.Length() >= 6)
+	if (DeckList.Length >= 6)
 		{
 		DeckSay("Six decks at most on the tab - delete one first")
 		return
@@ -1101,13 +1108,13 @@ DeckAddClick:
 DeckDelClick:
 	if (!IsObject(DeckEdit))
 		return
-	MsgBox, 262180, Decks, % "Delete the deck '" DeckEdit.name "'? Its file goes (" DeckEdit.file "); your Settings aren't touched."
-	IfMsgBox, No
+	msgResult := MsgBox("Delete the deck '" DeckEdit.name "'? Its file goes (" DeckEdit.file "); your Settings aren't touched.", "Decks", 262180)
+	if (msgResult = "No")
 		return
-	FileDelete, % DeckEdit.file
-	IniRead, DeckPinWas, %A_ScriptDir%\dashboard.ini, decks, pin, %A_Space%
+	Try FileDelete(DeckEdit.file)
+	DeckPinWas := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	if (DeckPinWas = DeckEdit.id)
-		IniDelete, %A_ScriptDir%\dashboard.ini, decks, pin
+		IniDelete(A_ScriptDir "\dashboard.ini", "decks", "pin")
 	DebugLog("Decks: " DeckEdit.name " deleted")
 	DeckEdit := "", DeckLoadAll(), DeckButtonsShow()
 	DeckViewShow(0)

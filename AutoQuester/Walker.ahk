@@ -293,7 +293,7 @@ WalkReset()
 WalkLog(text)
 	{
 	if (IsFunc("DebugLog"))
-		Func("DebugLog").Call("Walk: " text)
+		DebugLog.Call("Walk: " text)
 	}
 
 ;One step towards the quest goal: read the arrow, then walk / turn / stop. Call it over and over while
@@ -329,18 +329,18 @@ WalkStep()
 		if (IsFunc("GameToFront") && UserIdle() > 300000 && A_TickCount - WkFrontLook > 1500)
 			{
 			WkFrontLook := A_TickCount
-			if (Func("GameToFront").Call("nothing touched for 5 minutes, another window in front", true, true))
+			if (GameToFront.Call("nothing touched for 5 minutes, another window in front", true, true))
 				return true
 			}
-		if (IsFunc("GameFrontOn") && Func("GameFrontOn").Call() && A_TickCount - WkFrontLook > 1500)
+		if (IsFunc("GameFrontOn") && GameFrontOn.Call() && A_TickCount - WkFrontLook > 1500)
 			{
 			WkFrontLook := A_TickCount
-			if (ReadArrow() != "" && Func("GameToFront").Call("the quest arrow showed"))
+			if (ReadArrow() != "" && GameToFront.Call("the quest arrow showed"))
 				return true
 			}
 		SetStatus("paused - click into Wizard101 to carry on")
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkNoArrowFrom := 0, WkNoGuideFrom := 0, WkWaitFrom := 0
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 	if (Refocus)
@@ -375,7 +375,7 @@ WalkStep()
 					}
 				}
 			SetStatus((WkWaitWhat = "sigil" ? "entering the sigil" : "on the way (" WkWaitWhat ")") " - waiting " Ceil((WkSigilUntil - A_TickCount) / 1000) " s")
-			Sleep, 300
+			Sleep(300)
 			return true
 			}
 		WalkLog((WkWaitWhat = "sigil" ? "sigil" : "transport") ": waited " Round((WkWaitWhat = "sigil" ? SigilWait : TransportWait) / 1000) " s - walking on")
@@ -392,10 +392,10 @@ WalkStep()
 		}
 	;Reading the arrow is a lot of per-pixel script work: run it at full speed (AutoFarmer keeps the
 	;default speed for everything else, so its loop doesn't hog the CPU)
-	batch := A_BatchLines
-	SetBatchLines, -1
+	batch := -1
+; V1toV2: Removed 	SetBatchLines, -1
 	h := ReadArrow(dist, score)
-	SetBatchLines, %batch%
+; V1toV2: Removed 	SetBatchLines, %batch%
 	if (!Walking)
 		return false
 	seen := (h != "" && score >= MinMatch)
@@ -506,7 +506,7 @@ WalkStep()
 	if ((seen || WkNavD != "") && dist != "")
 		WkLastDist := dist, WkLastDistAt := A_TickCount
 	;(a battle by the game's log counts too - its first round not seen yet: no Escape over it, no notice)
-	if (arrowSeen || inbattle || WkLoading || inbattle = "" || (IsFunc("BattleLogInBattle") && Func("BattleLogInBattle").Call()))
+	if (arrowSeen || inbattle || WkLoading || inbattle = "" || (IsFunc("BattleLogInBattle") && BattleLogInBattle.Call()))
 		{
 		WkNoArrowFrom := 0, WkNoGuideFrom := 0
 		if (arrowSeen)
@@ -629,8 +629,8 @@ WalkStep()
 			WalkZone()
 			if (WalkSigilJustLeft(near))
 				{
-				if (!WkPromptUsed.HasKey("exitlog") || A_TickCount - WkPromptUsed["exitlog"] > 30000)
-					WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " (its dungeon) - not going straight back in")
+				if (!WkPromptUsed.Has("exitlog") || A_TickCount - WkPromptUsed["exitlog"] > 30000)
+					WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " (its dungeon) - not going straight back in") ;  V1toV2: Invalid Index errors?, try 'WkPromptUsed.Push(<val>)'
 				}
 			else if (WalkPromptFree(WkPromptDest, 600000))
 				{
@@ -653,8 +653,8 @@ WalkStep()
 			;quest, or another quest's: the game wants it talked to)
 			if (WalkQuestMarkerTalk(WkPromptDest))
 				return true
-			if (!WkPromptSkip.HasKey(WkPromptDest) || A_TickCount - WkPromptSkip[WkPromptDest] > 60000)
-				WkPromptSkip[WkPromptDest] := A_TickCount, WalkLog("prompt '" SubStr(WkPromptDest, 1, 40) "' - not the quest's (not in the goal line, not near the goal): no X, walking on")
+			if (!WkPromptSkip.Has(WkPromptDest) || A_TickCount - WkPromptSkip[WkPromptDest] > 60000)
+				WkPromptSkip[WkPromptDest] := A_TickCount, WalkLog("prompt '" SubStr(WkPromptDest, 1, 40) "' - not the quest's (not in the goal line, not near the goal): no X, walking on") ;  V1toV2: Invalid Index errors?, try 'WkPromptSkip.Push(<val>)'
 			}
 		;A boat or the like ("BOAT TO GOBBLERTON", "Press X or click to Use") covering the arrow: use it
 		;if it goes where the quest is, otherwise step out of it and walk on
@@ -692,7 +692,7 @@ WalkStep()
 			if (WkTalk < TalkMax * 3 && A_TickCount - WkSpaceAt > TalkGap)
 				PressKey("Space"), WkTalk += 1, WkSpaceAt := A_TickCount
 			SetStatus("pressed X - Space through what it opened")
-			Sleep, 100
+			Sleep(100)
 			return true
 			}
 		if (WkDialog || A_TickCount - WkPressAt > 1200)
@@ -702,7 +702,7 @@ WalkStep()
 			if (WkDialog)
 				WkQuietUntil := A_TickCount + DialogQuiet, WkQuietLogged := 0
 			}
-		Sleep, 100
+		Sleep(100)
 		return true
 		}
 
@@ -745,7 +745,7 @@ WalkStep()
 		;One far reading: wait for a second before deciding it's a new goal
 		if (WkFar = 1)
 			{
-			Sleep, 100
+			Sleep(100)
 			return true
 			}
 		;(what X opened, if not a dialogue: an OK box or a window - a shop - closed first, as after X at a prompt on the way -
@@ -781,7 +781,7 @@ WalkStep()
 					return true
 					}
 				SetStatus("at the goal - waiting for what X opened")
-				Sleep, 300
+				Sleep(300)
 				return true
 				}
 			;X at a World Gate opens the Spiral Map (it covers the arrow too): Go To World, not Space
@@ -799,7 +799,7 @@ WalkStep()
 				PressKey("Space")
 				WkTalk += 1, WkSpaceAt := A_TickCount
 				SetStatus("talking - Space to skip the dialogue (" WkTalk " of " TalkMax ")")
-				Sleep, %TalkGap%
+				Sleep(TalkGap)
 				}
 			else
 				{
@@ -807,7 +807,7 @@ WalkStep()
 				if (WkTalk < TalkMax * 3 && A_TickCount - WkSpaceAt > 1500)
 					PressKey("Space"), WkTalk += 1, WkSpaceAt := A_TickCount
 				SetStatus("waiting - dialogue or loading screen")
-				Sleep, 300
+				Sleep(300)
 				}
 			return true
 			}
@@ -828,12 +828,12 @@ WalkStep()
 			if (standIn || apNear || IsObject(WalkTalkGoal()))
 				{
 				SetStatus("talking - waiting for a dialogue (" WkTalk ")")
-				Sleep, 400
+				Sleep(400)
 				return true
 				}
 			PressKey("Space")
 			SetStatus("talking - Space (" WkTalk ")")
-			Sleep, %TalkGap%
+			Sleep(TalkGap)
 			return true
 			}
 		;(a talk goal by the game's memory - its NPC in this zone: X at it again from close by, facing it - never walked on
@@ -844,7 +844,7 @@ WalkStep()
 			{
 			if (WkDialog && A_TickCount - Max(WkDlgEndAt ? WkDlgEndAt : 0, WkSpaceAt ? WkSpaceAt : 0) < 1500)
 				{
-				Sleep, 100
+				Sleep(100)
 				return true
 				}
 			if (WkDialog)
@@ -857,7 +857,7 @@ WalkStep()
 			{
 			if (A_TickCount - WkTalkAt < 1500)
 				{
-				Sleep, 100
+				Sleep(100)
 				return true
 				}
 			WalkLog("talk: X by the obstacle opened nothing - going round it after all")
@@ -887,7 +887,7 @@ WalkStep()
 			if (!Walking)
 				return false
 			SetStatus("pushing on straight - arrow hidden (door frame or loading screen?)")
-			Sleep, 100
+			Sleep(100)
 			return true
 			}
 		;Walking and the arrow went: an arch, door frame or pillar between the camera and the wizard.
@@ -895,7 +895,7 @@ WalkStep()
 		if (WkArrived = 0 && HeldW && !inbattle && A_TickCount - WkSeenAt < HiddenWalkTime / (SpeedNow ? SpeedNow : 1) && !(WkLastDist != "" && WkLastDist <= OnTopDist))
 			{
 			SetStatus("walking on - arrow hidden (behind something?)")
-			Sleep, 100
+			Sleep(100)
 			return true
 			}
 		if (KeysDown)
@@ -968,7 +968,7 @@ WalkStep()
 			}
 		SetStatus("waiting - no quest arrow on screen (battle, loading or dialogue?)")
 		WkBestDist := "", WkRouteBest := "", WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 
@@ -1027,7 +1027,7 @@ WalkStep()
 		;(right after a turn the arrow doesn't show it yet: see TurnSettle. The game's memory does)
 		if (!WkStraight && !WkNavUse && A_TickCount - WkTurnAt < WalkSettle())
 			{
-			Sleep, 50
+			Sleep(50)
 			return true
 			}
 		if (WkStraight)
@@ -1046,7 +1046,7 @@ WalkStep()
 		if (!Walking)
 			return false
 		SetStatus("pushing on " (WkStraight ? "straight" : "- " (WkNavUse ? "heading " : "arrow ") Round(h) " degrees") ", distance " (dist = "" ? "?" : dist) (WkNavUse ? " (game's memory)" : ""))
-		Sleep, 50
+		Sleep(50)
 		return true
 		}
 
@@ -1071,21 +1071,21 @@ WalkStep()
 			ReleaseKeys(true)
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 		SetStatus("waiting - a mob on the way (" WkNavMobName (WkNavMob != "" ? ", " WkNavMob " s" : "") ")")
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 	;A party's leader (AutoFarmer's Party.ahk): it waits while a follower is far, in another zone or not ready - walking,
 	;not mid-talk or mid-push, and never inside a mob's reach (getting out of it first)
 	if ((WkArrived = 0 || WkArrived = 1) && A_TickCount - WkNavEscAt > 1500 && WkNavMob = "" && IsFunc("PartyHoldWhy"))
 		{
-		pWhy := Func("PartyHoldWhy").Call()
+		pWhy := PartyHoldWhy.Call()
 		if (pWhy != "")
 			{
 			if (KeysDown || HeldW)
 				ReleaseKeys(true)
 			WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 			SetStatus("party: waiting - " pWhy)
-			Sleep, 300
+			Sleep(300)
 			return true
 			}
 		}
@@ -1102,20 +1102,20 @@ WalkStep()
 			{
 			HoldW(1)
 			SetStatus("walking on into a teleport on the game's path")
-			Sleep, 50
+			Sleep(50)
 			return true
 			}
 		if (KeysDown || HeldW)
 			ReleaseKeys()
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 		SetStatus("at a teleport - waiting for it to take the wizard (" WkNavJump " s)")
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 	;Near the goal by the game's memory - in this zone, straight ahead, no mob on the way: the last bit walked closed loop
 	;and X there (WalkApproachStep). Steps a second apart walked 900-1800 units over it and turned round: 2026-10-25
 	;11:28-11:42, Celestia, a 160-175 degree turn by every NPC
-	if (WalkApproachWanted(apGn))
+	if (WalkApproachWanted(&apGn))
 		return WalkApproachStep(apGn, dist)
 	if (dist != "")
 		{
@@ -1148,7 +1148,7 @@ WalkStep()
 			if (WkFar < 2)
 				{
 				SetStatus("arrived (distance " dist ") - waiting for the next goal")
-				Sleep, 400
+				Sleep(400)
 				return true
 				}
 			;A new goal: it may be pushed into twice again
@@ -1213,7 +1213,7 @@ WalkStep()
 		;On the way to an obstacle remembered from before: keep to the side that got round it then (not
 		;while already getting round something)
 		;(not on the route round walls: that knows the walls - the ones remembered were met without it)
-		if (A_TickCount > WkBiasUntil && WkTries = 0 && !IsObject(WkEsc) && WkMem.Length() && !onRoute)
+		if (A_TickCount > WkBiasUntil && WkTries = 0 && !IsObject(WkEsc) && WkMem.Length && !onRoute)
 			{
 			spot := WalkMemAhead(WalkZone(), dist)
 			if (IsObject(spot))
@@ -1226,7 +1226,7 @@ WalkStep()
 		}
 	else if (WkArrived)
 		{
-		Sleep, 400
+		Sleep(400)
 		return true
 		}
 	;(those two guesses only with no game's memory this step - it knows the distance; 2026-10-25 11:28:20 "at the goal
@@ -1251,7 +1251,7 @@ WalkStep()
 			ReleaseKeys(true)
 		SetStatus("waiting - can't read the distance on the arrow")
 		WkBestTime := A_TickCount
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 	;The camera swings round after the wizard about half a second late (measured 2026-10-16: a 62
@@ -1263,7 +1263,7 @@ WalkStep()
 		;(after a turn on the spot of up to 70 degrees: walking on meanwhile - it faces about the right way)
 		if (!HeldW && WkSpotTurn != "" && WkSpotTurn = WkTurnAt && !(WkNavOk && IsObject(WkNavObj) && WkNavObj.blindahead != ""))
 			HoldW(1)
-		Sleep, 50
+		Sleep(50)
 		return true
 		}
 	;Arrow pushed up by the talk prompt (next to an NPC): the prompt slides in and out, so readings
@@ -1277,7 +1277,7 @@ WalkStep()
 			{
 			;(walking straight on past the NPC - not steered on a jumping arrow, not stopped)
 			SetStatus("walking on - arrow moving (talk prompt?)")
-			Sleep, 50
+			Sleep(50)
 			WkBestTime := A_TickCount
 			return true
 			}
@@ -1366,7 +1366,7 @@ WalkStep()
 			return false
 		;(the camera's wait is the arrow's - the game's memory knows the facing at once)
 		if (!WkNavUse)
-			Sleep, 150
+			Sleep(150)
 		WkBestTime := A_TickCount
 		;Turning doesn't count against the unreadable-distance timers, except next to the goal: there
 		;the wizard keeps walking over the goal point and turning back, which would put them off forever
@@ -1390,7 +1390,7 @@ WalkStep()
 				ReleaseKeys(true)
 			WkBestTime := A_TickCount, WkLastRead := A_TickCount
 			SetStatus("waiting - " WkNavObj.blindahead " ahead on the arrow's way (no route to keep to)")
-			Sleep, 300
+			Sleep(300)
 			return true
 			}
 		}
@@ -1485,7 +1485,7 @@ WalkStep()
 		if (WkTries >= UnstickTries)
 			{
 			;(what the game showed, to see what held it - AutoFarmer: Windows temp, "Wizard101 bot rounds")
-			stuckPic := IsFunc("SaveRoundPicture") ? Func("SaveRoundPicture").Call() : ""
+			stuckPic := IsFunc("SaveRoundPicture") ? SaveRoundPicture.Call() : ""
 			WalkLog("stuck: gave up after " UnstickTries " tries" (stuckPic != "" ? " (the game's picture: " stuckPic ")" : ""))
 			if (WalkCommonsReset("couldn't get round an obstacle in " UnstickTries " tries", stuckAt))
 				return true
@@ -1517,7 +1517,7 @@ WalkStep()
 		if (!Walking)
 			return false
 		}
-	Sleep, 50
+	Sleep(50)
 	return true
 	}
 
@@ -1599,11 +1599,11 @@ StartTalk(d, door := true)
 	WkTalkGoal := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : ""
 	WalkTalkCount()
 	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX, in the talk step)
-	WkPreXText := WalkAfterXText(stPre), WkAfterXLooked := 0
+	WkPreXText := WalkAfterXText(&stPre), WkAfterXLooked := 0
 	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("talk: at the goal (distance " d WalkGoalSay() "), pressed X")
 	SetStatus("talking - pressed X at the goal (distance " d ")")
-	Sleep, 600
+	Sleep(600)
 	}
 
 ;Walk on into the goal (doorway / loading point), at most twice for the same goal
@@ -1642,7 +1642,7 @@ StartGate(why)
 	PressKey("x")
 	WalkLog("gate: " why " - pressed X")
 	SetStatus("World Gate - pressed X, waiting for the Spiral Map")
-	Sleep, 800
+	Sleep(800)
 	}
 
 ;A "Press X ..." prompt on the way: stop, press X, then WalkStep (WkArrived = 6) presses Space
@@ -1651,11 +1651,11 @@ StartPressX(key)
 	{
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
-	WkPromptUsed[key = "" ? "?" : key] := A_TickCount
+	WkPromptUsed[key = "" ? "?" : key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'WkPromptUsed.Push(<val>)'
 	WkArrived := 6, WkPressAt := A_TickCount, WkTalk := 0, WkDialog := 0, WkSpaceAt := 0, WkAfterXLooked := 0
 	WkArrowAtX := (WkRealSeenAt && A_TickCount - WkRealSeenAt < 1500)
 	;(what's on screen before X: what X opens is what's new - WalkCloseAfterX)
-	WkPreXText := WalkAfterXText(preLines)
+	WkPreXText := WalkAfterXText(&preLines)
 	;(the talk goal's own NPC: a try at it - WalkTalkTriesLeft)
 	tgX := WalkTalkGoal()
 	if (IsObject(tgX) && WalkIsGoalNpc(key, tgX))
@@ -1663,7 +1663,7 @@ StartPressX(key)
 	PressKey("x"), WkLastX := A_TickCount
 	WalkLog("prompt '" SubStr(key, 1, 40) "' - pressed X" WalkGoalSay())
 	SetStatus("pressed X at a prompt")
-	Sleep, 400
+	Sleep(400)
 	}
 
 ;True if that prompt hasn't been used (X pressed) in the last ms. The key is the prompt's letters as
@@ -1686,10 +1686,10 @@ WalkSkipDialog()
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	presses := 0, acc := ""
-	Loop, 80
+	Loop 80
 		{
 		PressKey("Space"), presses += 1
-		Sleep, %SkipGap%
+		Sleep(SkipGap)
 		if (!Walking)
 			return false
 		;(no NEXT / DONE any more: closed - or its last page is a quest offer, its button ACCEPT)
@@ -1706,10 +1706,10 @@ WalkSkipDialog()
 		WalkLog("quest offer: ACCEPT in the dialogue box - clicking it at " acc.x - GameLeft "," acc.y - GameTop)
 		SetStatus("accepting the quest")
 		WalkClick(acc.x, acc.y)
-		Sleep, 700
+		Sleep(700)
 		}
 	;(a quest-giver's: the quest offer comes up after it - its ACCEPT clicked; looked for again a while: WalkStep)
-	Sleep, 300
+	Sleep(300)
 	if (Walking)
 		WalkAcceptQuest("after the dialogue")
 	;(a new offer may follow: its own clicks)
@@ -1738,7 +1738,7 @@ WalkAcceptButton()
 		btn := ""
 		for each, line in acceptLines
 			{
-			if (!IsObject(line.words) || line.words.Length() > 3)
+			if (!IsObject(line.words) || line.words.Length > 3)
 				continue
 			for each, word in line.words
 				if (btn = "" && RegExMatch(word.text, "i)^\W*ACC?E[PF]T\W*$"))
@@ -1788,7 +1788,7 @@ WalkAcceptQuest(why)
 	WalkLog("quest offer: ACCEPT showing (" why ") - clicking it at " btn.x - GameLeft "," btn.y - GameTop (WkAcceptClicks > 1 ? " (again)" : ""))
 	SetStatus("accepting the quest")
 	WalkClick(btn.x, btn.y)
-	Sleep, 700
+	Sleep(700)
 	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0
 	return true
 	}
@@ -1842,7 +1842,7 @@ WalkFroNote(d, hRaw)
 		if (A_TickCount - ft.at <= 12000)
 			keep.Push(ft)
 	WkFroTurns := keep
-	if (keep.Length() < 3)
+	if (keep.Length < 3)
 		return false
 	f1 := keep[1]
 	if (fx != "" && f1.x != "")
@@ -1853,7 +1853,7 @@ WalkFroNote(d, hRaw)
 		return false
 	WkFroTurns := []
 	by := WkNavUse ? (WkNavRouted ? "the route's aim" : "the game's memory") : WkNavByArrow ? "the arrow and the route" : "the arrow"
-	what := keep.Length() " turns of 140 degrees or more in " Round((A_TickCount - f1.at) / 1000) " s, no further on - by " by " (the arrow " (hRaw = "" ? "not seen" : Round(hRaw)) ", the memory " (WkNavH = "" ? "-" : Round(WkNavH)) ")"
+	what := keep.Length " turns of 140 degrees or more in " Round((A_TickCount - f1.at) / 1000) " s, no further on - by " by " (the arrow " (hRaw = "" ? "not seen" : Round(hRaw)) ", the memory " (WkNavH = "" ? "-" : Round(WkNavH)) ")"
 	if (WalkNear(d, NearDist, ArriveUnits * 2))
 		{
 		WalkLog("going to and fro by the goal: " what " - there")
@@ -1867,7 +1867,7 @@ WalkFroNote(d, hRaw)
 	keepH.Push(A_TickCount)
 	WkFroHolds := keepH
 	WalkLog("going to and fro: " what " - holding the course 5 s")
-	if (keepH.Length() >= 3)
+	if (keepH.Length >= 3)
 		{
 		WkFroHolds := []
 		WkBestTime := A_TickCount - StuckTime - 1
@@ -1884,7 +1884,7 @@ WalkSigilJustLeft(near)
 	{
 	if (WkZoneFrom = "" || A_TickCount - WkZoneAt >= 90000)
 		return false
-	if (IsObject(WkSigilZones) && WkSigilZones.HasKey(WkZoneFrom))
+	if (IsObject(WkSigilZones) && WkSigilZones.Has(WkZoneFrom))
 		return true
 	if (!InStr(WkZoneFrom, "/Interiors/"))
 		return false
@@ -1894,14 +1894,14 @@ WalkSigilJustLeft(near)
 ;Tries left at the sigil whose prompt key is key: 3 X presses in 10 minutes (the old ones dropped)
 WalkSigilTriesLeft(key)
 	{
-	if (!IsObject(WkSigilTries) || !WkSigilTries.HasKey(key))
+	if (!IsObject(WkSigilTries) || !WkSigilTries.Has(key))
 		return true
 	recent := []
 	for each, at in WkSigilTries[key]
 		if (A_TickCount - at < 600000)
 			recent.Push(at)
-	WkSigilTries[key] := recent
-	return recent.Length() < 3
+	WkSigilTries[key] := recent ;  V1toV2: Invalid Index errors?, try 'WkSigilTries.Push(<val>)'
+	return recent.Length < 3
 	}
 
 ;You've stopped playing (AutoFarmer's PlayerActing): the walker's watch starts afresh - but a sigil's or a boat's wait goes
@@ -1960,13 +1960,13 @@ StartSigil(why)
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkArrived := 5, WkSigilUntil := A_TickCount + SigilWait, WkWaitWhat := "sigil"
-	WkPromptUsed[WkPromptDest = "" ? "?" : WkPromptDest] := A_TickCount
+	WkPromptUsed[WkPromptDest = "" ? "?" : WkPromptDest] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'WkPromptUsed.Push(<val>)'
 	;(for the tries at it, and the zone it leads to - WalkZone notes it when the zone changes)
 	WkSigilKey := WkPromptDest = "" ? "?" : WkPromptDest, WkSigilAt := A_TickCount, WkSigilFromZone := WalkZone()
 	if (!IsObject(WkSigilTries))
 		WkSigilTries := {}
-	if (!WkSigilTries.HasKey(WkSigilKey))
-		WkSigilTries[WkSigilKey] := []
+	if (!WkSigilTries.Has(WkSigilKey))
+		WkSigilTries[WkSigilKey] := [] ;  V1toV2: Invalid Index errors?, try 'WkSigilTries.Push(<val>)'
 	WkSigilTries[WkSigilKey].Push(A_TickCount)
 	PressKey("x")
 	WalkLog("sigil: " why " - pressed X, waiting " Round(SigilWait / 1000) " s")
@@ -1983,7 +1983,7 @@ WalkTransport(dest, arrowSeen := false)
 	{
 	zone := WalkZone()
 	leads := WalkTransportLeads(dest, zone)
-	recent := WkTransUsed.HasKey(dest) && A_TickCount - WkTransUsed[dest] < 600000
+	recent := WkTransUsed.Has(dest) && A_TickCount - WkTransUsed[dest] < 600000
 	;Second time at the same one, the goal no closer, can't tell where it goes
 	;(and the arrow showed again in between: it really was walked on from, and came back here)
 	again := IsObject(WkTransSeen) && WkTransSeen.dest = dest && A_TickCount - WkTransSeen.at < 180000
@@ -2020,7 +2020,7 @@ WalkTransport(dest, arrowSeen := false)
 WalkTransportLeads(dest, zone)
 	{
 	destName := WalkLetters(dest)
-	if (StrLen(destName) < 3 || !WkGoalZones.Length())
+	if (StrLen(destName) < 3 || !WkGoalZones.Length)
 		return ""
 	;The zone whose name is closest to it - the game's title font fools OCR ("GOBBLERTON" can come out
 	;as "coeeLERTON"), so up to a third of the letters may be off, if no other zone is as close
@@ -2051,7 +2051,7 @@ WalkTransportLeads(dest, zone)
 ;Just the letters, in capitals, with the digits OCR mistakes for letters turned back (0 O, 1 I, 5 S, 8 B)
 WalkLetters(text)
 	{
-	StringUpper, text, text
+	text := StrUpper(text)
 	return RegExReplace(StrReplace(StrReplace(StrReplace(StrReplace(text, "0", "O"), "1", "I"), "5", "S"), "8", "B"), "[^A-Z]")
 	}
 
@@ -2059,14 +2059,14 @@ WalkLetters(text)
 WalkEditDistance(a, b)
 	{
 	lenB := StrLen(b), prevRow := []
-	Loop, % lenB + 1
-		prevRow[A_Index] := A_Index - 1
-	Loop, Parse, a
+	Loop lenB + 1
+		prevRow[A_Index] := A_Index - 1 ;  V1toV2: Invalid Index errors?, try 'prevRow.Push(<val>)'
+	Loop Parse, a
 		{
 		row := [A_Index]
 		charA := A_LoopField
-		Loop, % lenB
-			row[A_Index + 1] := Min(prevRow[A_Index + 1] + 1, row[A_Index] + 1, prevRow[A_Index] + (charA == SubStr(b, A_Index, 1) ? 0 : 1))
+		Loop lenB
+			row[A_Index + 1] := Min(prevRow[A_Index + 1] + 1, row[A_Index] + 1, prevRow[A_Index] + (charA :== SubStr(b, (A_Index)<1 ? (A_Index)-1 : (A_Index), 1) ? 0 : 1))
 		prevRow := row
 		}
 	return prevRow[lenB + 1]
@@ -2076,7 +2076,7 @@ WalkEditDistance(a, b)
 ;Karamelle/KM_Z10_Gobblerton and Karamelle/Interiors/KM_Z10_UnderwaterGrotto
 WalkZoneKey(zoneName)
 	{
-	return RegExMatch(zoneName, "i)([A-Z]+_Z\d+)", key) ? key1 : zoneName
+	return RegExMatch(zoneName, "i)([A-Z]+_Z\d+)", &key) ? key[1] : zoneName
 	}
 
 ;Uses a boat or the like: X, then stand still while it moves us and the new zone loads
@@ -2084,7 +2084,7 @@ StartTransport(dest, why)
 	{
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
-	WkTransUsed[dest] := A_TickCount, WkTransSeen := ""
+	WkTransUsed[dest] := A_TickCount, WkTransSeen := "" ;  V1toV2: Invalid Index errors?, try 'WkTransUsed.Push(<val>)'
 	WkArrived := 5, WkSigilUntil := A_TickCount + TransportWait, WkWaitWhat := dest
 	PressKey("x")
 	WalkLog("transport: '" dest "' covers the arrow and " why " - pressed X, waiting " Round(TransportWait / 1000) " s")
@@ -2114,7 +2114,7 @@ GateStep()
 		SetStatus("World Gate - clicking Go To World")
 		WalkClick(btn.x, btn.y)
 		WkGateAt := A_TickCount
-		Sleep, 1500
+		Sleep(1500)
 		return Walking ? true : false
 		}
 	if (WkGateClicks)
@@ -2132,7 +2132,7 @@ GateStep()
 			WalkLog("gate: no Spiral Map " Round(GateWait / 1000) " s after X - pressing X again")
 			WkGateX += 1, WkGateAt := A_TickCount
 			PressKey("x")
-			Sleep, 800
+			Sleep(800)
 			return Walking ? true : false
 			}
 		;Not a World Gate after all (or out of reach): walk on, and don't look for one again for a while
@@ -2142,7 +2142,7 @@ GateStep()
 		return true
 		}
 	SetStatus("World Gate - waiting for the Spiral Map")
-	Sleep, 300
+	Sleep(300)
 	return true
 	}
 
@@ -2164,13 +2164,13 @@ InteractPrompt()
 		return "gate"
 	if (RegExMatch(t, "i)to\s*enter"))
 		{
-		WkPromptDest := SubStr(WalkLetters(RegExMatch(t, "m`n)^\s*TO\s+(.+?)\s*$", sigil) ? sigil1 : t), 1, 60)
+		WkPromptDest := SubStr(WalkLetters(RegExMatch(t, "m`n)^\s*TO\s+(.+?)\s*$", &sigil) ? sigil[1] : t), 1, 60)
 		return "sigil"
 		}
 	;(the title is in capitals; the quest line under it isn't, so "Talk To Rosina" doesn't count)
-	if (RegExMatch(t, "i)to\s*use") && RegExMatch(t, "m`n)^\s*[A-Z][A-Z']*(?:\s+[A-Z][A-Z']*)*\s+TO\s+(\S.*?)\s*$", title))
+	if (RegExMatch(t, "i)to\s*use") && RegExMatch(t, "m`n)^\s*[A-Z][A-Z']*(?:\s+[A-Z][A-Z']*)*\s+TO\s+(\S.*?)\s*$", &title))
 		{
-		WkPromptDest := Trim(title1)
+		WkPromptDest := Trim(title[1])
 		return "transport"
 		}
 	;Any other prompt: "Press X to Talk", "... or click to Interact", "to Collect"... The key that tells one
@@ -2178,8 +2178,8 @@ InteractPrompt()
 	;picks up under it changes from read to read - else all its letters
 	if (RegExMatch(t, "i)\bpress\b") && RegExMatch(t, "i)\bto\s+[a-z]{3,}"))
 		{
-		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", cap) ? WalkLetters(cap1) : SubStr(WalkLetters(t), 1, 60)
-		WkPromptVerb := RegExMatch(t, "i)press.*?to\s+([a-z]{3,})", verb) ? verb1 : ""
+		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", &cap) ? WalkLetters(cap[1]) : SubStr(WalkLetters(t), 1, 60)
+		WkPromptVerb := RegExMatch(t, "i)press.*?to\s+([a-z]{3,})", &verb) ? verb[1] : ""
 		return "press"
 		}
 	return ""
@@ -2211,7 +2211,7 @@ WalkGoalNear()
 		return ""
 	gdx := WkNavObj.gx - WkNavObj.x, gdy := WkNavObj.gy - WkNavObj.y
 	gh := WalkNavHeading(WkNavObj.x, WkNavObj.y, WkNavObj.yaw, WkNavObj.gx, WkNavObj.gy)
-	return {r: Sqrt(gdx * gdx + gdy * gdy), dz: (WkNavObj.gz != "" && WkNavObj.z != "") ? WkNavObj.gz - WkNavObj.z : "", h: gh = "" ? 0 : gh}
+	return (AHKv1v2_Temp := {r: Sqrt(gdx * gdx + gdy * gdy), dz: (WkNavObj.gz != "" && WkNavObj.z != "") ? WkNavObj.gz - WkNavObj.z : "", h: gh = "" ? 0 : gh}, AHKv1v2_Temp) ; V1toV2: Wrapped Multi-statement return with parentheses
 	}
 
 ;By the goal by the game's memory - within TalkUnits, on the same floor: 1 / 0; "" not known (no memory, the goal zones away)
@@ -2261,7 +2261,7 @@ WalkStuckNear(d)
 ;(not at a goal), its heading steered by, out of battle, not a dungeon run; within ApproachUnits on the same floor; no mob's
 ;reach or sight on the way, none waited for, no teleport ahead (the route's way then, as before); a straight way there - the
 ;route (or the game's path) not much longer than straight - or right by it anyway; not given up on for now (WkApOffUntil)
-WalkApproachWanted(ByRef gn)
+WalkApproachWanted(&gn)
 	{
 	gn := ""
 	if (WkArrived != 0 || !WkNavUse || inbattle || IsObject(DgRun) || (WkApOffUntil && A_TickCount < WkApOffUntil) || !IsFunc("NavRead"))
@@ -2301,7 +2301,7 @@ WalkApproachStep(gn, dist)
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys(true)
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	asTalk := WalkTalkGoal()
@@ -2365,9 +2365,9 @@ WalkApproach(stopR)
 	apFrom := gn.r, apPrev := gn.r, apRises := 0, apMisses := 0, apLooks := 0, apWhy := "time"
 	HoldW(1, true)
 	apDown := A_TickCount, apLookAt := A_TickCount, apProgAt := A_TickCount, apProgX := WkNavObj.x, apProgY := WkNavObj.y
-	loop
+	Loop
 		{
-		Sleep, 10
+		Sleep(10)
 		if (!Walking || !GameActive())
 			{
 			apWhy := ""
@@ -2437,7 +2437,7 @@ WalkApproach(stopR)
 WalkApproachLook()
 	{
 	alWait := NavWait, alUntil := NavWaitUntil, alWhy := NavWhy
-	nav := Func("NavRead").Call(120)
+	nav := NavRead.Call(120)
 	NavWait := alWait, NavWaitUntil := alUntil, NavWhy := alWhy
 	if (!IsObject(nav) || nav.x = "" || nav.y = "" || nav.yaw = "" || !IsObject(WkNavObj) || (nav.zone != "" && nav.zone != WkNavObj.zone))
 		return ""
@@ -2523,7 +2523,7 @@ WalkUseNames(key, goal := "")
 	if (unAt && StrLen(key) < 60 && Abs(StrLen(key) - StrLen(unItem)) <= StrLen(unItem) // 4 && WalkNameLike(key, unItem))
 		unAt := 0
 	if (unAt)
-		key := SubStr(key, Max(1, unAt - StrLen(unItem)), Min(unAt - 1, StrLen(unItem)))
+		key := SubStr(key, (Max(1, unAt - StrLen(unItem)))<1 ? (Max(1, unAt - StrLen(unItem)))-1 : (Max(1, unAt - StrLen(unItem))), Min(unAt - 1, StrLen(unItem)))
 	else if (StrLen(key) >= 60)
 		return false
 	if (StrLen(key) < 4 || StrLen(unItem) < 4)
@@ -2546,8 +2546,8 @@ WalkGoalItemName(goal := "")
 	if (WkGoalNpc != "")
 		return WkGoalNpc
 	giLine := goal != "" ? goal : WkGoalLine
-	if (RegExMatch(giLine, "i)^\W*(?:Use|Open|Activate|Cl[i]ck|Inspect|Interact\s+With|Interact|Read|Examine|Search|Touch|Collect|Go\s+To|Travel\s+To|Talk\s+To|Find|Defeat)\s+(.+?)(?:\s+in\s+[^()]+?)?\s*(?:\(\s*\d+\s*(?:of|/)\s*\d+\s*\))?\s*$", giM))
-		return Trim(giM1)
+	if (RegExMatch(giLine, "i)^\W*(?:Use|Open|Activate|Cl[i]ck|Inspect|Interact\s+With|Interact|Read|Examine|Search|Touch|Collect|Go\s+To|Travel\s+To|Talk\s+To|Find|Defeat)\s+(.+?)(?:\s+in\s+[^()]+?)?\s*(?:\(\s*\d+\s*(?:of|/)\s*\d+\s*\))?\s*$", &giM))
+		return Trim(giM[1])
 	return ""
 	}
 
@@ -2604,7 +2604,7 @@ WalkArrivedMoved()
 	if (!IsFunc("NavGoal") || (IsObject(WkCollect) && WkCollect.gaveUp) || (WkArr1Look && A_TickCount - WkArr1Look < 3000))
 		return false
 	WkArr1Look := A_TickCount
-	amGoal := Func("NavGoal").Call()
+	amGoal := NavGoal.Call()
 	if (!IsObject(amGoal) || amGoal.text = "" || amGoal.goalid = "")
 		return false
 	amKey := amGoal.goalid "|" amGoal.count
@@ -2794,15 +2794,15 @@ WalkQuestMarker(key)
 	{
 	if (StrLen(key) < 4 || !IsFunc("VisionGet") || !VisionOn)
 		return ""
-	if (WkQmLooked.HasKey(key) && A_TickCount - WkQmLooked[key] < 4000)
+	if (WkQmLooked.Has(key) && A_TickCount - WkQmLooked[key] < 4000)
 		return ""
-	WkQmLooked[key] := A_TickCount
+	WkQmLooked[key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'WkQmLooked.Push(<val>)'
 	;(walking on through the look - X is only pressed with its prompt still showing)
 	;(the game above its bottom bar - the markers float over heads)
-	ans := Func("VisionGet").Call("/qmark?x1=" GameLeft "&y1=" GameTop "&x2=" GameLeft + GameW "&y2=" Round(GameTop + GameH * 0.85), 1500, true)
+	ans := VisionGet.Call("/qmark?x1=" GameLeft "&y1=" GameTop "&x2=" GameLeft + GameW "&y2=" Round(GameTop + GameH * 0.85), 1500, true)
 	if (ans = "" || ans = "none" || ans = " ")
 		return ""
-	Loop, Parse, ans, `n, `r
+	Loop Parse, ans, "`n", "`r"
 		{
 		qm := StrSplit(A_LoopField, "|")
 		if (qm[1] != "qmark" || qm[2] != "?" || qm[7] = "")
@@ -2822,7 +2822,7 @@ WalkQuestMarker(key)
 ;key: the prompt's name letters. True if X was pressed
 WalkQuestMarkerTalk(key)
 	{
-	if (WkQmTalked.HasKey(key) && A_TickCount - WkQmTalked[key] < 300000)
+	if (WkQmTalked.Has(key) && A_TickCount - WkQmTalked[key] < 300000)
 		return false
 	qmName := WalkQuestMarker(key)
 	if (qmName = "" || !Walking)
@@ -2832,7 +2832,7 @@ WalkQuestMarkerTalk(key)
 		WalkLog("quest marker (?) over " qmName " - its prompt went before X: walking on")
 		return false
 		}
-	WkQmTalked[key] := A_TickCount
+	WkQmTalked[key] := A_TickCount ;  V1toV2: Invalid Index errors?, try 'WkQmTalked.Push(<val>)'
 	WalkLog("prompt '" SubStr(key, 1, 40) "' - a quest marker (?) over " qmName ": pressing X")
 	StartPressX(WkPromptDest)
 	return true
@@ -2854,16 +2854,16 @@ WalkEditDist(a, b)
 	{
 	la := StrLen(a), lb := StrLen(b)
 	prev := []
-	Loop, % lb + 1
-		prev[A_Index] := A_Index - 1
-	Loop, %la%
+	Loop lb + 1
+		prev[A_Index] := A_Index - 1 ;  V1toV2: Invalid Index errors?, try 'prev.Push(<val>)'
+	Loop la
 		{
-		i := A_Index, ca := SubStr(a, i, 1), cur := [i]
-		Loop, %lb%
+		i := A_Index, ca := SubStr(a, (i)<1 ? (i)-1 : (i), 1), cur := [i]
+		Loop lb
 			{
 			j := A_Index
-			cost := (ca == SubStr(b, j, 1)) ? 0 : 1
-			cur[j + 1] := Min(prev[j + 1] + 1, cur[j] + 1, prev[j] + cost)
+			cost := (ca == SubStr(b, (j)<1 ? (j)-1 : (j), 1)) ? 0 : 1
+			cur[j + 1] := Min(prev[j + 1] + 1, cur[j] + 1, prev[j] + cost) ;  V1toV2: Invalid Index errors?, try 'cur.Push(<val>)'
 			}
 		prev := cur
 		}
@@ -2902,14 +2902,14 @@ WalkGoalLine()
 ;Escape that opened the game's menu instead closes it again. True if it closed something
 WalkCloseAfterX()
 	{
-	t := WalkAfterXText(lines)
+	t := WalkAfterXText(&lines)
 	if (t = "" || !IsObject(lines))
 		return false
-	if (RegExMatch(t, "i)\b(buy|sell|shop|cr[o0]wns?|purchase|recipes|reagents|treasure cards)\b", m) && !RegExMatch(WkPreXText, "i)\b\Q" m "\E\b"))
+	if (RegExMatch(t, "i)\b(buy|sell|shop|cr[o0]wns?|purchase|recipes|reagents|treasure cards)\b", &m) && !RegExMatch(WkPreXText, "i)\b\Q" m "\E\b"))
 		{
-		WalkLog("pressed X: a window opened (""" m """ in it - a shop?) - Escape, nothing in it clicked")
+		WalkLog("pressed X: a window opened (`"" (m&&m[0]) "`" in it - a shop?) - Escape, nothing in it clicked")
 		PressKey("Escape")
-		Sleep, 800
+		Sleep(800)
 		WalkCloseGameMenu()
 		;(a shop Escape doesn't close - 2026-10-23 07:11, Avery Templeton's Recipe Shop: its Escape opened the game's menu,
 		;the shop stayed and held the wizard 3 minutes - its close button)
@@ -2920,7 +2920,7 @@ WalkCloseAfterX()
 	if (RegExMatch(t, "i)cr[o0]wn"))
 		return false
 	for i, line in lines
-		if (IsObject(line.words) && line.words.Length() = 1 && RegExMatch(Trim(line.words[1].text), "i)^(ok|okay)[.!]?$")
+		if (IsObject(line.words) && line.words.Length = 1 && RegExMatch(Trim(line.words[1].text), "i)^(ok|okay)[.!]?$")
 			&& !RegExMatch(WkPreXText, "i)\b(ok|okay)\b"))
 			{
 			w := line.words[1]
@@ -2929,21 +2929,21 @@ WalkCloseAfterX()
 			WalkLog("pressed X: an OK box opened - OK")
 			ReleaseKeys()
 			;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
-			ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+			ownGrab := IsFunc("MouseGrab") ? MouseGrab.Call() : false
 			;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
 			if (IsFunc("MouseLockOn"))
-				Func("MouseLockOn").Call("walker")
-			MouseMove, % Round(w.x + w.w / 2), % Round(w.y + w.h / 2), 2
+				MouseLockOn.Call("walker")
+			MouseMove(Round(w.x + w.w / 2), Round(w.y + w.h / 2), 2)
 			;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 			if (IsFunc("MouseLockMoved"))
-				Func("MouseLockMoved").Call()
-			Sleep, 60
-			Click
-			Sleep, 500
+				MouseLockMoved.Call()
+			Sleep(60)
+			Click()
+			Sleep(500)
 			if (ownGrab)
-				Func("MouseLetGo").Call()
+				MouseLetGo.Call()
 			if (IsFunc("MouseLockOff"))
-				Func("MouseLockOff").Call("walker")
+				MouseLockOff.Call("walker")
 			return true
 			}
 	return false
@@ -2958,7 +2958,7 @@ WalkCloseWindow(why, now := false)
 	if (!IsFunc("PicOpt") || !Walking || !GameActive() || (!now && A_TickCount - WkCloseLook < 5000))
 		return false
 	WkCloseLook := A_TickCount
-	ImageSearch, cwX, cwY, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
+	ErrorLevel := !ImageSearch(&cwX, &cwY, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), PicOpt.Call("resources\closewin.png", 50))
 	if (ErrorLevel)
 		return false
 	cwT := OcrRect(GameLeft, GameTop, GameW, GameH)
@@ -2977,22 +2977,22 @@ WalkCloseWindow(why, now := false)
 	ReleaseKeys()
 	;(the picture's middle - it's 60 px at UI 1.144; the mouse back where it was afterwards, in AutoFarmer: mousereturn)
 	cwHalf := Round(30 * (UiScale ? UiScale : 1.144) / 1.144)
-	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	ownGrab := IsFunc("MouseGrab") ? MouseGrab.Call() : false
 	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
 	if (IsFunc("MouseLockOn"))
-		Func("MouseLockOn").Call("walker")
-	MouseMove, % cwX + cwHalf, % cwY + cwHalf, 2
+		MouseLockOn.Call("walker")
+	MouseMove(cwX + cwHalf, cwY + cwHalf, 2)
 	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 	if (IsFunc("MouseLockMoved"))
-		Func("MouseLockMoved").Call()
-	Sleep, 80
-	Click
-	Sleep, 700
+		MouseLockMoved.Call()
+	Sleep(80)
+	Click()
+	Sleep(700)
 	if (ownGrab)
-		Func("MouseLetGo").Call()
+		MouseLetGo.Call()
 	if (IsFunc("MouseLockOff"))
-		Func("MouseLockOff").Call("walker")
-	ImageSearch, cwX2, cwY2, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
+		MouseLockOff.Call("walker")
+	ErrorLevel := !ImageSearch(&cwX2, &cwY2, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), PicOpt.Call("resources\closewin.png", 50))
 	cwGone := ErrorLevel != 0
 	WalkLog(why " - clicked a window's close button at " cwX + cwHalf - GameLeft "," cwY + cwHalf - GameTop ": " (cwGone ? "closed" : "still there"))
 	;(the time it held him isn't walking without getting closer: the stuck watch starts afresh)
@@ -3003,7 +3003,7 @@ WalkCloseWindow(why, now := false)
 
 ;The middle of the game - where a window X opens shows: not the chat (bottom left), the prompt or the goal line
 ;(bottom), the walker's notice (top right) - read by OCR. "" if it can't be read; its lines (with their words)
-WalkAfterXText(ByRef lines)
+WalkAfterXText(&lines)
 	{
 	lines := ""
 	t := OcrRect(Round(GameLeft + GameW * 0.25), Round(GameTop + GameH * 0.12), Round(GameW * 0.5), Round(GameH * 0.58), "en", 1, lines)
@@ -3035,33 +3035,33 @@ WalkClick(x, y)
 	if (!Walking || !GameActive())
 		return
 	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
-	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	ownGrab := IsFunc("MouseGrab") ? MouseGrab.Call() : false
 	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn: the Spiral Map's Go To World, ACCEPT...)
 	if (IsFunc("MouseLockOn"))
-		Func("MouseLockOn").Call("walker")
-	MouseMove, %x%, %y%, 1
+		MouseLockOn.Call("walker")
+	MouseMove(x, y, 1)
 	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 	if (IsFunc("MouseLockMoved"))
-		Func("MouseLockMoved").Call()
-	Sleep, 40
+		MouseLockMoved.Call()
+	Sleep(40)
 	if (Walking && GameActive())
-		Click
-	Sleep, 100
+		Click()
+	Sleep(100)
 	if (ownGrab)
-		Func("MouseLetGo").Call()
+		MouseLetGo.Call()
 	if (IsFunc("MouseLockOff"))
-		Func("MouseLockOff").Call("walker")
+		MouseLockOff.Call("walker")
 	}
 
 ;One key press (down and up), only while walking is on and Wizard101 has focus
 PressKey(key)
 	{
-	Critical
+	Critical()
 	;(a window may open: the mouse's look for one done afresh - MouseSteer.ahk)
 	MsWinAt := 0
 	if (Walking && GameActive())
-		Send, {Blind}{%key%}
-	Critical, Off
+		Send("{Blind}{" key "}")
+	Critical("Off")
 	}
 
 ;Switches walking on or off (F8). Off lets go of every key straight away
@@ -3077,7 +3077,7 @@ WalkToggle()
 			{
 			WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
 			if (IsFunc("UseForget"))
-				Func("UseForget").Call()
+				UseForget.Call()
 			}
 		;(teleports the helper gave up get another go - you may have done what opens one: NavRead, AutoFarmer)
 		WkJumpStuck := 0, WkJumpKey := "", NavUnblock := 1
@@ -3097,7 +3097,7 @@ WalkToggle()
 		SetStatus("walking off - press " WalkKeyText() " to walk again")
 		;Keys let go while another window had focus: give Wizard101 one clean release when it's back
 		if (Refocus)
-			SetTimer, WalkerRefocusWatch, 250
+			SetTimer(WalkerRefocusWatch,250)
 		}
 	}
 
@@ -3105,14 +3105,14 @@ WalkerRefocusWatch()
 	{
 	if (Walking || !Refocus)
 		{
-		SetTimer, WalkerRefocusWatch, Off
+		SetTimer(WalkerRefocusWatch,0)
 		return
 		}
 	if (GameActive())
 		{
 		ReleaseKeys()
 		Refocus := 0
-		SetTimer, WalkerRefocusWatch, Off
+		SetTimer(WalkerRefocusWatch,0)
 		}
 	}
 
@@ -3147,10 +3147,10 @@ Turn(h)
 		}
 	if (WkNavUse && NavTurn(h))
 		return
-	Critical
+	Critical()
 	if (!Walking || !GameActive())
 		{
-		Critical, Off
+		Critical("Off")
 		return
 		}
 	key := h < 0 ? "a" : "d"
@@ -3160,15 +3160,15 @@ Turn(h)
 	;since: a turn froze by a battle starting - the wizard's facing before and after this turn checks it: see the end)
 	yaw0 := (WkNavOk && (!WkNavChecked || !WkNavTrusted) && IsObject(WkNavObj) && IsFunc("NavRead")) ? WkNavObj.yaw : ""
 	KeysDown := 1
-	Send, {Blind}{%key% down}
-	Critical, Off
+	Send("{Blind}{" key " down}")
+	Critical("Off")
 	HoldFor(ms)
-	Send, {Blind}{%key% up}
+	Send("{Blind}{" key " up}")
 	WkTurnAt := A_TickCount
 	if (yaw0 != "" && Walking)
 		{
-		Sleep, 120
-		nav := Func("NavRead").Call(120)
+		Sleep(120)
+		nav := NavRead.Call(120)
 		if (IsObject(nav) && nav.yaw != "")
 			{
 			turned := WkNavSign * ArrowWrap((nav.yaw - yaw0) * 57.29578)
@@ -3246,17 +3246,17 @@ BackUp(ms)
 			NavTurnOrKeys(-MsStandGot)
 		}
 	HoldW(0)
-	Critical
+	Critical()
 	if (!Walking || !GameActive())
 		{
-		Critical, Off
+		Critical("Off")
 		return false
 		}
 	KeysDown := 1
-	Send, {Blind}{s down}
-	Critical, Off
+	Send("{Blind}{s down}")
+	Critical("Off")
 	HoldFor(Round(ms / SpeedNow))
-	Send, {Blind}{s up}
+	Send("{Blind}{s up}")
 	WkTurnAt := A_TickCount
 	return true
 	}
@@ -3279,17 +3279,17 @@ NavTurnOrKeys(h)
 	key := h < 0 ? "a" : "d"
 	ms := Round(Abs(h) / (TurnRate * (SpeedNow ? SpeedNow : 1)))
 	ms := ms < 30 ? 30 : ms > 800 ? 800 : ms
-	Critical
+	Critical()
 	if (!Walking || !GameActive())
 		{
-		Critical, Off
+		Critical("Off")
 		return
 		}
 	KeysDown := 1
-	Send, {Blind}{%key% down}
-	Critical, Off
+	Send("{Blind}{" key " down}")
+	Critical("Off")
 	HoldFor(ms)
-	Send, {Blind}{%key% up}
+	Send("{Blind}{" key " up}")
 	WkTurnAt := A_TickCount
 	}
 
@@ -3308,7 +3308,7 @@ HoldFor(ms)
 			return false
 			}
 		left := stopAt - A_TickCount
-		Sleep, % left < 50 ? left : 50
+		Sleep(left < 50 ? left : 50)
 		}
 	return true
 	}
@@ -3316,21 +3316,21 @@ HoldFor(ms)
 ;noSpeed: no speed key now (the next step's HoldW sees to it)
 HoldW(on, noSpeed := false)
 	{
-	Critical
+	Critical()
 	if (on && !HeldW && Walking && GameActive())
 		{
 		KeysDown := 1
-		Send, {Blind}{w down}
+		Send("{Blind}{w down}")
 		HeldW := 1, WkWalkFrom := A_TickCount
 		WalkMetW(1)
 		}
 	else if (!on && HeldW)
 		{
-		Send, {Blind}{w up}
+		Send("{Blind}{w up}")
 		HeldW := 0
 		WalkMetW(0)
 		}
-	Critical, Off
+	Critical("Off")
 	;(walking: Cheat Engine's speed for it, if that's on)
 	if (on && HeldW && !noSpeed)
 		SpeedWalking()
@@ -3344,7 +3344,7 @@ ReleaseKeys(keepSpeed := false)
 	;(the right button too, if a mouse turn held it - MouseSteer.ahk)
 	if (MsHeld)
 		MouseSteerButton(0)
-	Send, {Blind}{w up}{a up}{s up}{d up}
+	Send("{Blind}{w up}{a up}{s up}{d up}")
 	if (HeldW)
 		WalkMetW(0)
 	HeldW := 0, KeysDown := 0
@@ -3419,20 +3419,20 @@ SpeedOn()
 ;The speedhack setting switched on (AutoFarmer's Settings window)
 SpeedSetting()
 	{
-	return IsFunc("Stat") && Func("Stat").Call("speedhack") = 1
+	return IsFunc("Stat") && Stat.Call("speedhack") = 1
 	}
 
 ;The speed Cheat Engine's walking key sets (speedfactor, 1-50)
 SpeedFactor()
 	{
-	f := IsFunc("Stat") ? Func("Stat").Call("speedfactor") : 1
+	f := IsFunc("Stat") ? Stat.Call("speedfactor") : 1
 	return (f + 0 >= 1) ? Min(f + 0, 50) : 1
 	}
 
 ;Cheat Engine's key for walking (fast) or for 1x: speedkeyfast / speedkeynormal, F13-F24 (1 = F13)
 SpeedKey(fast)
 	{
-	n := IsFunc("Stat") ? Func("Stat").Call(fast ? "speedkeyfast" : "speedkeynormal") : 0
+	n := IsFunc("Stat") ? Stat.Call(fast ? "speedkeyfast" : "speedkeynormal") : 0
 	n := (n + 0 >= 1 && n + 0 <= 12) ? n + 0 : (fast ? 2 : 1)
 	return "F" (12 + n)
 	}
@@ -3452,14 +3452,14 @@ SpeedSet(fast, why := "", force := false)
 	key := SpeedKey(want > 1)
 	gap := SpeedSentAt ? 400 - (A_TickCount - SpeedSentAt) : 0
 	SpeedNow := want, SpeedSentAt := A_TickCount
-	Critical
+	Critical()
 	if (gap > 0)
-		Sleep, %gap%
-	Send, {Blind}{%key% down}
-	Sleep, 250
-	Send, {Blind}{%key% up}
+		Sleep(gap)
+	Send("{Blind}{" key " down}")
+	Sleep(250)
+	Send("{Blind}{" key " up}")
 	SpeedSentAt := A_TickCount
-	Critical, Off
+	Critical("Off")
 	if (IsObject(WkMet))
 		WkMet.keys += 1
 	WalkLog("speed: " want "x - " key (why != "" ? " (" why ")" : ""))
@@ -3520,7 +3520,7 @@ UserIdle()
 	if (PlayForMe)
 		return 2147483647
 	if (lockIdle = "-")
-		lockIdle := IsFunc("MouseLockIdle") ? Func("MouseLockIdle") : 0
+		lockIdle := IsFunc("MouseLockIdle") ? MouseLockIdle : 0
 	return lockIdle ? lockIdle.Call() : A_TimeIdlePhysical
 	}
 
@@ -3528,7 +3528,7 @@ UserIdle()
 ;the dashboard's Keys tab), else F8 (AutoQuester's own - it has no Hotkeys.ahk)
 WalkKeyText()
 	{
-	return IsFunc("HkText") ? Func("HkText").Call("walk") : "F8"
+	return IsFunc("HkText") ? HkText.Call("walk") : "F8"
 	}
 
 ;Shows what the walker is doing in the tray tip. In AutoFarmer each new kind of status (walking,
@@ -3538,13 +3538,13 @@ SetStatus(text)
 	if (text = StatusText)
 		return
 	StatusText := text
-	Menu, Tray, Tip, % StatusPrefix ": " SubStr(text, 1, 110)
+	A_IconTip := StatusPrefix ": " SubStr(text, 1, 110)
 	kind := StrSplit(text, " ")[1]
 	if (kind != StatusKind)
 		{
 		StatusKind := kind
 		if (IsFunc("DebugLog"))
-			Func("DebugLog").Call("Walk: " text)
+			DebugLog.Call("Walk: " text)
 		}
 	}
 
@@ -3752,7 +3752,7 @@ CollectStep(seen, h, dist)
 	;(battles still get fought) and tell you. It carries on once the goal changes, or on Keep trying
 	;(not while one of the goal's items lies in the game's memory waiting to be tried again - Collect.ahk)
 	if ((seen || WkCollect.noPlace) && A_TickCount - WkCollect.progressAt > CollectStall && !csOwn
-		&& !(IsFunc("CollectItemsWaiting") && Func("CollectItemsWaiting").Call()))
+		&& !(IsFunc("CollectItemsWaiting") && CollectItemsWaiting.Call()))
 		{
 		WalkLog("collect: no progress on '" WkCollect.text "' in " Round(CollectStall / 60000) " minutes - stopping here, telling you")
 		CollectGiveUp(dist, "no progress in " Round(CollectStall / 60000) " minutes of roaming and fighting")
@@ -3761,7 +3761,7 @@ CollectStep(seen, h, dist)
 	;Right after a turn the picture is still swinging round: don't steer on it yet
 	if (A_TickCount - WkTurnAt < WalkSettle())
 		{
-		Sleep, 50
+		Sleep(50)
 		return true
 		}
 	;A goal to use things (X at each - Collect.ahk UseStep: the game's memory's things and the zone file's, nearest first), go to
@@ -3769,12 +3769,12 @@ CollectStep(seen, h, dist)
 	csGoal := WkCollect.last != "" ? WkCollect.last : WkCollect.text
 	if (csOwn)
 		{
-		if (Func(csKind = "use" ? "UseStep" : csKind = "go" ? "GoStep" : "TalkStep").Call(csGoal))
+		if (%csKind = "use" ? "UseStep" : csKind = "go" ? "GoStep" : "TalkStep"%.Call(csGoal))
 			return Walking ? true : false
 		}
 	;Things lying about the zone that the goal names, by the game's memory (AutoFarmer Collect.ahk): walked to and picked
 	;up one by one. None seen: monsters and roaming as before
-	else if (IsFunc("CollectItemStep") && Func("CollectItemStep").Call(csGoal))
+	else if (IsFunc("CollectItemStep") && CollectItemStep.Call(csGoal))
 		return Walking ? true : false
 	;(not a fight goal's: the walk / roam below, no monsters walked into)
 	if (csKind = "use" || csKind = "go" || csKind = "talk")
@@ -3784,13 +3784,13 @@ CollectStep(seen, h, dist)
 		{
 		WkFoesAt := A_TickCount
 		foes := (A_TickCount > WkChaseSkipUntil) ? WalkFoes() : []
-		if (foes.Length())
+		if (foes.Length)
 			{
 			foe := foes[1]
 			if (!WkChaseFrom)
 				{
 				WkChaseFrom := A_TickCount
-				WalkLog("collect: monster label on screen (" foes.Length() " in all, " foe.n " px, " Round((foe.x - GameLeft) / GameW * 100) "% across) - walking into it")
+				WalkLog("collect: monster label on screen (" foes.Length " in all, " foe.n " px, " Round((foe.x - GameLeft) / GameW * 100) "% across) - walking into it")
 				}
 			if (A_TickCount - WkChaseFrom > ChaseTime)
 				{
@@ -3815,7 +3815,7 @@ CollectStep(seen, h, dist)
 		}
 	else if (WkChaseFrom)
 		{
-		Sleep, 50
+		Sleep(50)
 		return true
 		}
 	;Roaming. Too far from the spot: back towards it (the arrow, or the game's memory while it's hidden), then
@@ -3851,7 +3851,7 @@ CollectStep(seen, h, dist)
 		}
 	HoldW(1)
 	SetStatus("collecting - roaming the area (leg " WkRoamLeg ")")
-	Sleep, 100
+	Sleep(100)
 	return Walking ? true : false
 	}
 
@@ -3865,7 +3865,7 @@ WalkGoalText()
 	{
 	if (IsFunc("NavGoal"))
 		{
-		g := Func("NavGoal").Call()
+		g := NavGoal.Call()
 		;(its kind, the NPC it names and its id kept - a talk goal's NPC: WalkTalkGoal; the thing it names, its count and total and
 		;the game's own keys - WalkGoalKind, Collect.ahk's use / go / talk steps; an older helper's has no keys: "". Nothing read:
 		;none kept - the kind of a goal before is stale)
@@ -3910,7 +3910,7 @@ WalkGoalOcr()
 WalkLineShares(a, b)
 	{
 	wlsB := WalkLetters(b)
-	Loop, Parse, a, %A_Space%
+	Loop Parse, a, A_Space
 		{
 		wlsW := WalkLetters(A_LoopField)
 		if (StrLen(wlsW) >= 4 && InStr(wlsB, wlsW))
@@ -3930,7 +3930,7 @@ CollectGoal(text)
 CollectCount(text)
 	{
 	;(a number above the total is a misread)
-	return (RegExMatch(text, "i)(\d+)\s*(?:of|/)\s*(\d+)", cnt) && cnt1 + 0 <= cnt2 + 0) ? cnt1 + 0 : ""
+	return (RegExMatch(text, "i)(\d+)\s*(?:of|/)\s*(\d+)", &cnt) && cnt[1] + 0 <= cnt[2] + 0) ? cnt[1] + 0 : ""
 	}
 
 ;The quest goal's id off the game's memory (read-only) - "" when it isn't read for sure
@@ -3985,29 +3985,29 @@ WalkFoes()
 	{
 	step := Round(GameH / 240), step := step < 2 ? 2 : step, sw := GameW // step, sh := GameH // step
 	foes := []
-	VarSetCapacity(bi, 40, 0)
-	NumPut(40, bi, 0, "UInt"), NumPut(sw, bi, 4, "Int"), NumPut(-sh, bi, 8, "Int")
-	NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")
+	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	NumPut("UInt", 40, bi, 0), NumPut("Int", sw, bi, 4), NumPut("Int", -sh, bi, 8)
+	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	sdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", sdc, "Ptr")
 	bits := 0, cells := {}
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", &bi, "UInt", 0, "Ptr*", bits, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
 	if (hbm && bits)
 		{
 		obm := DllCall("SelectObject", "Ptr", mdc, "Ptr", hbm, "Ptr")
 		DllCall("SetStretchBltMode", "Ptr", mdc, "Int", 3)
 		if (DllCall("StretchBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", sw, "Int", sh
-			, "Ptr", sdc, "Int", GameLeft, "Int", GameTop, "Int", GameW, "Int", GameH, "UInt", 0x00CC0020))
+, "Ptr", sdc, "Int", GameLeft, "Int", GameTop, "Int", GameW, "Int", GameH, "UInt", 0x00CC0020))
 			{
 			DllCall("GdiFlush")
-			batch := A_BatchLines
-			SetBatchLines, -1
+			batch := -1
+; V1toV2: Removed 			SetBatchLines, -1
 			cw := sw // 40, ch := sh // 45, cw := cw < 1 ? 1 : cw, ch := ch < 1 ? 1 : ch
 			y1 := Round(sh * 0.08), y2 := Round(sh * 0.80)
-			Loop, % y2 - y1
+			Loop y2 - y1
 				{
 				y := y1 + A_Index - 1, rowAt := bits + y * sw * 4
-				Loop, %sw%
+				Loop sw
 					{
 					c := NumGet(rowAt + (A_Index - 1) * 4, "UInt"), r := (c >> 16) & 0xFF
 					if (r < 120)
@@ -4016,8 +4016,8 @@ WalkFoes()
 					if (g > 75 || r - g < 80 || b - g < 25 || r - b < 30)
 						continue
 					x := A_Index - 1, key := (y // ch) * 1000 + x // cw
-					if (!cells.HasKey(key))
-						cells[key] := {n: 0, sx: 0, sy: 0, x1: x, x2: x}
+					if (!cells.Has(key))
+						cells[key] := {n: 0, sx: 0, sy: 0, x1: x, x2: x} ;  V1toV2: Invalid Index errors?, try 'cells.Push(<val>)'
 					cell := cells[key], cell.n += 1, cell.sx += x, cell.sy += y
 					if (x < cell.x1)
 						cell.x1 := x
@@ -4025,7 +4025,7 @@ WalkFoes()
 						cell.x2 := x
 					}
 				}
-			SetBatchLines, %batch%
+; V1toV2: Removed 			SetBatchLines, %batch%
 			}
 		DllCall("SelectObject", "Ptr", mdc, "Ptr", obm, "Ptr")
 		DllCall("DeleteObject", "Ptr", hbm)
@@ -4036,22 +4036,22 @@ WalkFoes()
 	done := {}
 	for key, cell in cells
 		{
-		if (done.HasKey(key))
+		if (done.Has(key))
 			continue
-		todo := [key], done[key] := 1, n := 0, sx := 0, sy := 0, x1 := cell.x1, x2 := cell.x2
-		while (todo.Length())
+		todo := [key], done[key] := 1, n := 0, sx := 0, sy := 0, x1 := cell.x1, x2 := cell.x2 ;  V1toV2: Invalid Index errors?, try 'done.Push(<val>)'
+		while (todo.Length)
 			{
 			k := todo.Pop(), c := cells[k], n += c.n, sx += c.sx, sy += c.sy
 			x1 := c.x1 < x1 ? c.x1 : x1, x2 := c.x2 > x2 ? c.x2 : x2
 			for each, dk in [1, -1, 1000, -1000, 999, 1001, -999, -1001]
-				if (cells.HasKey(k + dk) && !done.HasKey(k + dk))
-					done[k + dk] := 1, todo.Push(k + dk)
+				if (cells.Has(k + dk) && !done.Has(k + dk))
+					done[k + dk] := 1, todo.Push(k + dk) ;  V1toV2: Invalid Index errors?, try 'done.Push(<val>)'
 			}
 		;(a label is text: at least 10 samples and 2% of the width - not a red flag in the scenery)
 		if (n >= 10 && x2 - x1 + 1 >= sw * 0.02)
 			{
 			at := 1
-			while (at <= foes.Length() && foes[at].n >= n)
+			while (at <= foes.Length && foes[at].n >= n)
 				at++
 			foes.InsertAt(at, {x: GameLeft + Round((sx / n + 0.5) * step), y: GameTop + Round((sy / n + 0.5) * step), n: n})
 			}
@@ -4093,7 +4093,7 @@ WalkCommonsReset(why, at := "")
 	PressKey("End")
 	while (A_TickCount - t0 < 40000)
 		{
-		Sleep, 250
+		Sleep(250)
 		if (!Walking)
 			return false
 		WalkZone(true)
@@ -4102,7 +4102,7 @@ WalkCommonsReset(why, at := "")
 		if (!WkLoading && WkLoadedAt > t0 + 500)
 			{
 			WalkLog("at the Commons (" WalkZone(true) ") - walking on from here")
-			TrayTip, Wizard101 bot, % "The wizard was badly stuck (" why ") - it went to the Commons and walks on from there.", 10, 1
+			TrayTip("Wizard101 bot", "The wizard was badly stuck (" why ") - it went to the Commons and walks on from there.", 1)
 			WalkReset()
 			WkLoadAt := A_TickCount
 			return true
@@ -4121,7 +4121,7 @@ WalkCommonsReset(why, at := "")
 ;(since: the spellbook seen after then too - after the arrow went, say: the battle's own start hides both)
 WalkSureNoBattle(since := 0)
 	{
-	return IsFunc("BotNoBattle") ? Func("BotNoBattle").Call(since) : false
+	return IsFunc("BotNoBattle") ? BotNoBattle.Call(since) : false
 	}
 
 ;Wizard101's own menu (Escape opens it when nothing else is open) up: two of its page's labels read (GRAPHICS,
@@ -4129,7 +4129,7 @@ WalkSureNoBattle(since := 0)
 ;its buttons QUIT / IDLE / HELP / OK (WalkMenuButtons) - read enlarged, as yellow on red they aren't read at 1:1. Never
 ;with a disconnect box, a question or Crowns read. okBtn: the screen spot of its OK, if read (wantOk: the buttons
 ;read for it even with the labels read). seen: what was read (for debug.log)
-WalkGameMenuOpen(ByRef okBtn := "", wantOk := false, ByRef seen := "")
+WalkGameMenuOpen(&okBtn := "", wantOk := false, &seen := "")
 	{
 	okBtn := "", seen := ""
 	;(the middle 70% of the game - the chat's corner mostly left out - enlarged up to twice, to 2500 px across at
@@ -4145,20 +4145,20 @@ WalkGameMenuOpen(ByRef okBtn := "", wantOk := false, ByRef seen := "")
 	labels := {}
 	for i, line in menuLines
 		{
-		if (!IsObject(line.words) || line.words.Length() > 3)
+		if (!IsObject(line.words) || line.words.Length > 3)
 			continue
 		flat := RegExReplace(Format("{:L}", line.text), "[^a-z]")
 		for k, re in {graphics: "graphic", resolution: "solutio|olution", fullscreen: "lscreen|fullscr", texture: "texture|t[ui]redet"
 			, cursor: "cursor|recurs|hardwar", uisize: "uisiz"}
 			if (RegExMatch(flat, re))
 				{
-				labels[k] := 1
+				labels[k] := 1 ;  V1toV2: Invalid Index errors?, try 'labels.Push(<val>)'
 				break
 				}
 		}
 	;(its buttons are sometimes read at 1:1 too)
-	menuUp := WalkMenuButtons(menuLines, okRead)
-	menuUp := menuUp || labels.Count() >= 2
+	menuUp := WalkMenuButtons(menuLines, &okRead)
+	menuUp := menuUp || labels.Count >= 2
 	if (menuUp && (!wantOk || IsObject(okRead)))
 		{
 		okBtn := okRead
@@ -4170,7 +4170,7 @@ WalkGameMenuOpen(ByRef okBtn := "", wantOk := false, ByRef seen := "")
 	if (!ErrorLevel && IsObject(bandLines) && !RegExMatch(b, "i)reconnect|disconnect|are you sure|cr[o0]wn"))
 		{
 		seen .= " | " RegExReplace(b, "\s+", " ")
-		if (WalkMenuButtons(bandLines, bandOk))
+		if (WalkMenuButtons(bandLines, &bandOk))
 			menuUp := true, okRead := IsObject(bandOk) ? bandOk : okRead
 		}
 	okBtn := menuUp ? okRead : ""
@@ -4181,7 +4181,7 @@ WalkGameMenuOpen(ByRef okBtn := "", wantOk := false, ByRef seen := "")
 ;(0K, 1DLE... too) side by side at one height - no other word between them - in that order left to right, far apart
 ;like buttons (a gap of more than a word's height between them): not words of a sentence. okAt: the OK's middle,
 ;if it's one of them
-WalkMenuButtons(lines, ByRef okAt := "")
+WalkMenuButtons(lines, &okAt := "")
 	{
 	okAt := "", allWords := []
 	for i, line in lines
@@ -4204,7 +4204,7 @@ WalkMenuButtons(lines, ByRef okAt := "")
 		for j, bw in allWords
 			if (Abs(bw.y - first.y) <= Max(first.h, 10) * 0.6)
 				{
-				at := row.Length() + 1
+				at := row.Length + 1
 				for k, r in row
 					if (bw.x < r.x)
 						{
@@ -4221,7 +4221,7 @@ WalkMenuButtons(lines, ByRef okAt := "")
 		if (runLen < 3 || runLen > 4)
 			continue
 		okRow := true, okSpot := ""
-		Loop, % runLen
+		Loop runLen
 			{
 			r := row[firstAt + A_Index - 1]
 			if (!r.n)
@@ -4257,35 +4257,35 @@ WalkMenuMayAct(needWalking, from := 0)
 	{
 	if (!GameActive() || (needWalking && !Walking))
 		return false
-	return IsFunc("WalkHostOn") ? Func("WalkHostOn").Call(from) : true
+	return IsFunc("WalkHostOn") ? WalkHostOn.Call(from) : true
 	}
 
 ;Closes Wizard101's menu if it's up (WalkGameMenuOpen): Escape - twice at most - and if it's still there, its OK
 ;(never Quit), each only while the bot may act (WalkMenuMayAct, checked right before it, from since - or the start
 ;of this). -1: not looked at (the bot mayn't act), 0: no menu, 1: closed, 2: still up (left to you). seen: what the
 ;first look read (for debug.log)
-WalkCloseGameMenu(needWalking := true, ByRef seen := "", since := 0)
+WalkCloseGameMenu(needWalking := true, &seen := "", since := 0)
 	{
 	seen := "", from := since ? since : A_TickCount
 	if (!WalkMenuMayAct(needWalking, from))
 		return -1
-	if (!WalkGameMenuOpen("", false, seen))
+	if (!WalkGameMenuOpen(&"", false, &seen))
 		return 0
-	Loop, 2
+	Loop 2
 		{
 		WalkLog("the game's menu is open (an Escape opened it?) - Escape to close it")
-		Critical
+		Critical()
 		if (!WalkMenuMayAct(needWalking, from))
 			{
-			Critical, Off
+			Critical("Off")
 			WalkLog("the game's menu left to you (the bot is off, Wizard101 isn't in front or you've taken over)")
 			return 2
 			}
-		Send, {Blind}{Escape}
-		Critical, Off
-		Sleep, 800
+		Send("{Blind}{Escape}")
+		Critical("Off")
+		Sleep(800)
 		;(the second time, its OK looked for too - for a click if Escape won't do)
-		if (!WalkGameMenuOpen(menuOk, A_Index = 2))
+		if (!WalkGameMenuOpen(&menuOk, A_Index := 2))
 			return 1
 		}
 	if (!IsObject(menuOk))
@@ -4295,31 +4295,31 @@ WalkCloseGameMenu(needWalking := true, ByRef seen := "", since := 0)
 		}
 	WalkLog("the game's menu is still open - its OK")
 	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
-	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
-	Critical
+	ownGrab := IsFunc("MouseGrab") ? MouseGrab.Call() : false
+	Critical()
 	clicked := WalkMenuMayAct(needWalking, from)
 	if (clicked)
 		{
 		;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
 		if (IsFunc("MouseLockOn"))
-			Func("MouseLockOn").Call("walker")
-		Click, % menuOk.x " " menuOk.y
+			MouseLockOn.Call("walker")
+		Click(menuOk.x " " menuOk.y)
 		;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 		if (IsFunc("MouseLockMoved"))
-			Func("MouseLockMoved").Call()
+			MouseLockMoved.Call()
 		}
-	Critical, Off
-	Sleep, 100
+	Critical("Off")
+	Sleep(100)
 	if (ownGrab)
-		Func("MouseLetGo").Call()
+		MouseLetGo.Call()
 	if (clicked && IsFunc("MouseLockOff"))
-		Func("MouseLockOff").Call("walker")
+		MouseLockOff.Call("walker")
 	if (!clicked)
 		{
 		WalkLog("the game's menu left to you (the bot is off, Wizard101 isn't in front or you've taken over)")
 		return 2
 		}
-	Sleep, 700
+	Sleep(700)
 	return WalkGameMenuOpen() ? 2 : 1
 	}
 
@@ -4331,7 +4331,7 @@ WalkEscape()
 		ReleaseKeys()
 	WalkLog("no arrow for " Round((A_TickCount - WkNoArrowFrom) / 1000) " s since an X of the bot's - Escape, in case that opened a window Space doesn't close (a shop?)")
 	PressKey("Escape")
-	Sleep, 1200
+	Sleep(1200)
 	WalkCloseGameMenu()
 	}
 
@@ -4350,26 +4350,32 @@ WalkNotify(kind, title, text, withKeep := false)
 	WalkLog("NEEDS YOU - " title ": " text)
 	;(and to Discord, if alerts are set up: AutoFarmer's Alerts.ahk)
 	if (IsFunc("AlertSend"))
-		Func("AlertSend").Call("walk-" kind, title, text)
+		AlertSend.Call("walk-" kind, title, text)
 	;(+E0x08000000: clicking it never takes the focus from the game)
-	Gui, WkNote:New, +AlwaysOnTop +ToolWindow +E0x08000000 +HwndWkNoteHwnd, Wizard101 bot needs you
-	Gui, WkNote:Margin, 14, 12
-	Gui, WkNote:Font, s11 w700, Segoe UI
-	Gui, WkNote:Add, Text, w400, %title%
-	Gui, WkNote:Font, s9 w400, Segoe UI
-	Gui, WkNote:Add, Text, w400 y+6, %text%
+	WkNote := Gui("+AlwaysOnTop +ToolWindow +E0x08000000", "Wizard101 bot needs you"), WkNoteHwnd := WkNote.Hwnd
+	WkNote.MarginX := 14, WkNote.MarginY := 12
+	WkNote.SetFont("s11 w700", "Segoe UI")
+	WkNote.Add("Text", "w400", title)
+	WkNote.SetFont("s9 w400", "Segoe UI")
+	WkNote.Add("Text", "w400 y+6", text)
 	if (withKeep)
 		{
-		Gui, WkNote:Add, Button, gWalkNoteKeep w120 y+12, Keep trying
-		Gui, WkNote:Add, Button, gWalkNoteStop w120 x+8, Stop walking
-		Gui, WkNote:Add, Button, gWalkNoteOk w80 x+8, OK
+		ogcButtonKeeptrying := WkNote.Add("Button", "w120 y+12", "Keep trying")
+		ogcButtonKeeptrying.OnEvent("Click", WalkNoteKeep.Bind("Normal"))
+		ogcButtonStopwalking := WkNote.Add("Button", "w120 x+8", "Stop walking")
+		ogcButtonStopwalking.OnEvent("Click", WalkNoteStop.Bind("Normal"))
+		ogcButtonOK := WkNote.Add("Button", "w80 x+8", "OK")
+		ogcButtonOK.OnEvent("Click", WalkNoteOk.Bind("Normal"))
 		}
 	else
-		Gui, WkNote:Add, Button, gWalkNoteOk w80 y+12, OK
+	{
+		ogcButtonOK := WkNote.Add("Button", "w80 y+12", "OK")
+		ogcButtonOK.OnEvent("Click", WalkNoteOk.Bind("Normal"))
+	}
 	if (!inbattle)
 		WalkNoteShow()
-	SoundPlay, *48
-	TrayTip, Wizard101 bot needs you, % title ": " SubStr(text, 1, 200), 10, 2
+	SoundPlay("*48")
+	TrayTip("Wizard101 bot needs you", title ": " SubStr(text, 1, 200), 2)
 	}
 
 ;How important a notice is: stuck > collect > no arrow > waiting at a goal
@@ -4389,14 +4395,14 @@ WalkNoteShow()
 	{
 	if (WkNoteKind = "" || WkNoteOff)
 		return
-	Gui, WkNote:Show, Hide AutoSize
+	WkNote.Show("Hide AutoSize")
 	dhw := A_DetectHiddenWindows
-	DetectHiddenWindows, On
-	WinGetPos, , , noteW, noteH, ahk_id %WkNoteHwnd%
-	DetectHiddenWindows, %dhw%
+	DetectHiddenWindows(true)
+	WinGetPos(, , &noteW, &noteH, "ahk_id " WkNoteHwnd)
+	DetectHiddenWindows(dhw)
 	at := WalkNotePlace(noteW, noteH)
 	noteX := at[1], noteY := at[2]
-	Gui, WkNote:Show, x%noteX% y%noteY% NoActivate
+	WkNote.Show("x" . noteX . " y" . noteY . " NoActivate")
 	WkNoteShown := 1
 	}
 
@@ -4406,17 +4412,17 @@ WalkNoteShow()
 WalkNotePlace(noteW, noteH)
 	{
 	gx := GameLeft + GameW // 2, gy := GameTop + GameH // 2
-	SysGet, monCount, MonitorCount
-	Loop, %monCount%
+	monCount := MonitorGetCount()
+	Loop monCount
 		{
-		SysGet, wa, MonitorWorkArea, %A_Index%
+		MonitorGetWorkArea(A_Index, &waLeft, &waTop, &waRight, &waBottom)
 		if (gx >= waLeft && gx < waRight && gy >= waTop && gy < waBottom)
 			continue
 		return [waRight - noteW - 20, waTop + 20]
 		}
-	Loop, %monCount%
+	Loop monCount
 		{
-		SysGet, wa, MonitorWorkArea, %A_Index%
+		MonitorGetWorkArea(A_Index, &waLeft, &waTop, &waRight, &waBottom)
 		if (gx >= waLeft && gx < waRight && gy >= waTop && gy < waBottom)
 			break
 		}
@@ -4430,7 +4436,7 @@ WalkNotePlace(noteW, noteH)
 WalkNoteHide()
 	{
 	if (WkNoteShown)
-		Gui, WkNote:Hide
+		WkNote.Hide()
 	WkNoteShown := 0
 	}
 
@@ -4440,27 +4446,27 @@ WalkNotifyClose(kind := "")
 	if (WkNoteKind = "" || (kind != "" && WkNoteKind != kind))
 		return
 	WalkLog("notice '" WkNoteTitle "' closed")
-	Gui, WkNote:Destroy
+	Try WkNote.Destroy()
 	WkNoteKind := "", WkNoteTitle := "", WkNoteShown := 0, WkNoteOff := 0
 	}
 
 ;The notice's buttons. OK: put away (not shown again till it's sorted). Keep trying: collect again for
 ;CollectStall. Stop walking: walking off. Each gives the game the focus back
-WalkNoteOk(args*)
+WalkNoteOk(A_GuiEvent:="", args*:="", Info:="", *)
 	{
-	Gui, WkNote:Hide
+	WkNote.Hide()
 	WkNoteShown := 0, WkNoteOff := 1
 	WalkGameFocus()
 	}
 
-WalkNoteKeep(args*)
+WalkNoteKeep(A_GuiEvent:="", args*:="", Info:="", *)
 	{
 	if (IsObject(WkCollect))
 		{
 		WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount
 		;(a goal to use things: the ones left for a while tried again - Collect.ahk)
 		if (IsFunc("UseForget"))
-			Func("UseForget").Call()
+			UseForget.Call()
 		WalkNotifyClose()
 		StartCollect(WkCollect.text, "you said keep trying")
 		}
@@ -4469,7 +4475,7 @@ WalkNoteKeep(args*)
 	WalkGameFocus()
 	}
 
-WalkNoteStop(args*)
+WalkNoteStop(A_GuiEvent:="", args*:="", Info:="", *)
 	{
 	WalkNotifyClose()
 	if (Walking)
@@ -4479,7 +4485,7 @@ WalkNoteStop(args*)
 
 WalkGameFocus()
 	{
-	WinActivate, ahk_class %GameClass% ahk_exe %GameExe%
+	WinActivate("ahk_class " GameClass " ahk_exe " GameExe)
 	}
 
 ;---- Is the wizard moving? A tiny grey copy of the game compared with the one before ----
@@ -4489,29 +4495,29 @@ WalkGameFocus()
 WalkSnap()
 	{
 	snapW := 64, snapH := 40, snap := ""
-	VarSetCapacity(bi, 40, 0)
-	NumPut(40, bi, 0, "UInt"), NumPut(snapW, bi, 4, "Int"), NumPut(-snapH, bi, 8, "Int")
-	NumPut(1, bi, 12, "UShort"), NumPut(32, bi, 14, "UShort")
+	bi := Buffer(40, 0) ; V1toV2: if 'bi' is a UTF-16 string, use 'VarSetStrCapacity(&bi, 40)' and replace all instances of 'bi.Ptr' with 'StrPtr(bi)'
+	NumPut("UInt", 40, bi, 0), NumPut("Int", snapW, bi, 4), NumPut("Int", -snapH, bi, 8)
+	NumPut("UShort", 1, bi, 12), NumPut("UShort", 32, bi, 14)
 	sdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", sdc, "Ptr")
 	bits := 0
-	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", &bi, "UInt", 0, "Ptr*", bits, "Ptr", 0, "UInt", 0, "Ptr")
+	hbm := DllCall("CreateDIBSection", "Ptr", mdc, "Ptr", bi.Ptr, "UInt", 0, "Ptr*", bi.Ptrts, "Ptr", 0, "UInt", 0, "Ptr")
 	if (hbm && bits)
 		{
 		obm := DllCall("SelectObject", "Ptr", mdc, "Ptr", hbm, "Ptr")
 		DllCall("SetStretchBltMode", "Ptr", mdc, "Int", 4)
 		DllCall("SetBrushOrgEx", "Ptr", mdc, "Int", 0, "Int", 0, "Ptr", 0)
 		if (DllCall("StretchBlt", "Ptr", mdc, "Int", 0, "Int", 0, "Int", snapW, "Int", snapH
-			, "Ptr", sdc, "Int", GameLeft, "Int", GameTop, "Int", GameW, "Int", GameH, "UInt", 0x00CC0020))
+, "Ptr", sdc, "Int", GameLeft, "Int", GameTop, "Int", GameW, "Int", GameH, "UInt", 0x00CC0020))
 			{
 			DllCall("GdiFlush")
 			snap := []
-			Loop, % snapH
+			Loop snapH
 				{
 				row := A_Index - 1
 				if (row < snapH * 0.10 || row >= snapH * 0.75)
 					continue
-				Loop, % snapW
+				Loop snapW
 					{
 					col := A_Index - 1
 					if (col >= snapW * 0.35 && col < snapW * 0.65)
@@ -4538,11 +4544,11 @@ WalkStill()
 	nowMs := A_TickCount
 	if (IsObject(WkSnapPrev) && nowMs - WkSnapAt < 300)
 		return ""
-	batch := A_BatchLines
-	SetBatchLines, -1
+	batch := -1
+; V1toV2: Removed 	SetBatchLines, -1
 	snap := WalkSnap()
 	result := ""
-	if (IsObject(snap) && IsObject(WkSnapPrev) && snap.Length() && snap.Length() = WkSnapPrev.Length()
+	if (IsObject(snap) && IsObject(WkSnapPrev) && snap.Length && snap.Length = WkSnapPrev.Length
 		&& nowMs - WkSnapAt <= 1500 && WkSnapAt > WkTurnAt + WalkSettle() && WkSnapAt > WkWalkFrom + 200)
 		{
 		;A cell counts as changed by more than a bit of its brightness (dark places change less)
@@ -4550,10 +4556,10 @@ WalkStill()
 		for i, grey in snap
 			if (Abs(grey - WkSnapPrev[i]) > 3 + (grey + WkSnapPrev[i]) // 25)
 				changedCells += 1
-		WkMotion := Round(changedCells / snap.Length(), 2)
+		WkMotion := Round(changedCells / snap.Length, 2)
 		result := WkMotion < StillFrac ? 1 : 0
 		}
-	SetBatchLines, %batch%
+; V1toV2: Removed 	SetBatchLines, %batch%
 	WkSnapPrev := snap, WkSnapAt := nowMs
 	return result
 	}
@@ -4584,15 +4590,15 @@ WalkZone(fresh := false)
 	if (A_TickCount - checkedAt < (fresh ? 250 : 3000))
 		return zone
 	checkedAt := A_TickCount
-	WinGet, exePath, ProcessPath, ahk_class %GameClass% ahk_exe %GameExe%
+	exePath := WinGetProcessPath("ahk_class " GameClass " ahk_exe " GameExe)
 	if (exePath != "")
 		{
-		SplitPath, exePath,, binDir
+		SplitPath(exePath, , &binDir)
 		logPath := binDir "\WizardClient.log"
 		}
 	if (logPath = "")
 		return zone
-	FileGetSize, logSize, %logPath%
+	logSize := FileGetSize(logPath)
 	if (ErrorLevel || logSize = lastSize)
 		return zone
 	;The last part of the log normally has the latest zone change; the whole log if not known yet
@@ -4618,31 +4624,31 @@ WalkZone(fresh := false)
 	;(whole lines only: a line still being written could hold half a zone name). After each zone change
 	;the game lists the zones of the quest's goals ("checking goal zone ...")
 	foundAt := 1, goals := "", zoneBefore := zone
-	while (foundAt := RegExMatch(chunk, "(ConnectComplete destination Zone=|checking goal zone )(\S+)\r?\n", zoneMatch, foundAt))
+	while (foundAt := RegExMatch(chunk, "(ConnectComplete destination Zone=|checking goal zone )(\S+)\r?\n", &zoneMatch, (foundAt)<1 ? (foundAt)-1 : (foundAt)))
 		{
-		if (InStr(zoneMatch1, "ConnectComplete"))
-			zone := zoneMatch2, goals := []
+		if (InStr(zoneMatch[1], "ConnectComplete"))
+			zone := zoneMatch[2], goals := []
 		else
 			{
 			if (!IsObject(goals))
 				goals := []
 			isNew := true
 			for i, goalZone in goals
-				if (goalZone = zoneMatch2)
+				if (goalZone = zoneMatch[2])
 					isNew := false
 			if (isNew)
-				goals.Push(zoneMatch2)
+				goals.Push(zoneMatch[2])
 			}
-		WalkZoneSeen(zoneMatch2)
-		foundAt += StrLen(zoneMatch)
+		WalkZoneSeen(zoneMatch[2])
+		foundAt += StrLen((zoneMatch&&zoneMatch[0]))
 		}
-	if (IsObject(goals) && goals.Length())
+	if (IsObject(goals) && goals.Length)
 		WkGoalZones := goals
 	;A zone transfer (a loading screen) started and not finished yet, or finished just now - only from
 	;what was written since the last look (the first read of a log is history)
 	if (zoneBefore != "" && readFrom > 0)
 		{
-		startAt := InStr(chunk, "MSG_ZoneTransferRequest", false, 0), doneAt := InStr(chunk, "ConnectComplete destination", false, 0)
+		startAt := InStr(chunk, "MSG_ZoneTransferRequest", false, -1), doneAt := InStr(chunk, "ConnectComplete destination", false, -1)
 		if (startAt > doneAt)
 			WkLoading := 1
 		else if (doneAt)
@@ -4655,14 +4661,14 @@ WalkZone(fresh := false)
 		;(X at a sigil just before: this zone's its dungeon)
 		if (WkSigilAt && A_TickCount - WkSigilAt < SigilWait + 15000 && IsObject(WkSigilZones))
 			{
-			WkSigilZones[zone] := 1, WkSigilAt := 0
+			WkSigilZones[zone] := 1, WkSigilAt := 0 ;  V1toV2: Invalid Index errors?, try 'WkSigilZones.Push(<val>)'
 			;(a dungeon: its drops held from quick selling - AutoFarmer's QuickSell.ahk; AutoQuester has none)
 			if (IsFunc("QsDungeonMark"))
-				Func("QsDungeonMark").Call(zone)
+				QsDungeonMark.Call(zone)
 			}
 		;(a zone a dungeon's zone leads to - its deeper zones held from quick selling too: QuickSell.ahk)
 		if (IsFunc("QsZoneChange"))
-			Func("QsZoneChange").Call(zoneBefore, zone)
+			QsZoneChange.Call(zoneBefore, zone)
 		}
 	return zone
 	}
@@ -4674,17 +4680,17 @@ WalkZonesLoad()
 	WkKnownZones := {}
 	dir := AqDir()
 	WkZonesFile := dir "\resources\known_zones.txt"
-	Loop, Read, %WkZonesFile%
+	Loop Read, WkZonesFile
 		if (Trim(A_LoopReadLine) != "")
-			WkKnownZones[Trim(A_LoopReadLine)] := 1
+			WkKnownZones[Trim(A_LoopReadLine)] := 1 ;  V1toV2: Invalid Index errors?, try 'WkKnownZones.Push(<val>)'
 	}
 
 WalkZoneSeen(zoneName)
 	{
-	if (zoneName = "" || WkKnownZones.HasKey(zoneName))
+	if (zoneName = "" || WkKnownZones.Has(zoneName))
 		return
-	WkKnownZones[zoneName] := 1
-	FileAppend, %zoneName%`n, %WkZonesFile%
+	WkKnownZones[zoneName] := 1 ;  V1toV2: Invalid Index errors?, try 'WkKnownZones.Push(<val>)'
+	FileAppend(zoneName "`n", WkZonesFile)
 	}
 
 WalkMemLoad()
@@ -4695,13 +4701,13 @@ WalkMemLoad()
 		dir := AqDir()
 		WkMemFile := dir "\resources\walk_memory.txt"
 		}
-	Loop, Read, %WkMemFile%
+	Loop Read, WkMemFile
 		{
 		line := Trim(A_LoopReadLine)
 		if (line = "" || SubStr(line, 1, 1) = ";" || !RegExMatch(line, "^[^|]+(\|-?\d+){5}$"))
 			continue
 		part := StrSplit(line, "|")
-		if (part.Length() >= 6)
+		if (part.Length >= 6)
 			WkMem.Push({zone: part[1], dist: part[2] + 0, side: part[3] + 0, walkMs: part[4] + 0, wins: part[5] + 0, fails: part[6] + 0, preAt: 0})
 		}
 	}
@@ -4712,9 +4718,14 @@ WalkMemSave()
 		. "; zone|distance to the goal where it got stuck|side that got round it (1 right, -1 left)|ms walked along it|times it worked|times it didn't`n"
 	for i, spot in WkMem
 		text .= spot.zone "|" spot.dist "|" spot.side "|" spot.walkMs "|" spot.wins "|" spot.fails "`n"
-	FileDelete, %WkMemFile%.tmp
-	FileAppend, %text%, %WkMemFile%.tmp
-	FileMove, %WkMemFile%.tmp, %WkMemFile%, 1
+	Try FileDelete(WkMemFile ".tmp")
+	FileAppend(text, WkMemFile ".tmp")
+	Try {
+		FileMove(WkMemFile ".tmp", WkMemFile, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	}
 
 ;The remembered obstacle in that zone nearest that distance (within MemNear), if its way round has
@@ -4821,9 +4832,9 @@ WalkNav(hScr, dScr)
 	;turned avoiding off for every mob - the map's rings went and the wizard walked into crabs it didn't need)
 	;(...and while using things, going to a place or talking to an NPC the game shows no way to: only a fight goal's collecting walks
 	;into mobs - WkCollect.kind)
-	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.HasKey("mobavoid") && !Stats["mobavoid"])
+	avoidMobs := NavRoute && !(IsObject(Stats) && Stats.Has("mobavoid") && !Stats["mobavoid"])
 		&& !(WkArrived = 7 && !(IsObject(WkCollect) && WkCollect.kind != "" && WkCollect.kind != "fight"))
-	nav := Func("NavRead").Call(150, false, NavRoute, avoidMobs, Func("WalkGoalLine"))
+	nav := NavRead.Call(150, false, NavRoute, avoidMobs, WalkGoalLine)
 	;A goal the game shows no way to (a newer helper's noplace 1, held 2 s for this goal, two readings running with the same goal id;
 	;a missed reading keeps it 3 s): the arrow on screen is a phantom - WalkStep leaves it out, the goal's kind's own way instead.
 	;An older helper sends no noplace: never - the arrow as before
@@ -4922,16 +4933,16 @@ WalkNav(hScr, dScr)
 			if (!IsObject(WkWalkSamples))
 				WkWalkSamples := []
 			WkWalkSamples.Push(navSpeed)
-			if (WkWalkSamples.Length() > 15)
+			if (WkWalkSamples.Length > 15)
 				WkWalkSamples.RemoveAt(1)
-			if (WkWalkSamples.Length() >= 5)
+			if (WkWalkSamples.Length >= 5)
 				{
 				wsSorted := ""
 				for each, wsV in WkWalkSamples
 					wsSorted .= (wsSorted = "" ? "" : "`n") Format("{:012.6f}", wsV)
-				Sort, wsSorted
+				wsSorted := Sort(wsSorted)
 				wsList := StrSplit(wsSorted, "`n")
-				WkWalkSpeed := wsList[Ceil(wsList.Length() * 0.75)] + 0
+				WkWalkSpeed := wsList[Ceil(wsList.Length * 0.75)] + 0
 				TurnRadius := Min(900, Max(60, WkWalkSpeed / (TurnRate * 0.0174533)))
 				}
 			}
@@ -5108,7 +5119,7 @@ WalkNavMoveCheck(nav)
 WalkNavLearnScale(ratio, hops)
 	{
 	WkNavScales.Push(ratio)
-	if (WkNavScales.Length() > 9)
+	if (WkNavScales.Length > 9)
 		WkNavScales.RemoveAt(1)
 	if (WkNavScale > 0)
 		{
@@ -5123,7 +5134,7 @@ WalkNavLearnScale(ratio, hops)
 		else if (WkNavScaleBad = 2)
 			WalkLog("the game's memory: its distance doesn't match the arrow's any more (" Round(ratio, 2) " game units per arrow unit, not " Round(WkNavScale, 2) ") - its distance by 100 to the arrow's 1 till it's worked out again")
 		}
-	if (WkNavScales.Length() < 5)
+	if (WkNavScales.Length < 5)
 		return
 	mid := WalkMedian(WkNavScales), close := 0
 	for i, r in WkNavScales
@@ -5133,7 +5144,7 @@ WalkNavLearnScale(ratio, hops)
 	if (close < 5 || (own && Abs(mid / WkNavScale - 1) <= 0.03))
 		return
 	was := WkNavScale
-	WkNavScale := mid, WkNavScaleBad := 0, WkNavZScales[WkNavScaleZone] := mid
+	WkNavScale := mid, WkNavScaleBad := 0, WkNavZScales[WkNavScaleZone] := mid ;  V1toV2: Invalid Index errors?, try 'WkNavZScales.Push(<val>)'
 	WkNavScaleAll := WalkNavMiddleScale()
 	WalkLog("the game's memory: in " WkNavScaleZone " the arrow's distance is its distance / " Round(mid, 2) " (" close " readings agree" (hops = "" ? "" : ", " hops " zone changes to go") (was = "" ? "" : "; " (own ? "it was " : "other zones' ") Round(was, 2)) ") - its distance used from now on, not the OCR'd number")
 	WalkNavSave()
@@ -5146,11 +5157,11 @@ WalkMedian(list)
 	for i, v in list
 		{
 		at := 1
-		while (at <= sorted.Length() && sorted[at] < v)
+		while (at <= sorted.Length && sorted[at] < v)
 			at++
 		sorted.InsertAt(at, v)
 		}
-	n := sorted.Length()
+	n := sorted.Length
 	return Mod(n, 2) ? sorted[(n + 1) // 2] : (sorted[n // 2] + sorted[n // 2 + 1]) / 2
 	}
 
@@ -5181,25 +5192,25 @@ NavTurn(h)
 	static stillTurns := 0, wrongTurns := 0
 	if (!IsFunc("NavRead") || Abs(h) < 1)
 		return false
-	first := Func("NavRead").Call(120)
+	first := NavRead.Call(120)
 	if (!IsObject(first) || first.yaw = "")
 		return false
-	Critical
+	Critical()
 	if (!Walking || !GameActive())
 		{
-		Critical, Off
+		Critical("Off")
 		return true
 		}
 	key := h < 0 ? "a" : "d"
 	KeysDown := 1
-	Send, {Blind}{%key% down}
-	Critical, Off
+	Send("{Blind}{" key " down}")
+	Critical("Off")
 	downAt := A_TickCount, lookAt := A_TickCount, prevYaw := first.yaw, turned := 0, looks := 0, ending := ""
 	capMs := Round(Abs(h) / (TurnRate * SpeedNow) * 1.6) + 300
 	capMs := capMs > NavTurnCap ? NavTurnCap : capMs
-	loop
+	Loop
 		{
-		Sleep, 10
+		Sleep(10)
 		if (!Walking)
 			{
 			ending := "walking off"
@@ -5211,7 +5222,7 @@ NavTurn(h)
 			break
 			}
 		lookMs := A_TickCount - lookAt, lookAt := A_TickCount
-		nav := Func("NavRead").Call(120)
+		nav := NavRead.Call(120)
 		took := A_TickCount - downAt
 		if (!IsObject(nav) || nav.yaw = "")
 			{
@@ -5247,7 +5258,7 @@ NavTurn(h)
 			break
 			}
 		}
-	Send, {Blind}{%key% up}
+	Send("{Blind}{" key " up}")
 	WkTurnAt := A_TickCount
 	took := A_TickCount - downAt
 	stillTurns := ending = "not turning" ? stillTurns + 1 : 0
@@ -5417,7 +5428,7 @@ WalkNavMiddleScale(world := "")
 		if (world != "" && StrSplit(zoneName, "/")[1] = world)
 			inWorld.Push(sc)
 		}
-	return inWorld.Length() ? WalkMedian(inWorld) : vals.Length() ? WalkMedian(vals) : (WkNavScaleAll >= 50 && WkNavScaleAll <= 200) ? WkNavScaleAll : ""
+	return inWorld.Length ? WalkMedian(inWorld) : vals.Length ? WalkMedian(vals) : (WkNavScaleAll >= 50 && WkNavScaleAll <= 200) ? WkNavScaleAll : ""
 	}
 
 ;A zone's own scale (the arrow's distance per game unit) as kept - "" none, or one off 50-200: learned before v0.51.3 with the
@@ -5425,7 +5436,7 @@ WalkNavMiddleScale(world := "")
 ;4.59, WC_Hub 11.7); every zone worked out with the goal in it has been 100-103. Learned again there, with the goal in it
 WalkNavOwnScale(zone)
 	{
-	osSc := (IsObject(WkNavZScales) && WkNavZScales.HasKey(zone)) ? WkNavZScales[zone] : ""
+	osSc := (IsObject(WkNavZScales) && WkNavZScales.Has(zone)) ? WkNavZScales[zone] : ""
 	return (osSc != "" && osSc >= 50 && osSc <= 200) ? osSc : ""
 	}
 
@@ -5437,16 +5448,16 @@ WalkNavLoad()
 	WkNavSign := 1, WkNavChecked := 0, WkNavZScales := {}, WkNavScaleAll := "", WkNavScaleZone := ""
 	dir := AqDir()
 	WkNavFile := dir "\resources\nav_calibration.txt"
-	Loop, Read, %WkNavFile%
+	Loop Read, WkNavFile
 		{
-		if (RegExMatch(A_LoopReadLine, "^\s*sign\s*:\s*(-?1)\s*(;.*)?$", m))
-			WkNavSign := m1 + 0
-		else if (RegExMatch(A_LoopReadLine, "^\s*checked\s*:\s*([01])\s*(;.*)?$", m))
-			WkNavChecked := m1 + 0
-		else if (RegExMatch(A_LoopReadLine, "^\s*scale\s*:\s*(\d+(?:\.\d+)?)\s*(;.*)?$", m) && m1 > 0)
-			WkNavScaleAll := m1 + 0
-		else if (RegExMatch(A_LoopReadLine, "^\s*zone\s*:\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)\s*$", m) && m2 > 0)
-			WkNavZScales[m1] := m2 + 0
+		if (RegExMatch(A_LoopReadLine, "^\s*sign\s*:\s*(-?1)\s*(;.*)?$", &m))
+			WkNavSign := m[1] + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*checked\s*:\s*([01])\s*(;.*)?$", &m))
+			WkNavChecked := m[1] + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*scale\s*:\s*(\d+(?:\.\d+)?)\s*(;.*)?$", &m) && m[1] > 0)
+			WkNavScaleAll := m[1] + 0
+		else if (RegExMatch(A_LoopReadLine, "^\s*zone\s*:\s*(.+?)\s*\|\s*(\d+(?:\.\d+)?)\s*$", &m) && m[2] > 0)
+			WkNavZScales[m[1]] := m[2] + 0 ;  V1toV2: Invalid Index errors?, try 'WkNavZScales.Push(<val>)'
 		}
 	WkNavScale := WkNavScaleAll
 	WkNavSignSaved := WkNavSign
@@ -5466,9 +5477,14 @@ WalkNavSave()
 		. "checked:" (WkNavChecked ? 1 : 0) "`n"
 	for zone, sc in WkNavZScales
 		text .= "zone:" zone "|" Round(sc, 4) "`n"
-	FileDelete, %WkNavFile%.tmp
-	FileAppend, %text%, %WkNavFile%.tmp
-	FileMove, %WkNavFile%.tmp, %WkNavFile%, 1
+	Try FileDelete(WkNavFile ".tmp")
+	FileAppend(text, WkNavFile ".tmp")
+	Try {
+		FileMove(WkNavFile ".tmp", WkNavFile, 1)
+		ErrorLevel := 0
+	} Catch as Err {
+		ErrorLevel := Err.Extra
+	}
 	WkNavSignSaved := WkNavSign
 	}
 
@@ -5480,4 +5496,4 @@ WalkerQuit(reason, code)
 	return 0
 	}
 ;Turning by the mouse while walking
-#Include %A_LineFile%\..\MouseSteer.ahk
+#Include "%A_LineFile%\..\MouseSteer.ahk"

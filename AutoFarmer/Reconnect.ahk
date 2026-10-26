@@ -47,12 +47,12 @@ ReconnectInit()
 	RcPlayTries := 0, RcNoRelaunch := 0, RcLoginBad := 0, RcNote := 0, RcTyped := 0, RcMsg := ""
 	RcHead := "", RcPeekAt := 0, RcPeeks := 0, RcLoadAt := 0, RcLastLineAt := A_TickCount, RcHungAsked := 0
 	RcHungCount := 0, RcHungFirstAt := 0
-	Process, Exist, %GameExe%
+	ErrorLevel := ProcessExist(GameExe)
 	RcPid := ErrorLevel
 	RcSetClient(RcFindClient())
 	;Replay the end of the game's log (quietly) to see where things stand
 	RcPos := 0
-	FileGetSize, logSize, %RcLog%
+	logSize := FileGetSize(RcLog)
 	if (logSize > 131072)
 		RcPos := logSize - 131072
 	RcScanning := 1
@@ -61,7 +61,7 @@ ReconnectInit()
 	if ((RcState = "box" || RcState = "outdated") && RcPid)
 		{
 		RcTries := 0, RcNext := 0, RcStateAt := A_TickCount
-		RcLogMsg("a disconnect box is already up: """ RcMsg """")
+		RcLogMsg("a disconnect box is already up: `"" RcMsg "`"")
 		}
 	;Started (or restarted) in the middle of getting back in after a disconnect: carry on from there
 	else if ((RcState = "select" || RcState = "enter") && RcPid)
@@ -71,7 +71,8 @@ ReconnectInit()
 		}
 	else
 		RcState := "", RcTries := 0
-	Menu, Tray, Check, Auto-reconnect on/off
+	Tray := A_TrayMenu
+	Tray.Check("Auto-reconnect on/off")
 	return true
 	}
 
@@ -86,7 +87,7 @@ ReconnectCheck()
 	if (nowMs - RcProcAt >= 2000)
 		{
 		RcProcAt := nowMs
-		Process, Exist, %GameExe%
+		ErrorLevel := ProcessExist(GameExe)
 		gamePid := ErrorLevel
 		if (gamePid && gamePid != RcPid)
 			{
@@ -256,12 +257,12 @@ RcReadLog()
 	chunk := logFile.Read(logSize - RcPos)
 	logFile.Close()
 	;A line still being written is read next time
-	lastNl := InStr(chunk, "`n", false, 0)
+	lastNl := InStr(chunk, "`n", false, -1)
 	if (!lastNl)
 		return
 	chunk := SubStr(chunk, 1, lastNl)
 	RcPos += StrLen(chunk)
-	Loop, Parse, chunk, `n, `r
+	Loop Parse, chunk, "`n", "`r"
 		RcLogLine(A_LoopField)
 	}
 
@@ -283,14 +284,14 @@ RcLogLine(logLine)
 	if (InStr(logLine, "DisplayMessageBox("))
 		{
 		;(the msg string key can be empty - e.g. a Crown Shop error, keyed by its title: GUI_CrownShopError)
-		RegExMatch(logLine, "msg = (.*?), title = (.*?), msg string key = (\w*)(?:, title string key = (\w*))?", box)
-		boxMsg := box1, boxKey := (box3 != "") ? box3 : box4
+		RegExMatch(logLine, "msg = (.*?), title = (.*?), msg string key = (\w*)(?:, title string key = (\w*))?", &box)
+		boxMsg := box[1], boxKey := (box[3] != "") ? box[3] : box[4]
 		if (boxMsg = "")
 			boxMsg := logLine
 		if (RegExMatch(boxKey, "i)OutOfDate") || RegExMatch(boxMsg, "i)out of date"))
 			{
 			RcMsg := boxMsg
-			RcSet("outdated", "the game says """ boxMsg """ - it needs patching")
+			RcSet("outdated", "the game says `"" boxMsg "`" - it needs patching")
 			return
 			}
 		;Kicked because the account logged in somewhere else, or by an admin: don't fight that
@@ -298,9 +299,9 @@ RcLogLine(logLine)
 			|| RegExMatch(boxMsg, "i)someone else has logged in|logged in (from|on|at) another|by an Administrator|suspended|banned"))
 			{
 			RcMsg := boxMsg
-			RcSet("stopped", "not reconnecting: """ boxMsg """ (" boxKey ")")
+			RcSet("stopped", "not reconnecting: `"" boxMsg "`" (" boxKey ")")
 			if (!RcScanning)
-				TrayTip, Wizard101 bot, % "Not reconnecting: " boxMsg, 10, 2
+				TrayTip("Wizard101 bot", "Not reconnecting: " boxMsg, 2)
 			return
 			}
 		;While typing the login in: whatever the game says is about that
@@ -309,17 +310,17 @@ RcLogLine(logLine)
 			if (RegExMatch(boxMsg, "i)invalid|password|username|account"))
 				{
 				RcLoginBad := 1
-				RcSet("stopped", "the game turned the saved login down (""" boxMsg """) - it won't be typed again until it's saved again (tray menu: Set Wizard101 login...)")
-				TrayTip, Wizard101 bot, The game turned the saved login down. Save it again with "Set Wizard101 login..." in the tray menu., 10, 2
+				RcSet("stopped", "the game turned the saved login down (`"" boxMsg "`") - it won't be typed again until it's saved again (tray menu: Set Wizard101 login...)")
+				TrayTip("Wizard101 bot", "The game turned the saved login down. Save it again with `"Set Wizard101 login...`" in the tray menu.", 2)
 				}
 			else
-				RcFail("logging in: the game says """ boxMsg """")
+				RcFail("logging in: the game says `"" boxMsg "`"")
 			return
 			}
 		if (!RegExMatch(boxKey, "i)Connect|Disconnect|Shutdown|Maintenance|FailedTo|Attach|ZoneFull|NoZones|Unavailable|EnterWorld|Technical|LoginError")
 			&& !RegExMatch(boxMsg, "i)disconnect|connection|connect to|maintenance|failed to (load|enter)|try again later|unable to (connect|reach|contact|log ?in|enter|join)"))
 			{
-			RcLogMsg("(a game message, not a disconnect: """ boxMsg """)")
+			RcLogMsg("(a game message, not a disconnect: `"" boxMsg "`")")
 			return
 			}
 		;A disconnect. Straight after one of our tries: that try failed, so wait longer this time
@@ -329,9 +330,9 @@ RcLogLine(logLine)
 		RcMsg := boxMsg
 		RcNext := RegExMatch(boxKey "|" boxMsg, "i)Shutdown|maintenance|try again later") ? A_TickCount + 600000
 			: retry ? A_TickCount + RcBackoff() : 0
-		RcSet("box", "disconnected: """ boxMsg """ (" boxKey ")")
+		RcSet("box", "disconnected: `"" boxMsg "`" (" boxKey ")")
 		if (!RcScanning && !retry)
-			TrayTip, Wizard101 bot, % "Disconnected: " boxMsg "`nReconnecting...", 5, 2
+			TrayTip("Wizard101 bot", "Disconnected: " boxMsg "`nReconnecting...", 2)
 		return
 		}
 	if (InStr(logLine, "LOGIN RESPONSE: Error=0"))
@@ -362,11 +363,11 @@ RcLogLine(logLine)
 		{
 		if (RcState != "")
 			{
-			RegExMatch(logLine, "Zone=(\S+)", zone)
-			RcSet("", "back in the game (" zone1 ")")
+			RegExMatch(logLine, "Zone=(\S+)", &zone)
+			RcSet("", "back in the game (" zone[1] ")")
 			RcTries := 0, RcNext := 0, RcTyped := 0
 			if (!RcScanning)
-				TrayTip, Wizard101 bot, Back in the game., 3, 1
+				TrayTip("Wizard101 bot", "Back in the game.", 1)
 			}
 		return
 		}
@@ -384,12 +385,12 @@ RcHungCheck()
 	;(only with the game in front - covered by another window, the spellbook can't be seen on screen even when it's up)
 	if (!RcGameActive())
 		return
-	hungMin := IsFunc("Stat") ? Func("Stat").Call("hungload") : ""
+	hungMin := IsFunc("Stat") ? Stat.Call("hungload") : ""
 	hungMin := (hungMin = "") ? 5 : hungMin + 0
 	if (hungMin <= 0)
 		return
 	;(in the world again - the spellbook, a battle round - since the zone change began: done)
-	if (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt))
+	if (IsFunc("BotWorldSeenSince") && BotWorldSeenSince.Call(RcLoadAt))
 		{
 		RcLoadAt := 0
 		return
@@ -397,7 +398,7 @@ RcHungCheck()
 	if (A_TickCount - RcLoadAt < hungMin * 60000 || A_TickCount - RcLastLineAt < 180000)
 		return
 	;(a last look at the screen itself - the spellbook, a round's Pass: BotWorldSeenSince with look)
-	if (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt, true))
+	if (IsFunc("BotWorldSeenSince") && BotWorldSeenSince.Call(RcLoadAt, true))
 		{
 		RcLoadAt := 0
 		return
@@ -410,7 +411,7 @@ RcHungCheck()
 		RcLoadAt := 0
 		RcLogMsg("no saved login to start it again with (tray menu: Set Wizard101 login...) - the hung game left to you")
 		if (IsFunc("AlertSend"))
-			Func("AlertSend").Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - and no saved login to start it again with: close and start Wizard101 yourself.")
+			AlertSend.Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - and no saved login to start it again with: close and start Wizard101 yourself.")
 		return
 		}
 	;(two restarts for a hang within an hour: it's not going away - left to you)
@@ -421,12 +422,12 @@ RcHungCheck()
 		return
 		}
 	if (IsFunc("ReleaseKeys"))
-		Func("ReleaseKeys").Call()
+		ReleaseKeys.Call()
 	if (IsFunc("AlertSend"))
-		Func("AlertSend").Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - closing it and starting it again (Settings: hungload).")
+		AlertSend.Call("hung", "Wizard101 hung on a loading screen", "Stuck " hungFor " minutes with nothing in the game's log - closing it and starting it again (Settings: hungload).")
 	rcHungPid := RcPid
-	MsgBox, 4145, Wizard101 bot, % "Wizard101 has been stuck on a loading screen for " hungFor " minutes.`n`nClose it and start it again, logging back in?`n(It will in 60 seconds if nobody answers.)", 60
-	IfMsgBox, Cancel
+	msgResult := MsgBox("Wizard101 has been stuck on a loading screen for " hungFor " minutes.`n`nClose it and start it again, logging back in?`n(It will in 60 seconds if nobody answers.)", 60, "Wizard101 bot", 4145)
+	if (msgResult = "Cancel")
 		{
 		RcLoadAt := 0
 		RcLogMsg("the hung game left to you (you chose not to restart it)")
@@ -434,18 +435,18 @@ RcHungCheck()
 		}
 	;(things may have moved on while the question was up - the bot or auto-reconnect switched off, the load finished, a
 	;disconnect, the game closed or started afresh: the log read now, and the screen looked at again)
-	if (!RcOn || (IsFunc("BotIsOn") && !Func("BotIsOn").Call()))
+	if (!RcOn || (IsFunc("BotIsOn") && !BotIsOn.Call()))
 		{
 		RcLoadAt := 0
 		return
 		}
 	RcReadLog()
-	if (!RcLoadAt || RcState != "" || (IsFunc("BotWorldSeenSince") && Func("BotWorldSeenSince").Call(RcLoadAt, true)))
+	if (!RcLoadAt || RcState != "" || (IsFunc("BotWorldSeenSince") && BotWorldSeenSince.Call(RcLoadAt, true)))
 		{
 		RcLoadAt := 0
 		return
 		}
-	Process, Exist, %GameExe%
+	ErrorLevel := ProcessExist(GameExe)
 	if (!ErrorLevel || ErrorLevel != rcHungPid)
 		return
 	RcCloseGame()
@@ -472,7 +473,7 @@ RcFail(why)
 			}
 		RcSet("stopped", "can't get back into the game by itself - please log in yourself")
 		if (!RcScanning)
-			TrayTip, Wizard101 bot, Couldn't get back into the game by itself - please log in yourself., 10, 2
+			TrayTip("Wizard101 bot", "Couldn't get back into the game by itself - please log in yourself.", 2)
 		return
 		}
 	RcNext := A_TickCount + RcBackoff()
@@ -498,25 +499,25 @@ RcGone()
 			{
 			RcNote := 1
 			RcLogMsg("the game has closed and there's no saved login (tray menu: Set Wizard101 login...), so it can't start it again by itself")
-			TrayTip, Wizard101 bot, Wizard101 has closed. Save your login with "Set Wizard101 login..." in the tray menu and the bot can start it again by itself., 10, 2
+			TrayTip("Wizard101 bot", "Wizard101 has closed. Save your login with `"Set Wizard101 login...`" in the tray menu and the bot can start it again by itself.", 2)
 			if (IsFunc("AlertSend"))
-				Func("AlertSend").Call("reconnect", "Wizard101 has closed", "There's no saved login to start it again with (tray menu: Set Wizard101 login...).")
+				AlertSend.Call("reconnect", "Wizard101 has closed", "There's no saved login to start it again with (tray menu: Set Wizard101 login...).")
 			}
 		return false
 		}
 	if (RcTries >= 4)
 		{
 		RcSet("stopped", "couldn't get the game started and logged in after 4 tries - start it yourself")
-		TrayTip, Wizard101 bot, Couldn't restart Wizard101 by itself - please start it yourself., 10, 2
+		TrayTip("Wizard101 bot", "Couldn't restart Wizard101 by itself - please start it yourself.", 2)
 		return false
 		}
 	if (IsFunc("ReleaseKeys"))
-		Func("ReleaseKeys").Call()
+		ReleaseKeys.Call()
 	;(a hung game the bot closed itself has been asked about already - RcHungCheck)
 	if (!RcHungAsked)
 		{
-		MsgBox, 4145, Wizard101 bot, % "Wizard101 has closed.`n`nStart it again and log back in?`n(It will in 60 seconds if nobody answers.)", 60
-		IfMsgBox, Cancel
+		msgResult := MsgBox("Wizard101 has closed.`n`nStart it again and log back in?`n(It will in 60 seconds if nobody answers.)", "Wizard101 bot", "4145 T60")
+		if (msgResult = "Cancel")
 			{
 			RcNoRelaunch := 1
 			RcLogMsg("the game has closed - you chose not to start it again")
@@ -526,7 +527,7 @@ RcGone()
 	;Things may have changed while the question was up: the game started some other way, or
 	;auto-reconnect switched off in the tray menu. (The hung game still going away: looked at again next time, not
 	;asked about again)
-	Process, Exist, %GameExe%
+	ErrorLevel := ProcessExist(GameExe)
 	if (ErrorLevel && RcHungAsked)
 		return true
 	if (ErrorLevel || !RcOn || RcState != "gone")
@@ -538,12 +539,14 @@ RcGone()
 ;Starts the game itself (not the launcher), which then shows its own login box
 RcLaunchClient()
 	{
-	SplitPath, RcExe,, binDir
+	SplitPath(RcExe, , &binDir)
 	loginHost := "login.us.wizard101.com", loginPort := 12000
-	FileRead, patchCfg, %binDir%\PatchConfig.xml
-	if (RegExMatch(patchCfg, "CommandLine args=""-L\s+(\S+)\s+(\d+)", cfg))
-		loginHost := cfg1, loginPort := cfg2
-	Run, "%RcExe%" -L %loginHost% %loginPort%, %binDir%, UseErrorLevel, newPid
+	patchCfg := FileRead(binDir "\PatchConfig.xml")
+	if (RegExMatch(patchCfg, "CommandLine args=`"-L\s+(\S+)\s+(\d+)", &cfg))
+		loginHost := cfg[1], loginPort := cfg[2]
+	{   ErrorLevel := "ERROR"
+	   Try ErrorLevel := Run("`"" RcExe "`" -L " loginHost " " loginPort, binDir, "", &newPid)
+	}
 	if (ErrorLevel)
 		{
 		RcNext := A_TickCount + 600000
@@ -569,17 +572,17 @@ RcStartStep()
 	if (nowMs - RcStateAt < 5000 || nowMs - RcLookAt < 1500)
 		return true
 	RcLookAt := nowMs
-	WinGet, gameWin, ID, ahk_class %GameClass% ahk_exe %GameExe%
+	gameWin := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
 	if (!gameWin)
 		return true
 	if (IsFunc("UpdateGameRect"))
-		Func("UpdateGameRect").Call()
+		UpdateGameRect.Call()
 	;(its PASSWORD label - read badly at 1440p, "PASSWQD:": a word near it counts; the Account field worked out from it)
 	rcPw := RcFindWord("i)^password:?$", "all", "PASSWORD")
 	if (!IsObject(rcPw))
 		return true
 	rcField := RcAccountField(rcPw)
-	if (!RcCredLoad(loginUser, loginPass))
+	if (!RcCredLoad(&loginUser, &loginPass))
 		{
 		RcSet("stopped", "the saved login is gone - save it again (tray menu: Set Wizard101 login...)")
 		return false
@@ -589,7 +592,7 @@ RcStartStep()
 	rcTol := RcLineTol(loginUser)
 	;A fresh start has an empty login box: if the username is already there, don't guess where the
 	;typing would go
-	if (RcLineDist(loginUser, gameWin, rcDistX, rcField) <= rcTol)
+	if (RcLineDist(loginUser, gameWin, &rcDistX, rcField) <= rcTol)
 		{
 		loginUser := "", loginPass := ""
 		return RcLoginHelp("the login box already has the username in it")
@@ -597,11 +600,11 @@ RcStartStep()
 	;Typed straight to the game window as characters, checking each step. 0. Into the Account field: a click there, and a
 	;test (zq7) typed and read back before anything of the login is - nothing of the login typed where it can't be seen
 	RcLoginFocus(rcField)
-	Sleep, 300
+	Sleep(300)
 	RcChars(gameWin, "", 40)
 	RcChars(gameWin, "zq7")
-	Sleep, 400
-	rcDist := RcLineDist("zq7", gameWin, rcDistX, rcField)
+	Sleep(400)
+	rcDist := RcLineDist("zq7", gameWin, &rcDistX, rcField)
 	RcChars(gameWin, "", 10)
 	if (rcDist > 1)
 		{
@@ -611,8 +614,8 @@ RcStartStep()
 	;1. The username into the Account box (cleared first), then read it back
 	RcChars(gameWin, "", 40)
 	RcChars(gameWin, loginUser)
-	Sleep, 400
-	rcDist := RcLineDist(loginUser, gameWin, rcDistX, rcField)
+	Sleep(400)
+	rcDist := RcLineDist(loginUser, gameWin, &rcDistX, rcField)
 	if (rcDist > rcTol)
 		{
 		RcChars(gameWin, "", 40)
@@ -623,8 +626,8 @@ RcStartStep()
 	;nearer the username than the username with them after it, by 2 letters or more (an OCR slip can't make up for 3)
 	RcChars(gameWin, Chr(9))
 	RcChars(gameWin, "xqz")
-	Sleep, 400
-	rcDist := RcLineDist(loginUser, gameWin, rcDistX, rcField)
+	Sleep(400)
+	rcDist := RcLineDist(loginUser, gameWin, &rcDistX, rcField)
 	if (rcDist > rcTol || rcDistX < rcDist + 2)
 		{
 		RcChars(gameWin, "", 40)
@@ -635,8 +638,8 @@ RcStartStep()
 	RcChars(gameWin, "", 40)
 	RcChars(gameWin, loginPass)
 	loginPass := ""
-	Sleep, 300
-	if (RcLineDist(loginUser, gameWin, rcDistX, rcField) > rcTol)
+	Sleep(300)
+	if (RcLineDist(loginUser, gameWin, &rcDistX, rcField) > rcTol)
 		{
 		RcChars(gameWin, "", 40)
 		loginUser := ""
@@ -653,7 +656,7 @@ RcStartStep()
 RcLoginHelp(why)
 	{
 	RcSet("stopped", why " - didn't press Enter, log in yourself")
-	TrayTip, Wizard101 bot, Couldn't fill in the game's login box - please log in yourself., 10, 2
+	TrayTip("Wizard101 bot", "Couldn't fill in the game's login box - please log in yourself.", 2)
 	return false
 	}
 
@@ -661,7 +664,7 @@ RcLoginHelp(why)
 ;between them - both lower case, spaces left out, an "Account:" in front taken off or not, whichever is nearer; 99
 ;nothing like it read. withX: the same for text with xqz after it (the test letters of RcStartStep's Tab step). Nothing
 ;read is kept or logged
-RcLineDist(text, gameWin, ByRef withX := "", field := "")
+RcLineDist(text, gameWin, &withX := "", field := "")
 	{
 	rcWant := RegExReplace(Format("{:L}", text), "\s"), rcBest := 99, withX := 99
 	;(field: only that box - the login box's Account field, RcAccountField - read closer up: its text is small)
@@ -710,16 +713,16 @@ RcLoginFocus(field)
 	{
 	if (!RcGameActive())
 		return RcClick(field.cx, field.cy, "the login box's Account field")
-	MouseGetPos, rcMx, rcMy
+	MouseGetPos(&rcMx, &rcMy)
 	;(your mouse locked meanwhile - Settings.ahk MouseLockOn)
 	MouseLockOn("login")
-	MouseMove, % field.cx, % field.cy, 0
+	MouseMove(field.cx, field.cy, 0)
 	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 	MouseLockMoved()
-	Sleep, 120
-	Click
-	Sleep, 120
-	MouseMove, %rcMx%, %rcMy%, 0
+	Sleep(120)
+	Click()
+	Sleep(120)
+	MouseMove(rcMx, rcMy, 0)
 	MouseLockOff("login")
 	RcLogMsg("clicked into the login box's Account field at " field.cx - GameLeft "," field.cy - GameTop)
 	return true
@@ -742,7 +745,7 @@ RcLoginStep()
 			{
 			RcLoginBad := 1
 			RcSet("stopped", "the game says the saved login is invalid - it won't be typed again until it's saved again")
-			TrayTip, Wizard101 bot, The game turned the saved login down. Save it again with "Set Wizard101 login..." in the tray menu., 10, 2
+			TrayTip("Wizard101 bot", "The game turned the saved login down. Save it again with `"Set Wizard101 login...`" in the tray menu.", 2)
 			return false
 			}
 		}
@@ -762,13 +765,15 @@ RcOutdated()
 	if (RcLoginBad || !RcHaveLogin())
 		{
 		RcSet("stopped", "the game needs patching and there's no usable saved login - start Wizard101 yourself")
-		TrayTip, Wizard101 bot, Wizard101 needs patching - start it yourself (or save your login in the tray menu)., 10, 2
+		TrayTip("Wizard101 bot", "Wizard101 needs patching - start it yourself (or save your login in the tray menu).", 2)
 		return false
 		}
 	RcCloseGame()
-	SplitPath, RcExe,, binDir
-	SplitPath, binDir,, gameRoot
-	Run, "%gameRoot%\Wizard101.exe", %gameRoot%, UseErrorLevel
+	SplitPath(RcExe, , &binDir)
+	SplitPath(binDir, , &gameRoot)
+	{   ErrorLevel := "ERROR"
+	   Try ErrorLevel := Run("`"" gameRoot "\Wizard101.exe`"", gameRoot, "", )
+	}
 	if (ErrorLevel)
 		{
 		RcSet("stopped", "couldn't start the launcher (" gameRoot "\Wizard101.exe) - start Wizard101 yourself")
@@ -795,7 +800,7 @@ RcPatchStep()
 	if (nowMs - RcLookAt < 2000)
 		return true
 	RcLookAt := nowMs
-	WinGet, launchWin, ID, ahk_exe WizardLauncher.exe
+	launchWin := WinGetID("ahk_exe WizardLauncher.exe")
 	if (!launchWin)
 		{
 		if (nowMs - RcStateAt > 180000)
@@ -803,11 +808,15 @@ RcPatchStep()
 		return true
 		}
 	userBox := "", passBox := "", playBtn := "", seen := ""
-	WinGet, ctlList, ControlList, ahk_id %launchWin%
-	Loop, Parse, ctlList, `n
+	octlList := WinGetControls("ahk_id " launchWin,,,)
+	For v in octlList
+	{
+		ctlList .= A_index=1 ? v : "`r`n" v
+	}
+	Loop Parse, ctlList, "`n"
 		{
-		ControlGet, ctlVis, Visible,, %A_LoopField%, ahk_id %launchWin%
-		ControlGet, ctlStyle, Style,, %A_LoopField%, ahk_id %launchWin%
+		ctlVis := ControlGetVisible(A_LoopField, "ahk_id " launchWin)
+		ctlStyle := ControlGetStyle(A_LoopField, "ahk_id " launchWin)
 		if (!ctlVis)
 			continue
 		if (InStr(A_LoopField, "Edit") = 1)
@@ -818,7 +827,7 @@ RcPatchStep()
 				userBox := A_LoopField
 			continue
 			}
-		ControlGetText, ctlText, %A_LoopField%, ahk_id %launchWin%
+		ctlText := ControlGetText(A_LoopField, "ahk_id " launchWin)
 		if (RegExMatch(ctlText, "i)^\s*(play!?|log\s*in)\s*$"))
 			playBtn := A_LoopField
 		seen .= A_LoopField " "
@@ -830,28 +839,28 @@ RcPatchStep()
 			{
 			RcLogMsg("launcher controls seen: " seen)
 			RcSet("stopped", "the launcher is open but its password box wasn't found - log in there yourself")
-			TrayTip, Wizard101 bot, The launcher needs you: log in there yourself., 10, 2
+			TrayTip("Wizard101 bot", "The launcher needs you: log in there yourself.", 2)
 			}
 		return true
 		}
-	if (!RcCredLoad(loginUser, loginPass))
+	if (!RcCredLoad(&loginUser, &loginPass))
 		{
 		RcSet("stopped", "the saved login is gone - log in to the launcher yourself")
 		return false
 		}
 	if (userBox != "")
 		{
-		ControlGetText, curUser, %userBox%, ahk_id %launchWin%
+		curUser := ControlGetText(userBox, "ahk_id " launchWin)
 		if (curUser != loginUser)
-			ControlSetText, %userBox%, %loginUser%, ahk_id %launchWin%
+			ControlSetText(loginUser, userBox, "ahk_id " launchWin)
 		}
-	ControlSetText, %passBox%, %loginPass%, ahk_id %launchWin%
+	ControlSetText(loginPass, passBox, "ahk_id " launchWin)
 	loginUser := "", loginPass := ""
-	Sleep, 300
+	Sleep(300)
 	if (playBtn != "")
-		ControlClick, %playBtn%, ahk_id %launchWin%,,,, NA
+		ControlClick(playBtn, "ahk_id " launchWin, , , , "NA")
 	else
-		ControlSend, %passBox%, {Enter}, ahk_id %launchWin%
+		ControlSend("{Enter}", passBox, "ahk_id " launchWin)
 	RcTyped := 1, RcStateAt := A_TickCount
 	RcLogMsg("launcher: filled in the login and pressed " (playBtn = "" ? "Enter" : playBtn) " - it patches, then starts the game")
 	return true
@@ -860,13 +869,13 @@ RcPatchStep()
 ;Closes the game (and makes sure it's gone)
 RcCloseGame()
 	{
-	WinClose, ahk_class %GameClass% ahk_exe %GameExe%
-	Process, WaitClose, %GameExe%, 15
+	WinClose("ahk_class " GameClass " ahk_exe " GameExe)
+	ErrorLevel := ProcessWaitClose(GameExe, 15)
 	if (ErrorLevel)
 		{
-		Process, Close, %GameExe%
+		ErrorLevel := ProcessClose(GameExe)
 		;(a hung game takes a moment to go even when forced)
-		Process, WaitClose, %GameExe%, 10
+		ErrorLevel := ProcessWaitClose(GameExe, 10)
 		}
 	RcPid := 0
 	}
@@ -875,17 +884,17 @@ RcCloseGame()
 ;window (some games ignore those - then RcFrontClick)
 RcClick(px, py, what)
 	{
-	WinGet, gameWin, ID, ahk_class %GameClass% ahk_exe %GameExe%
+	gameWin := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
 	if (!gameWin)
 		return false
 	RcClickAt := A_TickCount
 	cx := px - GameLeft, cy := py - GameTop
 	pos := (cy << 16) | (cx & 0xFFFF)
-	PostMessage, 0x200, 0, pos,, ahk_id %gameWin%
-	Sleep, 50
-	PostMessage, 0x201, 1, pos,, ahk_id %gameWin%
-	Sleep, 80
-	PostMessage, 0x202, 0, pos,, ahk_id %gameWin%
+	PostMessage(0x200, 0, pos, , "ahk_id " gameWin)
+	Sleep(50)
+	PostMessage(0x201, 1, pos, , "ahk_id " gameWin)
+	Sleep(80)
+	PostMessage(0x202, 0, pos, , "ahk_id " gameWin)
 	RcLastBg := 1
 	RcLogMsg("clicked " what " at " cx "," cy " (game left in the background)")
 	return true
@@ -896,41 +905,41 @@ RcClick(px, py, what)
 ;the game couldn't be brought up or the word isn't there
 RcFrontClick(pattern, area, what, fuzzy := "")
 	{
-	WinGet, gameWin, ID, ahk_class %GameClass% ahk_exe %GameExe%
+	gameWin := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
 	if (!gameWin)
 		return false
 	RcClickAt := A_TickCount, RcLastBg := 0, RcFrontOk := 0
-	WinGet, prevWin, ID, A
-	MouseGetPos, mouseX, mouseY
+	prevWin := WinGetID("A")
+	MouseGetPos(&mouseX, &mouseY)
 	if (prevWin != gameWin)
 		{
-		WinActivate, ahk_id %gameWin%
-		WinWaitActive, ahk_id %gameWin%,, 2
+		WinActivate("ahk_id " gameWin)
+		ErrorLevel := !WinWaitActive("ahk_id " gameWin, , 2)
 		;Windows sometimes won't hand over the focus (e.g. to Windows' own hidden input window): a
 		;real click on the game's title bar always brings it up, and does nothing in the game
 		if (ErrorLevel)
 			{
-			WinGetPos, winX, winY, winW,, ahk_id %gameWin%
+			WinGetPos(&winX, &winY, &winW, , "ahk_id " gameWin)
 			barX := winX + winW // 2, barY := winY + (GameTop - winY) // 2
 			if (GameTop - winY >= 12 && RcOnGame(barX, barY, gameWin))
 				{
 				;(Settings.ahk MouseLockOn - it only locks with the game in front, so not for this click)
 				MouseLockOn("login")
-				MouseMove, %barX%, %barY%, 0
-				Click
+				MouseMove(barX, barY, 0)
+				Click()
 				MouseLockOff("login")
-				WinWaitActive, ahk_id %gameWin%,, 2
+				ErrorLevel := !WinWaitActive("ahk_id " gameWin, , 2)
 				}
 			}
 		if (ErrorLevel)
 			{
-			MouseMove, %mouseX%, %mouseY%, 0
+			MouseMove(mouseX, mouseY, 0)
 			RcLogMsg("couldn't bring the game to the front to click " what)
 			return false
 			}
-		Sleep, 700
+		Sleep(700)
 		if (IsFunc("UpdateGameRect"))
-			Func("UpdateGameRect").Call()
+			UpdateGameRect.Call()
 		}
 	RcFrontOk := 1
 	btn := RcFindWord(pattern, area, fuzzy)
@@ -938,21 +947,21 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 		{
 		;(your mouse locked meanwhile - Settings.ahk MouseLockOn)
 		MouseLockOn("login")
-		MouseMove, % btn.x, % btn.y, 0
+		MouseMove(btn.x, btn.y, 0)
 		;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
 		MouseLockMoved()
-		Sleep, 150
-		Click
-		Sleep, 150
+		Sleep(150)
+		Click()
+		Sleep(150)
 		MouseLockOff("login")
 		}
 	;(the focus back to your window - not when you've left the PC, nothing touched for 5 minutes: the game stays in front,
 	;else the bot can't walk and the game logs out for inactivity again)
 	if (prevWin && prevWin != gameWin && UserIdle() < 300000)
 		{
-		Sleep, 200
-		MouseMove, %mouseX%, %mouseY%, 0
-		WinActivate, ahk_id %prevWin%
+		Sleep(200)
+		MouseMove(mouseX, mouseY, 0)
+		WinActivate("ahk_id " prevWin)
 		}
 	if (IsObject(btn))
 		RcLogMsg("clicked " what " at " btn.x - GameLeft "," btn.y - GameTop (prevWin != gameWin ? " (brought the game to the front for it)" : ""))
@@ -996,13 +1005,13 @@ RcFindWord(pattern, area, fuzzy := "")
 		return ""
 	;Only words on the game itself: OCR reads the screen, and another window over the game could show
 	;the same word
-	WinGet, gameWin, ID, ahk_class %GameClass% ahk_exe %GameExe%
+	gameWin := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
 	if (!gameWin)
 		return ""
 	;For the log if it isn't found: how many words it read, and what window is over the middle
 	hitWin := DllCall("GetAncestor", "Ptr", DllCall("WindowFromPoint", "Int64", (midY << 32) | (midX & 0xFFFFFFFF), "Ptr"), "UInt", 2, "Ptr")
-	WinGet, hitExe, ProcessName, ahk_id %hitWin%
-	WinGetClass, hitClass, ahk_id %hitWin%
+	hitExe := WinGetProcessName("ahk_id " hitWin)
+	hitClass := WinGetClass("ahk_id " hitWin)
 	wordCount := 0, wordsSeen := ""
 	for each, zoom in [1, 2]
 		{
@@ -1018,7 +1027,7 @@ RcFindWord(pattern, area, fuzzy := "")
 				wx := ocrWord.x + ocrWord.w // 2, wy := ocrWord.y + ocrWord.h // 2
 				found := RegExMatch(Trim(ocrWord.text), pattern) || RcLooksLike(ocrWord.text, fuzzy)
 				;Split in two ("RECON NECT"): both halves together
-				if (!found && fuzzy != "" && j < ocrLine.words.Length())
+				if (!found && fuzzy != "" && j < ocrLine.words.Length)
 					{
 					nextWord := ocrLine.words[j + 1]
 					if (RcLooksLike(ocrWord.text nextWord.text, fuzzy))
@@ -1038,7 +1047,7 @@ RcLooksLike(word, want)
 	{
 	if (want = "")
 		return false
-	StringUpper, word, word
+	word := StrUpper(word)
 	word := RegExReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(word, "0", "O"), "1", "I"), "5", "S"), "8", "B"), "|", "I"), "[^A-Z]")
 	if (word = "" || word = "QUIT" || Abs(StrLen(word) - StrLen(want)) > 1)
 		return false
@@ -1049,14 +1058,14 @@ RcLooksLike(word, want)
 RcEditDistance(a, b)
 	{
 	lenB := StrLen(b), prevRow := []
-	Loop, % lenB + 1
-		prevRow[A_Index] := A_Index - 1
-	Loop, Parse, a
+	Loop lenB + 1
+		prevRow[A_Index] := A_Index - 1 ;  V1toV2: Invalid Index errors?, try 'prevRow.Push(<val>)'
+	Loop Parse, a
 		{
 		row := [A_Index]
 		charA := A_LoopField
-		Loop, % lenB
-			row[A_Index + 1] := Min(prevRow[A_Index + 1] + 1, row[A_Index] + 1, prevRow[A_Index] + (charA == SubStr(b, A_Index, 1) ? 0 : 1))
+		Loop lenB
+			row[A_Index + 1] := Min(prevRow[A_Index + 1] + 1, row[A_Index] + 1, prevRow[A_Index] + (charA :== SubStr(b, (A_Index)<1 ? (A_Index)-1 : (A_Index), 1) ? 0 : 1))
 		prevRow := row
 		}
 	return prevRow[lenB + 1]
@@ -1065,31 +1074,31 @@ RcEditDistance(a, b)
 ;Types text into a window as WM_CHAR messages (backspaces first: clears the box it goes into)
 RcChars(win, text, backspaces := 0)
 	{
-	Loop, % backspaces
-		SendMessage, 0x102, 8, 0,, ahk_id %win%
-	Loop, Parse, text
+	Loop backspaces
+		ErrorLevel := SendMessage(0x102, 8, 0, , "ahk_id " win)
+	Loop Parse, text
 		{
-		SendMessage, 0x102, Ord(A_LoopField), 0,, ahk_id %win%
-		Sleep, 15
+		ErrorLevel := SendMessage(0x102, Ord(A_LoopField), 0, , "ahk_id " win)
+		Sleep(15)
 		}
 	}
 
 ;Where the game is: the running one's path, else the last known one, else the usual install folder
 RcFindClient()
 	{
-	WinGet, exePath, ProcessPath, ahk_class %GameClass% ahk_exe %GameExe%
+	exePath := WinGetProcessPath("ahk_class " GameClass " ahk_exe " GameExe)
 	if (exePath != "")
 		return exePath
 	if (RcExe != "")
 		return RcExe
-	EnvGet, progData, ProgramData
+	progData := EnvGet("ProgramData")
 	return (progData = "" ? "C:\ProgramData" : progData) "\KingsIsle Entertainment\Wizard101\Bin\" GameExe
 	}
 
 RcSetClient(exePath)
 	{
 	RcExe := exePath
-	SplitPath, exePath,, binDir
+	SplitPath(exePath, , &binDir)
 	RcLog := binDir "\WizardClient.log"
 	}
 
@@ -1100,7 +1109,7 @@ RcSet(newState, why := "")
 		RcLogMsg(why)
 	;(stopped: it needs you - to Discord too, if alerts are set up: Alerts.ahk)
 	if (newState = "stopped" && !RcScanning && IsFunc("AlertSend"))
-		Func("AlertSend").Call("reconnect", "can't get back into the game", why)
+		AlertSend.Call("reconnect", "can't get back into the game", why)
 	if (newState = "")
 		RcStatus("online")
 	}
@@ -1108,7 +1117,7 @@ RcSet(newState, why := "")
 RcLogMsg(text)
 	{
 	if (!RcScanning && IsFunc("DebugLog"))
-		Func("DebugLog").Call("Reconnect: " text)
+		DebugLog.Call("Reconnect: " text)
 	}
 
 RcStatus(text)
@@ -1117,7 +1126,7 @@ RcStatus(text)
 	if (RcScanning || text = lastText)
 		return
 	lastText := text
-	Menu, Tray, Tip, % "Wizard101 bot " BotVersion() ": " SubStr(text, 1, 100)
+	A_IconTip := "Wizard101 bot " BotVersion() ": " SubStr(text
 	}
 
 ;Tray menu: switches auto-reconnect on and off
@@ -1127,24 +1136,24 @@ ReconnectToggle()
 	if (RcOn)
 		{
 		RcState := "", RcTries := 0, RcNext := 0, RcNoRelaunch := 0
-		Menu, Tray, Check, Auto-reconnect on/off
+		Tray.Check("Auto-reconnect on/off")
 		}
 	else
-		Menu, Tray, Uncheck, Auto-reconnect on/off
+		Tray.Uncheck("Auto-reconnect on/off")
 	RcLogMsg("auto-reconnect " (RcOn ? "on" : "off"))
-	TrayTip, Wizard101 bot, % "Auto-reconnect " (RcOn ? "on" : "off"), 3, 1
+	TrayTip("Wizard101 bot", "Auto-reconnect " (RcOn ? "on" : "off"), 1)
 	}
 
 ;Tray menu: asks for the Wizard101 login and keeps it in Windows Credential Manager
 ReconnectSetLogin()
 	{
 	if (IsFunc("ReleaseKeys"))
-		Func("ReleaseKeys").Call()
-	RegRead, rememberedUser, HKCU\Software\KingsIsle\Wizard101, UserName
-	InputBox, loginUser, Wizard101 login, Your Wizard101 username.`nUsed only to log back in if the game closes.,, 380, 160,,,,, %rememberedUser%
+		ReleaseKeys.Call()
+	rememberedUser := RegRead("HKCU\Software\KingsIsle\Wizard101", "UserName")
+	IB := InputBox("Your Wizard101 username.`nUsed only to log back in if the game closes.", "Wizard101 login", "w380 h160", rememberedUser), loginUser := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel || Trim(loginUser) = "")
 		return
-	InputBox, loginPass, Wizard101 login, % "Password for " Trim(loginUser) ".`nKept encrypted in Windows Credential Manager as """ RcCredTarget """.", HIDE, 380, 160
+	IB := InputBox("Password for " Trim(loginUser) ".`nKept encrypted in Windows Credential Manager as `"" RcCredTarget "`".", "Wizard101 login", "Password w380 h160"), loginPass := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel || loginPass = "")
 		return
 	saved := RcCredSave(Trim(loginUser), loginPass)
@@ -1153,16 +1162,16 @@ ReconnectSetLogin()
 		{
 		RcLoginBad := 0
 		RcLogMsg("login saved (in Windows Credential Manager)")
-		MsgBox, 64, Wizard101 bot, % "Saved. If Wizard101 closes, the bot can start it and log back in.`n`n(To remove it: Windows Credential Manager > Windows Credentials > " RcCredTarget ")", 15
+		MsgBox("Saved. If Wizard101 closes, the bot can start it and log back in.`n`n(To remove it: Windows Credential Manager > Windows Credentials > " RcCredTarget ")", 15, "Wizard101 bot", 64)
 		}
 	else
-		MsgBox, 16, Wizard101 bot, % "Couldn't save the login in Windows Credential Manager (error " A_LastError ")." 
+		MsgBox("Couldn't save the login in Windows Credential Manager (error " A_LastError ").", "Wizard101 bot", 16)
 	}
 
 ;Is there a saved login?
 RcHaveLogin()
 	{
-	found := RcCredLoad(loginUser, loginPass)
+	found := RcCredLoad(&loginUser, &loginPass)
 	loginUser := "", loginPass := ""
 	return found
 	}
@@ -1172,28 +1181,28 @@ RcHaveLogin()
 RcCredSave(user, pass)
 	{
 	is64 := (A_PtrSize = 8)
-	VarSetCapacity(targetW, (StrLen(RcCredTarget) + 1) * 2, 0), StrPut(RcCredTarget, &targetW, "UTF-16")
-	VarSetCapacity(userW, (StrLen(user) + 1) * 2, 0), StrPut(user, &userW, "UTF-16")
+	targetW := Buffer((StrLen(RcCredTarget) + 1) * 2, 0), StrPut(RcCredTarget, targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(RcCredTarget) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
+	userW := Buffer((StrLen(user) + 1) * 2, 0), StrPut(user, userW.Ptr, "UTF-16") ; V1toV2: if 'userW' is a UTF-16 string, use 'VarSetStrCapacity(&userW, (StrLen(user) + 1) * 2)' and replace all instances of 'userW.Ptr' with 'StrPtr(userW)'
 	blobSize := StrLen(pass) * 2
-	VarSetCapacity(blob, blobSize + 2, 0), StrPut(pass, &blob, "UTF-16")
-	VarSetCapacity(cred, is64 ? 80 : 52, 0)
-	NumPut(1, cred, 4, "UInt")                          ;Type: CRED_TYPE_GENERIC
-	NumPut(&targetW, cred, 8, "Ptr")                    ;TargetName
-	NumPut(blobSize, cred, is64 ? 32 : 24, "UInt")      ;CredentialBlobSize
-	NumPut(&blob, cred, is64 ? 40 : 28, "Ptr")          ;CredentialBlob
-	NumPut(2, cred, is64 ? 48 : 32, "UInt")             ;Persist: CRED_PERSIST_LOCAL_MACHINE
-	NumPut(&userW, cred, is64 ? 72 : 48, "Ptr")         ;UserName
-	saved := DllCall("Advapi32\CredWriteW", "Ptr", &cred, "UInt", 0)
-	DllCall("RtlZeroMemory", "Ptr", &blob, "Ptr", blobSize + 2)
+	blob := Buffer(blobSize + 2, 0), StrPut(pass, blob.Ptr, "UTF-16") ; V1toV2: if 'blob' is a UTF-16 string, use 'VarSetStrCapacity(&blob, blobSize + 2)' and replace all instances of 'blob.Ptr' with 'StrPtr(blob)'
+	cred := Buffer(is64 ? 80 : 52, 0) ; V1toV2: if 'cred' is a UTF-16 string, use 'VarSetStrCapacity(&cred, is64 ? 80 : 52)' and replace all instances of 'cred.Ptr' with 'StrPtr(cred)'
+	NumPut("UInt", 1, cred, 4)                          ;Type: CRED_TYPE_GENERIC
+	NumPut("Ptr", targetW.Ptr, cred, 8)                    ;TargetName
+	NumPut("UInt", blobSize, cred, is64 ? 32 : 24)      ;CredentialBlobSize
+	NumPut("Ptr", blob.Ptr, cred, is64 ? 40 : 28)          ;CredentialBlob
+	NumPut("UInt", 2, cred, is64 ? 48 : 32)             ;Persist: CRED_PERSIST_LOCAL_MACHINE
+	NumPut("Ptr", userW.Ptr, cred, is64 ? 72 : 48)         ;UserName
+	saved := DllCall("Advapi32\CredWriteW", "Ptr", cred.Ptr, "UInt", 0)
+	DllCall("RtlZeroMemory", "Ptr", blob.Ptr, "Ptr", blobSize + 2)
 	return saved
 	}
 
-RcCredLoad(ByRef user, ByRef pass)
+RcCredLoad(&user, &pass)
 	{
 	user := "", pass := "", credPtr := 0
 	is64 := (A_PtrSize = 8)
-	VarSetCapacity(targetW, (StrLen(RcCredTarget) + 1) * 2, 0), StrPut(RcCredTarget, &targetW, "UTF-16")
-	if (!DllCall("Advapi32\CredReadW", "Ptr", &targetW, "UInt", 1, "UInt", 0, "Ptr*", credPtr) || !credPtr)
+	targetW := Buffer((StrLen(RcCredTarget) + 1) * 2, 0), StrPut(RcCredTarget, targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(RcCredTarget) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
+	if (!DllCall("Advapi32\CredReadW", "Ptr", targetW.Ptr, "UInt", 1, "UInt", 0, "Ptr*", &credPtr) || !credPtr)
 		return false
 	blobSize := NumGet(credPtr + 0, is64 ? 32 : 24, "UInt")
 	blobPtr := NumGet(credPtr + 0, is64 ? 40 : 28, "Ptr")

@@ -28,15 +28,15 @@ DrawWouldKill()
 	if (!Stat("drawenchant") || enchant >= 1)
 		return false
 	;(the kill check with a made-up enchant - level 8, its damage drawneed - then put back)
-	was := enchant, wasStat := Stats.HasKey("enchant8") ? Stats["enchant8"] : ""
-	Stats["enchant8"] := Stat("drawneed") > 0 ? Stat("drawneed") : 100, enchant := 8
+	was := enchant, wasStat := Stats.Has("enchant8") ? Stats["enchant8"] : ""
+	Stats["enchant8"] := Stat("drawneed") > 0 ? Stat("drawneed") : 100, enchant := 8 ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
 	if (FindLethalHit(h, e) && e)
 		DrawKeep := h
 	enchant := was
 	if (wasStat = "")
 		Stats.Delete("enchant8")
 	else
-		Stats["enchant8"] := wasStat
+		Stats["enchant8"] := wasStat ;  V1toV2: Invalid Index errors?, try 'Stats.Push(<val>)'
 	return DrawKeep != ""
 	}
 
@@ -70,7 +70,7 @@ DrawForKill()
 			return false
 			}
 		;(the button read first - and no "Crown" anywhere by it - before any card's discarded for it)
-		w := DrawWord(band)
+		w := DrawWord(&band)
 		if (!IsObject(w))
 			{
 			DebugLog("  draw: no draw - the Draw button couldn't be read (OCR: " SubStr(band, 1, 80) ")")
@@ -79,7 +79,7 @@ DrawForKill()
 			}
 		if (RegExMatch(band, "i)cr[o0]wn"))
 			{
-			DebugLog("  draw: no draw - ""Crown"" on the screen by the buttons")
+			DebugLog("  draw: no draw - `"Crown`" on the screen by the buttons")
 			DrawOff := "Crown on the screen"
 			return false
 			}
@@ -114,7 +114,7 @@ DrawForKill()
 		got := -1, t0 := A_TickCount
 		while (A_TickCount - t0 < 2000)
 			{
-			Sleep, 200
+			Sleep(200)
 			got := DrawHandCount(LearnHandRead())
 			if (got > n)
 				break
@@ -150,13 +150,13 @@ DrawHandCount(ans)
 	if (ans = "")
 		return -1
 	n := 0, boxes := 0
-	Loop, Parse, ans, `n, `r
+	Loop Parse, ans, "`n", "`r"
 		{
 		if (InStr(A_LoopField, "card|") != 1)
 			continue
 		boxes += 1
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 15 || f[15] != "0")
+		if (f.Length < 15 || f[15] != "0")
 			n += 1
 		}
 	return (boxes || InStr(ans, "hand|0")) ? n : -1
@@ -172,10 +172,10 @@ DrawMakeRoom(ans)
 	global
 	local best, bestRank, f, k, rank, x, y, lc, keepX
 	best := "", bestRank := 9, keepX := (DrawKeep != "") ? %DrawKeep%X : ""
-	Loop, Parse, ans, `n, `r
+	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 16 || f[1] != "card" || f[15] = "0" || f[16] = 1 || f[8] = 1 || f[6] = "")
+		if (f.Length < 16 || f[1] != "card" || f[15] = "0" || f[16] = 1 || f[8] = 1 || f[6] = "")
 			continue
 		k := f[6]
 		if (k = hitschool "/" DrawKeep || RegExMatch(k, "i)^resources/(epic|colossal|gargantuan|monstrous|giant|strong)$|^life/enchant$"))
@@ -193,8 +193,8 @@ DrawMakeRoom(ans)
 		return ""
 	x := Round(best[2] + best[4] / 2), y := Round(best[3] + best[5] * 0.6)
 	MoveToCard(x, y)
-	s(Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
-	Click, right
+	s(Stats.Has("clickwait") ? Stats["clickwait"] : 40)
+	Click("right")
 	s(Stat("discardafter"))
 	VisionForget(), CenterMouse()
 	DebugLog("  draw: discarded " best[6] " to make room (right-click at " x - GameLeft "," y - GameTop ")")
@@ -206,10 +206,10 @@ DrawMakeRoom(ans)
 DiscardIsTc(x)
 	{
 	ans := IsFunc("LearnHandRead") ? LearnHandRead() : ""
-	Loop, Parse, ans, `n, `r
+	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f.Length() < 16 || f[1] != "card" || x < f[2] - 5 || x > f[2] + f[4] + 5)
+		if (f.Length < 16 || f[1] != "card" || x < f[2] - 5 || x > f[2] + f[4] + 5)
 			continue
 		if (f[16] = 1)
 			return true
@@ -222,11 +222,11 @@ DiscardIsTc(x)
 ;The DRAW button's word ({x, y, w, h} on the screen) under the hand, between PASS and FLEE - by OCR as FleeWord
 ;reads FLEE; band: all that was read there (for Crown). "" if not read. The mouse moved off it first (hovered, it
 ;greys and its tooltip "Discard to draw a treasure card" shows); level with PASS when PASS is read
-DrawWord(ByRef band)
+DrawWord(&band)
 	{
 	band := ""
-	MouseMove, % ScreenX, % ScreenY - Px(250), 0
-	Sleep, 150
+	MouseMove(ScreenX, ScreenY - Px(250), 0)
+	Sleep(150)
 	OcrRect(GameLeft + GameW // 8, GameTop + Round(GameH * 0.4), GameW * 3 // 4, Round(GameH * 0.45), "en", GameH < 1000 ? 2 : 1, lines)
 	if (ErrorLevel || !IsObject(lines))
 		return ""
@@ -254,9 +254,9 @@ DrawWord(ByRef band)
 ;The mouse moved off it first: hovered, its letters turn grey
 DrawLit(w)
 	{
-	MouseMove, % ScreenX, % ScreenY - Px(250), 0
-	Sleep, 120
-	PixelSearch, px, py, w.x - Px(4), w.y - Px(4), w.x + w.w + Px(4), w.y + w.h + Px(4), 0xFFFF00, 0, Fast RGB
+	MouseMove(ScreenX, ScreenY - Px(250), 0)
+	Sleep(120)
+	ErrorLevel := !PixelSearch(&px, &py, w.x - Px(4), w.y - Px(4), w.x + w.w + Px(4), w.y + w.h + Px(4), 0xFFFF00, 0)
 	return ErrorLevel = 0
 	}
 
@@ -267,8 +267,8 @@ DrawRoundUp()
 	t0 := A_TickCount
 	while (A_TickCount - t0 < 1200)
 		{
-		Sleep, 150
-		ImageSearch, px, py, GameLeft, GameTop, GameRight, GameBottom, % PicOpt("resources\roundstart.png")
+		Sleep(150)
+		ErrorLevel := !ImageSearch(&px, &py, GameLeft, GameTop, GameRight, GameBottom, PicOpt("resources\roundstart.png"))
 		if (ErrorLevel = 0)
 			return true
 		}

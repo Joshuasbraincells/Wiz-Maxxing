@@ -45,14 +45,14 @@ CollectItems(goal, far := false)
 	if (answer = "" || SubStr(answer, 1, 3) = "ERR")
 		return ""
 	out := []
-	Loop, Parse, answer, `n, `r
+	Loop Parse, answer, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "item" && f.Length() >= 8)
+		if (f[1] = "item" && f.Length >= 8)
 			out.Push({name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, dist: f[6] + 0, quest: f[7] = 1, gid: f[8]
-				, key: f.Length() >= 11 ? Trim(f[9]) : "", template: f.Length() >= 11 ? Trim(f[10]) : ""
-				, src: f.Length() >= 11 ? Trim(f[11]) : ""
-				, kind: (f.Length() >= 12 && Trim(f[12]) != "") ? Trim(f[12]) : f.Length() >= 11 ? CollectKeyKind(Trim(f[9])) : ""})
+				, key: f.Length >= 11 ? Trim(f[9]) : "", template: f.Length >= 11 ? Trim(f[10]) : ""
+				, src: f.Length >= 11 ? Trim(f[11]) : ""
+				, kind: (f.Length >= 12 && Trim(f[12]) != "") ? Trim(f[12]) : f.Length >= 11 ? CollectKeyKind(Trim(f[9])) : ""})
 		}
 	return out
 	}
@@ -78,7 +78,7 @@ CollectKeyKind(key)
 ;for - the walker does its own collecting (monsters, roaming)
 CollectItemStep(goal)
 	{
-	if ((Stats.HasKey("collectmem") && !Stats["collectmem"]) || !VisionOn)
+	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		{
 		CiGid := ""
 		return false
@@ -111,7 +111,7 @@ CollectItemStep(goal)
 	;NPC or a mob a newer helper's key says it is)
 	it := ""
 	for i, x in CiItems
-		if (x.quest && x.src != "file" && x.kind != "npc" && x.kind != "mob" && !(CiSkip.HasKey(x.gid) && A_TickCount < CiSkip[x.gid]))
+		if (x.quest && x.src != "file" && x.kind != "npc" && x.kind != "mob" && !(CiSkip.Has(x.gid) && A_TickCount < CiSkip[x.gid]))
 			{
 			it := x
 			break
@@ -135,7 +135,7 @@ CollectItemStep(goal)
 	;minutes)
 	if (A_TickCount - CiFrom > 60000)
 		{
-		CiSkip[it.gid] := A_TickCount + 180000, CiGid := ""
+		CiSkip[it.gid] := A_TickCount + 180000, CiGid := "" ;  V1toV2: Invalid Index errors?, try 'CiSkip.Push(<val>)'
 		WalkLog("collect: couldn't get " it.name " in a minute - another one first")
 		ReleaseKeys()
 		return true
@@ -160,7 +160,7 @@ CollectItemStep(goal)
 			PressKey("x")
 			}
 		SetStatus("collecting - at " it.name)
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	CiOnAt := 0
@@ -172,7 +172,7 @@ CollectItemStep(goal)
 			CiTries += 1, CiStillAt := 0
 			if (CiTries > 4)
 				{
-				CiSkip[it.gid] := A_TickCount + 180000, CiGid := ""
+				CiSkip[it.gid] := A_TickCount + 180000, CiGid := "" ;  V1toV2: Invalid Index errors?, try 'CiSkip.Push(<val>)'
 				WalkLog("collect: stuck on the way to " it.name " - another one first")
 				ReleaseKeys()
 				return true
@@ -181,7 +181,7 @@ CollectItemStep(goal)
 			BackUp(700)
 			DgTurn(CiTries & 1 ? 90 : -90)
 			HoldW(1)
-			Sleep, 900
+			Sleep(900)
 			return true
 			}
 		}
@@ -199,7 +199,7 @@ CollectItemsWaiting()
 	if (!IsObject(CiSkip) || !IsObject(CiItems))
 		return false
 	for i, x in CiItems
-		if (x.quest && CiSkip.HasKey(x.gid) && A_TickCount < CiSkip[x.gid])
+		if (x.quest && CiSkip.Has(x.gid) && A_TickCount < CiSkip[x.gid])
 			return true
 	return false
 	}
@@ -220,8 +220,8 @@ UseBegin(kind)
 	;(not collecting by walking into mobs: a mob that catches the wizard here gets its reach made bigger - Vision.ahk MobGrow)
 	CiGid := "(" kind ")"
 	ubKey := kind ":" (WkCollect.goalid != "" ? WkCollect.goalid : WalkLetters(RegExReplace(WkCollect.text, "i)\(?\s*\d+\s*(of|/)\s*\d+\s*\)?")))
-	if (!UsDone.HasKey(ubKey))
-		UsDone[ubKey] := []
+	if (!UsDone.Has(ubKey))
+		UsDone[ubKey] := [] ;  V1toV2: Invalid Index errors?, try 'UsDone.Push(<val>)'
 	if (UsGoalWas != ubKey)
 		{
 		UsGoalWas := ubKey, UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsNoneFrom := 0, UsLastCount := ""
@@ -350,7 +350,7 @@ UseX(it, why, key)
 	UsXs := UsXs ? UsXs + 1 : 1
 	WalkLog("use: X at " it.name " (" why ") - the count " (UsCount0 = "" ? "not known" : UsCount0) ", watched for 8 s")
 	SetStatus("using - X at " it.name)
-	Sleep, 300
+	Sleep(300)
 	return true
 	}
 
@@ -387,7 +387,7 @@ UseWait(key)
 	if (A_TickCount - UsXAt < 8000)
 		{
 		SetStatus("using - X at " UsIt.name ", watching the count")
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	UsXAt := 0
@@ -428,7 +428,7 @@ UseStuck(nav, d, what)
 		BackUp(700)
 		DgTurn(UsTries & 1 ? 90 : -90)
 		HoldW(1)
-		Sleep, 900
+		Sleep(900)
 		return true
 		}
 	UsStillAt := A_TickCount, UsStillX := nav.x, UsStillY := nav.y
@@ -445,7 +445,7 @@ UseStuck(nav, d, what)
 ;did this step; false when there's nothing to go for (the walker roams)
 UseStep(goal)
 	{
-	if ((Stats.HasKey("collectmem") && !Stats["collectmem"]) || !VisionOn)
+	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	usKey := UseBegin("use")
 	if (UsXAt)
@@ -510,7 +510,7 @@ UseStep(goal)
 	if (!IsObject(usNav))
 		{
 		ReleaseKeys()
-		Sleep, 200
+		Sleep(200)
 		return true
 		}
 	usDist := Sqrt((usNav.x - UsIt.x) ** 2 + (usNav.y - UsIt.y) ** 2), UsD := usDist
@@ -549,7 +549,7 @@ UseStep(goal)
 		if (A_TickCount - UsBareAt >= 6000)
 			return UseLeave("another prompt by it all the while ('" SubStr(WkPromptDest, 1, 30) "'), not its own")
 		SetStatus("using - by " UsIt.name)
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	if (UseStuck(usNav, usDist, "use"))
@@ -575,10 +575,10 @@ UseVolumes()
 	if (uvAns = "" || SubStr(uvAns, 1, 3) = "ERR")
 		return []
 	UsVols := []
-	Loop, Parse, uvAns, `n, `r
+	Loop Parse, uvAns, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		if (f[1] = "vol" && f.Length() >= 6)
+		if (f[1] = "vol" && f.Length >= 6)
 			UsVols.Push({name: f[2], x: f[3] + 0, y: f[4] + 0, z: f[5] + 0, r: f[6] + 0, src: "volume", dist: ""})
 		}
 	return UsVols
@@ -591,7 +591,7 @@ UseVolumes()
 ;then the notice. goal: the goal line. True when it did this step
 GoStep(goal)
 	{
-	if ((Stats.HasKey("collectmem") && !Stats["collectmem"]) || !VisionOn)
+	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	gsKey := UseBegin("go")
 	gsName := WalkLetters(WalkGoalItemName(goal))
@@ -641,7 +641,7 @@ GoStep(goal)
 	if (!IsObject(gsNav))
 		{
 		ReleaseKeys()
-		Sleep, 200
+		Sleep(200)
 		return true
 		}
 	gsD := Sqrt((gsNav.x - UsIt.x) ** 2 + (gsNav.y - UsIt.y) ** 2), UsD := gsD
@@ -674,7 +674,7 @@ GoStep(goal)
 			}
 		ReleaseKeys()
 		SetStatus("going - at " UsIt.name ", waiting for the goal to move on")
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	if (gsD > 250)
@@ -694,7 +694,7 @@ UseTalkTries()
 		if (A_TickCount - utAt < 120000)
 			utKeep.Push(utAt)
 	UsTalkXs := utKeep
-	return UsTalkXs.Length() < 3
+	return UsTalkXs.Length < 3
 	}
 
 ;X at the talk goal's NPC from TalkStep (never with Crowns on its prompt): the walker's own talk (Walker.ahk StartTalk -
@@ -718,7 +718,7 @@ UseTalkX(d, why)
 ;looks about, 3 minutes, then the notice. goal: the goal line. True when it did this step
 TalkStep(goal)
 	{
-	if ((Stats.HasKey("collectmem") && !Stats["collectmem"]) || !VisionOn)
+	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
 	tsKey := UseBegin("talk")
 	tsNpc := WalkGoalItemName(goal), tsLetters := WalkLetters(tsNpc)
@@ -762,7 +762,7 @@ TalkStep(goal)
 	if (!IsObject(tsNav))
 		{
 		ReleaseKeys()
-		Sleep, 200
+		Sleep(200)
 		return true
 		}
 	tsD := Sqrt((tsNav.x - UsIt.x) ** 2 + (tsNav.y - UsIt.y) ** 2), UsD := tsD
@@ -789,7 +789,7 @@ TalkStep(goal)
 			WalkNotify("collect", "Talking to " UsIt.name " didn't work", "X at " UsIt.name " (found by its name - the game shows no way to it) opened nothing 3 times, or its dialogue left the quest as it was, so the bot waits by it and tries again every 2 minutes. Talk to it yourself if it needs something the bot can't do - it walks on by itself once there's a new goal.")
 			}
 		SetStatus("finding - " UsIt.name ": X did nothing, waiting")
-		Sleep, 300
+		Sleep(300)
 		return true
 		}
 	;(within TalkReach: its prompt read every 0.7 s - X at the one naming it; within TalkUnits none of its own for 3 s: X there all
@@ -808,7 +808,7 @@ TalkStep(goal)
 		if (A_TickCount - UsBareAt >= 3000 && UsPrompt = "" && UsPromptAt && A_TickCount - UsPromptAt < 1500)
 			return UseTalkX(Round(tsD), "by it, no prompt of its own in 3 s")
 		SetStatus("finding - by " UsIt.name)
-		Sleep, 150
+		Sleep(150)
 		return true
 		}
 	UsBareAt := 0

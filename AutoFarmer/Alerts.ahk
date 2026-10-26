@@ -1,3 +1,4 @@
+#Warn Unreachable, Off
 ; Alerts.ahk - Discord alerts when the wizard needs you, through a webhook of your Discord channel. AHK v1.1, functions
 ; and labels only; #Included by Autofarmer.ahk.
 ;
@@ -31,8 +32,8 @@ AlertUrl()
 		return AlertTestUrl
 	credPtr := 0, url := ""
 	is64 := (A_PtrSize = 8)
-	VarSetCapacity(targetW, (StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), &targetW, "UTF-16")
-	if (!DllCall("Advapi32\CredReadW", "Ptr", &targetW, "UInt", 1, "UInt", 0, "Ptr*", credPtr) || !credPtr)
+	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(AlertTarget()) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
+	if (!DllCall("Advapi32\CredReadW", "Ptr", targetW.Ptr, "UInt", 1, "UInt", 0, "Ptr*", &credPtr) || !credPtr)
 		return ""
 	blobSize := NumGet(credPtr + 0, is64 ? 32 : 24, "UInt")
 	blobPtr := NumGet(credPtr + 0, is64 ? 40 : 28, "Ptr")
@@ -45,26 +46,26 @@ AlertUrl()
 ;Keeps the webhook's address in Windows Credential Manager ("" removes it). True if done
 AlertUrlSave(url)
 	{
-	VarSetCapacity(targetW, (StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), &targetW, "UTF-16")
+	targetW := Buffer((StrLen(AlertTarget()) + 1) * 2, 0), StrPut(AlertTarget(), targetW.Ptr, "UTF-16") ; V1toV2: if 'targetW' is a UTF-16 string, use 'VarSetStrCapacity(&targetW, (StrLen(AlertTarget()) + 1) * 2)' and replace all instances of 'targetW.Ptr' with 'StrPtr(targetW)'
 	if (url = "")
 		{
-		DllCall("Advapi32\CredDeleteW", "Ptr", &targetW, "UInt", 1, "UInt", 0)
+		DllCall("Advapi32\CredDeleteW", "Ptr", targetW.Ptr, "UInt", 1, "UInt", 0)
 		return AlertUrl() = ""
 		}
 	is64 := (A_PtrSize = 8)
 	user := "discord-webhook"
-	VarSetCapacity(userW, (StrLen(user) + 1) * 2, 0), StrPut(user, &userW, "UTF-16")
+	userW := Buffer((StrLen(user) + 1) * 2, 0), StrPut(user, userW.Ptr, "UTF-16") ; V1toV2: if 'userW' is a UTF-16 string, use 'VarSetStrCapacity(&userW, (StrLen(user) + 1) * 2)' and replace all instances of 'userW.Ptr' with 'StrPtr(userW)'
 	blobSize := StrLen(url) * 2
-	VarSetCapacity(blob, blobSize + 2, 0), StrPut(url, &blob, "UTF-16")
-	VarSetCapacity(cred, is64 ? 80 : 52, 0)
-	NumPut(1, cred, 4, "UInt")                          ;Type: CRED_TYPE_GENERIC
-	NumPut(&targetW, cred, 8, "Ptr")                    ;TargetName
-	NumPut(blobSize, cred, is64 ? 32 : 24, "UInt")      ;CredentialBlobSize
-	NumPut(&blob, cred, is64 ? 40 : 28, "Ptr")          ;CredentialBlob
-	NumPut(2, cred, is64 ? 48 : 32, "UInt")             ;Persist: CRED_PERSIST_LOCAL_MACHINE
-	NumPut(&userW, cred, is64 ? 72 : 48, "Ptr")         ;UserName
-	saved := DllCall("Advapi32\CredWriteW", "Ptr", &cred, "UInt", 0)
-	DllCall("RtlZeroMemory", "Ptr", &blob, "Ptr", blobSize + 2)
+	blob := Buffer(blobSize + 2, 0), StrPut(url, blob.Ptr, "UTF-16") ; V1toV2: if 'blob' is a UTF-16 string, use 'VarSetStrCapacity(&blob, blobSize + 2)' and replace all instances of 'blob.Ptr' with 'StrPtr(blob)'
+	cred := Buffer(is64 ? 80 : 52, 0) ; V1toV2: if 'cred' is a UTF-16 string, use 'VarSetStrCapacity(&cred, is64 ? 80 : 52)' and replace all instances of 'cred.Ptr' with 'StrPtr(cred)'
+	NumPut("UInt", 1, cred, 4)                          ;Type: CRED_TYPE_GENERIC
+	NumPut("Ptr", targetW.Ptr, cred, 8)                    ;TargetName
+	NumPut("UInt", blobSize, cred, is64 ? 32 : 24)      ;CredentialBlobSize
+	NumPut("Ptr", blob.Ptr, cred, is64 ? 40 : 28)          ;CredentialBlob
+	NumPut("UInt", 2, cred, is64 ? 48 : 32)             ;Persist: CRED_PERSIST_LOCAL_MACHINE
+	NumPut("Ptr", userW.Ptr, cred, is64 ? 72 : 48)         ;UserName
+	saved := DllCall("Advapi32\CredWriteW", "Ptr", cred.Ptr, "UInt", 0)
+	DllCall("RtlZeroMemory", "Ptr", blob.Ptr, "Ptr", blobSize + 2)
 	return saved
 	}
 
@@ -80,8 +81,8 @@ AlertSend(kind, title, text)
 	{
 	;(the log's OneDrive copy, when it's on: what the game showed - at most every 20 s)
 	if (IsFunc("LogMirrorSnap"))
-		Func("LogMirrorSnap").Call(20000, kind)
-	if (Stats.HasKey("alertson") && !Stats["alertson"])
+		LogMirrorSnap.Call(20000, kind)
+	if (Stats.Has("alertson") && !Stats["alertson"])
 		return
 	url := AlertUrl()
 	if (url = "")
@@ -89,11 +90,11 @@ AlertSend(kind, title, text)
 	if (!IsObject(AlertLast))
 		AlertLast := {}
 	now := A_TickCount
-	if (AlertLast.HasKey(kind) && now - AlertLast[kind] < 600000)
+	if (AlertLast.Has(kind) && now - AlertLast[kind] < 600000)
 		return
 	;(another went less than 20 s ago: this one waits its turn - an alert that the bot has stopped often comes
 	;right after the one that led to it)
-	if (AlertLast.HasKey("") && now - AlertLast[""] < 20000)
+	if (AlertLast.Has("") && now - AlertLast[""] < 20000)
 		{
 		if (!IsObject(AlertWait))
 			AlertWait := []
@@ -102,12 +103,12 @@ AlertSend(kind, title, text)
 				return
 		AlertWait.Push({kind: kind, title: title, text: text})
 		DebugLog("Discord: alert '" title "' held - another went less than 20 s ago")
-		SetTimer, AlertFlush, % -(20000 - (now - AlertLast[""]) + 200)
+		SetTimer(AlertFlush,-(20000 - (now - AlertLast[""]) + 200))
 		return
 		}
-	AlertLast[kind] := now, AlertLast[""] := now
-	zone := IsFunc("WalkZone") ? Func("WalkZone").Call() : ""
-	FormatTime, at, , HH:mm
+	AlertLast[kind] := now, AlertLast[""] := now ;  V1toV2: Invalid Index errors?, try 'AlertLast.Push(<val>)'
+	zone := IsFunc("WalkZone") ? WalkZone.Call() : ""
+	at := FormatTime(, "HH:mm")
 	AlertPost(url, "**Wizard101 bot needs you: " title "**`n" text "`n_" (zone != "" ? zone " - " : "") at "_", kind)
 	}
 
@@ -115,16 +116,16 @@ AlertSend(kind, title, text)
 ;when it couldn't be sent). Never logs the address
 AlertPost(url, content, kind, wait := false)
 	{
-	body := "{""content"": """ AlertJson(SubStr(content, 1, 1900)) """, ""username"": ""Wiz-Maxxing"", ""allowed_mentions"": {""parse"": []}}"
+	body := "{`"content`": `"" AlertJson(SubStr(content, 1, 1900)) "`", `"username`": `"Wiz-Maxxing`", `"allowed_mentions`": {`"parse`": []}}"
 	try
 		{
-		req := ComObjCreate("WinHttp.WinHttpRequest.5.1")
+		req := ComObject("WinHttp.WinHttpRequest.5.1")
 		req.Open("POST", url, !wait)
 		req.SetTimeouts(5000, 5000, 10000, 10000)
 		req.SetRequestHeader("Content-Type", "application/json; charset=utf-8")
 		req.Send(body)
 		}
-	catch e
+	Catch Error as e
 		{
 		DebugLog("Discord: alert '" kind "' couldn't be sent (" e.Message ")")
 		return ""
@@ -134,20 +135,20 @@ AlertPost(url, content, kind, wait := false)
 	if (!IsObject(AlertReqs))
 		AlertReqs := []
 	AlertReqs.Push({req: req, kind: kind, at: A_TickCount})
-	SetTimer, AlertPoll, 1000
+	SetTimer(AlertPoll,1000)
 	return ""
 	}
 
 ;The sends under way: their answers logged (204 = Discord took it)
 AlertPoll()
 	{
-	if (!IsObject(AlertReqs) || !AlertReqs.Length())
+	if (!IsObject(AlertReqs) || !AlertReqs.Length)
 		{
-		SetTimer, AlertPoll, Off
+		SetTimer(AlertPoll,0)
 		return
 		}
 	i := 1
-	while (i <= AlertReqs.Length())
+	while (i <= AlertReqs.Length)
 		{
 		r := AlertReqs[i]
 		done := false
@@ -174,7 +175,7 @@ AlertPoll()
 AlertJson(s)
 	{
 	s := StrReplace(s, "\", "\\")
-	s := StrReplace(s, """", "\""")
+	s := StrReplace(s, "`"", "\`"")
 	s := StrReplace(s, "`r", "")
 	s := StrReplace(s, "`n", "\n")
 	s := StrReplace(s, "`t", "\t")
@@ -187,10 +188,10 @@ AlertSetup()
 	{
 	;(a walking key the bot holds let go: this box can stay up a while)
 	if (IsFunc("ReleaseKeys"))
-		Func("ReleaseKeys").Call()
+		ReleaseKeys.Call()
 	have := AlertUrl() != ""
 	prompt := have ? "Alerts go to a Discord webhook already.`n`nPaste a new webhook address to change it, leave it empty to send a test message, or type OFF to remove it." : "In Discord: the channel's settings > Integrations > Webhooks > New Webhook > Copy Webhook URL.`nPaste it here - it's kept in Windows Credential Manager on this PC only.`n`nThe bot then messages that channel when the wizard needs you."
-	InputBox, url, Discord alerts, %prompt%, HIDE, 560, 210
+	IB := InputBox(prompt, "Discord alerts", "Password w560 h210"), url := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
 	if (ErrorLevel)
 		return
 	url := Trim(url)
@@ -198,7 +199,7 @@ AlertSetup()
 		{
 		AlertUrlSave("")
 		DebugLog("Discord: alerts' webhook removed")
-		TrayTip, Wizard101 bot, Discord alerts are off (the webhook was removed)., 5, 1
+		TrayTip("Wizard101 bot", "Discord alerts are off (the webhook was removed).", 1)
 		return
 		}
 	isNew := (url != "")
@@ -210,7 +211,7 @@ AlertSetup()
 		}
 	else if (!AlertUrlOk(url))
 		{
-		MsgBox, 48, Discord alerts, That isn't a Discord webhook address (it starts https://discord.com/api/webhooks/). Nothing was changed.
+		MsgBox("That isn't a Discord webhook address (it starts https://discord.com/api/webhooks/). Nothing was changed.", "Discord alerts", 48)
 		return
 		}
 	;(the test first: a new address is kept only once Discord takes it - the one there before stays otherwise)
@@ -219,26 +220,39 @@ AlertSetup()
 	saved := !isNew || (took && AlertUrlSave(url))
 	url := ""
 	DebugLog("Discord: test message - " (took ? "sent" : "not taken (HTTP " status ")"))
-	off := (Stats.HasKey("alertson") && !Stats["alertson"])
+	off := (Stats.Has("alertson") && !Stats["alertson"])
 	if (took && !saved)
-		MsgBox, 48, Discord alerts, The test message went through`, but the address couldn't be kept in Windows Credential Manager - nothing was changed.
+		MsgBox("The test message went through, but the address couldn't be kept in Windows Credential Manager - nothing was changed.", "Discord alerts", 48)
 	else if (took)
-		MsgBox, 64, Discord alerts, % "A test message went to your Discord channel. " (off ? "Alerts are switched off in the Settings window, though (""Discord alerts when the wizard needs you"") - tick it to get them." : "Alerts are on.")
+		MsgBox("A test message went to your Discord channel. " (off ? "Alerts are switched off in the Settings window, though (`"Discord alerts when the wizard needs you`") - tick it to get them." : "Alerts are on."), "Discord alerts", 64)
 	else
-		MsgBox, 48, Discord alerts, % "Discord didn't take the test message (" (status = "" ? "no answer" : "HTTP " status) "). " (isNew ? "The new address wasn't kept" (have ? " - alerts still go to the one before" : "") "." : "Check the webhook still exists, then try again.")
+		MsgBox("Discord didn't take the test message (" (status = "" ? "no answer" : "HTTP " status) "). " (isNew ? "The new address wasn't kept" (have ? " - alerts still go to the one before" : "") "." : "Check the webhook still exists, then try again."), "Discord alerts", 48)
 	}
 
 AlertPoll:
-	AlertPoll()
+AlertPoll()
 	return
 
 ;An alert held for the 20 s gap: sent now (the rules checked again), the next one 20 s later
 AlertFlush:
-	if (IsObject(AlertWait) && AlertWait.Length())
+AlertFlush()
+	return
+
+;###############  V1toV2 FUNCS  ###############
+AlertPoll() { ; V1toV2: Lbl->Func
+	global
+	AlertPoll()
+	return
+}
+;##############################################
+AlertFlush() { ; V1toV2: Lbl->Func
+	global
+	if (IsObject(AlertWait) && AlertWait.Length)
 		{
 		AlertFlushOne := AlertWait.RemoveAt(1)
 		AlertSend(AlertFlushOne.kind, AlertFlushOne.title, AlertFlushOne.text)
-		if (AlertWait.Length())
-			SetTimer, AlertFlush, -20200
+		if (AlertWait.Length)
+			SetTimer(AlertFlush,-20200)
 		}
 	return
+}

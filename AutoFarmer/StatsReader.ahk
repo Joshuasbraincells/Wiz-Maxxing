@@ -1,4 +1,4 @@
-#Requires AutoHotkey v1.1.33+
+#Requires Autohotkey v2.0
 ; StatsReader.ahk - reads your wizard's Damage, Accuracy, Critical, Block and Armor Piercing off the
 ; Spellbook's stats pages and writes them into PlayerStats.txt as <school>.damage, <school>.pierce, ...
 ; for that wizard's school (the kill check uses <school>.damage and <school>.pierce). Run it while
@@ -16,12 +16,12 @@
 ; A number is only written when it was read the same way twice (digit pictures and Windows OCR), so it
 ; never writes a wrong one; what it couldn't read for sure keeps its old value. What it read goes to
 ; StatsReader.log, and pictures of the two stats pages to %TEMP%\Wizard101 bot rounds\stats_*.bmp.
-#NoEnv
+; V1toV2: Removed #NoEnv
 #SingleInstance force
-SetBatchLines, -1
-CoordMode, Pixel, Screen
-CoordMode, Mouse, Screen
-SetWorkingDir, %A_ScriptDir%
+; V1toV2: Removed SetBatchLines, -1
+CoordMode("Pixel", "Screen")
+CoordMode("Mouse", "Screen")
+SetWorkingDir(A_ScriptDir)
 
 ; ---- Settings ----
 School := ""             ; "" = work it out; or one of: fire ice storm myth life death balance shadow
@@ -30,36 +30,36 @@ global GameExe := "WizardGraphicalClient.exe", GameClass := "Wizard Graphical Cl
 global GameLeft := 0, GameTop := 0, GameW := 0, GameH := 0, GameRight := 0, GameBottom := 0, ScreenX := 0, ScreenY := 0
 global PicSets := [], PicSet := 1, PicDir := A_WorkingDir, UiScale := 1.0
 
-FileDelete, %A_ScriptDir%\StatsReader.log
+Try FileDelete(A_ScriptDir "\StatsReader.log")
 
 ;AutoFarmer running? Then it does the reading (message 0x5555 = "read the stats")
-DetectHiddenWindows, On
-SetTitleMatchMode, RegEx
+DetectHiddenWindows(true)
+SetTitleMatchMode("RegEx")
 ;(the script's window, or the compiled AutoFarmer.exe's)
 farmer := WinExist("i)\\Autofarmer\.(ahk - AutoHotkey|exe$) ahk_class AutoHotkey")
-SetTitleMatchMode, 1
+SetTitleMatchMode(1)
 if (farmer)
 	{
-	PostMessage, 0x5555, 0, 0,, ahk_id %farmer%
+	PostMessage(0x5555, 0, 0, , "ahk_id " farmer)
 	if (ErrorLevel)
 		Fail("AutoFarmer is running but didn't take the request. Close AutoFarmer and run this again.")
-	MsgBox, 64, StatsReader, AutoFarmer is running, so it will read your stats itself at the next quiet moment out of battle: with Wizard101 in front and your hands off the mouse and keyboard for 5 seconds. A tray tip says when it's done.
-	ExitApp
+	MsgBox("AutoFarmer is running, so it will read your stats itself at the next quiet moment out of battle: with Wizard101 in front and your hands off the mouse and keyboard for 5 seconds. A tray tip says when it's done.", "StatsReader", 64)
+	ExitApp()
 	}
-DetectHiddenWindows, Off
+DetectHiddenWindows(false)
 
-WinGet, hwnd, ID, ahk_class %GameClass% ahk_exe %GameExe%
+hwnd := WinGetID("ahk_class " GameClass " ahk_exe " GameExe)
 if (!hwnd)
 	Fail("Wizard101 isn't running.")
-WinActivate, ahk_id %hwnd%
-WinWaitActive, ahk_id %hwnd%, , 3
+WinActivate("ahk_id " hwnd)
+ErrorLevel := !WinWaitActive("ahk_id " hwnd, , 3)
 if (ErrorLevel)
 	Fail("Couldn't bring Wizard101 to the front.")
-VarSetCapacity(rect, 16, 0), VarSetCapacity(pt, 8, 0)
-DllCall("GetClientRect", "Ptr", hwnd, "Ptr", &rect), DllCall("ClientToScreen", "Ptr", hwnd, "Ptr", &pt)
+rect := Buffer(16, 0), pt := Buffer(8, 0) ; V1toV2: if 'pt' is a UTF-16 string, use 'VarSetStrCapacity(&pt, 8)' and replace all instances of 'pt.Ptr' with 'StrPtr(pt)'
+DllCall("GetClientRect", "Ptr", hwnd, "Ptr", rect.Ptr), DllCall("ClientToScreen", "Ptr", hwnd, "Ptr", pt.Ptr)
 GameLeft := NumGet(pt, 0, "Int"), GameTop := NumGet(pt, 4, "Int"), GameW := NumGet(rect, 8, "Int"), GameH := NumGet(rect, 12, "Int")
 GameRight := GameLeft + GameW, GameBottom := GameTop + GameH, ScreenX := GameLeft + GameW // 2, ScreenY := GameTop + GameH // 2
-Sleep, 300
+Sleep(300)
 
 ;The UI size: whichever picture set sees the Spellbook icon, else look for the icon at every size
 LoadPicSets()
@@ -83,30 +83,30 @@ if (err != "")
 	Fail("Couldn't read your stats: " err ".")
 msg := StatsWrite(got, School, charID)
 DebugLog(StrReplace(msg, "`n", " "))
-MsgBox, 64, StatsReader, %msg%
-ExitApp
+MsgBox(msg, "StatsReader", 64)
+ExitApp()
 
 ; ------------------------------------------------------------------------------------------------
 
 Fail(why)
 	{
 	DebugLog(why)
-	MsgBox, 48, StatsReader, % why "`n`n(Details: StatsReader.log next to this script.)"
-	ExitApp
+	MsgBox(why "`n`n(Details: StatsReader.log next to this script.)", "StatsReader", 48)
+	ExitApp()
 	}
 
 ;Each line goes to StatsReader.log
 DebugLog(msg)
 	{
-	FormatTime, stamp,, HH:mm:ss
-	FileAppend, % stamp " " msg "`r`n", %A_ScriptDir%\StatsReader.log
+	stamp := FormatTime(, "HH:mm:ss")
+	FileAppend(stamp " " msg "`r`n", A_ScriptDir "\StatsReader.log")
 	}
 
 ;Picture set i (PicScale.ahk) and its UI size; why: what chose it
 UsePicSet(i, why := "")
 	{
 	PicSet := i, PicDir := PicSets[i].dir, UiScale := PicSets[i].scale
-	DebugLog("Pictures: " (i = 1 ? "main set" : SubStr(PicDir, StrLen(A_WorkingDir) + 2)) " (UI scale " Round(UiScale, 3) ")" (why != "" ? " - " why : ""))
+	DebugLog("Pictures: " (i = 1 ? "main set" : SubStr(PicDir, (StrLen(A_WorkingDir) + 2)<1 ? (StrLen(A_WorkingDir) + 2)-1 : (StrLen(A_WorkingDir) + 2))) " (UI scale " Round(UiScale, 3) ")" (why != "" ? " - " why : ""))
 	}
 
 ;A picture at the UI size in use: the set's own, or one made at its size (PicMake), else the main one
@@ -122,6 +122,6 @@ PicPath(rel)
 	return (p != "" && FileExist(p)) ? p : A_WorkingDir "\" rel
 	}
 
-#Include %A_ScriptDir%\Ocr.ahk
-#Include %A_ScriptDir%\PicScale.ahk
-#Include %A_ScriptDir%\StatsRead.ahk
+#Include "%A_ScriptDir%\Ocr.ahk"
+#Include "%A_ScriptDir%\PicScale.ahk"
+#Include "%A_ScriptDir%\StatsRead.ahk"
