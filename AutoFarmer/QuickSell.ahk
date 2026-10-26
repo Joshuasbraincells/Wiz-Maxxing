@@ -488,8 +488,8 @@ QsRun(d, bag, manual := false, rehearse := false)
 ;The steps; the result as QsRun's - a step that fails returns its failure (QsFinish backs out)
 QsSteps(bag, manual, rehearse)
 	{
-	;(0. the groups: the gear's and the pets' - less any an Equipment Set's item in the backpack is in; none at all when
-	;the sets can't be read)
+	;(0. the groups: the gear's and the pets' - less any an Equipment Set's item or a Crown-shop item in the backpack is
+	;in; none at all when the sets can't be read)
 	qCats := QsCategories(bag, qWhyNot)
 	if (!IsObject(qCats))
 		return QsFail(qWhyNot)
@@ -722,10 +722,10 @@ QsOpenQuickSell()
 	}
 
 ;The groups sold - the gear's eight and the pets' (quicksellpets), never the All group - less any group an Equipment
-;Set's item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax, petMax (the most each
-;can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or unsellable, by the game's
-;memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items)}; "" and why when a set
-;item's kind isn't one the game's memory names
+;Set's item or a Crown-shop item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
+;petMax (the most each can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or
+;unsellable, by the game's memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items)};
+;"" and why when a set item's or a Crown-shop item's kind isn't one the game's memory names
 QsCategories(bag, ByRef why)
 	{
 	static qKnown := {hat: 1, robe: 1, shoes: 1, weapon: 1, athame: 1, amulet: 1, ring: 1, deck: 1, pet: 1, mount: 1, jewel: 1
@@ -754,6 +754,19 @@ QsCategories(bag, ByRef why)
 			}
 		qGuard[qs.kind] := (qGuard.HasKey(qs.kind) ? qGuard[qs.kind] ", " : "") qName " (set " qs.set ")"
 		}
+	;(a Crown-shop item the game doesn't flag as a Crowns item - "Crown-S05-Robe-093": the game's Quick Sell may take it for
+	;plain gear, and locked items - the bot can't read locks - keep the confirmation's gear count from showing it: its
+	;group left out. One of a kind the bot can't tell: nothing sold)
+	if (IsObject(bag.crownShop))
+		for qi, qx in bag.crownShop
+			{
+			if (!qKnown.HasKey(qx.kind))
+				{
+				why := "a Crown-shop item in the backpack (" qx.name ") is of a kind the bot can't tell - nothing sold (never a Crowns item)"
+				return ""
+				}
+			qGuard[qx.kind] := (qGuard.HasKey(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)"
+			}
 	qOut := {list: [], skipped: "", gearMax: 0, petMax: 0, crownShop: ""}
 	for qi, qc in qAll
 		{
@@ -780,7 +793,7 @@ QsCategories(bag, ByRef why)
 	if (bag.cats.HasKey("?"))
 		qOut.gearMax += bag.cats["?"].n, qOut.petMax += bag.cats["?"].n
 	if (qOut.skipped != "")
-		QsLog("left out - an Equipment Set's item is in the group: " qOut.skipped)
+		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group (bank Crown-shop items to have their group sold): " qOut.skipped)
 	if (qOut.crownShop != "")
 		QsLog("Crown-shop gear in the groups without the game's Crowns flag (not counted as plain gear - kept out if the game takes them for Crowns items or they're locked; if the confirmation's equipment goes over the plain gear, nothing's sold): " qOut.crownShop)
 	return qOut

@@ -836,8 +836,8 @@ NavBattle(timeoutMs := 700)
 ;every Equipment Set and its items read, every item walked - QuickSell.ahk sells nothing without it), space
 ;({n, m, text}: the backpack page's own "N/M" - only while that page is shown - else ""), cats ({kind: {n, crowns,
 ;nosell, plain}} - deck, hat, robe, shoes, weapon, athame, amulet, ring, pet, mount, emote...; ? not read; crowns: a Crowns
-;item or a Crown-shop template's; plain: neither crowns nor unsellable), crownShop ([{kind, name}]: Crown-shop templates
-;without the game's Crowns flag), tips ([{i, shown, l,
+;item or a Crown-shop template's, or one whose name wasn't read; plain: neither crowns nor unsellable), crownShop ([{kind,
+;name}]: Crown-shop templates without the game's Crowns flag, and items whose name wasn't read), tips ([{i, shown, l,
 ;t, r, b, image, button, name}]: the HUD's right-hand icons - Prospector Zeke's portrait: the backpack full, or the gold
 ;bag nearly full), sets ([{n, equipped, ids, name}]), setItems ([{set, equipped, gid, tid, name, kind, crowns}]: the
 ;Equipment Sets' items in the backpack), rootW, rootH (the game's GUI in its own units). "" when it can't be read -

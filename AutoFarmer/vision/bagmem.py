@@ -531,11 +531,14 @@ class BagMem:
             flagged = adjs is not None and "FLAG_CrownsOnly" in adjs
             # (a Crown-shop template - "Crown-S05-Robe-093" - is a Crowns item to the bot even without the game's flag:
             # the live Crown-S05 gear has none - never counted as plain gear that may be sold)
-            shop = (name or "").startswith("Crown-")
+            # (its name not read: it could be one - counted as one, its group not sold this time)
+            shop = name is None or name.startswith("Crown-")
             crowns = flagged or shop
             nosell = adjs is not None and "FLAG_NoSell" in adjs
-            if shop and not flagged and len(r["crownshop"]) < 40:
-                r["crownshop"].append((kind if kind is not None else "?", name))
+            # (every kind with one listed - the list's cut short only after that: QuickSell.ahk keeps those groups out)
+            ck = kind if kind is not None else "?"
+            if shop and not flagged and (len(r["crownshop"]) < 40 or all(ck != k for k, _ in r["crownshop"])):
+                r["crownshop"].append((ck, name if name is not None else "template %s (its name not read)" % tid))
             # (its global id not read: it isn't walked - an Equipment Set's item could go unnoticed - sets_ok stays off)
             if gid:
                 gids[gid] = (tid, name, kind, crowns)
@@ -680,7 +683,8 @@ def bag_lines(r, why=""):
     space|N|M|raw text                                       (only while the backpack page is shown)
     cat|kind|n|crowns|nosell|plain                           (each kind in the backpack; ? not read; crowns: Crowns
                                                               items and Crown-shop templates; plain: neither nor nosell)
-    crownshop|kind|object name                               (Crown-shop templates without the game's Crowns flag)
+    crownshop|kind|object name                               (Crown-shop templates without the game's Crowns flag, and
+                                                              items whose name wasn't read - every kind with one listed)
     tip|i|shown|l|t|r|b|image texture|button texture|name    (the HUD's right-hand column, its rect in the root)
     set|n|equipped|ids|name                                  (each Equipment Set)
     setitem|set n|set equipped|gid hex|template id|object name|kind|crowns
