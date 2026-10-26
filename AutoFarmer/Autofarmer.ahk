@@ -1259,9 +1259,13 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 														{
 														BoostRun := 0
 														Goto, EndRound
-														} else if (tower == 1) && Stat("usetower")
+														} else if (tower == 1) && Stat("usetower") && UseOnSelf("tower", tower, "resources")
 															{
-															UseOnSelf("tower", tower, "resources")
+															;(it has to go out, as when defending - CastWentOut; the card didn't go: passed,
+															;not left to the round's timer. Not clicked at all - the game's Tower Shield's box
+															;not lined up for sure (UseMemAt): on to Reshuffle, else Pass)
+															if (!CastWentOut())
+																Click("pass", pass, "resources")
 															} else if (reshuffle == 1) && Stat("usereshuffle")
 																{
 																;(a party battle's blader or healer: on itself - hammerX/Y is the hitter's
@@ -1961,20 +1965,26 @@ UseOnSelf(ByRef title, ByRef card, ByRef dir)
 	global
 	Find(title, card, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
-	
+	;(no picture found it, the game's hand has it - Tower Shield: at its card box - UseMemAt)
+	UseMemAt(title, dir, card, foundX, foundY)
+
 	if (card == 1)
 		{
 		ClickAt(foundX, foundY, 150)
 		ClickAt(playerX, playerY, 150)
 		}
+	;(true if the card was in hand - clicked - as UseOnHammer: the solo filler goes on to Reshuffle when it wasn't)
+	return card == 1
 	}
-	
+
 ;The card, then the hitter's plate (hammerX, hammerY) - or tx, ty (a party battle's ally). True if the card was in hand
 UseOnHammer(ByRef title, ByRef card, ByRef dir, tx := "", ty := "")
 	{
 	global
 	Find(title, card, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" card " at " foundX - GameLeft "," foundY - GameTop)
+	;(no picture found it, the game's hand has it: at its card box - UseMemAt)
+	UseMemAt(title, dir, card, foundX, foundY)
 
 	if (card == 1)
 		{
@@ -1983,7 +1993,31 @@ UseOnHammer(ByRef title, ByRef card, ByRef dir, tx := "", ty := "")
 		}
 	return card == 1
 	}
-	
+
+;A card dir\title no picture found that the game's hand has (KillCalc.ahk BoostSearch's BoostMemOnly - Tower Shield:
+;TowerMem): card 1 and x, y its card box's middle - a fresh look at the hand's boxes laid on the game's cards, only while
+;they line up for sure (KillCalc.ahk BoostMemBox, as UseBlade / UseTrap cast a blade or trap no picture found). Found by its
+;picture while the game's hand has a Tower Shield and another shield the picture may be on (TowerMem): its card box the
+;same way, else the picture's spot as found. False, nothing set: not one the game's hand found, or the boxes and the game's
+;cards not lining up for sure
+UseMemAt(title, dir, ByRef card, ByRef x, ByRef y)
+	{
+	global BoostMemOnly, GameLeft, GameTop
+	umaKey := BoostKey(title, dir)
+	if (!IsObject(BoostMemOnly) || !BoostMemOnly.HasKey(umaKey))
+		return false
+	umaAt := BoostMemBox(umaKey, 0, "", "")
+	if (umaAt.x = "")
+		{
+		DebugLog("  " umaKey ": in hand (the game), " (card == 1 ? "found by its picture - another shield's too? - its box not sure, the picture's spot: " : "no picture found it - not cast: ") umaAt.why)
+		return false
+		}
+	umaPic := (card == 1)
+	card := 1, x := umaAt.x, y := umaAt.y
+	DebugLog("  " umaKey ": " (umaPic ? "its picture found a shield, the game has another shield in hand too" : "no picture found it") " - the game's " umaAt.name " is card " umaAt.n " of " umaAt.of " in hand: cast at its box " x - GameLeft "," y - GameTop)
+	return true
+	}
+
 UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 	{
 	global
