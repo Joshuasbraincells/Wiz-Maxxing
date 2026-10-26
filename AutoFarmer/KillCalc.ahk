@@ -1712,24 +1712,36 @@ NegAuraKey(x)
 	}
 
 ;The round a negative aura last went on the enemy key names (NegAuraKey), by the surest of its identities known now - its
-;first ("" none recorded: NegAuraOn, this battle's)
+;first ("" none recorded: NegAuraOn, this battle's). Its participant read now but not when one was cast (NavBattle's
+;back-off, the helper restarting - the v0.54.0 review: a second one a round later): that cast's most health ("nog m...")
 NegAuraWhen(key)
 	{
 	global NegAuraOn
-	nawK := StrSplit(key, "|")[1]
-	return (IsObject(NegAuraOn) && nawK != "" && NegAuraOn.HasKey(nawK)) ? NegAuraOn[nawK] : ""
+	if (!IsObject(NegAuraOn))
+		return ""
+	nawP := StrSplit(key, "|"), nawK := nawP[1]
+	if (nawK != "" && NegAuraOn.HasKey(nawK))
+		return NegAuraOn[nawK]
+	if (SubStr(nawK, 1, 1) = "g" && SubStr(nawP[2], 1, 1) = "m" && NegAuraOn.HasKey("nog " nawP[2]))
+		return NegAuraOn["nog " nawP[2]]
+	return ""
 	}
 
 ;A negative aura cast on the enemy key names in round rnd: noted under each of its identities (NegAuraOn) - the next look
-;finds it by the surest one it knows then
+;finds it by the surest one it knows then; one cast without its participant (no g first) also marked "nog " (NegAuraWhen)
 NegAuraNote(key, rnd)
 	{
 	global NegAuraOn
 	if (!IsObject(NegAuraOn))
 		NegAuraOn := {}
+	nanNoG := SubStr(key, 1, 1) != "g"
 	for nanI, nanK in StrSplit(key, "|")
 		if (nanK != "")
+			{
 			NegAuraOn[nanK] := rnd
+			if (nanNoG)
+				NegAuraOn["nog " nanK] := rnd
+			}
 	}
 
 ;The enemy of the game's memory (Vision.ahk NavBattle - the helper's /battle, READ-ONLY) whose plate is at x: the nearest by
