@@ -39,9 +39,10 @@ WHAT IS READ (build 6A9721E9-370E000, 2026-10-25 - every offset found by name ea
                  WizItemTemplate: GameObjectTemplate.m_objectName +0x60 ("Deck-Purchased-50-E01-Balance"),
                  m_adjectiveList +0xF8 (std::list<std::string>: "Deck", "FLAG_NoTrade"... - its kind: Hat, Robe, Shoes,
                  Weapon, Athame, Amulet, Ring, Deck, Pet, Mount, Jewel, Emote, Elixir...; FLAG_CrownsOnly a Crowns item -
-                 so is a Crown-shop template, "Crown-S05-Robe-093", which has no such flag live; FLAG_NoSell one that
-                 can't be sold). The 22 emotes and teleport effects are items too - the game's own N/M
-                 on the backpack page may leave them out (m_numCEEmotesAllowed): the bot calibrates by it
+                 so is a Crown-shop template, "Crown-S05-Robe-093" or "Crowns-S67-Robe-L50-DS-010-01", which may have
+                 no such flag live; FLAG_NoSell one that can't be sold). The 22 emotes and teleport effects are items
+                 too - the game's own N/M on the backpack page may leave them out (m_numCEEmotesAllowed): the bot
+                 calibrates by it
   sets         ClientWizEquipmentBehavior.m_equipmentSets +0xE8: std::list {head, size} of EquipmentSet (node +0x10):
                  m_serializedItems +0x60 (a std::string of bytes: u16 n, then n u64 global ids), m_isEquipped +0x80
                  (m_equipmentSetName +0x58 is 8 bytes - not a string: not read). sets_ok only when every set and its
@@ -529,10 +530,11 @@ class BagMem:
             name, adjs = self.template_info(tid, hm)
             kind = item_kind(adjs)
             flagged = adjs is not None and "FLAG_CrownsOnly" in adjs
-            # (a Crown-shop template - "Crown-S05-Robe-093" - is a Crowns item to the bot even without the game's flag:
-            # the live Crown-S05 gear has none - never counted as plain gear that may be sold)
+            # (a Crown-shop template - "Crown-S05-Robe-093" or the game's own "Crowns-S67-Robe-L50-DS-010-01" - is a
+            # Crowns item to the bot even without the game's flag: the live Crown-S05 gear and some Crowns-S67 / S63 / S53
+            # gear have none - never counted as plain gear that may be sold)
             # (its name not read: it could be one - counted as one, its group not sold this time)
-            shop = name is None or name.startswith("Crown-")
+            shop = name is None or name.startswith(("Crown-", "Crowns-"))
             crowns = flagged or shop
             nosell = adjs is not None and "FLAG_NoSell" in adjs
             # (every kind with one listed - the list's cut short only after that: QuickSell.ahk keeps those groups out)

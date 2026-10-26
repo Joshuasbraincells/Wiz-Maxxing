@@ -1047,8 +1047,9 @@ read-only, never a picture):
 	  sell rehearsal (stops at the confirmation)" - everything up to the
 	  confirmation, read and logged, closed, nothing sold (quicksell:2 in
 	  PlayerStats.txt rehearses after battles, at most once an hour).
-	  A group with Crown-shop gear ("Crown-..." items) in the backpack is left
-	  out - bank it to have that group sold.
+	  A group with Crown-shop gear ("Crown-..." or "Crowns-..." items) in the
+	  backpack is left out - bank it to have that group sold (a full
+	  backpack's alert names those groups and items).
 	  quicksellfree:N sells with N slots or fewer left. debug.log:
 	  "Backpack: ..."; the dashboard: Quick sells.
 

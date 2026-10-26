@@ -493,6 +493,7 @@ QsSteps(bag, manual, rehearse)
 	qCats := QsCategories(bag, qWhyNot)
 	if (!IsObject(qCats))
 		return QsFail(qWhyNot)
+	QsBefore.shopLeft := qCats.shopLeft
 	;(1. the backpack open, on its page)
 	qr := QsOpenBook()
 	if (IsObject(qr))
@@ -584,6 +585,8 @@ QsAfter(r, manual)
 	{
 	QsFails := QsFails ? QsFails : 0
 	now := A_TickCount
+	;(groups left out for a Crown-shop item in them: said in the alerts - banking those items has the groups sold)
+	qLeft := (IsObject(QsBefore) && QsBefore.shopLeft != "") ? " Not quick sold at all: the groups " QsBefore.shopLeft " - a Crown-shop item is in each (never sold, nor its group). Bank those items to have the rest of those groups sold." : ""
 	if (r.res = "sold")
 		{
 		QsFails := 0, QsTryAt := now + 600000
@@ -593,7 +596,7 @@ QsAfter(r, manual)
 			{
 			QsTryAt := now + 3600000
 			QsLog("still full after the sale (it freed " QsBefore.items - qAfter.items " slots) - not tried again for 60 minutes")
-			AlertSend("inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes.")
+			AlertSend("inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes." qLeft)
 			}
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
@@ -616,7 +619,7 @@ QsAfter(r, manual)
 	else if (r.res = "nothing")
 		{
 		QsTryAt := now + 3600000, QsStill := 1
-		AlertSend("inventory", "backpack full", "The backpack is full, but Quick Sell finds nothing it may sell in the gear" (QsPets() ? " and pet" : "") " groups. Drops go to the bank; tried again in 60 minutes.")
+		AlertSend("inventory", "backpack full", "The backpack is full, but Quick Sell finds nothing it may sell in the gear" (QsPets() ? " and pet" : "") " groups. Drops go to the bank; tried again in 60 minutes." qLeft)
 		}
 	else if (r.res = "stopped")
 		QsTryAt := now + 600000, QsStill := 1
@@ -724,7 +727,8 @@ QsOpenQuickSell()
 ;The groups sold - the gear's eight and the pets' (quicksellpets), never the All group - less any group an Equipment
 ;Set's item or a Crown-shop item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
 ;petMax (the most each can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or
-;unsellable, by the game's memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items)};
+;unsellable, by the game's memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items),
+;shopLeft (the groups left out for a Crown-shop item, with those items - for the alerts)};
 ;"" and why when a set item's or a Crown-shop item's kind isn't one the game's memory names
 QsCategories(bag, ByRef why)
 	{
@@ -757,6 +761,7 @@ QsCategories(bag, ByRef why)
 	;(a Crown-shop item the game doesn't flag as a Crowns item - "Crown-S05-Robe-093": the game's Quick Sell may take it for
 	;plain gear, and locked items - the bot can't read locks - keep the confirmation's gear count from showing it: its
 	;group left out. One of a kind the bot can't tell: nothing sold)
+	qShop := {}
 	if (IsObject(bag.crownShop))
 		for qi, qx in bag.crownShop
 			{
@@ -766,13 +771,17 @@ QsCategories(bag, ByRef why)
 				return ""
 				}
 			qGuard[qx.kind] := (qGuard.HasKey(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)"
+			qShop[qx.kind] := (qShop.HasKey(qx.kind) ? qShop[qx.kind] ", " : "") qx.name
 			}
-	qOut := {list: [], skipped: "", gearMax: 0, petMax: 0, crownShop: ""}
+	;(shopLeft: the groups left out for a Crown-shop item - for the alerts)
+	qOut := {list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""}
 	for qi, qc in qAll
 		{
 		if (qGuard.HasKey(qc[2]))
 			{
 			qOut.skipped .= (qOut.skipped = "" ? "" : "; ") qc[1] " (" qGuard[qc[2]] ")"
+			if (qShop.HasKey(qc[2]) && StrLen(qOut.shopLeft) < 300)
+				qOut.shopLeft .= (qOut.shopLeft = "" ? "" : "; ") qc[1] " (" qShop[qc[2]] ")"
 			continue
 			}
 		qc2 := bag.cats.HasKey(qc[2]) ? bag.cats[qc[2]] : ""
