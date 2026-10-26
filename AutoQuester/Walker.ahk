@@ -2244,7 +2244,7 @@ InteractPrompt()
 	if (RegExMatch(t, "i)\bpress\b") && RegExMatch(t, "i)\bto\s+[a-z]{3,}"))
 		{
 		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", &cap) ? WalkLetters(cap[1]) : SubStr(WalkLetters(t), 1, 60)
-		WkPromptVerb := RegExMatch(t, "i)press.*?to\s+([a-z]{3,})", &verb) ? verb[1] : ""
+		WkPromptVerb := RegExMatch(t, "i)\bpress\b.*?\bto\s+([a-z]{3,})", &verb) ? verb[1] : ""
 		return "press"
 		}
 	return ""
