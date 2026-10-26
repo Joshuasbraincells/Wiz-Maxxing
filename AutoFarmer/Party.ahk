@@ -411,8 +411,9 @@ PartyHealAlly()
 	return false
 	}
 
-;Tower Shield (resources\tower, usetower on) for the party: the healer's on the ally lowest on health while under twice
-;healat %, else - and the blader's - on the hitter; once till the hitter's next hit (used19). True if it went out
+;Tower Shield (resources\tower, usetower on - one no picture finds at its card box by the game's hand: KillCalc.ahk
+;TowerMem, Autofarmer.ahk UseMemAt) for the party: the healer's on the ally lowest on health while under twice healat %,
+;else - and the blader's - on the hitter; once till the hitter's next hit (used19). True if it went out
 PartyShield()
 	{
 	global

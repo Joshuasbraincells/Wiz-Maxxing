@@ -253,11 +253,21 @@ CfgShow()
 	cfgPlan := CfgPlace(cfgMaxY, false)
 	if (cfgPlan.cols > cfgMaxCols)
 		{
-		;(the tabs' row of buttons above the settings, its frame below them)
-		cfgPlan := CfgPlace(cfgMaxY - 10, true)
-		cfgTabNames := ""
-		for each, cfgT in cfgPlan.tabs
-			cfgTabNames .= (cfgTabNames = "" ? "" : "|") cfgT
+		;(the tabs' buttons above the settings, its frame below them - as many rows of buttons as the names need at the
+		;window's width: a narrow window (one column on a 1920x1080 screen) wraps them to 2 or 3 rows, so the settings
+		;start under the last row, measured (CfgTabsTop) - not under the first, hidden behind the others)
+		cfgTop := 44
+		Loop, 4
+			{
+			cfgPlan := CfgPlace(cfgMaxY - 10 - (cfgTop - 44), true, cfgTop)
+			cfgTabNames := ""
+			for each, cfgT in cfgPlan.tabs
+				cfgTabNames .= (cfgTabNames = "" ? "" : "|") cfgT
+			cfgNeed := CfgTabsTop(432 * cfgPlan.cols + 6, cfgTabNames)
+			if (cfgNeed <= cfgTop || A_Index = 4)
+				break
+			cfgTop := cfgNeed
+			}
 		Gui, Cfg:Font, s9 w600 cF2F2F2, Segoe UI
 		Gui, Cfg:Add, Tab3, % "x6 y8 w" 432 * cfgPlan.cols + 6 " h" cfgPlan.bottom + 2 " +Buttons -Theme", %cfgTabNames%
 		}
@@ -344,10 +354,11 @@ CfgShow()
 ;Where each of CfgList's settings and headings goes in the window: {items: [{s: the setting, x, y, tab}], cols: the
 ;most columns, bottom: the lowest y used, tabs: their names}. Down in columns from the top, a new one at "|" and
 ;wherever the next wouldn't end above maxY (a heading goes with its first setting). tabbed: each heading starts a
-;tab of its own (named after it; the heading itself not shown), the settings under the tabs' buttons, "|" left out
-CfgPlace(maxY, tabbed)
+;tab of its own (named after it; the heading itself not shown), the settings under the tabs' buttons (from top - one
+;row of them: 44), "|" left out
+CfgPlace(maxY, tabbed, top := "")
 	{
-	top := tabbed ? 44 : 12
+	top := top != "" ? top : tabbed ? 44 : 12
 	plan := {items: [], cols: 1, bottom: top, tabs: []}
 	x := 12, y := top, col := 1
 	for each, s in CfgViewList()
@@ -375,6 +386,25 @@ CfgPlace(maxY, tabbed)
 		plan.bottom := Max(plan.bottom, y), plan.cols := Max(plan.cols, col)
 		}
 	return plan
+	}
+
+;Where the settings start under the tabs' buttons (the window's units): the same Tab3 made in a window never shown, at
+;width w with those names, its buttons' rows measured - they wrap when the names don't fit one row. 44 for one row
+CfgTabsTop(w, names)
+	{
+	Gui, CfgM:New
+	Gui, CfgM:Font, s9 w600, Segoe UI
+	Gui, CfgM:Add, Tab3, % "x6 y8 w" w " h200 +Buttons -Theme HwndctTab", %names%
+	;(TCM_GETITEMCOUNT, then each button's rect - TCM_GETITEMRECT - in the control's own pixels)
+	ctN := DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x1304, "Ptr", 0, "Ptr", 0, "Ptr"), ctBottom := 0
+	VarSetCapacity(ctRect, 16, 0)
+	Loop, %ctN%
+		if (DllCall("SendMessage", "Ptr", ctTab, "UInt", 0x130A, "Ptr", A_Index - 1, "Ptr", &ctRect, "Ptr"))
+			ctBottom := Max(ctBottom, NumGet(ctRect, 12, "Int"))
+	Gui, CfgM:Destroy
+	Gui, Cfg:Default
+	;(pixels to the window's units - 96 a inch, as Gui positions are given)
+	return Max(44, 8 + Ceil(ctBottom * 96 / A_ScreenDPI) + 8)
 	}
 
 ;The help for what the mouse is over: a label (SS_NOTIFY) or a control in the window

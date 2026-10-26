@@ -239,6 +239,12 @@ def strip_markup(s):
     return re.sub(r"\s+", " ", re.sub(r"<[^>]*>", "", s or "")).strip()
 
 
+def raw_key(v):
+    """a madlib's or field's value when it is a name-table key ("WizQst371C7_00000008"), else "" (none, a number, or
+    words already - a talk goal's NAME 'Talk To')"""
+    return v if isinstance(v, str) and KEY.match(v) else ""
+
+
 # ============================================================================ the name tables
 class Lang:
     """Root.wad's name tables (Locale/en-US/<table>.lang, handmem.parse_lang), each read once - the tables a batch of keys
@@ -833,11 +839,19 @@ class QuestMem:
                       Waverunner", "Gobblers"), the item / object / one to go to (TALLYTEXT), the NPC to talk to
                       (FIRSTNAME LASTNAME), the place ("" none)
             quest, quest_id, goal_id, ids_from   the quest's title, the GIDs read, whose ids they are ("hud" / "thread")
+            item_key, mob_key, npc_keys, name_key   the same names' name-table keys as the goal holds them - TALLYTEXT
+                      ("WizQst371C7_00000008" = Inactive Protector: the display key of the zone objects it means - their
+                      template's +0xA8), TALLYTEXT2 ("WizardMobs_00000883"), (FIRSTNAME, LASTNAME), the goal's own name
+                      (m_name "WizardQuestGoals_UseItem", else NAME's): exact, no name lookup - there even while a name
+                      table isn't read. "" (("", "")) when there's none or the value is words, not a key; cleared with
+                      the names when the quest has moved on. A match candidate, never the only test: a goal's key may be
+                      another table's for the same words (Jack O' Lantern's, Flame Gems')
             why, ms"""
         out = {"text": None, "from": "", "exact": False, "shown": None, "visible": None, "distance": None,
                "type": None, "type_raw": None, "status": None, "count": None, "total": None, "name": "", "mob": "",
                "item": "", "npc": "", "place": "", "quest": "", "quest_id": None, "goal_id": None,
-               "ids_from": "", "why": "", "ms": 0.0}
+               "ids_from": "", "why": "", "ms": 0.0,
+               "item_key": "", "mob_key": "", "npc_keys": ("", ""), "name_key": ""}
         t0 = time.perf_counter()
         try:
             self._resolve(snap, out, block)
@@ -871,6 +885,10 @@ class QuestMem:
                        npc=" ".join(x for x in (nm(args.get("FIRSTNAME")), nm(args.get("LASTNAME"))) if x),
                        place=nm(args.get("LOCATION") or g.get("location_key")).split("|")[-1],
                        quest=nm(title_key))
+            # (the raw keys: no lookup - there even while a name table isn't read yet)
+            out.update(item_key=raw_key(args.get("TALLYTEXT")), mob_key=raw_key(args.get("TALLYTEXT2")),
+                       npc_keys=(raw_key(args.get("FIRSTNAME")), raw_key(args.get("LASTNAME"))),
+                       name_key=raw_key(g.get("name_key")) or raw_key(args.get("NAME")))
             if g.get("madlibs") is None:
                 out["why"] = "the goal has no madlibs (the HUD's line only)"
         shown = out["shown"]
@@ -885,7 +903,7 @@ class QuestMem:
                 # (the quest moved on: the HUD shows the next goal already, the ids read are a goal behind - their names
                 # aren't this line's)
                 out.update(type=None, type_raw=None, status=None, count=None, total=None, name="", mob="", item="",
-                           npc="", place="")
+                           npc="", place="", item_key="", mob_key="", npc_keys=("", ""), name_key="")
                 out["why"] = "the goal read is complete - the HUD's line is the next one"
             elif g and not ok:
                 out["why"] = out["why"] or "a name of the goal's isn't in the name tables (yet) - the HUD's line"

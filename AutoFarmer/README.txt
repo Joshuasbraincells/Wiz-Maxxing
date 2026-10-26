@@ -209,6 +209,27 @@ monsters as before. A collect goal the game shows no arrow for (its goal has
 no place) is read where its line sits and collected the same way. The
 dashboard's map shows them as green diamonds (the goal's brighter, named).
 debug.log: "Walk: collect: ...".
+Goals the game shows no way to ("Use Inactive Protector in District of the
+Stars (0 of 3)" stood there doing nothing): the game's memory (navmem:1,
+read-only) says when the quest helper has no place for the goal - the arrow
+seen on screen then is a phantom: not followed, no X at nothing, no pushing on,
+no waiting there - and what kind of goal it is. A goal to use things (Use,
+Read, a "Collect" of an object): its things are found in the game's memory and
+in the zone's own file - all of them, even far off - the nearest walked to
+round walls and mobs (mobs kept off, no monsters walked into), X at the prompt
+naming it, the count watched: up, the next; not, X once more, then it's left
+for 5 minutes. One that shows no prompt: one X in case, then left. None known:
+it looks about, X only at a prompt naming the thing (never a teleporter), and
+after 3 minutes shows a notice (Quest needs you); each one tried and the count
+not rising: the notice at once. A go-to goal: the place by its name (a thing,
+or one of the zone's volumes) walked to, no X; the same goal 5 s there: walked
+through it, then the notice. A talk goal: the NPC by its name walked to, then
+talked to as any talk goal (its own prompt, 3 tries, the wait by it). Anything
+else ("Practice Photomancy"): left alone, nothing roamed for. Waiting at a goal:
+its id and count are read every 3 s - moved on, it walks on at once. A use
+goal's prompts on the way: X only at the ones naming its thing; collecting
+never X's a teleporter's. An older helper (no "no place"): as before.
+debug.log: "Walk: use: ...", "Walk: go: ...", "Walk: talk: ...".
 Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
 kept off (mobgrow); every 10 minutes of walking without one it's made a tenth
 smaller again - never below what you set yourself in Settings (mobshrink).

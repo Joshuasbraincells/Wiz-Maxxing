@@ -41,9 +41,11 @@
 ; name in the game>; its picture is still cut as before (/cut). A card the bot knows by its picture gets what the game
 ; says filled in - never what you set (flag user, a name you typed): only the learner's own guesses and OCR'd numbers.
 ; An enchanted card the bot doesn't know by its picture isn't learned (its picture is the enchanted one's): it is when it
-; shows up plain. LearnMemHand, LearnMemRead, LearnApplyMem. A blade or trap the game names whose slot's picture the
-; battle's look doesn't find on it twice running gets the card's own picture there (the old one in backups\ -
-; LearnBoostPicFix); meanwhile the battle casts it at its card box by the game's hand (KillCalc.ahk BoostMemBox).
+; shows up plain. LearnMemHand, LearnMemRead, LearnApplyMem. A learned card you named on the Spells tab, of any wizard, is
+; put right whenever the game's hand has a card of that name (LearnMemNamed). A blade, trap or Tower Shield the game names
+; whose slot's picture the battle's look doesn't find on it twice running gets the card's own picture there (the old one
+; in backups\ - LearnBoostPicFix); meanwhile the battle casts it at its card box by the game's hand (KillCalc.ahk
+; BoostMemBox, TowerMem).
 ; Out of battle, once a run (LearnOutOfBattle): learned "cards" that aren't cards are moved to backups\learned
 ; junk\, and a learned card's picture left in a slot that isn't its own is taken out (backups\learned strays\).
 ; Everything learned is listed in learned\cards.txt (and on the dashboard's Spells tab); debug.log: "learned a
@@ -138,6 +140,10 @@ DiscardUnused()
 			;support boosts the Storm hitter, an Elemental Blade a Balance wizard's Hydra - so it was thrown away as having
 			;no slot, 2026-10-23; an aura only with a slot)
 			|| lc.type = "blade" || lc.type = "trap" || (lc.type = "aura" && LearnSlotFor(lc) != "")
+			;(nor a Tower Shield - the game's name for it, or yours - while the game's hand is read: the bot casts one no
+			;picture finds at its box - KillCalc.ahk TowerMem, Autofarmer.ahk UseMemAt; another shield - a school's, a
+			;team's - in no slot is never cast: thrown away as before)
+			|| (lc.type = "ward" && Stat("usetower") && BoostMemOk && RegExMatch(LearnFlag(lc, "game") "|" lc.name, "i)\btower\s*shield\b"))
 			;(a hit of the school while no hit1-3 in hand can go: cast this round instead - LearnHitCards)
 			|| (LearnIsHit(lc) && Stat("learnedhits") && !((hit1 == 1 && Affordable("hit1")) || (hit2 == 1 && Affordable("hit2")) || (hit3 == 1 && Affordable("hit3")))))
 			{
@@ -328,10 +334,12 @@ LearnSure(c)
 
 ;A card whose icon wasn't one the helper knows (a blade's is a charm's), whose text says it's a blade: "+25% to next
 ;spell" - the + often read as something else, or lost. Not a "-25%" (a weakness, a shield), nor a Sharpen (it's put
-;on a blade - its text says so). Now only for cards an older version learned (LearnLoad): new ones need the charm icon
+;on a blade - its text says so). Now only for cards an older version learned (LearnLoad): new ones need the charm icon.
+;Never one with a shield's icon (icon=ward - a shield's or a trap's): its - or + lost ("?50% to next" - a Tower Shield,
+;a Thermic Shield, learned 2026-10-24 by OCR) made it a blade at every load, 2026-10-25
 LearnLooksBlade(c)
 	{
-	return (c.type = "" || c.type = "blade") && RegExMatch(c.text, "i)\d{1,3}\s*%\s*to\s*next") && !RegExMatch(c.text, "-\s*\d{1,3}\s*%") && !RegExMatch(c.text, "i)blade")
+	return (c.type = "" || c.type = "blade") && LearnIconOf(c) != "ward" && RegExMatch(c.text, "i)\d{1,3}\s*%\s*to\s*next") && !RegExMatch(c.text, "-\s*\d{1,3}\s*%") && !RegExMatch(c.text, "i)blade")
 	}
 
 ;Why learned card id isn't one the bot plays (for the log)
@@ -592,11 +600,14 @@ LearnCards(picFix := 1)
 			fresh++
 			placed += LearnNew(card)
 			}
-		;(a blade or trap the game names here whose slot's picture never finds it: the card's own put there -
+		;(a blade, trap or Tower Shield the game names here whose slot's picture never finds it: the card's own put there -
 		;LearnBoostPicFix)
 		if (picFix && IsObject(card.mem))
 			placed += LearnBoostPicFix(card, f)
 		}
+	;(the learned cards you named that the game has in hand - any wizard's, never named by the game: put right -
+	;LearnMemNamed)
+	placed += IsFunc("LearnMemNamed") ? Func("LearnMemNamed").Call() : 0
 	if (enchNew)
 		DebugLog("  " enchNew " enchanted card(s) in hand the bot doesn't know by their picture - learned when they show up plain")
 	if (boxes && notCards = boxes)
@@ -972,9 +983,11 @@ LearnSeenAgain(card)
 		changed := 0, got := 0
 		;(known by its own name though it has a slot: the slot's picture isn't this card's any more - you
 		;put another there - so it's out of that slot. Not while the slot's picture is still its own: its
-		;.raw.png - never made see-through - is the same)
-		slotDir := A_WorkingDir (c.dir = "" ? "" : "\" c.dir)
-		if (c.slot != "" && "learned/" c.id = card.known && !LearnSameCard(slotDir "\" c.slot, slotDir "\learned\" c.id))
+		;.raw.png - never made see-through - is the same; nor in this UI size's set, where LearnBoostPicFix writes a slot's
+		;new picture - a card learned at another size, the Tower Shield at 0.917 given resources\tower at 1.144)
+		slotDir := A_WorkingDir (c.dir = "" ? "" : "\" c.dir), hereDir := LearnSetDir(false)
+		if (c.slot != "" && "learned/" c.id = card.known && !LearnSameCard(slotDir "\" c.slot, slotDir "\learned\" c.id)
+			&& !LearnSameCard(hereDir "\" c.slot, hereDir "\learned\" c.id))
 			{
 			DebugLog("  learned card " c.id " (" LearnDescribe(c) "): " c.slot " has another picture now - not using it there any more")
 			c.slot := "", changed := 1
@@ -1156,6 +1169,52 @@ LearnMemHand(answer)
 		}
 	DebugLog("  the hand from the game's memory: " (lmhNames = "" ? "no cards" : lmhNames))
 	return lmhOut
+	}
+
+;---- A learned card you named, put right by the game's hand on any wizard (2026-10-25) ----
+;LearnSeenAgain puts right only the learned card a box of the hand is known as - and the helper is asked only about this
+;school's learned cards and those in a slot every school shares (LearnCards' learned list): a card learned on another
+;wizard, in no slot, is never seen here, so the game's memory never reaches it. c261024120831_1004 - a Tower Shield learned
+;on the Fire wizard by OCR before v0.49.0, its - lost ("?50% to next") and so made a blade at load (LearnLooksBlade) - stayed
+;a blade while the Balance wizard held two Tower Shields. So each card of the game's hand (VisionCards: the hand settled; no
+;box pairing needed - the name is the card) puts right every learned card, of any school, you named so on the Spells tab
+;that the game never named (no flag game=): LearnApplyMem - its kind, number, pips and words the game's, game=<its name>.
+;Not one you set (flag user: left alone), nor from a treasure or item copy onto a card that isn't one (its own numbers -
+;and it'd be flagged tc / item). Returns how many it took out of a slot (their kind changed: the slots' pictures did)
+LearnMemNamed()
+	{
+	lmnHand := VisionCards(1500, 3000)
+	if (!IsObject(lmnHand) || !lmnHand.cards.Length() || !IsObject(LearnedCards))
+		return 0
+	lmnReads := []
+	for lmnI, lmnM in lmnHand.cards
+		if (lmnM.kind != "")
+			lmnReads.Push({m: lmnM, r: LearnMemRead(lmnM)})
+	lmnOut := 0, lmnAny := 0
+	for lmnI, lmnC in LearnedCards
+		{
+		lmnNm := Trim(lmnC.name)
+		if (lmnNm = "" || LearnFlag(lmnC, "game") != "" || LearnHasFlag(lmnC, "user"))
+			continue
+		for lmnJ, lmnE in lmnReads
+			{
+			if (lmnNm != lmnE.r.name && lmnNm != lmnE.r.game)
+				continue
+			if ((lmnE.m.tc && !LearnHasFlag(lmnC, "tc")) || (lmnE.m.item && !LearnHasFlag(lmnC, "item")))
+				continue
+			lmnWas := LearnDescribe(lmnC)
+			lmnGot := LearnApplyMem(lmnC, lmnE.r)
+			if (lmnGot)
+				{
+				lmnAny := 1, lmnOut += (lmnGot = 2) ? 1 : 0
+				DebugLog("  learned card " lmnC.id " (learned for " lmnC.sch "), named " lmnNm " on the Spells tab: the game's " lmnE.r.game " in hand - " lmnWas " -> " LearnDescribe(lmnC))
+				}
+			break
+			}
+		}
+	if (lmnAny)
+		LearnSave()
+	return lmnOut
 	}
 
 ;A card's name in the game, as flag game= keeps it: the name on the card (else the spell's own), printable, no , | $ \
@@ -1492,19 +1551,32 @@ LearnBoostSlotIs(rel)
 ;    (LearnShadowSet - vision.py Library.masters; since 2026-10-24 this size's own cut comes first, so that's rare), or the
 ;    card looks otherwise now and then: said once a run; the card's cast at its box by the game's hand meanwhile
 ;    (KillCalc.ahk BoostMemBox)
+;And Tower Shield's slot the same way (2026-10-25): a shield the game names Tower Shield (KillCalc.ahk TowerMatches) whose
+;resources\tower picture never finds it - live at UI 1.144 that picture was a Spirit Shield's, the first shield learned
+;(LearnSlotFor gives any shield resources\tower), so the Tower Shields learned since got no slot: the shield learned card
+;the box is gets resources\tower, its picture there (the Spirit Shield's in backups\, the Spirit Shield out of the slot)
 ;f: the box's /hand line, split. 1 if the slot's picture was written (the hand's looked at again)
 LearnBoostPicFix(card, f)
 	{
 	static misses := {}, said := {}, lookOf := {}
 	m := card.mem
-	if (!IsObject(m) || (m.kind != "blade" && m.kind != "trap") || card.grey || !card.isCard || card.tc || m.ench != "" || m.tc || m.item)
+	if (!IsObject(m) || (m.kind != "blade" && m.kind != "trap" && m.kind != "ward") || card.grey || !card.isCard || card.tc || m.ench != "" || m.tc || m.item)
 		return 0
-	b := BoostsParse(m.boosts)
-	if (!IsObject(b))
-		return 0
-	slot := BoostSlotFor(m.kind, b.sch, b.pct, hitschool)
-	if (slot = "" || !LearnBoostPctOk(slot, b.pct, hitschool))
-		return 0
+	if (m.kind = "ward")
+		{
+		if (!TowerMatches([m]).Length())
+			return 0
+		slot := "resources\tower"
+		}
+	else
+		{
+		b := BoostsParse(m.boosts)
+		if (!IsObject(b))
+			return 0
+		slot := BoostSlotFor(m.kind, b.sch, b.pct, hitschool)
+		if (slot = "" || !LearnBoostPctOk(slot, b.pct, hitschool))
+			return 0
+		}
 	pic := StrReplace(slot, "\", "/"), name := LearnMemGame(m), key := slot "|" name
 	;(the battle's own look asked about it - and found it on this box: its picture works)
 	if (!InStr("," VisionPicList() ",", "," pic ",") || InStr(VisionMissing, "," pic ","))
@@ -1517,13 +1589,15 @@ LearnBoostPicFix(card, f)
 				misses.Delete(key)
 				return 0
 				}
+	;(one miss a look at the hand - VisionFind's count: the same look asked about again isn't a second - and so the look's
+	;first copy of it only: a second copy known as another learned card - two Tower Shields learned apart - would start
+	;the count again every look, 2026-10-25)
+	if (VisionLookN = "" || lookOf[key] = VisionLookN)
+		return 0
 	;(twice running for one box identity - the same picture or learned card known there: two misses on two different boxes
 	;or cards, a pairing that shifted, aren't twice)
 	if (!misses.HasKey(key) || misses[key].known != card.known)
 		misses[key] := {n: 0, known: card.known}
-	;(and one miss a look at the hand - VisionFind's count: the same look asked about again isn't a second)
-	if (VisionLookN = "" || lookOf[key] = VisionLookN)
-		return 0
 	lookOf[key] := VisionLookN
 	misses[key].n += 1
 	if (misses[key].n < 2)

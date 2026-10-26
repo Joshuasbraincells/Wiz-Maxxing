@@ -394,6 +394,8 @@ global NavGoalWhy, NavGoalWaitUntil
 global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 ;Why the last NavBag / NavGui got nothing; when each may ask again (declared only: a top-level := never runs here)
 global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
+;Why the last NavItems got nothing; when it may ask again
+global NavItemsWhy, NavItemsWaitUntil
 
 ;The wizard and the quest goal from the game's memory, as an object:
 ;  ok        1
@@ -411,6 +413,12 @@ global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
 ;            waited there, and where it is; "" otherwise
 ;  goaltext, goaltype, goalstatus, goalcount, goaltotal, goalshown  the quest's goal line from the game's memory and its
 ;            kind, status, count, total, on screen (1/0) - as NavGoal's; "" when it can't be read (or an older helper)
+;  noplace   1: the game shows no way to the goal - no arrow (its goal reads exactly 0, 0, 0 and the arrow's distance -1:
+;            "Use Inactive Protector in District of the Stars (0 of 3)" - gx..dist are "" then and an arrow seen on the
+;            screen is a phantom); 0: the goal has a place; "" not known (another zone, the quest helper off, a goal
+;            change caught midway, an older helper). noplaceheld: seconds the 1 has held for this quest and goal (a
+;            number - 3.000000: compare it as one), "" unless noplace is 1 - act on it once it has held (2 s, and the
+;            same goalid two readings running: a goal change or a zone arrival can read 1 for a moment)
 ;A value that couldn't be read for sure is "". Returns "" when it can't be asked: navmem:0, the helper not
 ;running, an ERR (the game not running, at the login screen...) or no answer within timeoutMs - NavWhy says
 ;why, and after an ERR it isn't asked again for 1 s, doubling to 30 s while it keeps failing (no answer:
@@ -453,7 +461,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 	nav := {ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
 		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""
-		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: ""}
+		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: "", noplace: "", noplaceheld: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		navLine := A_LoopField
@@ -486,6 +494,10 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			nav.blindahead := Trim(f[2]), nav.blindback := Trim(f[3]), nav.blindin := Trim(f[4])
 		else if (f[1] = "routewhy" && withRoute)
 			nav.routewhy := Trim(SubStr(navLine, 10))
+		;(no place: the game shows no way to the goal - 1, a place 0, "" not known; how long the 1 has held, s - an older
+		;helper sends no such line)
+		else if (f[1] = "noplace")
+			nav.noplace := NavNum(f[2]), nav.noplaceheld := NavNum(f[3])
 		;(the quest's goal line from the game's memory - the helper's last line; an older one has none)
 		else if (f[1] = "goalline")
 			nav.goaltext := Trim(f[2]), nav.goaltype := Trim(f[3]), nav.goalstatus := Trim(f[4]), nav.goalcount := NavNum(f[5])
@@ -537,6 +549,12 @@ NavUri(text)
 ;  count, total  "(count of total)"; "" none (talk and go-to goals)
 ;  mob, item, npc, place  what it names: the mob (or its kind: "Gobblers"), the item / object / one to go to, the NPC
 ;  quest, questid, goalid  the quest's title and ids; exact 1: the line and the fields are the goal's own data
+;  itemkey, mobkey  the name-table keys of what it names (the TALLYTEXT "WizQst371C7_00000008" = Inactive Protector - the
+;            display key NavItems' things carry; the TALLYTEXT2 "WizardMobs_00000883"); npcfirst, npclast a talk goal's
+;            NPC's (FIRSTNAME, LASTNAME "WC-NPCs_00000014"); namekey the goal's own ("WizardQuestGoals_UseItem"); typenum
+;            the game's number for its kind (USAGE 8 - for logs only: it may change between builds). "" none, the quest
+;            moved on, or an older helper. A key is exact, but a goal's key may be another table's for the same words:
+;            a match candidate, never the only test
 ;"" when it can't be read - navmem:0 in PlayerStats.txt, the helper not running or older (no /goal), no quest, the game
 ;not read yet - NavGoalWhy says why (the walker reads the line off the screen then). After no answer or an ERR it isn't
 ;asked again for 10 s (an older helper: 60 s)
@@ -563,7 +581,8 @@ NavGoal(timeoutMs := 800)
 		}
 	NavGoalWaitUntil := 0
 	goal := {text: "", from: "", shown: "", hudtext: "", distance: "", type: "", status: "", count: "", total: "", mob: ""
-		, item: "", npc: "", place: "", quest: "", questid: "", goalid: "", exact: ""}
+		, item: "", npc: "", place: "", quest: "", questid: "", goalid: "", exact: "", typenum: "", itemkey: "", mobkey: ""
+		, npcfirst: "", npclast: "", namekey: ""}
 	Loop, Parse, answer, `n, `r
 		{
 		f := StrSplit(A_LoopField, "|")
@@ -576,8 +595,9 @@ NavGoal(timeoutMs := 800)
 			goal.text := Trim(f[2]), goal.from := Trim(f[3])
 		else if (f[1] = "shown")
 			goal.shown := NavNum(f[2]), goal.hudtext := Trim(f[3]), goal.distance := Trim(f[4])
+		;(kind's number: a kindnum line - or a 4th field here, as a helper may send it)
 		else if (f[1] = "kind")
-			goal.type := Trim(f[2]), goal.status := Trim(f[3])
+			goal.type := Trim(f[2]), goal.status := Trim(f[3]), goal.typenum := f.Length() >= 4 ? NavNum(f[4]) : goal.typenum
 		else if (f[1] = "count")
 			goal.count := NavNum(f[2]), goal.total := NavNum(f[3])
 		else if (f[1] = "mob" || f[1] = "item" || f[1] = "npc" || f[1] = "place")
@@ -586,6 +606,13 @@ NavGoal(timeoutMs := 800)
 			goal.quest := Trim(f[2]), goal.questid := Trim(f[3]), goal.goalid := Trim(f[4])
 		else if (f[1] = "exact")
 			goal.exact := NavNum(f[2])
+		;(the goal's raw keys - an older helper sends none of these lines)
+		else if (f[1] = "itemkey" || f[1] = "mobkey" || f[1] = "namekey")
+			goal[f[1]] := Trim(f[2])
+		else if (f[1] = "npckeys")
+			goal.npcfirst := Trim(f[2]), goal.npclast := Trim(f[3])
+		else if (f[1] = "kindnum")
+			goal.typenum := NavNum(f[2])
 		}
 	if (goal.text = "")
 		{
@@ -667,6 +694,73 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		nmOut.Push(nmM)
 		}
 	return nmOut
+	}
+
+;The zone's things from the game's memory (the helper's /items - READ-ONLY, vision\navmem.py; with far the zone's own file
+;too, vision\placements.py), nearest first, as an array of {name, x, y, z, dist (from the wizard), quest (1: the quest's
+;goal is about it - the helper's verdict: the goal's own key (NavGoal's itemkey), else - an exact goal - its item, or a
+;talk goal's NPC, as the thing's whole name, else the goal's line naming it; goalLine, the line read off the screen, only
+;when the memory's can't be read), gid (a number in memory; a placement of the file's "f:<template>:<n>" - it turns into
+;the live gid once in reach: remember used or skipped ones by template and place, not gid), key (its display key),
+;template, src (mem: in the game's memory now; file: where the zone's file places it - far only), kind (item: lying about,
+;picked up on contact; object: used, opened, read - Inactive Protector; npc; ambient: a mob's name on something that
+;doesn't fight)}. An older helper's lines (8 fields): key and template "", src mem, kind item (all it listed). far: the
+;zone file's things the memory doesn't hold too (it holds only those within ~6.7k; the file is read in a thread at each
+;zone change - till then the live ones only; a used or picked-up one stays in the file). [] when there are none; "" when
+;they can't be read - navmem:0, the helper not running, "none (<why>)" (not attached, a new zone being looked at, the
+;zone's file being read...), an ERR or no answer: NavItemsWhy says why, and after an ERR or no answer it isn't asked
+;again for 5 s
+NavItems(goalLine := "", far := false, timeoutMs := 2500)
+	{
+	NavItemsWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavItemsWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavItemsWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (NavItemsWaitUntil && A_TickCount < NavItemsWaitUntil)
+		{
+		NavItemsWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	niAns := VisionGet("/items?goal=" NavUri(SubStr(goalLine, 1, 160)) (far ? "&far=1" : ""), timeoutMs, true)
+	if (niAns = "")
+		{
+		NavItemsWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavItemsWaitUntil := A_TickCount + 5000
+		return ""
+		}
+	NavItemsWaitUntil := 0
+	niOut := []
+	Loop, Parse, niAns, `n, `r
+		{
+		;(none: nothing in the zone - "none (<why>)": they can't be read now)
+		if (Trim(A_LoopField) = "none")
+			{
+			NavItemsWhy := "nothing in the zone"
+			return []
+			}
+		if (SubStr(A_LoopField, 1, 5) = "none ")
+			{
+			NavItemsWhy := Trim(RegExReplace(Trim(A_LoopField), "^none\s*\(?|\)$"))
+			return ""
+			}
+		niF := StrSplit(A_LoopField, "|")
+		if (niF[1] != "item" || niF.Length() < 8)
+			continue
+		niT := {name: Trim(niF[2]), x: NavNum(niF[3]), y: NavNum(niF[4]), z: NavNum(niF[5]), dist: NavNum(niF[6])
+			, quest: niF[7] = 1 ? 1 : 0, gid: Trim(niF[8]), key: "", template: "", src: "mem", kind: "item"}
+		;(9-12: its key, template, where it's from, its kind - an older helper's lines stop at 8)
+		if (niF.Length() >= 11)
+			niT.key := Trim(niF[9]), niT.template := Trim(niF[10]), niT.src := Trim(niF[11]), niT.kind := niF.Length() >= 12 ? Trim(niF[12]) : ""
+		niOut.Push(niT)
+		}
+	return niOut
 	}
 
 ;The battle's participants from the game's memory (the helper's /battle - READ-ONLY, vision\bossmem.py), in a battle's

@@ -71,12 +71,19 @@ by a signature in its code, or checked by a type name / window name it carries):
              battle - keeping what it found: each is checked again at every read, and it carries on from there).
              ClientObject +0 vtable (a live one's type name ends ClientObject: a destroyed one's is its base class's,
              PropertyClass), +0x48 global id, +0x58 template, +0xA8 x, y, z (its own copy - the body's,
-             as the wizard's, when it has one); template +0x60 its name, +0xA8 its display name's key, +0x1C8 its
-             school. A mob: a display name in one of the game's *Mobs name tables (Root.wad Locale/en-US/
+             as the wizard's, when it has one); template +0x60 its name (m_objectName), +0xA8 its display name's key
+             (m_displayName), +0x1C8 its school (WizGameObjectTemplate's m_primarySchoolName - read on a Wiz* template
+             only). A mob: a display name in one of the game's *Mobs name tables (Root.wad Locale/en-US/
              WizardMobs.lang, Mobs.lang) that has a name - wisps and the like have none - and a school (a teleporter
-             can borrow a mob's name). An object is re-checked at each read
+             can borrow a mob's name). Every other object with a name key is a thing (items()): an item (WizItems -
+             Piece Of Coral), an object (WizQst371C7_00000008 - the Inactive Protector a USAGE goal names by that very
+             key), an NPC, an ambient one (a mob's name, no school); its name from placements.py's name tables (read in
+             its worker, kept). An object is re-checked at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
+           no place: a goal the game shows no way to (no arrow - "Use Inactive Protector in District of the Stars
+             (0 of 3)") reads the thread's goal exactly (0, 0, 0), hops 0, the HUD's distance -1, hops 0: noplace 1
+             (noplace_of), how long it has held for the goal timed by every read() (NoPlaceHold)
            titles:  each mob's title (Boss / Elite / Normal / Easy / Minion), rank, starting (max) health, school and the
              game's own boss flag: its NPCBehavior's NPCBehaviorTemplate - bossmem.py, its offsets found by name in the
              game's reflection registration (handmem.py's way), read under this lock once per mob object (kept while it
@@ -491,6 +498,23 @@ MOB_TABLES = ("WizardMobs", "Mobs")
 # its template's display key is in the items name table
 ITEM_KEY = re.compile(r"^(WizItems)_(\d+)$")
 ITEM_TABLES = ("WizItems",)
+# any other thing of the zone with a name: its display key a name-table key ("<table>_<...>"), its kind by the table -
+# an NPC's (WizardNPC, NPCs, WC-NPCs, KT-NPCs...), a mob's name on something that doesn't fight (ambient: DM-Ambient-*
+# 'Veggie Revanant', a teleporter named after a mob), any other an object a quest may have you use, open, read
+# (WizQst371C7_00000008 Inactive Protector, WizardGameObjects_00000344 Celestian Monolith)
+THING_KEY = re.compile(r"^([A-Za-z][A-Za-z0-9-]*)_(\S+)$")
+NPC_TABLE = re.compile(r"^(WizardNPC|NPCs|[A-Za-z0-9]+-NPCs)$")
+
+
+def thing_kind(key):
+    """what a thing's display key says it is: "item" (WizItems), "npc", "ambient" (a *Mobs key), "object" (any other
+    name-table key), "" (none - a Basic Positional, the Player Object, a duel circle: not a thing)"""
+    m = THING_KEY.match(key or "")
+    if not m:
+        return ""
+    t = m.group(1)
+    return ("ambient" if MOB_KEY.match(key) else "item" if t in ITEM_TABLES else "npc" if NPC_TABLE.match(t)
+            else "object")
 
 
 def scan(code):
@@ -517,6 +541,61 @@ def scan(code):
 
 def finite(*v):
     return all(isinstance(x, float) and math.isfinite(x) and abs(x) < 1e7 for x in v)
+
+
+# A goal the game shows no way to (USAGE "Use Inactive Protector in District of the Stars (0 of 3)", 2026-10-25; "Collect
+# Piece Of Coral in The Grotto", 2026-10-23) reads: the quest helper thread on the client's zone, enabled, its goal
+# exactly (0, 0, 0) with hops 0, and the HUD's arrow distance -1 with hops 0 - quest() drops that goal as no place, the
+# same as one it couldn't read; noplace_of tells the two apart
+NOPLACE_ZERO = 1e-3
+
+
+def _num(*v):
+    return all(isinstance(x, (int, float)) and not isinstance(x, bool) and math.isfinite(x) and abs(x) < 1e7 for x in v)
+
+
+def _zero3(v):
+    return v is not None and len(v) == 3 and _num(*v) and all(abs(c) <= NOPLACE_ZERO for c in v)
+
+
+def noplace_of(raw):
+    """1 / 0 / None from one reading's raw quest fields - raw: {same_zone, enabled, th_goal (x, y, z) | None, th_hops,
+    hud_target, hud_dist, hud_hops}:
+        1     no place: the same zone, enabled 1, the thread's goal exactly (0, 0, 0) and hops 0, the HUD's distance < 0
+              and its hops 0 - every one of them read
+        0     a place: the thread's goal finite, not (0, 0, 0), 0 <= hops < 1000 - exactly what quest() takes as the goal
+        None  not known: another zone (the thread not caught up), the quest helper off, a field not read (a signature
+              missing in this build), or a mix (the goal (0, 0, 0) while the HUD still shows a distance: a goal change
+              caught between the thread's update and the HUD's)
+    A goal with a place can't read 1 (it has hops > 0 - the way out of this zone -, or a goal that isn't (0, 0, 0)), but
+    a goal change or a zone arrival can pass through all zeros for a moment: NoPlaceHold times how long 1 has held"""
+    if not raw.get("same_zone"):
+        return None
+    g, h = raw.get("th_goal"), raw.get("th_hops")
+    if g is not None and len(g) == 3 and _num(*g) and _num(h) and 0 <= h < 1000 and not _zero3(g):
+        return 0
+    if raw.get("enabled") != 1:
+        return None
+    d, hh = raw.get("hud_dist"), raw.get("hud_hops")
+    if _zero3(g) and h == 0 and _num(d) and d < 0 and hh == 0:
+        return 1
+    return None
+
+
+class NoPlaceHold:
+    """how long noplace 1 has held for the same (quest, goal id): 0.0 at the reading it starts; None when it isn't 1"""
+
+    def __init__(self):
+        self.key, self.since = None, None
+
+    def update(self, key, noplace, now=None):
+        now = time.monotonic() if now is None else now
+        if noplace != 1:
+            self.key, self.since = None, None
+            return None
+        if key != self.key or self.since is None:
+            self.key, self.since = key, now
+        return now - self.since
 
 
 # ============================================================================ one attached game
@@ -792,20 +871,26 @@ class _Attached:
         return found, where
 
     def template_kind(self, tpl, names, cache):
-        """(mob name or "", template name, item name or "") of a template - a mob's display name is in one of the
-        *Mobs name tables (names: {key: English name}) and has a name, and it has a school (Fire, Storm...: one that
-        fights - a teleporter can borrow a mob's name, Wormguts Tower); an item's (a thing a quest has you collect) is
-        in the items table; None if tpl isn't a template (cached per template)"""
+        """(mob name or "", template name, item name or "", display key or "", kind) of a template - kind "mob": one that
+        fights (a school - Fire, Storm...: +0x1C8 is WizGameObjectTemplate's m_primarySchoolName, read only on a Wiz*
+        template), its name "" unless its display key is in one of the *Mobs name tables (names: {key: English name})
+        with a name (a wisp has none; a teleporter can borrow a mob's name - Wormguts Tower - and has no school);
+        else thing_kind's: "item" (the items table - its name from names), "ambient" (a *Mobs key - its name from
+        names), "npc" / "object" (other tables: the name "" here - the objects thread looks it up), "" (no key: not a
+        thing). None if tpl isn't a template (cached per template)"""
         if tpl in cache:
             return cache[tpl]
         k = None
         tname = self.tn.of(tpl) if ptr_ok(tpl) else None
         if tname and tname.endswith("Template"):
             key = self.p.try_string(tpl + DATA["tpl_display"]) or ""
-            m = MOB_KEY.match(key)
-            fights = bool(m) and bool((self.p.try_string(tpl + DATA["tpl_school"]) or "").strip())
-            item = (names.get(key) or "") if ITEM_KEY.match(key) else ""
-            k = ((names.get(key) or "") if fights else "", self.p.try_string(tpl + DATA["tpl_name"]) or "", item)
+            tn = self.p.try_string(tpl + DATA["tpl_name"]) or ""
+            school = (self.p.try_string(tpl + DATA["tpl_school"]) or "").strip() if tname.startswith("Wiz") else ""
+            if school:
+                k = ((names.get(key) or "") if MOB_KEY.match(key) else "", tn, "", key, "mob")
+            else:
+                kind = thing_kind(key)
+                k = ("", tn, (names.get(key) or "") if kind in ("item", "ambient") else "", key if kind else "", kind)
         if len(cache) > 20000:
             cache.clear()
         cache[tpl] = k
@@ -864,7 +949,8 @@ class _Attached:
                     th = self._named(qhh, off, tn, "QuestHelper")
             if not th:
                 return None, "no quest helper thread"
-        r = dict.fromkeys(("enabled", "quest", "goalid", "goal", "hops", "target", "dist", "path", "thread_zone"))
+        r = dict.fromkeys(("enabled", "quest", "goalid", "goal", "hops", "target", "dist", "path", "thread_zone",
+                           "noplace"))
         ids = {k: v for k, v in (("enabled", (o["th_enabled"], "B")), ("quest", (o["th_quest"], "Q")),
                                  ("goalid", (o["th_goalid"], "Q"))) if v[0] is not None}
         if ids:
@@ -874,8 +960,12 @@ class _Attached:
         same_zone = r["thread_zone"] is not None and gc_zone is not None and r["thread_zone"] == gc_zone
         if not same_zone:
             return r, "the quest helper is still on zone %r" % r["thread_zone"]
+        # (the fields as read, for noplace_of only - not handed out)
+        raw = {"same_zone": True, "enabled": r["enabled"], "th_goal": None, "th_hops": None, "hud_target": None,
+               "hud_dist": None, "hud_hops": None}
         if o["th_goal"] is not None and o["th_hops"] is not None:
             g = self._group(th, {"goal": (o["th_goal"], "3f"), "hops": (o["th_hops"], "i")})
+            raw["th_goal"], raw["th_hops"] = tuple(g["goal"]), g["hops"]
             # (a goal the game shows no way to - collect things lying about the zone, 2026-10-23 Piece Of Coral: no arrow,
             # the goal at exactly 0, 0, 0 - is no place: not read as one, else the walker stands "at" it)
             if finite(*g["goal"]) and 0 <= g["hops"] < 1000 and any(abs(v) > 1e-3 for v in g["goal"]):
@@ -883,10 +973,13 @@ class _Attached:
         if o["hud_arrow"] is not None:
             h = self._group(qhh, {"target": (o["hud_arrow"], "3f"), "dist": (o["hud_dist"], "f"),
                                   "hops": (o["hud_hops"], "i")})
+            raw["hud_target"], raw["hud_dist"], raw["hud_hops"] = tuple(h["target"]), h["dist"], h["hops"]
             # (the arrow is the thread's message as of its last update: only while it has the same hops)
             if (r["hops"] is not None and h["hops"] == r["hops"] and finite(*h["target"]) and finite(h["dist"])
                     and h["dist"] >= 0 and any(abs(v) > 1e-3 for v in h["target"])):
                 r["target"], r["dist"] = h["target"], h["dist"]
+        # (no place at all - the game shows no way to the goal: 1; a place: 0; not known: None - noplace_of)
+        r["noplace"] = noplace_of(raw)
         if want_path and o["th_path"] is not None:
             r["path"] = self.path(th)
         return r, ""
@@ -945,12 +1038,14 @@ class NavMem:
         self._thread = None
         self._failed = (0, 0.0, "")      # pid, when to try again, why
         self._last_why = None
-        # the zone's mobs (the objects thread): {object address: (gid, name, template name)}, the zone they're
+        # the zone's mobs (the objects thread): {object address: (gid, name, template name, vtable)}, the zone they're
         # of, why there are none, when last asked for, the English names of the *Mobs tables (and the items table);
-        # the things lying about it a quest has you collect: the same, {object address: (gid, item name, template)}
+        # the zone's other things with a name (an item a quest has you collect, an object to use, an NPC...): {object
+        # address: (gid, name - "" while its table isn't read -, template name, vtable, display key, kind)}
         self._objs, self._obj_cz, self._obj_why, self._obj_asked = {}, 0, "not looked yet", 0.0
         self._items = {}
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
+        self._names_said = 0.0           # (when a failure to ask for the things' name tables may be logged again)
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
         # the hand (handmem.py): its reader of the attached game, the thread making it (its classes looked up once, about
         # half a second), why it couldn't be made (the game it was for, when to try again); the game opened for the
@@ -968,6 +1063,8 @@ class NavMem:
         # the backpack, the HUD's tips and the game's windows by name (bagmem.py): its reader of the attached game, the
         # thread making it (about half a second), why it couldn't be made (the game it was for, when to try again)
         self._bagm, self._bagm_thread, self._bagm_fail = None, None, (None, 0.0, "")
+        # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
+        self._np_hold = NoPlaceHold()
 
     def close(self):
         with self.lock:
@@ -1035,14 +1132,17 @@ class NavMem:
 
     def read(self, path=False, wait=1.0):
         """(r, why): r = {zone, pos (x, y, z), yaw, source, enabled, quest, goalid, goal (x, y, z), hops,
-        target (x, y, z), dist, path [(x, y, z)], thread_zone, why_player, why_quest} - a value None when it
-        can't be read for sure; r is None (and why says why) when the game can't be read at all"""
+        target (x, y, z), dist, path [(x, y, z)], thread_zone, noplace, noplace_s, why_player, why_quest} - a value None
+        when it can't be read for sure; r is None (and why says why) when the game can't be read at all. noplace: 1 the
+        game shows no way to the goal (noplace_of), 0 the goal has a place, None not known; noplace_s: how long (s) the 1
+        has held for this quest and goal (None unless it's 1)"""
         try:
             st, why = self._ensure(wait)
             if st is None:
                 return None, why
             with self.lock:
                 r = self._read(st, path)
+                r["noplace_s"] = self._np_hold.update((r.get("quest"), r.get("goalid")), r.get("noplace"))
             note = (r.get("why_player") or "") + " / " + (r.get("why_quest") or "")
             if note != self._last_why:
                 self._last_why = note
@@ -1055,7 +1155,7 @@ class NavMem:
     @staticmethod
     def _read(st, path):
         r = dict.fromkeys(("zone", "pos", "yaw", "source", "enabled", "quest", "goalid", "goal", "hops",
-                           "target", "dist", "path", "thread_zone", "why_player", "why_quest"))
+                           "target", "dist", "path", "thread_zone", "noplace", "noplace_s", "why_player", "why_quest"))
         try:
             gc = st.gameclient()
         except ReadError as e:
@@ -1520,9 +1620,11 @@ class NavMem:
         return self._live("mobs")
 
     def items(self):
-        """(items, why): items = [{name, pos (x, y, z), yaw, gid, template}] - the things lying about the game's zone
-        that a quest has you collect (their template's display name is in the items table: Piece Of Coral), read now -
-        one picked up is gone from it; None and why as mobs(). Never raises."""
+        """(items, why): items = [{name, pos (x, y, z), yaw, gid, template, key, kind, src}] - the zone's things that
+        aren't mobs and have a name key (template_kind), read now: kind "item" (the items table: Piece Of Coral - one
+        picked up is gone), "object" (Inactive Protector, Celestian Monolith, a chest), "npc", "ambient"; key its display
+        key (WizQst371C7_00000008 - the one a quest's goal names it by), src "mem"; name "" while its name table isn't
+        read (placements.py reads it, kept). None and why as mobs(). Never raises."""
         return self._live("items")
 
     def _live(self, which):
@@ -1538,7 +1640,8 @@ class NavMem:
             if st is None or not cz or why:
                 return None, why or "not attached"
             out, gids, live = [], set(), []
-            for obj, (gid, name, tname, vt) in objs:
+            for obj, v in objs:
+                gid, name, tname, vt = v[:4]
                 if gid in gids:
                     continue
                 raw = st.p.try_read(obj, OBJ_SPAN)
@@ -1554,6 +1657,11 @@ class NavMem:
                     gids.add(gid)
                     out.append({"name": name, "pos": pos[:3], "yaw": pos[3], "gid": gid, "template": tname})
                     live.append((obj, gid, out[-1]))
+                    if which == "items":
+                        key, kind = (v[4], v[5]) if len(v) >= 6 else ("", "item")
+                        out[-1].update(key=key, kind=kind, src="mem")
+                        if not name and key:
+                            out[-1]["name"] = self._thing_name(key)
             # (what each mob is - its title, rank, max health: bossmem.py, once per mob object - the walker's route
             # doesn't wait for it: a reader not made yet leaves them None)
             if which == "mobs" and live:
@@ -1624,6 +1732,18 @@ class NavMem:
                 self._names_retry = time.monotonic() + 60.0
         return self._mob_names
 
+    def _thing_name(self, key, want=None):
+        """a thing's name (its display key's text) from placements' name tables - one persistent set, not questmem's,
+        whose limit would drop the goal's tables; "" while its table isn't read (want gets the key then)"""
+        try:
+            import placements                       # (here: placements imports navmem)
+            t = placements.text(key, self.game_dir)
+        except Exception:  # noqa: BLE001 - no name
+            t = None
+        if t is None and want is not None:
+            want.append(key)
+        return t or ""
+
     def _set_objs(self, cz, objs, why, items=None):
         with self.lock:
             self._obj_cz, self._objs, self._obj_why, self._items = cz, objs, why, items or {}
@@ -1662,7 +1782,7 @@ class NavMem:
                     found, where = st.scan_objects(cz, None if full else regions)
                     if full:
                         regions, last_full = where, t0
-                    objs, items = {}, {}
+                    objs, items, want = {}, {}, []
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -1676,8 +1796,18 @@ class NavMem:
                         k = st.template_kind(tpl, names, cache)
                         if k and k[0]:
                             objs[obj] = (gid, k[0], k[1], vt)
-                        elif k and k[2]:
-                            items[obj] = (gid, k[2], k[1], vt)
+                        elif k and k[3] and k[4] != "mob":
+                            # (a thing with a name key: its name from navmem's tables, else placements' - its table read
+                            # in placements' worker, outside this thread: "" till then)
+                            items[obj] = (gid, k[2] or self._thing_name(k[3], want), k[1], vt, k[3], k[4])
+                    if want:
+                        try:
+                            import placements
+                            placements.want_names(want, self.game_dir)
+                        except Exception as e:  # noqa: BLE001 - the names stay "" (said once a minute)
+                            if time.monotonic() >= self._names_said:
+                                self._names_said = time.monotonic() + 60.0
+                                self.log("navmem: the things' name tables couldn't be asked for (%r)" % (e,))
                     self._set_objs(cz, objs, "", items)
                     self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}

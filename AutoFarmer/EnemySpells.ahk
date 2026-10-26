@@ -372,7 +372,8 @@ EnemyDanger()
 	}
 
 ;Defending first (EnemyDanger said so): a heal on yourself (heal1, heal2), else Tower Shield (resources\tower, usetower
-;on). True if one went out
+;on - one no picture finds at its card box by the game's hand: KillCalc.ahk TowerMem, Autofarmer.ahk UseMemAt). True if
+;one went out
 EnemyDefend()
 	{
 	global

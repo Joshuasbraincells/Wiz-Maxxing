@@ -292,9 +292,11 @@ BoostSrcOf(c)
 ;The cards of the game's hand (VisionCards' cards) that are boost key's card, as their numbers in cards: its kind (blade /
 ;trap) and schools (BoostSchools) - those whose boosts weren't read only when no card read for sure is (they match any of
 ;their kind); one every school shares (blade3, blade4, trap3, feint) only those at its % (PlayerStats.txt's: Balanceblade's
-;25, Bladestorm's 20) when any are
+;25, Bladestorm's 20) when any are. Tower Shield (key tower - resources\tower): TowerMatches'
 BoostMatches(key, cards)
 	{
+	if (key = "tower")
+		return TowerMatches(cards)
 	bmOut := [], bmKind := BoostKind(key), bmSch := BoostSchools(key), bmUnsure := []
 	if (bmKind = "" || bmSch = "" || !IsObject(cards))
 		return bmOut
@@ -320,6 +322,28 @@ BoostMatches(key, cards)
 			return bmAt
 		}
 	return bmOut
+	}
+
+;The cards of the game's hand (VisionCards' cards) that are a Tower Shield (resources\tower - cast on yourself or an ally
+;as Tower Shield), as their numbers in cards: a shield (kind ward) the game names Tower Shield - the deck's, a treasure or
+;an item card's; none so named: a shield card (the game's type Ward) for one wizard against every school - its text as
+;the helper writes it, "-50% to next spell" (no school named, not "(all of you)"; a school's shield - Fire Shield, Spirit
+;Shield - only stops that school's hits, and a ramp's shield is another kind of card). [] none
+TowerMatches(cards)
+	{
+	twmOut := [], twmAny := []
+	if (!IsObject(cards))
+		return twmOut
+	for twmI, twmC in cards
+		{
+		if (twmC.kind != "ward")
+			continue
+		if (RegExMatch(twmC.display "|" twmC.name, "i)\btower\s*shield\b"))
+			twmOut.Push(twmI)
+		else if (twmC.type = "ward" && RegExMatch(Trim(twmC.text), "i)^-\d+%\s*to next spell$"))
+			twmAny.Push(twmI)
+		}
+	return twmOut.Length() ? twmOut : twmAny
 	}
 
 ;The slot a boost of kind ("blade" / "trap") boosting schools sch (BoostsParse's - "fire,ice,storm", "all") at pct % is
@@ -1048,6 +1072,8 @@ BoostSearch()
 			else
 				%bsK% := 1, %bsK%X := "", %bsK%Y := ""
 			}
+		;(and Tower Shield the same way - TowerMem)
+		TowerMem(bsHand)
 		}
 	;(this look's: the first school blade and trap in the schools' order, the first group's)
 	for bsI, bsS in bsWant
@@ -1090,6 +1116,52 @@ BoostSearch()
 			bsS .= (bsS = "" ? "" : ",") bsH
 		DebugLog("  boosts searched for " (bsS = "" ? "no school (the hitter's isn't known: only every school's)" : bsS) ": " (bsLog = "" ? "no blade" : bsLog) "; traps: " (bsTr = "" ? "none" : bsTr) (BoostMemOk ? " (the game's hand)" : ""))
 		}
+	}
+
+;---- Tower Shield by the game's hand (2026-10-25) ----
+;Live 18:53 (1440p, UI 1.144): the game's hand held two Tower Shields while every round's "cards:" line said tower=0 -
+;ui1.144\resources\tower.png is another card's picture (a Spirit Shield's, learned before Tower Shields were), so no picture
+;found them, and the shield went out neither to defend you (EnemySpells.ahk EnemyDefend), on an ally or the hitter
+;(Party.ahk PartyShield), nor as the filler when nothing else could go. BoostSearch, the game's hand read for sure (hand):
+;the tower picture found with no shield in the game's hand at all is a false match - not used; a Tower Shield the game has
+;(TowerMatches) that no picture found is found all the same when one can be cast now - tower 1, no picture spot,
+;BoostMemOnly["tower"]: UseOnSelf / UseOnHammer cast it at its card box (Autofarmer.ahk UseMemAt - BoostMemBox, only while
+;the hand's boxes and the game's cards line up for sure). Said once a battle. The slot's picture is put right by the
+;learner meanwhile (CardLearn.ahk LearnBoostPicFix)
+TowerMem(hand)
+	{
+	global tower, towerX, towerY, BoostMemOnly, BoostSaid
+	twmWard := 0
+	for twmI, twmC in hand.cards
+		twmWard += (twmC.kind = "ward") ? 1 : 0
+	twmM := TowerMatches(hand.cards)
+	if (tower == 1)
+		{
+		if (!twmWard)
+			{
+			tower := 0
+			if (!BoostSaid.HasKey("false|tower"))
+				BoostSaid["false|tower"] := 1, DebugLog("  the tower picture matched, but the game has no shield in hand - a false match, not used")
+			}
+		;(a Tower Shield in hand and another shield too - a school's or a team's, which the picture may be on: as shipped at
+		;UI 1.144 resources\tower is a Spirit Shield's - the Tower Shield at its card box when the boxes line up for sure,
+		;else the picture's spot as before - Autofarmer.ahk UseMemAt, 2026-10-25)
+		else if (twmM.Length() && twmM.Length() < twmWard)
+			BoostMemOnly["tower"] := 1
+		return
+		}
+	if (!twmM.Length())
+		return
+	twmGo := ""
+	for twmI, twmN in twmM
+		if (twmGo = "" && hand.cards[twmN].castable != "0")
+			twmGo := twmN
+	twmC := hand.cards[twmGo != "" ? twmGo : twmM[1]], twmNm := BoostMemName(twmC)
+	if (twmGo != "")
+		tower := 1, towerX := "", towerY := "", BoostMemOnly["tower"] := 1
+	if (!BoostSaid.HasKey("miss|" twmNm))
+		BoostSaid["miss|" twmNm] := 1, DebugLog("  in hand (the game): " twmNm " (" twmC.kind " " twmC.value ") - no picture found it (resources\tower)"
+			. (twmGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now"))
 	}
 
 ;The planned hit's share of damage boost key fits (1: every school's boost)
