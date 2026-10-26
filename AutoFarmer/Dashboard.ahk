@@ -29,7 +29,8 @@ global DashFrontBtn
 ;The Updates button, at the right end of the heading row (says whether a newer version is out: UpdState); Report a
 ;bug left of it (BugReport.ahk)
 global DashUpdBtn, DashUpdBusy, DashBugBtn
-;The red "Play for me" button (a red bar and clickable words: a button can't be red) - Autofarmer.ahk PlayForMeToggle
+;The "Play for me" button (a coloured bar - red off, green on - and clickable words: a button can't be coloured) -
+;Autofarmer.ahk PlayForMeToggle
 global DashPlayBtn, DashPlayBg
 ;Where the tabs' inside starts in the window (GuiControl Move places a tab's controls from there: DashGuiSize)
 global DashTabOX, DashTabOY, DashTabOW, DashTabOH
@@ -270,9 +271,9 @@ DashInit()
 	Gui, Dash:Add, ListView, x12 y190 w760 h598 vKeyList gKeyListEvent AltSubmit -Multi Background111317 cDADADA, Action|Key|Default|Works|Id
 	LV_ModifyCol(1, 330), LV_ModifyCol(2, 130), LV_ModifyCol(3, 150), LV_ModifyCol(4, 140), LV_ModifyCol(5, 0)
 	Gui, Dash:Tab
-	;The red Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
-	;room: every check for you off till you click it again; off at every start. A red bar - a Progress control takes a
-	;colour - with the clickable words over it
+	;The Play for me button, on every tab - the tab row's right end (DashGuiSize keeps it there), not the heading's
+	;room: every check for you off till you click it again; off at every start. A red bar (green while on: DashPlayShow) -
+	;a Progress control takes a colour - with the clickable words over it
 	Gui, Dash:Add, Progress, x668 y37 w108 h24 BackgroundB71C1C Disabled vDashPlayBg
 	Gui, Dash:Font, s9 w700 cFFFFFF, Segoe UI
 	Gui, Dash:Add, Text, x668 y37 w108 h24 +Center +0x200 BackgroundTrans gDashPlayToggle vDashPlayBtn, Play for me
@@ -341,12 +342,12 @@ DashFrontShow(frontOn)
 		GuiControl, Dash:, DashFrontBtn, % "Game to front: " (frontOn ? "on" : "off")
 	}
 
-;The red "Play for me" button: dark red "Play for me" off, bright red "PLAYING FOR ME" on
+;The "Play for me" button: red "Play for me" off, green "PLAYING FOR ME" on (you asked, 2026-10-26)
 DashPlayShow(on)
 	{
 	if (!DashHwnd)
 		return
-	playCol := on ? "E53935" : "B71C1C"
+	playCol := on ? "2E7D32" : "B71C1C"
 	GuiControl, Dash:+Background%playCol%, DashPlayBg
 	GuiControl, Dash:, DashPlayBtn, % on ? "PLAYING FOR ME" : "Play for me"
 	;(the words drawn again over the bar's new colour)

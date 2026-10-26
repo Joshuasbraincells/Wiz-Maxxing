@@ -292,11 +292,21 @@ BoostSrcOf(c)
 ;The cards of the game's hand (VisionCards' cards) that are boost key's card, as their numbers in cards: its kind (blade /
 ;trap) and schools (BoostSchools) - those whose boosts weren't read only when no card read for sure is (they match any of
 ;their kind); one every school shares (blade3, blade4, trap3, feint) only those at its % (PlayerStats.txt's: Balanceblade's
-;25, Bladestorm's 20) when any are. Tower Shield (key tower - resources\tower): TowerMatches'
+;25, Bladestorm's 20) when any are. Tower Shield (key tower - resources\tower): TowerMatches'. A school's bubble (key
+;<school>/bubble - <school>\bubble, a global): BubbleMatches'
 BoostMatches(key, cards)
 	{
 	if (key = "tower")
 		return TowerMatches(cards)
+	if (RegExMatch(key, "^([a-z]+)/bubble$", bmBb))
+		return BubbleMatches(cards, bmBb1)
+	;(2026-10-26: an absorb - resources\absorb -, a negative aura, your school's prism - <school>\convert)
+	if (key = "absorb")
+		return AbsorbMatches(cards)
+	if (key = "negaura")
+		return NegAuraMatches(cards)
+	if (RegExMatch(key, "^([a-z]+)/convert$", bmCv))
+		return ConvertMatches(cards, bmCv1)
 	bmOut := [], bmKind := BoostKind(key), bmSch := BoostSchools(key), bmUnsure := []
 	if (bmKind = "" || bmSch = "" || !IsObject(cards))
 		return bmOut
@@ -720,17 +730,28 @@ BoostBoxSays(known)
 		return "ward"
 	if (RegExMatch(bxsN, "^(sharpen|potent|enchant|strong|giant|monstrous|gargantuan|colossal|epic)$"))
 		return "enchant"
+	;(2026-10-26: an absorb's learned slot - a shield's word, as its kind's: BoostKindSays)
+	if (bxsN = "absorb")
+		return "ward"
 	return ""
 	}
 
 ;The same for a kind (the game's - VisionCards' kind - or a learned card's): "hit" damage / aoe, "boost" blade / trap /
-;aura, "heal", "ward", "enchant"; "" any other (damage over time, keep - the game's effects cut short -...)
+;aura, "heal", "ward", "enchant" (a Sharpened Blade / Potent Trap too - their pictures' word); "" any other (damage over
+;time, keep - the game's effects cut short -...). An absorb says "ward" and a negative aura "boost" (the review,
+;2026-10-26): they were keep and trap before they had kinds of their own, and a shield's or trap's picture on one -
+;Tower Shield's on a Spirit Armor, Hex's on an Attenuate - isn't boxes out of line (that would stop every cast at a card
+;box that round); which card is which is still told apart by the casts themselves (AbsorbMatches, NegAuraMatches)
 BoostKindSays(kind)
 	{
 	if (kind = "damage" || kind = "aoe")
 		return "hit"
-	if (kind = "blade" || kind = "trap" || kind = "aura")
+	if (kind = "blade" || kind = "trap" || kind = "aura" || kind = "negaura")
 		return "boost"
+	if (kind = "sharpen" || kind = "potent")
+		return "enchant"
+	if (kind = "absorb")
+		return "ward"
 	return (kind = "heal" || kind = "ward" || kind = "enchant") ? kind : ""
 	}
 
@@ -739,10 +760,12 @@ BoostKindSays(kind)
 ;copy of it (BoostMatches) that can go now (BoostCopyCanGo - sharp: a Sharpen / Potent in hand; use1, use2: its deck copy's
 ;used flags), not greyed out nor one the game says can't be cast - and only while the pairing is sure: no box the bot knows
 ;by a picture holds a card of another kind than the picture says (BoostBoxSays: a hit's picture on a blade - the boxes don't
-;line up), and this box's own picture, if it has one, is this card's (BoostMemBoxOk). ench 1: only a copy with an
+;line up), and this box's own picture, if it has one, is this card's - or a card's the game's hand doesn't hold at all, a
+;false match (BoostMemBoxOk). ench 1: only a copy with an
 ;enchantment on it (the one just sharpened - BoostSettleMem); wait: how long the game's hand may still be changing.
 ;{x, y (the box's middle - ClickAt goes there from above the hand: MoveToCard), n, of (the box's number, how many), src (""
-;the deck's, "tc", "item"), item, name (the game's), ench (1: it carries an enchantment already)}; {x: "", why} none
+;the deck's, "tc", "item"), item, name (the game's), ench (1: it carries an enchantment already), note (for the log: its
+;box's false picture match, "" none)}; {x: "", why} none
 BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 	{
 	global VisionCardsWhy
@@ -762,7 +785,7 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 	bmbIdx := {}
 	for bmbI, bmbN in BoostMatches(key, bmbAll.hand.cards)
 		bmbIdx[bmbN] := 1
-	bmbWhy := "no copy of it among the game's cards now", bmbEnc := ""
+	bmbWhy := "no copy of it among the game's cards now", bmbEnc := "", bmbNote := ""
 	for bmbI, bmbB in bmbAll.boxes
 		{
 		if (!bmbIdx.HasKey(bmbB.n))
@@ -773,11 +796,13 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 			bmbWhy := "no copy of it with an enchantment on it"
 			continue
 			}
-		if (!BoostMemBoxOk(key, bmbB.known, bmbNm))
+		if (!BoostMemBoxOk(key, bmbB.known, bmbNm, bmbAll.hand.cards))
 			{
 			bmbWhy := "its box (" bmbI ") is known as " bmbB.known " - another card's picture"
 			continue
 			}
+		;(its box's picture another card's that the game's hand doesn't hold at all: a false match - said with the cast)
+		bmbNote := BoostMemBoxOk(key, bmbB.known, bmbNm) ? "" : " - its box was known as " bmbB.known ", a card the game's hand doesn't hold (a false picture match)"
 		if (bmbB.grey || bmbM.castable = "0")
 			{
 			bmbWhy := "it's greyed out (not enough pips)"
@@ -792,7 +817,7 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 			}
 		;(ench 0: a plain copy first - one that carries an enchantment already can't take a Sharpen / Potent: it's cast as it
 		;is only when no plain copy can go - ench 1 in the answer, UseBlade / UseTrap)
-		bmbAt := {x: Round(bmbB.l + bmbB.w / 2), y: Round(bmbB.t + bmbB.h / 2), n: bmbI, of: bmbAll.boxes.Length(), src: bmbSrc, item: bmbItem, name: bmbNm, ench: (bmbM.ench != "") ? 1 : 0}
+		bmbAt := {x: Round(bmbB.l + bmbB.w / 2), y: Round(bmbB.t + bmbB.h / 2), n: bmbI, of: bmbAll.boxes.Length(), src: bmbSrc, item: bmbItem, name: bmbNm, ench: (bmbM.ench != "") ? 1 : 0, note: bmbNote}
 		if (ench || !bmbAt.ench)
 			return bmbAt
 		if (!IsObject(bmbEnc))
@@ -803,8 +828,12 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 
 ;Whether a hand box known as picture known can hold boost key's card the game names name (BoostMemBox): no picture; a
 ;learned card's the game named so (flag game=) or never named; a slot's - a learned card there the game named so, else the
-;slot's own key is key (resources/blade3 for Balanceblade)
-BoostMemBoxOk(key, known, name)
+;slot's own key is key (resources/blade3 for Balanceblade). cards (the game's hand, VisionCards' cards): a picture of a
+;card the game's hand doesn't hold at all - no card of the name the game gave it, no copy of its slot's boost - is a false
+;match, and doesn't keep the game's card from its box (2026-10-25: Balanceblade's picture named the Bladestorm box with no
+;Balanceblade in hand - Bladestorm not cast in 41 rounds that day); the boxes still have to line up (BoostMemBox: as many as
+;the cards, each known box's kind the game's)
+BoostMemBoxOk(key, known, name, cards := "")
 	{
 	if (known = "")
 		return true
@@ -815,10 +844,38 @@ BoostMemBoxOk(key, known, name)
 		bmoC := Func("LearnCardInSlot").Call(StrReplace(known, "/", "\"))
 	bmoG := (IsObject(bmoC) && IsFunc("LearnFlag")) ? Func("LearnFlag").Call(bmoC, "game") : ""
 	if (bmoG != "")
-		return bmoG = name
+		return (bmoG = name) || BoostMemNoneOf(bmoG, "", cards)
 	if (InStr(known, "learned/") = 1)
 		return true
-	return BoostMemKey(StrReplace(known, "/", "\")) = key
+	bmoK := BoostMemKey(StrReplace(known, "/", "\"))
+	return (bmoK = key) || BoostMemNoneOf("", bmoK, cards)
+	}
+
+;Whether the game's hand (cards: VisionCards' cards) holds no card the game names name - or, name "", no copy of boost key
+;(BoostMatches: a blade, trap or Tower Shield; one every school shares read for sure at another % than key's isn't it -
+;Bladestorm's 20 isn't Balanceblade's 25; any other key can't be told - false). False without the game's cards
+BoostMemNoneOf(name, key, cards)
+	{
+	if (!IsObject(cards) || !cards.Length())
+		return false
+	if (name != "")
+		{
+		for bmnI, bmnC in cards
+			if (BoostMemName(bmnC) = name)
+				return false
+		return true
+		}
+	if (key = "" || (key != "tower" && BoostKind(key) = ""))
+		return false
+	bmnPct := (key = "tower") ? "" : BoostPct(key)
+	for bmnI, bmnN in BoostMatches(key, cards)
+		{
+		bmnB := BoostsParse(cards[bmnN].boosts)
+		if (bmnPct && IsObject(bmnB) && bmnB.sch = "all" && BoostCardPct(cards[bmnN]) != bmnPct)
+			continue
+		return false
+		}
+	return true
 	}
 
 ;A card of the game's hand by its name, for the log (the name on it - CardLearn.ahk LearnMemGame -, else its own)
@@ -1072,8 +1129,13 @@ BoostSearch()
 			else
 				%bsK% := 1, %bsK%X := "", %bsK%Y := ""
 			}
-		;(and Tower Shield the same way - TowerMem)
+		;(and Tower Shield the same way - TowerMem - and your school's bubble - BubbleMem)
 		TowerMem(bsHand)
+		BubbleMem(bsHand)
+		;(an absorb, a negative aura, your school's prism - 2026-10-26: AbsorbMem, NegAuraMem, ConvertMem)
+		AbsorbMem(bsHand)
+		NegAuraMem(bsHand)
+		ConvertMem(bsHand)
 		}
 	;(this look's: the first school blade and trap in the schools' order, the first group's)
 	for bsI, bsS in bsWant
@@ -1162,6 +1224,606 @@ TowerMem(hand)
 	if (!BoostSaid.HasKey("miss|" twmNm))
 		BoostSaid["miss|" twmNm] := 1, DebugLog("  in hand (the game): " twmNm " (" twmC.kind " " twmC.value ") - no picture found it (resources\tower)"
 			. (twmGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now"))
+	}
+
+;---- Your school's bubble (a global) by the game's hand (2026-10-26) ----
+;A bubble - a global spell: all of the battle, everyone's spells - goes from <school>\bubble before a hit (usebubble;
+;Autofarmer.ahk ClickBubble). The game's memory (read-only) names a global kind bubble (vision\handmem.py: an effect aimed at
+;kGlobal) with the schools whose damage it adds to (its boosts). BoostSearch, the game's hand read for sure (BubbleMem): the
+;bubble picture found with no global in the game's hand at all is a false match - not used; found while the global the bot
+;put up this battle is in hand (BubbleUp - the game replaces a global with the next one cast: the same again is a card and
+;pips for nothing; an enemy's global over ours isn't seen) and no other of the slot's is - not cast again, whatever else is
+;in hand (a global that adds no damage, a card the memory couldn't tell); the slot's global (BubbleMatches) that no picture
+;found is found all the same when one can be cast now - bubble 1, no picture spot, BoostMemOnly["<school>/bubble"]:
+;ClickBubble casts it at its card box (BoostMemBox - only while the hand's boxes and the game's cards line up for sure).
+;Your kinds on the Spells tab win (2026-10-26 review): a global you set to another kind (Not used...) is never the bubble,
+;the card you set to Bubble yourself in the slot is one whatever the game calls it (BubbleUserOff, BubbleUserSlot). Said
+;once a battle. Only for your own school's hits (another school's wizard's - Alt+2, a party's hitter - gets no bubble:
+;FindCards) and with the bubble on
+
+;The game's name of the card in school sch's bubble slot (<sch>\bubble): its learned card's - the game's name for it (flag
+;game=), else the name it was given; "" none known (no learned card there - a picture cut by hand: any global that boosts
+;sch's damage is its card)
+BubbleSlotName(sch)
+	{
+	if (sch = "" || !IsFunc("LearnCardInSlot"))
+		return ""
+	bsnC := Func("LearnCardInSlot").Call(sch "\bubble")
+	if (!IsObject(bsnC))
+		return ""
+	bsnG := IsFunc("LearnFlag") ? Func("LearnFlag").Call(bsnC, "game") : ""
+	return (bsnG != "") ? bsnG : Trim(bsnC.name)
+	}
+
+;Whether a global boosting schools bs ("all", or schools joined with , or + - BoostsParse's sch, a learned card's flag
+;boost=) adds to school sch's damage
+BubbleHelps(bs, sch)
+	{
+	if (bs = "" || sch = "")
+		return false
+	return (bs = "all" || InStr("," StrReplace(bs, "+", ",") ",", "," sch ",")) ? true : false
+	}
+
+;The cards of the game's hand (VisionCards' cards) that are school sch's bubble slot's card, as their numbers in cards: a
+;global (kind bubble) the game names as the slot's learned card (BubbleSlotName); none known: a global that boosts sch's
+;damage (its boosts: sch's or every school's - not one that only changes healing or pierce, nor another school's). Never
+;the global the bot put up this battle (BubbleUp), nor one you set to another kind on the Spells tab (Not used...:
+;BubbleUserOff); the card you set to Bubble yourself in the slot is one whatever kind the game gives it (BubbleUserSlot). []
+;none
+BubbleMatches(cards, sch)
+	{
+	global BubbleUp
+	bbmOut := []
+	if (!IsObject(cards) || sch = "")
+		return bbmOut
+	bbmName := BubbleSlotName(sch)
+	for bbmI, bbmC in cards
+		{
+		if (!BubbleIs(bbmC) && !BubbleUserSlot(bbmC, sch))
+			continue
+		if (BubbleUserOff(bbmC, sch))
+			continue
+		bbmNm := BoostMemName(bbmC)
+		if (BubbleUp != "" && bbmNm = BubbleUp)
+			continue
+		if (bbmName != "")
+			{
+			if (bbmNm = bbmName || bbmC.name = bbmName || bbmC.display = bbmName)
+				bbmOut.Push(bbmI)
+			continue
+			}
+		bbmB := BoostsParse(bbmC.boosts)
+		if (IsObject(bbmB) && BubbleHelps(bbmB.sch, sch))
+			bbmOut.Push(bbmI)
+		}
+	return bbmOut
+	}
+
+;BoostSearch's look at your school's bubble by the game's hand (hand: VisionCards', read for sure) - see above
+BubbleMem(hand)
+	{
+	global bubble, bubbleX, bubbleY, BoostMemOnly, BoostSaid, BubbleUp, hitschool, HammerSchool
+	if (hitschool = "" || HammerSchool != hitschool || !Stat("usebubble") || !IsObject(hand) || !IsObject(hand.cards))
+		return
+	bbuKey := BoostKey("bubble", hitschool), bbuAll := 0, bbuUp := 0, bbuOdd := 0
+	for bbuI, bbuC in hand.cards
+		{
+		;(a global - or the card you set to Bubble yourself in the slot: the game may call it another kind)
+		if (BubbleIs(bbuC) || BubbleUserSlot(bbuC, hitschool))
+			bbuAll += 1, bbuUp += (BubbleUp != "" && BoostMemName(bbuC) = BubbleUp) ? 1 : 0
+		;(a card whose kind the game's memory couldn't tell - its effects cut short: it may be a global)
+		else if (bbuC.kind = "")
+			bbuOdd += 1
+		}
+	bbuM := BubbleMatches(hand.cards, hitschool)
+	if (bubble == 1)
+		{
+		if (!bbuAll && !bbuOdd)
+			{
+			bubble := 0
+			if (!BoostSaid.HasKey("false|bubble"))
+				BoostSaid["false|bubble"] := 1, DebugLog("  the bubble picture matched, but the game has no global in hand - a false match, not used")
+			}
+		;(the global the bot put up in hand and none of the slot's to cast besides: the picture is on that one, on a global
+		;that isn't the slot's - one that doesn't boost your school, one you set to another kind -, or on a card the game's
+		;memory couldn't tell - not cast either way)
+		else if (bbuUp && !bbuM.Length())
+			{
+			bubble := 0
+			if (!BoostSaid.HasKey("up|" BubbleUp))
+				BoostSaid["up|" BubbleUp] := 1, DebugLog("  the bubble in hand is " BubbleUp ", the global the bot put up this battle - not cast again")
+			}
+		;(the slot's global in hand and another global the picture may be on - the one up already, one that doesn't boost
+		;your school, or another of the slot's (its name then not known by the picture): the slot's at its card box when the
+		;boxes line up for sure, the one cast named (BubbleUp) - ClickBubble)
+		else if (bbuM.Length() && bbuAll > 1)
+			BoostMemOnly[bbuKey] := 1
+		return
+		}
+	if (!bbuM.Length())
+		return
+	bbuGo := ""
+	for bbuI, bbuN in bbuM
+		if (bbuGo = "" && hand.cards[bbuN].castable != "0")
+			bbuGo := bbuN
+	bbuC := hand.cards[bbuGo != "" ? bbuGo : bbuM[1]], bbuNm := BoostMemName(bbuC)
+	if (bbuGo != "")
+		bubble := 1, bubbleX := "", bubbleY := "", BoostMemOnly[bbuKey] := 1
+	if (!BoostSaid.HasKey("miss|" bbuNm))
+		BoostSaid["miss|" bbuNm] := 1, DebugLog("  in hand (the game): " bbuNm " (bubble " bbuC.value (bbuC.boosts != "" ? ", " bbuC.boosts : "") ") - no picture found it (" hitschool "\bubble)"
+			. (bbuGo != "" ? ": cast at its card box when the hand's boxes and the game's cards line up" : ": greyed out now"))
+	}
+
+;Whether the game's hand (this look's - VisionCards) holds the global the bot put up this battle (BubbleUp)
+BubbleUpHeld()
+	{
+	global BubbleUp
+	if (BubbleUp = "" || !IsFunc("VisionCards"))
+		return false
+	buhHand := Func("VisionCards").Call(300, 5000)
+	if (IsObject(buhHand))
+		for buhI, buhC in buhHand.cards
+			if (BubbleIs(buhC) && BoostMemName(buhC) = BubbleUp)
+				return true
+	return false
+	}
+
+;Whether a card of the game's hand (VisionCards') is a global: kind bubble - or its type Global (the game's own word: an
+;older helper called a global's kind "keep")
+BubbleIs(c)
+	{
+	return IsObject(c) && (c.kind = "bubble" || c.type = "global")
+	}
+
+;Whether a card of the game's hand (VisionCards') is the card you put in school sch's bubble slot yourself - its learned
+;card there flagged user (you set its kind to Bubble on the Spells tab; CardLearn.ahk LearnBubbleFits gives it the slot
+;whatever the game says): your bubble, whatever kind the game gives it - never a false match of the slot's picture
+BubbleUserSlot(c, sch)
+	{
+	if (!IsObject(c) || sch = "" || !IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag"))
+		return false
+	busC := Func("LearnCardInSlot").Call(sch "\bubble")
+	if (!IsObject(busC) || !Func("LearnHasFlag").Call(busC, "user"))
+		return false
+	busNm := BubbleSlotName(sch)
+	return (busNm != "" && (BoostMemName(c) = busNm || c.name = busNm || c.display = busNm)) ? true : false
+	}
+
+;Whether you set a card of the game's hand (VisionCards') to a kind other than Bubble on the Spells tab - Not used, an
+;aura...: the learned card it is (the game's name for it - flag game= -, else the name it was given) flagged user, that
+;kind kept (the learner never changes it - LearnApplyMem): never cast as a bubble. The learned card for school sch first,
+;of its own copy (the deck's, a treasure or an item card's) first
+BubbleUserOff(c, sch)
+	{
+	global LearnedCards
+	if (!IsObject(c) || !IsObject(LearnedCards) || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+		return false
+	buoNm := BoostMemName(c), buoBest := "", buoRank := 0
+	for buoI, buoL in LearnedCards
+		{
+		buoG := Func("LearnFlag").Call(buoL, "game"), buoLn := Trim(buoL.name)
+		if (buoG != "" ? (buoG != buoNm) : (buoLn = "" || (buoLn != buoNm && buoLn != c.name && buoLn != c.display)))
+			continue
+		buoR := 1 + ((buoL.sch = sch) ? 2 : 0)
+		buoR += (Func("LearnHasFlag").Call(buoL, "tc") = (c.tc ? true : false) && Func("LearnHasFlag").Call(buoL, "item") = (c.item ? true : false)) ? 1 : 0
+		if (buoR > buoRank)
+			buoRank := buoR, buoBest := buoL
+		}
+	return (IsObject(buoBest) && buoBest.type != "bubble" && Func("LearnHasFlag").Call(buoBest, "user")) ? true : false
+	}
+
+;The game's name of the global about to be cast by its picture (ClickBubble): the one name every global in the game's hand
+;has (this look's - VisionCards; the card you put in the slot yourself counted as one - BubbleUserSlot); several or none:
+;the slot's learned card's (BubbleSlotName - the slot's picture is that card's own) when the hand holds a card of that
+;name; the hand not read: the slot's learned card's; "" not known (several globals and no learned card in the slot - a
+;picture cut by hand -, or the slot's card not in hand)
+BubbleHandName()
+	{
+	global hitschool
+	bhnSlot := BubbleSlotName(hitschool)
+	bhnHand := IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : ""
+	if (!IsObject(bhnHand))
+		return bhnSlot
+	bhnOut := "", bhnMany := 0, bhnHas := 0
+	for bhnI, bhnC in bhnHand.cards
+		{
+		bhnNm := BoostMemName(bhnC)
+		if (bhnSlot != "" && (bhnNm = bhnSlot || bhnC.name = bhnSlot || bhnC.display = bhnSlot))
+			bhnHas := 1
+		if (BubbleIs(bhnC) || BubbleUserSlot(bhnC, hitschool))
+			{
+			if (bhnOut != "" && bhnOut != bhnNm)
+				bhnMany := 1
+			bhnOut := bhnNm
+			}
+		}
+	return (bhnMany || bhnOut = "") ? (bhnHas ? bhnSlot : "") : bhnOut
+	}
+
+;---- Absorbs, negative auras and your school's prism by the game's hand (2026-10-26) ----
+;Since every battle spell type of the game's has a kind (vision\handmem.py kind_of, the game's memory read-only):
+;  absorb   soaks N damage (Spirit Armor, Legion Absorb; Ice Armor: N a pip): a shield on you, on Tower Shield's turns,
+;           after it - defending (EnemySpells.ahk EnemyDefend) and the solo filler (Autofarmer.ahk AbsorbFiller: there
+;           only one that costs no pips - an X-pip or 3-pip one spends what the next hit needs). By its picture in its learned
+;           slot resources\absorb (CardLearn.ahk LearnSlotFor), else at its card box (AbsorbMem: absorb 1, no picture spot,
+;           BoostMemOnly["absorb"] - UseOnSelf / UseMemAt, BoostMemBox - only while the boxes and the game's cards line up for
+;           sure). With usetower, and useabsorb (PlayerStats.txt, on unless 0)
+;  negaura  a negative aura - on one enemy for 4 rounds, not used up by a hit. The Attenuates (+N% damage taken: the game's
+;           boosts, "fire:25", "all:20") go on the trap rule's enemy (NegAuraWhere: the boss picked with Alt+1, else the one
+;           with the most health - TrapWhere / TrapTarget; a party support's: the hitter's target) before the traps and
+;           blades, only one that adds to the planned hit's schools (NegAuraFits: a school's Attenuate for that school's
+;           damage, the plain one for any), at most once in 4 rounds on an enemy (NegAuraOn), at its card box (NegAuraMem,
+;           Autofarmer.ahk UseNegAura). Starfall and Pathogen (no damage taken) aren't played. With usetraps. The kill check
+;           doesn't count it
+;  prism    your school's (the card's school yours) in <school>\convert: cast at the boss picked with Alt+1 when the game's
+;           memory says it's of your school - it resists your hits (ConvertNeedMem, Autofarmer.ahk NeedsConvert /
+;           UseConvert); no picture for it: at its card box (ConvertMem). Once till a hit of yours goes out (ConvertUp)
+;Your kinds on the Spells tab win (the review, 2026-10-26 - as the bubble's: BubbleUserOff, BubbleUserSlot): a card you set
+;to another kind (Not used...) is never cast as one of these (MemUserOff), and the card you set to Absorb or Prism yourself
+;in its slot is one whatever kind the game gives it (MemUserSlot)
+
+;Whether you set a card of the game's hand (VisionCards') to a kind other than kind on the Spells tab - Not used, an aura...:
+;the learned card it is (the game's name for it - flag game= -, else the name it was given; school sch's first, of its own
+;copy - the deck's, a treasure or an item card's - first: BubbleUserOff's way) flagged user, that kind kept (the learner
+;never changes it): never cast as kind
+MemUserOff(c, sch, kind)
+	{
+	global LearnedCards
+	if (!IsObject(c) || !IsObject(LearnedCards) || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+		return false
+	muoNm := BoostMemName(c), muoBest := "", muoRank := 0
+	for muoI, muoL in LearnedCards
+		{
+		muoG := Func("LearnFlag").Call(muoL, "game"), muoLn := Trim(muoL.name)
+		if (muoG != "" ? (muoG != muoNm) : (muoLn = "" || (muoLn != muoNm && muoLn != c.name && muoLn != c.display)))
+			continue
+		muoR := 1 + ((sch != "" && muoL.sch = sch) ? 2 : 0)
+		muoR += (Func("LearnHasFlag").Call(muoL, "tc") = (c.tc ? true : false) && Func("LearnHasFlag").Call(muoL, "item") = (c.item ? true : false)) ? 1 : 0
+		if (muoR > muoRank)
+			muoRank := muoR, muoBest := muoL
+		}
+	return (IsObject(muoBest) && muoBest.type != kind && Func("LearnHasFlag").Call(muoBest, "user")) ? true : false
+	}
+
+;Whether a card of the game's hand (VisionCards') is the card you put in slot rel yourself (resources\absorb, <school>\convert):
+;its learned card there of kind kind flagged user (you set its kind on the Spells tab; the learner gives it the slot whatever
+;the game says), the game's name for it (flag game=, else the name it was given) this card's - that kind whatever kind the
+;game gives it (another, or none: its effects cut short), never a false match of the slot's picture
+MemUserSlot(c, rel, kind)
+	{
+	if (!IsObject(c) || rel = "" || !IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag") || !IsFunc("LearnFlag"))
+		return false
+	musC := Func("LearnCardInSlot").Call(rel)
+	if (!IsObject(musC) || musC.type != kind || !Func("LearnHasFlag").Call(musC, "user"))
+		return false
+	musG := Func("LearnFlag").Call(musC, "game"), musNm := (musG != "") ? musG : Trim(musC.name)
+	return (musNm != "" && (BoostMemName(c) = musNm || c.name = musNm || c.display = musNm)) ? true : false
+	}
+
+;The cards of the game's hand (VisionCards' cards) that are an absorb (key absorb - resources\absorb), as their numbers in
+;cards: kind absorb, or the card you set to Absorb in resources\absorb (MemUserSlot) - not one you set to another kind
+;(MemUserOff); with AbsorbOnlyFree set (the solo filler - AbsorbFiller) only one that costs no pips (AbsorbFreeCard). [] none
+AbsorbMatches(cards)
+	{
+	global AbsorbOnlyFree, hitschool
+	abmOut := []
+	if (!IsObject(cards))
+		return abmOut
+	for abmI, abmC in cards
+		if ((abmC.kind = "absorb" || MemUserSlot(abmC, "resources\absorb", "absorb")) && !MemUserOff(abmC, hitschool, "absorb")
+			&& (!AbsorbOnlyFree || AbsorbFreeCard(abmC)))
+			abmOut.Push(abmI)
+	return abmOut
+	}
+
+;Whether a card of the game's hand costs no pips: 0 pips read, not X-pip, no shadow or school pips
+AbsorbFreeCard(c)
+	{
+	return IsObject(c) && c.pips != "" && c.pips + 0 = 0 && !c.xpip && (c.shadow = "" || c.shadow + 0 = 0) && c.schoolpips = ""
+	}
+
+;Whether resources\absorb's card costs no pips by its learned card (pips 0 read, not guessed, not X-pip - the game's hand not
+;read); a picture cut by hand: not known - no
+AbsorbSlotFree()
+	{
+	if (!IsFunc("LearnCardInSlot") || !IsFunc("LearnHasFlag"))
+		return 0
+	asfC := Func("LearnCardInSlot").Call("resources\absorb")
+	return (IsObject(asfC) && asfC.pips != "" && asfC.pips + 0 = 0 && !asfC.guess && !Func("LearnHasFlag").Call(asfC, "xpip")) ? 1 : 0
+	}
+
+;Whether resources\absorb has a picture to look for (FindCards): a learned card in it, or one cut by hand (the main set's,
+;this UI size's) - none: never looked for by its picture (an ImageSearch of a file that isn't there)
+AbsorbPicThere()
+	{
+	global PicDir
+	if (IsFunc("LearnCardInSlot") && IsObject(Func("LearnCardInSlot").Call("resources\absorb")))
+		return true
+	return FileExist(A_WorkingDir "\resources\absorb.png") || (PicDir != "" && FileExist(PicDir "\resources\absorb.png"))
+	}
+
+;Whether absorbs are cast: Tower Shield on (usetower) and useabsorb (on unless 0)
+AbsorbOn()
+	{
+	return Stat("usetower") && StatOr("useabsorb", 1)
+	}
+
+;BoostSearch's look at absorbs by the game's hand (hand: VisionCards', read for sure): the absorb picture found with no absorb
+;in the game's hand is a false match - not used; found with more than one absorb in hand: the one cast at its card box
+;(BoostMemOnly - the picture may be on another); no picture found it: one that can be cast now is found all the same (absorb
+;1, no picture spot). AbsorbFreeOk: one that costs no pips can be cast now. Said once a battle
+AbsorbMem(hand)
+	{
+	global absorb, absorbX, absorbY, AbsorbFreeOk, BoostMemOnly, BoostSaid
+	if (!IsObject(hand) || !IsObject(hand.cards))
+		return
+	abmM := AbsorbMatches(hand.cards), abmGo := "", abmFree := 0
+	for abmI, abmN in abmM
+		if (hand.cards[abmN].castable != "0")
+			{
+			if (abmGo = "")
+				abmGo := abmN
+			if (AbsorbFreeCard(hand.cards[abmN]))
+				abmFree := 1
+			}
+	AbsorbFreeOk := abmFree
+	if (absorb == 1)
+		{
+		if (!abmM.Length())
+			{
+			absorb := 0
+			if (!BoostSaid.HasKey("false|absorb"))
+				BoostSaid["false|absorb"] := 1, DebugLog("  the absorb picture matched, but the game has no absorb in hand - a false match, not used")
+			}
+		else if (abmM.Length() > 1)
+			BoostMemOnly["absorb"] := 1
+		return
+		}
+	if (!abmM.Length())
+		return
+	abmC := hand.cards[abmGo != "" ? abmGo : abmM[1]], abmNm := BoostMemName(abmC)
+	if (abmGo != "")
+		absorb := 1, absorbX := "", absorbY := "", BoostMemOnly["absorb"] := 1
+	if (!BoostSaid.HasKey("miss|" abmNm))
+		BoostSaid["miss|" abmNm] := 1, DebugLog("  in hand (the game): " abmNm " (absorb " abmC.value ") - no picture found it (resources\absorb)"
+			. (abmGo != "" ? ": cast at its card box on Tower Shield's turns (defending; the filler only one that costs no pips)" : ": greyed out now"))
+	}
+
+;Whether a negative aura boosting schools bs (its boosts as BoostsParse has them: "all", "fire", "death,ice") adds to the
+;planned hit (PlanHeads - BoostPick's: some of its damage of those schools); every school's (Attenuate) always; the plan
+;not made yet: the hitter's school (your own)
+NegAuraFits(bs)
+	{
+	global PlanHeads, HammerSchool, hitschool
+	if (bs = "")
+		return false
+	if (bs = "all")
+		return true
+	if (IsObject(PlanHeads) && PlanHeads.total > 0)
+		{
+		for nafS, nafV in PlanHeads.heads
+			if (nafV > 0 && InStr("," bs ",", "," nafS ","))
+				return true
+		return false
+		}
+	nafS := (HammerSchool != "") ? HammerSchool : hitschool
+	return (nafS != "" && InStr("," bs ",", "," nafS ",")) ? true : false
+	}
+
+;The cards of the game's hand that are a negative aura adding damage taken that fits the planned hit (key negaura -
+;NegAuraFits), as their numbers in cards - not one you set to another kind on the Spells tab (MemUserOff). [] none
+NegAuraMatches(cards)
+	{
+	global hitschool
+	namOut := []
+	if (!IsObject(cards))
+		return namOut
+	for namI, namC in cards
+		{
+		if (namC.kind != "negaura" || MemUserOff(namC, hitschool, "negaura"))
+			continue
+		namB := BoostsParse(namC.boosts)
+		if (IsObject(namB) && NegAuraFits(namB.sch))
+			namOut.Push(namI)
+		}
+	return namOut
+	}
+
+;BoostSearch's look at negative auras by the game's hand: negaura 1 when one that adds damage taken can be cast now (whether
+;it fits the planned hit is asked when it's cast - BoostPick plans after this); one you set to another kind on the Spells
+;tab never (MemUserOff). Said once a battle
+NegAuraMem(hand)
+	{
+	global negaura, BoostSaid, hitschool
+	negaura := 0
+	if (!IsObject(hand) || !IsObject(hand.cards))
+		return
+	for namI, namC in hand.cards
+		{
+		if (namC.kind != "negaura")
+			continue
+		namB := BoostsParse(namC.boosts), namNm := BoostMemName(namC), namOff := MemUserOff(namC, hitschool, "negaura")
+		if (IsObject(namB) && namC.castable != "0" && !namOff)
+			negaura := 1
+		if (!BoostSaid.HasKey("miss|" namNm))
+			BoostSaid["miss|" namNm] := 1, DebugLog("  in hand (the game): " namNm " (a negative aura, " namC.value (namC.boosts != "" && namC.boosts != "?" ? ", " namC.boosts : "") ")"
+				. (namOff ? " - you set it to another kind on the Spells tab: not played" : !IsObject(namB) ? " - adds no damage taken: not played" : namC.castable = "0" ? " - greyed out now"
+				: " - cast at its card box on the trap target before the boosts, once in 4 rounds an enemy, when it adds to the planned hit"))
+		}
+	}
+
+;Where this round's negative aura goes (UseNegAura): the trap rule's enemy - the boss picked with Alt+1; TrapWhere's pick when
+;it made one (a party support's: the hitter's target; else the enemy with the most health); else that rule asked now (no trap
+;in hand: TrapWhere didn't look - PartyTrapTarget, TrapTarget; TrapWhere's own pick left as it was). x, y: its plate; key:
+;the enemy (NegAuraKey - once in 4 rounds an enemy: NegAuraWhen, NegAuraNote); who: for the log. False: no enemy found
+NegAuraWhere(ByRef x, ByRef y, ByRef key, ByRef who)
+	{
+	global BossChoosen, bossX, bossY, TrapOn, TrapAtX, TrapAtY, TrapWhy, TrapPick, GameLeft
+	nawMost := ""
+	if (BossChoosen == 1)
+		x := bossX, y := bossY, who := "the boss (Alt+1)"
+	else if (TrapOn == 1 && TrapAtX != "")
+		x := TrapAtX, y := TrapAtY, who := (TrapWhy != "") ? TrapWhy : "the trap target"
+	else
+		{
+		nawPick := TrapPick, nawWhy := TrapWhy
+		if (PartySupport())
+			nawGot := PartyTrapTarget(x, y), who := "the hitter's target"
+		else
+			nawGot := TrapTarget(x, y, nawMost), who := TrapWhy
+		TrapPick := nawPick, TrapWhy := nawWhy
+		if (!nawGot || x = "")
+			return false
+		}
+	if (x = "" || y = "")
+		return false
+	key := NegAuraKey(x)
+	return true
+	}
+
+;The enemy whose plate is at x, for the negative aura's once in 4 rounds (the review, 2026-10-26: the plate's place alone
+;gave the same enemy a second one when the plates closed up round a dead one - TrapFoeSlot's "they may have moved along" -
+;and kept it from the one that moved into its place): its identities, the surest first, joined with |: the game's memory's
+;participant at that plate (g<gid> - BattleFoeAt), its most health off the plates (EnemyHP, read with EnemyPlates: m<max>,
+;with its place when another enemy has that most health too - TrapFoeSlot's way), its plate's place (p<n>, always)
+NegAuraKey(x)
+	{
+	global EnemyPlates, EnemyHP, GameLeft
+	nakAt := "p" Round((x - GameLeft) / Px(60)), nakOut := ""
+	nakF := BattleFoeAt(x)
+	if (IsObject(nakF) && nakF.gid != "")
+		nakOut .= "g" nakF.gid "|"
+	if (IsObject(EnemyPlates) && IsObject(EnemyHP) && EnemyHP.Length() && EnemyHP.Length() = EnemyPlates.Length())
+		{
+		nakN := 0, nakD := ""
+		for nakI, nakP in EnemyPlates
+			if (nakP.x != "" && (nakD = "" || Abs(nakP.x - x) < nakD))
+				nakN := nakI, nakD := Abs(nakP.x - x)
+		nakMax := nakN ? EnemyHP[nakN].max : ""
+		if (nakN && nakD <= Px(40) && nakMax != "" && nakMax > 0)
+			{
+			nakSame := 0
+			for nakI, nakE in EnemyHP
+				nakSame += (nakE.max = nakMax) ? 1 : 0
+			nakOut .= "m" nakMax (nakSame > 1 ? "@" nakAt : "") "|"
+			}
+		}
+	return nakOut nakAt
+	}
+
+;The round a negative aura last went on the enemy key names (NegAuraKey), by the surest of its identities known now - its
+;first ("" none recorded: NegAuraOn, this battle's)
+NegAuraWhen(key)
+	{
+	global NegAuraOn
+	nawK := StrSplit(key, "|")[1]
+	return (IsObject(NegAuraOn) && nawK != "" && NegAuraOn.HasKey(nawK)) ? NegAuraOn[nawK] : ""
+	}
+
+;A negative aura cast on the enemy key names in round rnd: noted under each of its identities (NegAuraOn) - the next look
+;finds it by the surest one it knows then
+NegAuraNote(key, rnd)
+	{
+	global NegAuraOn
+	if (!IsObject(NegAuraOn))
+		NegAuraOn := {}
+	for nanI, nanK in StrSplit(key, "|")
+		if (nanK != "")
+			NegAuraOn[nanK] := rnd
+	}
+
+;The enemy of the game's memory (Vision.ahk NavBattle - the helper's /battle, READ-ONLY) whose plate is at x: the nearest by
+;the helper's x (its plate's middle across the window) within Px(160), not one whose health is read as 0 (dead); "" none
+;(not read, no enemy there)
+BattleFoeAt(x)
+	{
+	global GameLeft, GameW
+	if (x = "" || !IsFunc("NavBattle"))
+		return ""
+	bfaB := Func("NavBattle").Call()
+	if (!IsObject(bfaB) || !IsObject(bfaB.foes))
+		return ""
+	bfaBest := "", bfaD := ""
+	for bfaI, bfaF in bfaB.foes
+		if (bfaF.x != "" && (bfaF.health = "" || bfaF.health > 0))
+			{
+			bfaDx := Abs(GameLeft + bfaF.x * GameW - x)
+			if (bfaD = "" || bfaDx < bfaD)
+				bfaBest := bfaF, bfaD := bfaDx
+			}
+	return (IsObject(bfaBest) && bfaD <= Px(160)) ? bfaBest : ""
+	}
+
+;The cards of the game's hand that are school sch's prism (key <sch>/convert - <school>\convert): kind prism, the card's own
+;school sch, or the card you set to Prism in <sch>\convert (MemUserSlot) - not one you set to another kind (MemUserOff). []
+;none
+ConvertMatches(cards, sch)
+	{
+	cvmOut := []
+	if (!IsObject(cards) || sch = "")
+		return cvmOut
+	for cvmI, cvmC in cards
+		if (((cvmC.kind = "prism" && cvmC.school = sch) || MemUserSlot(cvmC, sch "\convert", "prism")) && !MemUserOff(cvmC, sch, "prism"))
+			cvmOut.Push(cvmI)
+	return cvmOut
+	}
+
+;Whether your prism is on the boss already: one cast this battle (ConvertOn - Autofarmer.ahk UseConvert: your hits counted
+;then) and no hit of yours has gone out since (PartyHits - ConsumeBoosts counts each). The review, 2026-10-26: a second and
+;third went out the next rounds while the first waited for the hit
+ConvertUp()
+	{
+	global ConvertOn, PartyHits
+	return (IsObject(ConvertOn) && ConvertOn.hits = (PartyHits ? PartyHits : 0)) ? true : false
+	}
+
+;BoostSearch's look at your school's prism by the game's hand: the convert picture found with no prism of your school in the
+;game's hand is a false match - not used; none found by its picture: one that can be cast now is found all the same (convert
+;1, no picture spot, BoostMemOnly["<school>/convert"] - Autofarmer.ahk UseConvert, UseMemAt) - not while one is on the boss
+;already (ConvertUp). Another school's wizard's hits (Alt+2, a party's hitter) get none. Said once a battle
+ConvertMem(hand)
+	{
+	global convert, convertX, convertY, BoostMemOnly, BoostSaid, hitschool, HammerSchool
+	if (hitschool = "" || !IsObject(hand) || !IsObject(hand.cards))
+		return
+	cvmKey := BoostKey("convert", hitschool), cvmM := ConvertMatches(hand.cards, hitschool)
+	if (convert == 1)
+		{
+		if (!cvmM.Length())
+			{
+			convert := 0
+			if (!BoostSaid.HasKey("false|convert"))
+				BoostSaid["false|convert"] := 1, DebugLog("  the convert picture matched, but the game has no " hitschool " prism in hand - a false match, not used")
+			}
+		return
+		}
+	if (!cvmM.Length() || HammerSchool != hitschool || ConvertUp())
+		return
+	cvmGo := ""
+	for cvmI, cvmN in cvmM
+		if (cvmGo = "" && hand.cards[cvmN].castable != "0")
+			cvmGo := cvmN
+	cvmC := hand.cards[cvmGo != "" ? cvmGo : cvmM[1]], cvmNm := BoostMemName(cvmC)
+	if (cvmGo != "")
+		convert := 1, convertX := "", convertY := "", BoostMemOnly[cvmKey] := 1
+	if (!BoostSaid.HasKey("miss|" cvmNm))
+		BoostSaid["miss|" cvmNm] := 1, DebugLog("  in hand (the game): " cvmNm " (a " hitschool " prism) - no picture found it (" hitschool "\convert)"
+			. (cvmGo != "" ? ": cast at its card box at the boss picked with Alt+1 when it's of your school" : ": greyed out now"))
+	}
+
+;Whether the boss picked with Alt+1 is of your school - it resists your hits: your prism converts them (Autofarmer.ahk
+;NeedsConvert) - by the game's memory (Vision.ahk NavBattle - the helper's /battle, READ-ONLY): the enemy whose plate is the
+;boss's (BattleFoeAt: the helper's x within Px(160) of it, the nearest), its school. 1 yours, 0 another; "" not known (not
+;read, no enemy there, its school not read)
+ConvertNeedMem()
+	{
+	global bossX, hitschool
+	if (hitschool = "")
+		return ""
+	cnmBest := BattleFoeAt(bossX)
+	if (!IsObject(cnmBest) || cnmBest.school = "")
+		return ""
+	return (cnmBest.school = hitschool) ? 1 : 0
 	}
 
 ;The planned hit's share of damage boost key fits (1: every school's boost)
@@ -1847,11 +2509,12 @@ ReadEnemyHealth()
 		return false
 		}
 	;Where each plate is (its name, else its health line), left to right: a single-target hit clicks one
-	;(kept even if the health can't be read below)
+	;(kept even if the health can't be read below; with the name OCR read on it - TrapMemHealth matches the game's memory
+	;to the plates by it)
 	for i, p in plates
 		{
 		b := IsObject(p.name) ? p.name : p.health
-		EnemyPlates.Push({x: b.x + b.w // 2, y: b.y + b.h // 2})
+		EnemyPlates.Push({x: b.x + b.w // 2, y: b.y + b.h // 2, name: IsObject(p.name) ? p.name.text : ""})
 		}
 
 	;2) Each plate's health also read on its own at both sizes. Every read is a vote: at least two must
@@ -2004,13 +2667,15 @@ TrapsInHand()
 	}
 
 ;Where a trap goes with no boss picked (TrapWhere): the enemy with the most health - the plates read as the kill check
-;reads them (ReadEnemyHealth: the helper's digits, else OCR; read again when the last read is over 8 s old); a tie, or
-;health not read: the planned hit's target among them (TrapHitPick). x, y: its plate; most: its most health ("" not read);
-;TrapPick its slot, TrapWhy which it is (the log). False: no plate found - nowhere sure to put it
+;reads them (ReadEnemyHealth: the helper's digits, else OCR; read again when the last read is over 8 s old); their
+;health not read, the game's memory's (TrapMemHealth - 2026-10-25 23:28:08 the Hex went on the planned hit's target,
+;nameplate 2's health not read, while the memory had Gahlwok 3335 and the Water Lurker 1025); a tie, or neither read: the
+;planned hit's target among them (TrapHitPick). x, y: its plate; most: its most health ("" not read); TrapPick its slot,
+;TrapWhy which it is (the log). False: no plate found - nowhere sure to put it
 TrapTarget(ByRef x, ByRef y, ByRef most)
 	{
 	global
-	local ttI, ttE, ttTop, ttTied, ttN, ttOne
+	local ttI, ttE, ttTop, ttTied, ttN, ttOne, ttMem
 	most := "", TrapPick := 0, TrapWhy := ""
 	if (A_TickCount - EnemyPlatesAt > 8000)
 		ReadEnemyHealth()
@@ -2036,11 +2701,107 @@ TrapTarget(ByRef x, ByRef y, ByRef most)
 		}
 	else
 		{
-		TrapPick := TrapHitPick("")
-		TrapWhy := "enemy " TrapPick " of " EnemyPlates.Length() " (health not read" (HealthStatus != "" ? ": " HealthStatus : "") " - the planned hit's target)"
+		ttMem := TrapMemHealth()
+		if (ttMem.pick)
+			{
+			TrapPick := ttMem.pick, most := ttMem.max
+			TrapWhy := "enemy " TrapPick " of " EnemyPlates.Length() " (" (ttMem.name != "" ? ttMem.name " " : "") ttMem.cur "/" most " health - "
+				. (ttMem.tied > 1 ? ttMem.tied " have the most: the leftmost" : "the most") ", from the game's memory (put on its plate " ttMem.how "): the plates' health not read" (HealthStatus != "" ? " - " HealthStatus : "") ")"
+			}
+		else
+			{
+			TrapPick := TrapHitPick("")
+			TrapWhy := "enemy " TrapPick " of " EnemyPlates.Length() " (health not read" (HealthStatus != "" ? ": " HealthStatus : "") "; the game's memory: " ttMem.why " - the planned hit's target)"
+			}
 		}
 	x := EnemyPlates[TrapPick].x, y := EnemyPlates[TrapPick].y
 	return true
+	}
+
+;The plates' health not read (TrapTarget): the enemies' health from the game's memory (Vision.ahk NavBattle - the helper's
+;/battle, READ-ONLY) put on the plates (EnemyPlates, left to right): by where its plate is (the helper's x - its plate's
+;middle across the window - within Px(160) of the plate's), else by its name (the plate's OCR'd name against the mob's:
+;PlateNameLike), else the one enemy and the one plate left over. {pick: the plate of the one with the most health now -
+;a tie: the leftmost of them (equal health: HitPick's own rule) -, cur, max, name, tied (how many have that most), how
+;(how it was put on its plate), why (what failed: pick 0)}
+TrapMemHealth()
+	{
+	if (!IsFunc("NavBattle"))
+		return {pick: 0, why: "not asked (no Vision.ahk)"}
+	tmhB := Func("NavBattle").Call()
+	if (!IsObject(tmhB))
+		return {pick: 0, why: "not read (" NavBattleWhy ")"}
+	tmhFoes := []
+	for tmhI, tmhF in tmhB.foes
+		if (tmhF.health != "" && tmhF.health > 0)
+			tmhFoes.Push(tmhF)
+	if (!tmhFoes.Length())
+		return {pick: 0, why: "no enemy's health read"}
+	;(each foe's plate: foe -> plate, plate -> foe, how)
+	tmhPlate := {}, tmhFoe := {}, tmhHow := {}
+	for tmhI, tmhF in tmhFoes
+		if (tmhF.x != "")
+			{
+			tmhFx := GameLeft + tmhF.x * GameW, tmhBest := 0, tmhD := ""
+			for tmhJ, tmhP in EnemyPlates
+				if (!tmhFoe.HasKey(tmhJ) && (tmhD = "" || Abs(tmhP.x - tmhFx) < tmhD))
+					tmhBest := tmhJ, tmhD := Abs(tmhP.x - tmhFx)
+			if (tmhBest && tmhD <= Px(160))
+				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by where it is"
+			}
+	for tmhI, tmhF in tmhFoes
+		if (!tmhPlate.HasKey(tmhI) && tmhF.name != "")
+			{
+			tmhBest := 0
+			for tmhJ, tmhP in EnemyPlates
+				if (!tmhFoe.HasKey(tmhJ) && PlateNameLike(tmhP.name, tmhF.name))
+					tmhBest := tmhBest ? -1 : tmhJ
+			if (tmhBest > 0)
+				tmhPlate[tmhI] := tmhBest, tmhFoe[tmhBest] := tmhI, tmhHow[tmhI] := "by its name"
+			}
+	;(the one left of each - not a plate whose name was read as another's)
+	if (tmhFoes.Length() - tmhPlate.Count() = 1 && EnemyPlates.Length() - tmhFoe.Count() = 1)
+		for tmhI, tmhF in tmhFoes
+			if (!tmhPlate.HasKey(tmhI))
+				for tmhJ, tmhP in EnemyPlates
+					if (!tmhFoe.HasKey(tmhJ) && tmhP.name = "")
+						tmhPlate[tmhI] := tmhJ, tmhFoe[tmhJ] := tmhI, tmhHow[tmhI] := "as the one left"
+	;The most health now; the leftmost plate of those that have it
+	tmhTop := ""
+	for tmhI, tmhF in tmhFoes
+		if (tmhTop = "" || tmhF.health > tmhTop)
+			tmhTop := tmhF.health
+	tmhPick := 0, tmhTied := 0, tmhLost := ""
+	for tmhI, tmhF in tmhFoes
+		if (tmhF.health = tmhTop)
+			{
+			tmhTied += 1
+			if (!tmhPlate.HasKey(tmhI))
+				tmhLost .= (tmhLost = "" ? "" : ", ") (tmhF.name != "" ? tmhF.name : "?")
+			else if (!tmhPick || tmhPlate[tmhI] < tmhPlate[tmhPick])
+				tmhPick := tmhI
+			}
+	if (tmhLost != "")
+		return {pick: 0, why: "the one with the most health (" tmhLost ", " tmhTop ") not found on a plate (" EnemyPlates.Length() " plates, " tmhFoes.Length() " enemies)"}
+	tmhF := tmhFoes[tmhPick]
+	return {pick: tmhPlate[tmhPick], cur: tmhF.health, max: tmhF.max, name: tmhF.name, tied: tmhTied, how: tmhHow[tmhPick], why: ""}
+	}
+
+;A plate's OCR'd name (capitals, maybe cut short - "SELWYN SKYW...") is the mob's name: letters only (digits OCR swaps in
+;for letters turned back), the shorter at least 3 letters and the longer one starting with it but for one letter in five
+PlateNameLike(ocr, name)
+	{
+	StringUpper, pnlA, ocr
+	StringUpper, pnlB, name
+	pnlA := RegExReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(StrReplace(pnlA, "0", "O"), "1", "I"), "5", "S"), "8", "B"), "6", "G"), "|", "I"), "[^A-Z]")
+	pnlB := RegExReplace(pnlB, "[^A-Z]")
+	pnlN := StrLen(pnlA) < StrLen(pnlB) ? StrLen(pnlA) : StrLen(pnlB)
+	if (pnlN < 3)
+		return false
+	pnlOff := 0
+	Loop, % pnlN
+		pnlOff += (SubStr(pnlA, A_Index, 1) != SubStr(pnlB, A_Index, 1))
+	return pnlOff <= pnlN // 5
 	}
 
 ;The planned hit's target among the enemies among ({slot: 1}; "" all) - TrapTarget's in a tie or with health not read:

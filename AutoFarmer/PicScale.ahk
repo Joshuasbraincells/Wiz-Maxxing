@@ -18,11 +18,16 @@ global PicMade
 ;start: "<w>x<h>"); the size the first rounds are being measured at and how many were tried (the main loop); why
 ;DetectUiScale last gave up
 global PicMeasuredSize, PicMeasureSize, PicMeasureTries, PicMeasureWhy
+;The colour tolerance the cut pictures needed on this screen (PicCutFind: 0 / 3 their usual *3 - 2026-10-25 from 22:44 the
+;game, started on its DisplayLink adapter, drew the cut 1.144 Pass button a little off all evening); when and at which
+;window size a cut set's own picture (the spellbook, the Pass button) last matched with that set in use, and that set's
+;index (PicCutOk)
+global PicCutTol, PicCutOkAt, PicCutOkSize, PicCutOkSet
 
 ;Called by LoadPicSets
 PicScaleInit()
 	{
-	GenTol := 20, PicEnlarged := {}, PicMade := {}
+	GenTol := 20, PicEnlarged := {}, PicMade := {}, PicCutTol := 0, PicCutOkAt := 0, PicCutOkSize := "", PicCutOkSet := ""
 	GenRoot := A_WorkingDir "\generated"
 	;Distance between the middles of the Pass and Flee buttons at UI scale 1 (521 px at UI 1.144,
 	;580 px at UI 1.265)
@@ -47,26 +52,69 @@ LoadPicSets()
 				}
 			}
 		}
+	;(a made set at a cut set's own size is that set's copy: its pictures resized 1:1 - PicCopySet. Only a cut set with its
+	;own Pass button or spellbook - PicCutOwn: not one of the card learner's folders, which hold the cards learned at a made
+	;size only, e.g. ui0.917 / ui1.121, and whose generated\ twin is an ordinary made set)
+	for each, set in PicSets
+		if (set.gen)
+			for each2, cs in PicSets
+				if (Abs(cs.scale - set.scale) < 0.0005 && PicCutOwn(cs))
+					set.copy := 1
+	}
+
+;Cut set `set` has its own Pass button or spellbook picture (resources\roundstart.png, roundstart_hover.png or
+;roundfinish.png) - not one of the card learner's folders (LearnSetDir) holding only the cards learned at that size
+PicCutOwn(set)
+	{
+	return IsObject(set) && !set.gen && (FileExist(set.dir "\resources\roundstart.png") || FileExist(set.dir "\resources\roundstart_hover.png") || FileExist(set.dir "\resources\roundfinish.png"))
 	}
 
 ;Looks for the spellbook (out of battle) or the Pass button (a battle round) with each picture set,
-;and switches to the first set that finds one. skipCurrent: only try the other sets. True if found
+;and switches to the first set that finds one. skipCurrent: only try the other sets. True if found.
+;The set in use a cut one at this window's own size, or its copy (PicCutHome): never left for a made set at another size
+;on a made picture's match (2026-10-25 23:14:47: the cut 1.144 Pass button - drawn a little off all evening - missed, and
+;the made, mostly see-through 1.121 one matched it twice: every picture was made at the wrong size from then on). Its own
+;pictures are looked for again with more colour tolerance first (PicCutFind, every 9 s at most), then its copy made 1:1
+;(PicCopySet) may take over; another cut set still can (it matches nearly pixel for pixel), and DetectUiScale measures
 DetectPicSet(skipCurrent := false)
 	{
 	;(another set than the one in use: found twice, 3-20 s apart, before it's used - a made set's mostly see-through
 	;pictures can match something else once)
-	static cand := 0, candAt := 0
-	;(the set this window size was last played at first - generated\scales.txt)
-	want := PicScaleFor(GameW "x" GameH), order := []
+	static cand := 0, candAt := 0, slackAt := 0, saidHome := ""
+	home := skipCurrent && PicCutHome(), homeScale := home ? PicSets[PicSet].scale : ""
+	if (home && !PicSets[PicSet].gen && PicCutTol < GenTol && (!slackAt || A_TickCount - slackAt > 9000))
+		{
+		slackAt := A_TickCount
+		if (PicCutFind(PicSets[PicSet], ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, dpsTol, dpsPic, PicCutTol))
+			{
+			PicCutSlackSet(dpsTol, dpsPic)
+			PicCutOk()
+			cand := 0
+			return true
+			}
+		;(not even so: its copy made 1:1, for the sets below)
+		dpsCp := PicCopySet(PicSet)
+		PicMake("resources\roundstart.png", PicSets[dpsCp]), PicMake("resources\roundfinish.png", PicSets[dpsCp])
+		}
+	if (home && saidHome != GameW "x" GameH "|" PicSet)
+		{
+		saidHome := GameW "x" GameH "|" PicSet
+		DebugLog("Pictures: " PicSetName(PicSet) " is the set at this window's own size - held: another cut set or its own copy only can take over here, or the UI size measured from Pass and Flee")
+		}
+	;(the set this window size was last played at first - generated\scales.txt: a cut one before its copy)
+	want := PicScaleFor(GameW "x" GameH), order := [], wantN := 0
 	for i, set in PicSets
 		if (want != "" && Abs(set.scale - want) < 0.002)
-			order.InsertAt(1, i)
+			order.InsertAt(set.gen ? wantN + 1 : 1, i), wantN += 1
 		else
 			order.Push(i)
 	for each, i in order
 		{
 		set := PicSets[i]
 		if (skipCurrent && i = PicSet)
+			continue
+		;(a cut set's own size held: no made set at another size)
+		if (home && set.gen && Abs(set.scale - homeScale) >= 0.0005)
 			continue
 		for each2, pic in ["roundfinish", "roundstart"]
 			{
@@ -76,7 +124,7 @@ DetectPicSet(skipCurrent := false)
 			;(a made picture this see-through - the spellbook at a small UI size keeps 6-8% - matches nearly anything)
 			if (PicTooThin(file))
 				continue
-			ImageSearch, fx, fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % (set.gen ? "*" GenTol " *TransFF00FF " : "*3 ") file
+			ImageSearch, fx, fy, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, % (set.gen ? "*" GenTol : "*" (PicCutTol > 3 ? PicCutTol : 3)) " *TransFF00FF " file
 			if (ErrorLevel = 0)
 				{
 				if (skipCurrent && i != PicSet && !(cand = i && A_TickCount - candAt >= 2500 && A_TickCount - candAt <= 20000))
@@ -85,11 +133,29 @@ DetectPicSet(skipCurrent := false)
 						cand := i, candAt := A_TickCount
 					return false
 					}
+				dpsGap := (skipCurrent && cand = i) ? Round((A_TickCount - candAt) / 1000, 1) : ""
 				cand := 0
 				if (i != PicSet || !skipCurrent)
-					UsePicSet(i)
+					UsePicSet(i, "its " (pic = "roundstart" ? "Pass button" : "spellbook") " picture found on screen"
+						. (dpsGap != "" ? " twice, " dpsGap " s apart, where " PicSetName(PicSet) "'s own wasn't" : "")
+						. (want != "" && Abs(set.scale - want) < 0.002 ? " - the size this window was last played at" : "")
+						. (set.gen ? " (made, " PicSolidPct(file) "% solid, *" GenTol ")" : ""))
+				if (!set.gen)
+					PicCutOk()
 				return true
 				}
+			}
+		;(the start: the cut set this window was last played at, not matching as cut - its own pictures with more colour
+		;tolerance before any other set's. From the tolerance just used, not over it: the hovered Pass button wasn't looked
+		;for above - drawn hovered on an exact screen it matches at *3, no tolerance learned for it)
+		if (!skipCurrent && !set.gen && want != "" && Abs(set.scale - want) < 0.002
+			&& PicCutFind(set, ["roundfinish", "roundstart", "roundstart_hover"], GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, dpsTol, dpsPic, (PicCutTol > 3 ? PicCutTol : 3) - 1))
+			{
+			cand := 0
+			UsePicSet(i, "its " (dpsPic = "roundfinish" ? "spellbook" : dpsPic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " picture found on screen at *" dpsTol " - the size this window was last played at")
+			PicCutSlackSet(dpsTol, dpsPic)
+			PicCutOk()
+			return true
 			}
 		}
 	return false
@@ -182,9 +248,105 @@ PicRemember()
 		if (A_LoopField != "" && InStr(A_LoopField, size "=") != 1)
 			out .= A_LoopField "`r`n"
 	FileCreateDir, %GenRoot%
+	was := PicScaleFor(size)
 	f := FileOpen(GenRoot "\scales.txt", "w")
 	if (IsObject(f))
 		f.Write(out size "=" sc "`r`n"), f.Close()
+	DebugLog("UI size: " size " remembered at UI scale " sc " (generated\scales.txt" (was != "" ? "; it was " was : "") ") - the set the bot starts with at this size")
+	}
+
+;The name of picture set i for the log: "the main set", "ui1.144", "generated\ui1.130"
+PicSetName(i)
+	{
+	return (i = 1) ? "the main set" : IsObject(PicSets[i]) ? SubStr(PicSets[i].dir, StrLen(A_WorkingDir) + 2) : "set " i
+	}
+
+;The set in use is a cut set (or its copy, PicCopySet) at this game window's own size: its own picture matched at this
+;size in this run (PicCutOk), the size was measured with it (PicMeasuredSize), or it's the size remembered for this
+;window (generated\scales.txt). DetectPicSet holds such a set - no made set at another size takes over from it
+PicCutHome()
+	{
+	set := PicSets[PicSet], size := GameW "x" GameH
+	;(a cut set with its own Pass button or spellbook - PicCutOwn - or such a set's copy)
+	if (!IsObject(set) || (set.gen ? !set.copy : !PicCutOwn(set)))
+		return false
+	;(PicCutOk's window size only as noted with this very set - or, for a copy, with the cut set it's the copy of)
+	pchOk := PicSets[PicCutOkSet]
+	if ((PicCutOkSize = size && (PicCutOkSet = PicSet || (set.copy && IsObject(pchOk) && Abs(pchOk.scale - set.scale) < 0.0005))) || PicMeasuredSize = size)
+		return true
+	want := PicScaleFor(size)
+	return (want != "" && Abs(set.scale - want) < 0.002)
+	}
+
+;A cut set's own picture just matched with it in use (the spellbook, a round's Pass button - the main loop, DetectPicSet,
+;DetectUiScale): noted, with the window size and the set (PicCutHome, DetectUiScale). file: the picture that matched (the
+;main loop's) - only the set's own cut .png counts, not one PicPath made for it at its size (a card learner's folder
+;has no Pass button or spellbook of its own: the made, mostly see-through one would hold a size a little off)
+PicCutOk(file := "")
+	{
+	pcoSet := PicSets[PicSet]
+	if (IsObject(pcoSet) && !pcoSet.gen && (file != "" ? (InStr(file, pcoSet.dir "\resources\") = 1 && SubStr(file, -3) = ".png" && FileExist(file)) : PicCutOwn(pcoSet)))
+		PicCutOkAt := A_TickCount, PicCutOkSize := GameW "x" GameH, PicCutOkSet := PicSet
+	}
+
+;Cut set `set`'s own pictures (names in its resources\, e.g. ["roundstart", "roundstart_hover"]) looked for in the
+;rectangle at *3, then - the game drawing their colours a little off (2026-10-25 from 22:44: the game started on its
+;DisplayLink adapter, and the cut 1.144 Pass button missed at *3 all evening while made ones matched) - at *8, *12, *16 and
+;*20 (GenTol); a fully solid cut picture still only matches at its own size. Only the tolerances over `above` (one
+;already tried). True if one matched: tolAt its least tolerance, picAt the picture
+PicCutFind(set, pics, x1, y1, x2, y2, ByRef tolAt, ByRef picAt, above := 0)
+	{
+	tolAt := "", picAt := ""
+	if (!IsObject(set) || set.gen)
+		return false
+	for each, tol in [3, 8, 12, 16, GenTol]
+		{
+		if (tol <= above)
+			continue
+		for each2, pic in pics
+			{
+			file := set.dir "\resources\" pic ".png"
+			if (!FileExist(file))
+				continue
+			ImageSearch, fx, fy, x1, y1, x2, y2, *%tol% *TransFF00FF %file%
+			if (ErrorLevel = 0)
+				{
+				tolAt := tol, picAt := pic
+				return true
+				}
+			}
+		}
+	return false
+	}
+
+;The colour tolerance the cut pictures need on this screen (PicCutFind found picture pic at *tol): kept (PicCutTol - PicOptFile
+;searches every cut picture with at least that) and said once per change
+PicCutSlackSet(tol, pic)
+	{
+	if (tol = "" || tol <= 3 || tol <= PicCutTol)
+		return
+	PicCutTol := tol
+	DebugLog("Pictures: " PicSetName(PicSet) "'s " (pic = "roundfinish" ? "spellbook" : pic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " cut picture matches at *" tol " only - the game draws its colours a little off (another graphics adapter or display mode?): the cut pictures are searched with *" tol " from now on")
+	}
+
+;The copy of cut set i (a made set at its very size - generated\ui<scale>, copy: 1 - whose pictures are the cut ones
+;resized 1:1: only the pixels every sub-pixel position of them agrees on kept, searched at *GenTol): for a screen that
+;draws the cut set's size but not its pixels. Made in PicSets if it isn't there. Its index (i itself for a made set)
+PicCopySet(i)
+	{
+	if (!IsObject(PicSets[i]) || PicSets[i].gen)
+		return i
+	sc := PicSets[i].scale
+	for j, set in PicSets
+		if (set.gen && Abs(set.scale - sc) < 0.0005)
+			{
+			set.copy := 1
+			return j
+			}
+	dir := GenRoot "\ui" Round(sc, 3)
+	FileCreateDir, %dir%
+	PicSets.Push({dir: dir, scale: sc + 0, gen: 1, copy: 1})
+	return PicSets.Length()
 	}
 
 ;ImageSearch options and file for picture rel (e.g. "resources\player.png"): "*<tol> <file>", or for a
@@ -200,8 +362,9 @@ PicOptFile(p, tol := 3)
 	{
 	if (SubStr(p, -3) = ".bmp")
 		return "*" (Max(tol, GenTol) + (PicEnlarged.HasKey(p) ? 4 : 0)) " *TransFF00FF " p
-	;(a cut picture can have see-through parts too, e.g. the round badges)
-	return "*" tol " *TransFF00FF " p
+	;(a cut picture can have see-through parts too, e.g. the round badges; at least the colour tolerance this screen was
+	;found to need for the cut pictures - PicCutTol)
+	return "*" (PicCutTol > tol ? PicCutTol : tol) " *TransFF00FF " p
 	}
 
 ;The picture rel for the made set `set`: generated\ui<scale>\<rel as .bmp>, made now if it isn't there
@@ -218,8 +381,8 @@ PicMake(rel, set)
 	if (srcs[1].scale < set.scale * 0.97)
 		PicEnlarged[dest] := 1
 	;(cut at nearly this size - under 1% off: that picture as it is; resizing a mostly see-through one
-	;that little only loses pixels)
-	if (Abs(set.scale / srcs[1].scale - 1) < 0.01)
+	;that little only loses pixels. Not for a cut set's copy - PicCopySet: resized 1:1, that's what it's for)
+	if (!set.copy && Abs(set.scale / srcs[1].scale - 1) < 0.01)
 		return PicMade[key] := srcs[1].file
 	if (FileExist(dest))
 		{
@@ -507,20 +670,59 @@ DetectUiScale()
 		return false
 	;A cut set within 3% of the guess whose own Pass button (cut at its size: it only matches nearly pixel for pixel,
 	;*3) is the one on screen: that's the size - exact, and quicker than making the button at sizes round the guess
-	;(that missed at 1.141 twice and once came to 1.118 for a 1.144 screen)
+	;(that missed at 1.141 twice and once came to 1.118 for a 1.144 screen). Not as drawn: as it's drawn hovered (the
+	;mouse on it), then both with more colour tolerance (PicCutFind - 2026-10-25 23:15:26 the cut 1.144 one missed at *3,
+	;the screen drawn a little off all evening, and a made 1.130 set was taken for a 1.144 screen)
+	near := 0, duSaid := "Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) ")"
 	for i, set in PicSets
 		{
 		cutPass := set.dir "\resources\roundstart.png"
 		if (set.gen || Abs(set.scale / guess - 1) > 0.03 || !FileExist(cutPass))
 			continue
-		if (PicPassAt(cutPass, "*3 *TransFF00FF", passX, passY, set.scale))
+		if (!near || Abs(set.scale - guess) < Abs(PicSets[near].scale - guess))
+			near := i
+		duTol := (PicCutTol > 3 ? PicCutTol : 3), duPic := "roundstart"
+		if (!PicPassAt(cutPass, "*" duTol " *TransFF00FF", passX, passY, set.scale)
+			&& !PicCutFind(set, ["roundstart_hover", "roundstart"], passX - 110 * set.scale, passY - 45 * set.scale, passX + 110 * set.scale, passY + 45 * set.scale, duTol, duPic))
+			continue
+		DebugLog("UI size: " duSaid "; the Pass button cut at " Round(set.scale, 3) " matches" (duPic = "roundstart_hover" ? " (drawn hovered)" : "") (duTol > 3 ? " at *" duTol : "") " - UI scale " Round(set.scale, 3))
+		PicMeasuredSize := GameW "x" GameH
+		if (i != PicSet)
+			UsePicSet(i, "measured: " duSaid " and the Pass button cut at that size matches")
+		PicCutSlackSet(duTol, duPic)
+		PicCutOk()
+		PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")
+		return true
+		}
+	;A cut set within 1% of the guess - Pass and Flee's distance is read to a pixel or two in 500: that's its size - whose
+	;Pass button isn't there even so (drawn differently tonight, or something over it): its copy made 1:1 (PicCopySet) if
+	;that one's Pass button is there; never a made set fine-tuned to a size a little off (as 2026-10-25 23:15:26's 1.130 for a
+	;1.144 screen - every picture made at the wrong size from then on)
+	if (near && Abs(PicSets[near].scale / guess - 1) <= 0.01)
+		{
+		cp := PicCopySet(near)
+		for each, rel in ["resources\roundstart.png", "resources\roundstart_hover.png"]
 			{
-			DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button cut at " Round(set.scale, 3) " matches - UI scale " Round(set.scale, 3))
+			cpPass := PicMake(rel, PicSets[cp])
+			if (cpPass = "" || SubStr(cpPass, -3) != ".bmp" || !PicPassAt(cpPass, "*" GenTol " *TransFF00FF", passX, passY, PicSets[cp].scale, 2))
+				continue
+			DebugLog("UI size: " duSaid "; the Pass button cut at " Round(PicSets[near].scale, 3) " doesn't match even at *" GenTol " (drawn a little differently), its copy made at that size does" (InStr(rel, "hover") ? " (drawn hovered)" : "") " - UI scale " Round(PicSets[cp].scale, 3))
 			PicMeasuredSize := GameW "x" GameH
-			UsePicSet(i)
+			if (cp != PicSet)
+				UsePicSet(cp, "measured: " duSaid ", the size of the cut set " PicSetName(near) " - its own Pass button doesn't match, its copy's does")
 			PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")
 			return true
 			}
+		PicMeasureWhy := duSaid " - the cut set " PicSetName(near) "'s size, but neither its Pass button nor its copy's is there (something over it?): " PicSetName(PicSet) " kept"
+		return false
+		}
+	;Pass and Flee say another size than the cut set in use at this window's own size: only if its own pictures haven't
+	;been seen at this size for 2 minutes (the spellbook, the Pass button - PicCutOk, with this very set) - else kept, not
+	;measured
+	if (PicCutHome() && !PicSets[PicSet].gen && PicCutOkSize = GameW "x" GameH && PicCutOkSet = PicSet && A_TickCount - PicCutOkAt < 120000)
+		{
+		PicMeasureWhy := duSaid " - but " PicSetName(PicSet) "'s own pictures were seen at this window size " Round((A_TickCount - PicCutOkAt) / 1000) " s ago: kept"
+		return false
 		}
 	PicMeasureWhy := "no Pass button picture to measure with"
 	;Fine-tune: the Pass button made at sizes from 3% under the guess to 3% over, 1% apart, looked for
@@ -578,12 +780,12 @@ DetectUiScale()
 		{
 		other := PicSets[found]
 		p := other.gen ? PicMake("resources\roundstart.png", other) : other.dir "\resources\roundstart.png"
-		if (!PicPassAt(p, other.gen ? "*" GenTol " *TransFF00FF" : "*3", passX, passY, sc))
+		if (!PicPassAt(p, other.gen ? "*" GenTol " *TransFF00FF" : "*" (PicCutTol > 3 ? PicCutTol : 3), passX, passY, sc))
 			found := PicSetFor(sc, 0)
 		}
-	DebugLog("UI size: Pass and Flee are " Round(fleeX - passX) " px apart (UI scale about " Round(guess, 3) "); the Pass button made at that size and a bit off matches at " fitList " - UI scale " sc " (" A_TickCount - tuneFrom " ms)")
+	DebugLog("UI size: " duSaid "; the Pass button made at that size and a bit off matches at " fitList " - UI scale " sc " (" A_TickCount - tuneFrom " ms)")
 	PicMeasuredSize := GameW "x" GameH
-	UsePicSet(found)
+	UsePicSet(found, "measured: " duSaid ", the Pass button made at sizes round that fits best at " sc " (no cut set within 1% of it, nor one whose Pass button is there)")
 	;made now, so the round start and the spellbook are known from here on
 	PicPath("resources\roundstart.png"), PicPath("resources\roundfinish.png")
 	return true

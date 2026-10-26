@@ -290,9 +290,17 @@ SrClick(x, y)
 	{
 	if (!SrOk())
 		return
+	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn; StatsReader has none)
+	if (IsFunc("MouseLockOn"))
+		Func("MouseLockOn").Call("stats")
 	MouseMove, x, y, 5
+	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+	if (IsFunc("MouseLockMoved"))
+		Func("MouseLockMoved").Call()
 	Sleep, 120
 	Click
+	if (IsFunc("MouseLockOff"))
+		Func("MouseLockOff").Call("stats")
 	Sleep, 150
 	}
 

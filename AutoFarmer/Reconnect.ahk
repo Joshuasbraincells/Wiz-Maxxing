@@ -711,13 +711,16 @@ RcLoginFocus(field)
 	if (!RcGameActive())
 		return RcClick(field.cx, field.cy, "the login box's Account field")
 	MouseGetPos, rcMx, rcMy
-	BlockInput, MouseMove
+	;(your mouse locked meanwhile - Settings.ahk MouseLockOn)
+	MouseLockOn("login")
 	MouseMove, % field.cx, % field.cy, 0
+	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+	MouseLockMoved()
 	Sleep, 120
 	Click
 	Sleep, 120
 	MouseMove, %rcMx%, %rcMy%, 0
-	BlockInput, MouseMoveOff
+	MouseLockOff("login")
 	RcLogMsg("clicked into the login box's Account field at " field.cx - GameLeft "," field.cy - GameTop)
 	return true
 	}
@@ -911,10 +914,11 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 			barX := winX + winW // 2, barY := winY + (GameTop - winY) // 2
 			if (GameTop - winY >= 12 && RcOnGame(barX, barY, gameWin))
 				{
-				BlockInput, MouseMove
+				;(Settings.ahk MouseLockOn - it only locks with the game in front, so not for this click)
+				MouseLockOn("login")
 				MouseMove, %barX%, %barY%, 0
 				Click
-				BlockInput, MouseMoveOff
+				MouseLockOff("login")
 				WinWaitActive, ahk_id %gameWin%,, 2
 				}
 			}
@@ -932,12 +936,15 @@ RcFrontClick(pattern, area, what, fuzzy := "")
 	btn := RcFindWord(pattern, area, fuzzy)
 	if (IsObject(btn))
 		{
-		BlockInput, MouseMove
+		;(your mouse locked meanwhile - Settings.ahk MouseLockOn)
+		MouseLockOn("login")
 		MouseMove, % btn.x, % btn.y, 0
+		;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+		MouseLockMoved()
 		Sleep, 150
 		Click
 		Sleep, 150
-		BlockInput, MouseMoveOff
+		MouseLockOff("login")
 		}
 	;(the focus back to your window - not when you've left the PC, nothing touched for 5 minutes: the game stays in front,
 	;else the bot can't walk and the game logs out for inactivity again)

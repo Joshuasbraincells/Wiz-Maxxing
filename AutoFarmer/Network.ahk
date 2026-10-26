@@ -2,7 +2,7 @@
 ; steered from another): every bot on your home network with Settings > Network on - its PC, version, wizard, zone,
 ; on / off, Play for me, what it's doing, health, mana, deaths - and, once you pick it, its recent log and its game's
 ; picture; buttons turn it on or off, switch its Play for me off or restart it (with the network PIN, the same on both
-; PCs - Settings: netpin). Play for me can only be switched OFF from the network: on needs pimpmeout typed at that PC.
+; PCs - Settings: netpin). Play for me can only be switched OFF from the network: on only at that PC (its button).
 ; The vision helper does the talking (vision\netmon.py): NetTick tells it this bot's state every 2 s and takes the
 ; others' and any commands for this one. Settings: neton (off till you switch it on - Windows then asks once to let
 ; Python through its firewall: allow it on Private networks), netport, netpin. AutoHotkey v1.1, #Included by

@@ -25,7 +25,7 @@ global WkPassMin, WkPassKey, WkPassAt
 global WkPromptVerb
 ;When a window's close button was last looked for (WalkCloseWindow)
 global WkCloseLook
-;"Play for me" (AutoFarmer's red button, off at every start): every check for you off - UserIdle
+;"Play for me" (AutoFarmer's button - green while on -, off at every start): every check for you off - UserIdle
 global PlayForMe
 ;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute
 global WkFroTurns, WkFroUntil, WkFroHolds
@@ -2930,12 +2930,20 @@ WalkCloseAfterX()
 			ReleaseKeys()
 			;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
 			ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+			;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
+			if (IsFunc("MouseLockOn"))
+				Func("MouseLockOn").Call("walker")
 			MouseMove, % Round(w.x + w.w / 2), % Round(w.y + w.h / 2), 2
+			;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+			if (IsFunc("MouseLockMoved"))
+				Func("MouseLockMoved").Call()
 			Sleep, 60
 			Click
 			Sleep, 500
 			if (ownGrab)
 				Func("MouseLetGo").Call()
+			if (IsFunc("MouseLockOff"))
+				Func("MouseLockOff").Call("walker")
 			return true
 			}
 	return false
@@ -2970,12 +2978,20 @@ WalkCloseWindow(why, now := false)
 	;(the picture's middle - it's 60 px at UI 1.144; the mouse back where it was afterwards, in AutoFarmer: mousereturn)
 	cwHalf := Round(30 * (UiScale ? UiScale : 1.144) / 1.144)
 	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
+	if (IsFunc("MouseLockOn"))
+		Func("MouseLockOn").Call("walker")
 	MouseMove, % cwX + cwHalf, % cwY + cwHalf, 2
+	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+	if (IsFunc("MouseLockMoved"))
+		Func("MouseLockMoved").Call()
 	Sleep, 80
 	Click
 	Sleep, 700
 	if (ownGrab)
 		Func("MouseLetGo").Call()
+	if (IsFunc("MouseLockOff"))
+		Func("MouseLockOff").Call("walker")
 	ImageSearch, cwX2, cwY2, Round(GameLeft + GameW * 0.3), Round(GameTop + GameH * 0.3), Round(GameLeft + GameW * 0.92), Round(GameTop + GameH * 0.95), % Func("PicOpt").Call("resources\closewin.png", 50)
 	cwGone := ErrorLevel != 0
 	WalkLog(why " - clicked a window's close button at " cwX + cwHalf - GameLeft "," cwY + cwHalf - GameTop ": " (cwGone ? "closed" : "still there"))
@@ -3020,13 +3036,21 @@ WalkClick(x, y)
 		return
 	;(the mouse back where it was afterwards, in AutoFarmer: mousereturn)
 	ownGrab := IsFunc("MouseGrab") ? Func("MouseGrab").Call() : false
+	;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn: the Spiral Map's Go To World, ACCEPT...)
+	if (IsFunc("MouseLockOn"))
+		Func("MouseLockOn").Call("walker")
 	MouseMove, %x%, %y%, 1
+	;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+	if (IsFunc("MouseLockMoved"))
+		Func("MouseLockMoved").Call()
 	Sleep, 40
 	if (Walking && GameActive())
 		Click
 	Sleep, 100
 	if (ownGrab)
 		Func("MouseLetGo").Call()
+	if (IsFunc("MouseLockOff"))
+		Func("MouseLockOff").Call("walker")
 	}
 
 ;One key press (down and up), only while walking is on and Wizard101 has focus
@@ -3487,11 +3511,17 @@ GameActive()
 	}
 
 ;How long you've left the keyboard and mouse alone (ms; the bot's own input doesn't count) - as A_TimeIdlePhysical, which
-;every check for you goes by. "Play for me" on (AutoFarmer: PlayForMe - the red button; off at every start): you're
-;taken as away for good - nothing waits for you, yields to you or keeps its hands off for you
+;every check for you goes by. "Play for me" on (AutoFarmer: PlayForMe - its button, green while on; off at every start):
+;you're taken as away for good - nothing waits for you, yields to you or keeps its hands off for you. In AutoFarmer, what
+;its mouse lock swallowed (your mouse while the bot had it) isn't you either (Settings.ahk MouseLockIdle)
 UserIdle()
 	{
-	return PlayForMe ? 2147483647 : A_TimeIdlePhysical
+	static lockIdle := "-"
+	if (PlayForMe)
+		return 2147483647
+	if (lockIdle = "-")
+		lockIdle := IsFunc("MouseLockIdle") ? Func("MouseLockIdle") : 0
+	return lockIdle ? lockIdle.Call() : A_TimeIdlePhysical
 	}
 
 ;The walking on/off key in words, for the messages that say which key to press: AutoFarmer's (Hotkeys.ahk - yours from
@@ -4269,11 +4299,21 @@ WalkCloseGameMenu(needWalking := true, ByRef seen := "", since := 0)
 	Critical
 	clicked := WalkMenuMayAct(needWalking, from)
 	if (clicked)
+		{
+		;(your mouse locked meanwhile, in AutoFarmer - Settings.ahk MouseLockOn)
+		if (IsFunc("MouseLockOn"))
+			Func("MouseLockOn").Call("walker")
 		Click, % menuOk.x " " menuOk.y
+		;(its clicks too, now the pointer's on the game - Settings.ahk MouseLockMoved)
+		if (IsFunc("MouseLockMoved"))
+			Func("MouseLockMoved").Call()
+		}
 	Critical, Off
 	Sleep, 100
 	if (ownGrab)
 		Func("MouseLetGo").Call()
+	if (clicked && IsFunc("MouseLockOff"))
+		Func("MouseLockOff").Call("walker")
 	if (!clicked)
 		{
 		WalkLog("the game's menu left to you (the bot is off, Wizard101 isn't in front or you've taken over)")

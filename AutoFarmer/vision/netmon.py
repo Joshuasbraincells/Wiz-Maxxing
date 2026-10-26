@@ -14,7 +14,7 @@
                              (Settings: netpin, the same on both PCs; 0: none taken or sent): signed with it (HMAC-SHA256
                              over the command, the bot it's for, the time and a nonce - 2 minutes old at most, each nonce
                              once). AutoFarmer picks it up at its next /net
-  * Play for me can only be switched OFF from the network: on needs pimpmeout typed at that PC (your say-so).
+  * Play for me can only be switched OFF from the network: on only at that PC (its button - your say-so).
 Never sent: the game's login, anything from Credential Manager, the GitHub token, the Discord webhook, the PIN itself,
 file paths."""
 import hashlib

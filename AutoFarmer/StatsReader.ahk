@@ -69,7 +69,7 @@ if (!DetectPicSet())
 	sc := PicScaleFromBook()
 	if (!sc)
 		Fail("Couldn't find the Spellbook icon at the bottom right. Run this outside battle, with nothing over the icon.")
-	UsePicSet(PicSetFor(sc))
+	UsePicSet(PicSetFor(sc), "the Spellbook icon made at every size matches best at " sc)
 	}
 
 charID := StatsCharID()
@@ -102,11 +102,11 @@ DebugLog(msg)
 	FileAppend, % stamp " " msg "`r`n", %A_ScriptDir%\StatsReader.log
 	}
 
-;Picture set i (PicScale.ahk) and its UI size
-UsePicSet(i)
+;Picture set i (PicScale.ahk) and its UI size; why: what chose it
+UsePicSet(i, why := "")
 	{
 	PicSet := i, PicDir := PicSets[i].dir, UiScale := PicSets[i].scale
-	DebugLog("Pictures: " (i = 1 ? "main set" : SubStr(PicDir, StrLen(A_WorkingDir) + 2)) " (UI scale " Round(UiScale, 3) ")")
+	DebugLog("Pictures: " (i = 1 ? "main set" : SubStr(PicDir, StrLen(A_WorkingDir) + 2)) " (UI scale " Round(UiScale, 3) ")" (why != "" ? " - " why : ""))
 	}
 
 ;A picture at the UI size in use: the set's own, or one made at its size (PicMake), else the main one

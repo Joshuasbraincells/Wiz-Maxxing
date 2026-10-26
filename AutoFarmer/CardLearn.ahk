@@ -20,6 +20,12 @@
 ;       damage / aoe, no pips  -> <school>\wand
 ;       heal                   -> <school>\heal1, heal2
 ;       ward                   -> resources\tower (cast on yourself)
+;       absorb                 -> resources\absorb (soaks N damage: cast on yourself on Tower Shield's turns)
+;       sharpen, potent        -> resources\sharpen, resources\potent (Sharpened Blade, Potent Trap - at least the %
+;                                 PlayerStats.txt counts: sharpen:, potent:)
+;       prism (your school's)  -> <school>\convert (cast at the boss picked with Alt+1 when it's of your school)
+;       bubble (a global)      -> <school>\bubble - one that boosts your school's damage as the game's memory read it
+;                                 (flag boost=), or one you set as a bubble on the Spells tab
 ;       blade                  -> resources\blade3 for Balanceblade ("+25% to next spell"), <school>\blade for one
 ;       trap, aura                naming your school, resources\trap3 for a trap on the next spell, <school>\aura -
 ;                                 only at the % PlayerStats.txt counts for that slot (blade3:, blade:, trap3:, aura:),
@@ -30,8 +36,9 @@
 ;     (LearnArrange - learnupgrade:0 switches it off): the weakest leaves and hit1-3 are kept weakest to
 ;     strongest, everything that was there kept in backups\hits <school> <when> (<id>)\ and put back when you
 ;     forget the card or change its kind on the Spells tab
-;   - otherwise (no free slot, or a kind the bot doesn't play: damage over time, stun, dispel, prism...) it's
-;     only kept, and recognised from then on (it's tried for a slot again whenever it's in hand)
+;   - otherwise (no free slot, or a kind the bot doesn't play: damage over time, stun, dispel, a curse, a minion...)
+;     it's only kept, and recognised from then on (it's tried for a slot again whenever it's in hand). A negative aura
+;     (Attenuate) has no slot: the battle casts it at its box by the game's hand (KillCalc.ahk NegAuraMem)
 ; A pip cost that couldn't be read is guessed as the pips you have (the card's in colour), and brought down
 ; whenever the card shows up in colour with fewer; a digit read is the card's own and is kept.
 ; The game's memory (Vision.ahk VisionCards - vision\handmem.py, read-only: nothing in the game is written, no key or
@@ -45,7 +52,9 @@
 ; put right whenever the game's hand has a card of that name (LearnMemNamed). A blade, trap or Tower Shield the game names
 ; whose slot's picture the battle's look doesn't find on it twice running gets the card's own picture there (the old one
 ; in backups\ - LearnBoostPicFix); meanwhile the battle casts it at its card box by the game's hand (KillCalc.ahk
-; BoostMemBox, TowerMem).
+; BoostMemBox, TowerMem). A global (a bubble) the game names is learned as one (kind bubble, its % and the schools whose
+; damage it adds to: flag boost=); the battle casts your school's bubble no picture finds at its box the same way
+; (KillCalc.ahk BubbleMem, Autofarmer.ahk ClickBubble), and one in no slot it casts so isn't discarded (LearnBubbleCast).
 ; Out of battle, once a run (LearnOutOfBattle): learned "cards" that aren't cards are moved to backups\learned
 ; junk\, and a learned card's picture left in a slot that isn't its own is taken out (backups\learned strays\).
 ; Everything learned is listed in learned\cards.txt (and on the dashboard's Spells tab); debug.log: "learned a
@@ -75,9 +84,9 @@ global LearnArrangeQueue, LearnRunDone, LearnRereadsLeft
 
 ;---- Discarding what the bot never plays (normal battles) ----
 ;Once a round, after the hand's been read and learned (LastHandAnswer): every card in it the bot knows for sure
-;it never plays - a learned card in no slot: a charm, a global, a minion... it has no use for, a kind it doesn't
-;play (a stun, damage over time...), one taken out of its slot by a stronger card, or one more card of a kind whose
-;slots are all taken - is right-clicked away, so the next round draws cards it can use. Not: its own cards (hits,
+;it never plays - a learned card in no slot: a charm, a global that doesn't boost your school, a minion... it has no
+;use for, a kind it doesn't play (a stun, damage over time...), one taken out of its slot by a stronger card, or one
+;more card of a kind whose slots are all taken - is right-clicked away, so the next round draws cards it can use. Not: its own cards (hits,
 ;heals, blades, traps... - spare blades and Sharpen have their own rule, DiscardSpare), cards it doesn't know
 ;(greyed out - they may be its own; in colour they're learned first, and go next round if they get no slot), a
 ;treasure card (discarding one uses it up), one you said never to discard (Spells tab), a box that isn't a card,
@@ -108,7 +117,8 @@ DiscardUnused()
 	own := []
 	for k, o in [[hit1, hit1X], [hit2, hit2X], [hit3, hit3X], [hit4, hit4X], [wand, wandX], [heal1, heal1X], [heal2, heal2X]
 		, [blade, BladeX], [blade3, Blade3X], [blade4, Blade4X], [sharpen, SharpX], [potent, PotentX], [trap, trapX]
-		, [trap3, trap3X], [aura, auraX], [tower, towerX], [reshuffle, reshuffleX], [feint, feintX], [bubble, bubbleX], [convert, convertX]]
+		, [trap3, trap3X], [aura, auraX], [tower, towerX], [reshuffle, reshuffleX], [feint, feintX], [bubble, bubbleX], [convert, convertX]
+		, [absorb, absorbX]]
 		if (o[1] == 1 && o[2] != "")
 			own.Push(o[2])
 	did := 0, i := 1
@@ -144,6 +154,17 @@ DiscardUnused()
 			;picture finds at its box - KillCalc.ahk TowerMem, Autofarmer.ahk UseMemAt; another shield - a school's, a
 			;team's - in no slot is never cast: thrown away as before)
 			|| (lc.type = "ward" && Stat("usetower") && BoostMemOk && RegExMatch(LearnFlag(lc, "game") "|" lc.name, "i)\btower\s*shield\b"))
+			;(nor a bubble - a global - with your school's bubble slot free for it, or one the bot casts at its box by the game's
+			;hand this round - KillCalc.ahk BubbleMatches, LearnBubbleCast; one that doesn't boost your school, or the global
+			;put up already this battle: thrown away as before)
+			|| (lc.type = "bubble" && (LearnSlotFor(lc) != "" || (IsFunc("LearnBubbleCast") && Func("LearnBubbleCast").Call(lc))))
+			;(2026-10-26: nor an absorb the bot casts - Tower Shield on (and useabsorb): its slot free for it, or the game's hand
+			;read (cast at its box on Tower Shield's turns - KillCalc.ahk AbsorbMem); nor a negative aura that adds damage taken
+			;(an Attenuate, flag boost= - a trap before, never thrown away; Starfall and Pathogen go as before); nor a Sharpened
+			;Blade, Potent Trap or your prism with its slot free for it)
+			|| (lc.type = "absorb" && Stat("usetower") && StatOr("useabsorb", 1) && (BoostMemOk || LearnSlotFor(lc) != ""))
+			|| (lc.type = "negaura" && LearnFlag(lc, "boost") != "")
+			|| ((lc.type = "sharpen" || lc.type = "potent" || lc.type = "prism") && LearnSlotFor(lc) != "")
 			;(a hit of the school while no hit1-3 in hand can go: cast this round instead - LearnHitCards)
 			|| (LearnIsHit(lc) && Stat("learnedhits") && !((hit1 == 1 && Affordable("hit1")) || (hit2 == 1 && Affordable("hit2")) || (hit3 == 1 && Affordable("hit3")))))
 			{
@@ -336,10 +357,11 @@ LearnSure(c)
 ;spell" - the + often read as something else, or lost. Not a "-25%" (a weakness, a shield), nor a Sharpen (it's put
 ;on a blade - its text says so). Now only for cards an older version learned (LearnLoad): new ones need the charm icon.
 ;Never one with a shield's icon (icon=ward - a shield's or a trap's): its - or + lost ("?50% to next" - a Tower Shield,
-;a Thermic Shield, learned 2026-10-24 by OCR) made it a blade at every load, 2026-10-25
+;a Thermic Shield, learned 2026-10-24 by OCR) made it a blade at every load, 2026-10-25. Nor a global's (a bubble - its
+;text says Global: LearnKindOf)
 LearnLooksBlade(c)
 	{
-	return (c.type = "" || c.type = "blade") && LearnIconOf(c) != "ward" && RegExMatch(c.text, "i)\d{1,3}\s*%\s*to\s*next") && !RegExMatch(c.text, "-\s*\d{1,3}\s*%") && !RegExMatch(c.text, "i)blade")
+	return (c.type = "" || c.type = "blade") && LearnIconOf(c) != "ward" && RegExMatch(c.text, "i)\d{1,3}\s*%\s*to\s*next") && !RegExMatch(c.text, "-\s*\d{1,3}\s*%") && !RegExMatch(c.text, "i)blade|gl[o0]ba[l1]")
 	}
 
 ;Why learned card id isn't one the bot plays (for the log)
@@ -374,8 +396,32 @@ LearnWhyNot(c)
 		return "no free slot for it (its numbers weren't read for sure)"
 	if ((c.type = "blade" || c.type = "trap") && LearnFlag(c, "boost") != "")
 		return "no free slot for a " c.type " that boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) (c.value != "" ? " at " c.value "%" : "")
+	;(a bubble: the slot is your school's - one that doesn't boost its damage isn't cast)
+	if (c.type = "bubble" && !(IsFunc("LearnBubbleFits") && Func("LearnBubbleFits").Call(c)))
+		return "a bubble that doesn't boost " (c.sch != "" ? c.sch "'s" : "your school's") " damage" (LearnFlag(c, "boost") != "" ? " (it boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) ")" : "") " - set its kind to Bubble on the Spells tab to use it"
+	;(the slot's learned card another global: only that one is the bubble - KillCalc.ahk BubbleSlotName, the catalog alone)
+	lwnSlot := (c.type = "bubble" && c.sch != "" && IsFunc("BubbleSlotName")) ? Func("BubbleSlotName").Call(c.sch) : ""
+	if (lwnSlot != "" && lwnSlot != LearnFlag(c, "game") && lwnSlot != Trim(c.name))
+		return "no free slot for it - " c.sch "\bubble is " lwnSlot "'s (only that one is cast)"
+	if (c.type = "bubble")
+		return "no free slot for it (" (c.sch != "" ? c.sch : "your school") "\bubble has a picture) - cast at its box by the game's hand when no picture finds the bubble"
 	if (c.type = "blade" || c.type = "trap" || c.type = "aura")
 		return "no free slot for it at its % (PlayerStats.txt counts its slot at another)"
+	;(the kinds since 2026-10-26)
+	if (c.type = "negaura")
+		return (LearnFlag(c, "boost") = "") ? "a negative aura that adds no damage taken (Starfall, Pathogen...) - not played"
+			: "no slot - cast at its box by the game's hand on the trap target before the hits, once in 4 rounds an enemy, when it adds to the planned hit's "
+			. (LearnFlag(c, "boost") = "all" ? "damage" : StrReplace(LearnFlag(c, "boost"), "+", ", ") " damage")
+	if (c.type = "absorb")
+		return "no free slot for it (resources\absorb has a picture) - cast at its box by the game's hand on Tower Shield's turns (defending; the filler only one that costs no pips)"
+	lwnWant := ((c.type = "sharpen" || c.type = "potent") && IsFunc("LearnStatOf")) ? Func("LearnStatOf").Call(c.sch, c.type) : ""
+	if (c.type = "sharpen" || c.type = "potent")
+		return (c.value != "" && lwnWant != "" && c.value + 0 < lwnWant + 0)
+			? "below the % PlayerStats.txt counts for it (" c.type ": " lwnWant ")" : "no free slot for it (resources\" c.type " has a picture)"
+	if (c.type = "prism")
+		return !(IsFunc("LearnPrismFits") && Func("LearnPrismFits").Call(c)) ? (LearnHasFlag(c, "mem") ? "a prism of another school (" LearnFlag(c, "school") ") - only your school's goes in " (c.sch != "" ? c.sch : "your school") "\convert"
+			: "its school isn't sure (read off the card) - set its kind to Prism on the Spells tab to use it as " (c.sch != "" ? c.sch : "your school") "\convert")
+			: "no free slot for it (" c.sch "\convert has a picture)"
 	return "no free slot for it"
 	}
 
@@ -673,10 +719,10 @@ LearnNew(card)
 		if (r.item)
 			LearnSetFlag(c, "item")
 		;(what it does by school, as the game has it: a hit's heads - Hydra's fire, ice and storm, KillCalc.ahk HitHeads -, a
-		;blade's or trap's schools - the slot it goes in, LearnBoostSlot)
+		;blade's or trap's schools - the slot it goes in, LearnBoostSlot -, a bubble's: whose damage it adds to, LearnBubbleFits)
 		if (r.sure && (r.kind = "damage" || r.kind = "aoe") && r.heads != "")
 			LearnSetFlag(c, "heads", r.heads)
-		if (r.sure && (r.kind = "blade" || r.kind = "trap" || r.kind = "aura") && r.boost != "")
+		if (r.sure && (r.kind = "negaura" || r.kind = "blade" || r.kind = "trap" || r.kind = "aura" || r.kind = "bubble") && r.boost != "")
 			LearnSetFlag(c, "boost", r.boost)
 		}
 	else if (card.tc)
@@ -771,9 +817,9 @@ LearnDotMark(text)
 ;A card's kind from the text read off it and its icon (cardicons\: damage, aoe, heal, ward, charm, manip; "" none) -
 ;{kind, value, extra}: extra "dot=<n>" (damage over time besides the hit), "xpip". sch: the card's school (an aura
 ;names it, or "all spells"). In this order: a stun ("Stun all enemies"), a dispel, a prism ("Convert next..."),
-;"N times Clear"; a hit (damage / aoe icon, or none with a range - "all enemies" an aoe): its range's lowest, the
-;up-front number when there's damage over time too ("540 + 435 (3)"), damage over time alone ("525 over 3 rounds",
-;"950 (3)"), an X-pip spell ("85 per pip"); a heal; a % - a shield icon's "-50%" a shield, its "+25%" a trap, a charm's
+;"N times Clear", a global with a % (a bubble: "Global: +25% Ice damage"); a hit (damage / aoe icon, or none with a
+;range - "all enemies" an aoe): its range's lowest, the up-front number when there's damage over time too ("540 + 435
+;(3)"), damage over time alone ("525 over 3 rounds", "950 (3)"), an X-pip spell ("85 per pip"); a heal; a % - a shield icon's "-50%" a shield, its "+25%" a trap, a charm's
 ;"+25% to next" a blade (its "-%" a weakness), "+15% to all spells" an aura; else unknown (kind ""). Numbers of two
 ;digits or more only (OCR makes single ones out of nothing)
 LearnKindOf(text, icon, sch := "")
@@ -791,6 +837,9 @@ LearnKindOf(text, icon, sch := "")
 		return {kind: "prism", value: "", extra: ""}
 	if (RegExMatch(low, "\bc[l1]ear\b"))
 		return {kind: "clear", value: "", extra: ""}
+	;(a global - a bubble: "Global: +25% Ice damage" as the game's memory writes it - never an aura or a blade for its %)
+	if (hasPct && RegExMatch(low, "gl[o0]ba[l1]"))
+		return {kind: "bubble", value: pm.Value(2) + 0, extra: ""}
 	;(a damage enchant - Strong, Giant, Monstrous, Gargantuan, Colossal, Epic: "+175 [fist] to 1 spell" - a number that
 	;isn't a % (OCR: "0175", "t175"), "spell" with no "next" / "all" / "enemies" / range / "per pip": the damage it adds,
 	;when it's one PlayerStats.txt knows (enchantN) - Epic's accuracy % besides is allowed)
@@ -1225,11 +1274,11 @@ LearnMemGame(m)
 
 ;A card as the game's memory has it (VisionCards' card m) in the learner's words: {kind (LearnTypes' - one it doesn't
 ;have: keep), value (the number the learner keeps: a hit's least damage, every head added - an X-pip hit's a pip -, a
-;heal's, the % of a shield, blade, trap, aura or weakness, an enchant's damage; "" none), extra (dot=<n>, xpip - as
+;heal's, the % of a shield, blade, trap, aura or weakness, an enchant's damage, a bubble's %; "" none), extra (dot=<n>, xpip - as
 ;LearnKindOf's), text (about as the card says it), name (the name on the card), game (LearnMemGame), school (lower
 ;case, "" not one of LearnSchools), pips (0 for X; "" not read), xpip, tc, item, two: 0, heads (a hit's damage by school as
-;flag heads= keeps it: "fire:230+ice:230+storm:230"; "" not known), boost (what a blade, trap or aura boosts, as flag boost=
-;keeps it: "fire+ice+storm", "all"; "" not known)}
+;flag heads= keeps it: "fire:230+ice:230+storm:230"; "" not known), boost (what a blade, trap, aura or bubble boosts, as flag
+;boost= keeps it: "fire+ice+storm", "all"; "" not known)}
 LearnMemRead(m)
 	{
 	;(no kind from the game - its effects cut short: unknown, not "keep"; sure 0: its kind and numbers aren't the game's)
@@ -1237,7 +1286,7 @@ LearnMemRead(m)
 	for lmrI, lmrT in LearnTypes()
 		if (lmrT.kind = m.kind && m.kind != "xpip")
 			lmrKind := m.kind
-	lmrValue := InStr(",damage,aoe,heal,ward,blade,trap,aura,weakness,enchant,", "," lmrKind ",") ? m.num : ""
+	lmrValue := InStr(",damage,aoe,heal,ward,blade,trap,aura,weakness,enchant,bubble,absorb,negaura,sharpen,potent,curse,charm,pips,", "," lmrKind ",") ? m.num : ""
 	lmrExtra := ((lmrKind = "damage" || lmrKind = "aoe" || lmrKind = "dot") && m.dot != "") ? "dot=" m.dot : ""
 	if (m.xpip)
 		lmrExtra .= (lmrExtra = "" ? "" : ",") "xpip"
@@ -1316,7 +1365,7 @@ LearnApplyMem(c, r)
 			LearnSetFlag(c, "heads", r.heads)
 		else
 			LearnDropFlag(c, "heads")
-		if ((r.kind = "blade" || r.kind = "trap" || r.kind = "aura") && r.boost != "")
+		if ((r.kind = "negaura" || r.kind = "blade" || r.kind = "trap" || r.kind = "aura" || r.kind = "bubble") && r.boost != "")
 			LearnSetFlag(c, "boost", r.boost)
 		else
 			LearnDropFlag(c, "boost")
@@ -1333,7 +1382,9 @@ LearnApplyMem(c, r)
 	if (!lamUser && c.slot != "" && LearnFlag(c, "boost") != "" && IsFunc("LearnBoostSlotOf") && Func("LearnBoostSlotIs").Call(c.slot)
 		&& Func("LearnBoostSlotOf").Call(c) != c.slot)
 		return LearnUnplace(c, "the game says it boosts " LearnFlag(c, "boost")) ? 2 : 1
-	if (c.slot != "" && c.type != lamKind)
+	;(a Reshuffle stays in its own slot - only a Reshuffle gets it - whatever kind the game gives it: keep before 2026-10-26,
+	;manipulation since)
+	if (c.slot != "" && c.type != lamKind && c.slot != "resources\reshuffle")
 		return LearnUnplace(c, "the game says it's " LearnKindLabel(c.type)) ? 2 : 1
 	if (c.slot != "" && (c.value != lamValue || c.pips != lamPips))
 		{
@@ -1414,6 +1465,37 @@ LearnIsReshuffle(c)
 	return IsObject(c) && RegExMatch(LearnFlag(c, "game") "|" c.name, "i)\breshuffle\b")
 	}
 
+;Whether learned bubble c (a global) fits its wizard's bubble slot (<school>\bubble - LearnSlotFor): one you set as a bubble
+;(flag user), else one that boosts the damage of c.sch, the school it was learned for (flag boost=, the game's: that school's
+;or every school's - KillCalc.ahk BubbleHelps)
+LearnBubbleFits(c)
+	{
+	if (!IsObject(c) || c.type != "bubble")
+		return false
+	if (LearnHasFlag(c, "user"))
+		return true
+	return IsFunc("BubbleHelps") && Func("BubbleHelps").Call(LearnFlag(c, "boost"), c.sch)
+	}
+
+;Whether learned bubble c in no slot is one the battle casts at its card box by the game's hand this round (KillCalc.ahk
+;BubbleMatches' rule on the catalog's words) - so it isn't thrown away (DiscardUnused): the bubble on (usebubble), the game's
+;hand read this look (BoostMemOk), your own school's hits (not another wizard's - HammerSchool), its name in the game the
+;bubble slot's card's (BubbleSlotName) - none known: one that boosts your school's damage (flag boost=) - and not the
+;global the bot put up this battle (BubbleUp: never cast twice)
+LearnBubbleCast(c)
+	{
+	global BoostMemOk, BubbleUp, HammerSchool
+	if (!IsObject(c) || c.type != "bubble" || !Stat("usebubble") || !BoostMemOk || hitschool = "" || HammerSchool != hitschool || !IsFunc("BubbleSlotName"))
+		return false
+	lbcG := LearnFlag(c, "game"), lbcNm := (lbcG != "") ? lbcG : Trim(c.name)
+	if (BubbleUp != "" && lbcNm = BubbleUp)
+		return false
+	lbcSlot := Func("BubbleSlotName").Call(hitschool)
+	if (lbcSlot != "")
+		return lbcNm = lbcSlot
+	return Func("BubbleHelps").Call(LearnFlag(c, "boost"), hitschool)
+	}
+
 LearnSlotFor(c)
 	{
 	;(Reshuffle: its own slot - cast when nothing else can go (Use Reshuffle) - whatever the game calls its kind)
@@ -1451,6 +1533,11 @@ LearnSlotFor(c)
 		}
 	if (kd = "ward")
 		return LearnFree("resources\tower") ? "resources\tower" : ""
+	;(a bubble - a global, all of the battle: <school>\bubble, your school's, cast before a hit (usebubble) - one that boosts
+	;your school's damage as the game read it (flag boost=: your school's or every school's), or one you set as a bubble on
+	;the Spells tab; a global that only changes healing or pierce, or boosts another school, is kept, not used)
+	if (kd = "bubble")
+		return (sch != "" && IsFunc("LearnBubbleFits") && Func("LearnBubbleFits").Call(c) && LearnFree(sch "\bubble")) ? sch "\bubble" : ""
 	;(a blade or trap whose schools the game's memory read - flag boost=: the slot they say, LearnBoostSlot - an Elemental
 	;Blade in resources\elementalblade, a pet's Stormblade in storm\blade; not by its text, which put an Ice wizard's
 	;Elemental Blade - "+35% to next Ice, Storm, Fire spell" - in ice\blade)
@@ -1486,7 +1573,34 @@ LearnSlotFor(c)
 				slot := e[2] "\" e[3]
 		return (LearnFree(slot) || !LearnRealPic(A_WorkingDir (c.dir = "" ? "" : "\" c.dir) "\" slot ".png")) ? slot : ""
 		}
+	;(2026-10-26: an absorb - soaks N damage - in resources\absorb, cast on you on Tower Shield's turns (KillCalc.ahk AbsorbMem;
+	;the filler only one that costs no pips); a Sharpened Blade / Potent Trap in the battle's own resources\sharpen / potent -
+	;at least the % PlayerStats.txt counts for it (sharpen:, potent: - the kill check adds that), a number not read: any; your
+	;school's prism in <school>\convert - cast at the boss picked with Alt+1 when it's of your school (Autofarmer.ahk
+	;NeedsConvert). A negative aura has no slot: cast at its box by the game's hand - KillCalc.ahk NegAuraMem)
+	if (kd = "absorb")
+		return LearnFree("resources\absorb") ? "resources\absorb" : ""
+	if (kd = "sharpen" || kd = "potent")
+		{
+		want := LearnStatOf(sch, kd)
+		return ((c.value = "" || want = "" || c.value + 0 >= want + 0) && LearnFree("resources\" kd)) ? "resources\" kd : ""
+		}
+	if (kd = "prism")
+		return (sch != "" && IsFunc("LearnPrismFits") && Func("LearnPrismFits").Call(c) && LearnFree(sch "\convert")) ? sch "\convert" : ""
 	return ""
+	}
+
+;Whether learned prism c is its own wizard's school's (c.sch): <school>\convert's card - converts your school's hits at a
+;boss that resists them. The game's memory read it (flag mem) and its school (flag school=) is none - the wizard's own - or
+;the same; one you set as a prism (flag user) whatever it is. A prism read off the card by OCR: its school isn't sure - no
+LearnPrismFits(c)
+	{
+	if (!IsObject(c) || c.type != "prism" || c.sch = "")
+		return false
+	if (LearnHasFlag(c, "user"))
+		return true
+	lpfS := LearnFlag(c, "school")
+	return LearnHasFlag(c, "mem") && (lpfS = "" || lpfS = c.sch)
 	}
 
 ;The slot learned blade or trap c goes in by its schools as the game read them (flag boost=), free or not: one school's
@@ -2332,9 +2446,10 @@ LearnReconcile()
 ;The slots a learned card of school sch can be in
 LearnSlotNames(sch)
 	{
-	lsnOut := [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", "resources\blade3", "resources\trap3", "resources\tower"
+	lsnOut := [sch "\hit1", sch "\hit2", sch "\hit3", sch "\hit4", sch "\wand", sch "\heal1", sch "\heal2", sch "\blade", sch "\trap", sch "\aura", sch "\bubble", "resources\blade3", "resources\trap3", "resources\tower"
 		, "resources\strong", "resources\giant", "resources\monstrous", "resources\gargantuan", "resources\colossal", "resources\epic"
-		, "resources\blade4", "resources\feint", "resources\elementalblade", "resources\elementaltrap", "resources\spiritblade", "resources\spirittrap"]
+		, "resources\blade4", "resources\feint", "resources\elementalblade", "resources\elementaltrap", "resources\spiritblade", "resources\spirittrap"
+		, "resources\absorb", "resources\sharpen", "resources\potent", sch "\convert"]
 	;(and every other school's blade and trap: a pet's Stormblade on a Balance wizard goes in storm\blade - LearnBoostSlot)
 	for lsnI, lsnS in ["storm", "fire", "ice", "myth", "life", "death"]
 		if (lsnS != sch)
@@ -2922,28 +3037,50 @@ LearnWritten(paths, add)
 
 ;---- The Spells tab's (Spells.ahk) - call on the main thread, out of battle ----
 
-;The kinds a learned card can be: [{kind, label, played (the bot casts it), menu (offered on the Spells tab)}]
+;The kinds a learned card can be: [{kind, label, played (the bot casts it), menu (offered on the Spells tab)}]. Since
+;2026-10-26 every battle spell type of the game's own list (m_sTypeName, its files read - vision\handmem.py kind_of) has
+;one: played - an absorb as a shield on you (resources\absorb, on Tower Shield's turns - KillCalc.ahk AbsorbMem), a
+;negative aura on the trap target (Attenuate: by the game's hand - NegAuraMem), Sharpened Blade / Potent Trap in the
+;battle's resources\sharpen / potent, your school's prism in <school>\convert (cast at a boss of your school); not played
+;but named - a curse, a charm that isn't a blade, another enchantment, a mutation, a shadow form, a minion, a pips or
+;another manipulation spell. A kind an older bot doesn't know (its cards.txt line read by it) is "not played" there
 LearnTypes()
 	{
 	static types := ""
 	if (!IsObject(types))
+		{
+		;(in parts: one list of 30 is an expression too long for AutoHotkey v1)
 		types := [{kind: "damage", label: "Hits one enemy", played: 1, menu: 1}
 			, {kind: "aoe", label: "Hits all enemies", played: 1, menu: 1}
 			, {kind: "heal", label: "Heals you", played: 1, menu: 1}
 			, {kind: "ward", label: "Shield (cast on you)", played: 1, menu: 1}
+			, {kind: "absorb", label: "Absorb (soaks N damage - cast on you)", played: 1, menu: 1}
 			, {kind: "blade", label: "Blade", played: 1, menu: 1}
 			, {kind: "trap", label: "Trap", played: 1, menu: 1}
 			, {kind: "aura", label: "Aura", played: 1, menu: 1}
-			, {kind: "enchant", label: "Enchant (+N damage on a hit)", played: 1, menu: 1}
+			, {kind: "bubble", label: "Bubble (a global spell - all of the battle)", played: 1, menu: 1}
+			, {kind: "negaura", label: "Negative aura (on an enemy for 4 rounds)", played: 1, menu: 1}]
+		types.Push({kind: "enchant", label: "Enchant (+N damage on a hit)", played: 1, menu: 1}
+			, {kind: "sharpen", label: "Sharpened Blade (+N% on a blade)", played: 1, menu: 1}
+			, {kind: "potent", label: "Potent Trap (+N% on a trap)", played: 1, menu: 1}
+			, {kind: "prism", label: "Prism (converts the school)", played: 1, menu: 1}
 			, {kind: "dot", label: "Damage over time", played: 0, menu: 1}
 			, {kind: "stun", label: "Stun", played: 0, menu: 1}
 			, {kind: "dispel", label: "Dispel", played: 0, menu: 1}
-			, {kind: "prism", label: "Prism (converts the school)", played: 0, menu: 1}
 			, {kind: "clear", label: "Removes shields or charms (N times Clear)", played: 0, menu: 1}
+			, {kind: "weakness", label: "Weakness (-N% on an enemy's next hit)", played: 0, menu: 1}
+			, {kind: "curse", label: "Curse (an enemy's accuracy or healing down)", played: 0, menu: 1})
+		types.Push({kind: "charm", label: "Charm, not a blade (spear, accuracy, healing)", played: 0, menu: 1}
+			, {kind: "enchantother", label: "Enchantment, other (accuracy, protect, cloak...)", played: 0, menu: 1}
+			, {kind: "mutate", label: "Mutation (turns a spell in hand into another)", played: 0, menu: 1}
 			, {kind: "polymorph", label: "Polymorph / shift (Moon)", played: 0, menu: 1}
-			, {kind: "weakness", label: "Weakness", played: 0, menu: 0}
+			, {kind: "shadow", label: "Shadow form or creature (shadow pips)", played: 0, menu: 1}
+			, {kind: "minion", label: "Minion (summons one, or works on yours)", played: 0, menu: 1}
+			, {kind: "pips", label: "Pips (gives you or an ally pips)", played: 0, menu: 1}
+			, {kind: "manipulation", label: "Manipulation (steal charm / ward, aggro, push...)", played: 0, menu: 1}
 			, {kind: "xpip", label: "X-pip spell", played: 0, menu: 0}
-			, {kind: "keep", label: "Not used (stays in the list)", played: 0, menu: 1}]
+			, {kind: "keep", label: "Not used (stays in the list)", played: 0, menu: 1})
+		}
 	return types
 	}
 
@@ -2956,7 +3093,8 @@ LearnKindLabel(kind)
 	return "unknown"
 	}
 
-;Whether the bot plays kind (dot, stun, dispel, prism, clear, weakness, xpip, keep and "" it doesn't: no slot)
+;Whether the bot plays kind (dot, stun, dispel, clear, weakness, curse, charm, enchantother, mutate, polymorph, shadow,
+;minion, pips, manipulation, xpip, keep, one it doesn't know and "" it doesn't: no slot)
 LearnPlayed(kind)
 	{
 	for i, t in LearnTypes()
@@ -3137,6 +3275,17 @@ LearnDescribe(c)
 	pips := LearnHasFlag(c, "xpip") ? "X pips (all you have)" : (c.pips = "") ? "pips unknown" : c.pips " pip" (c.pips = 1 ? "" : "s") (c.guess ? " (guessed)" : "")
 	v := (c.value = "") ? "?" : c.value, dt := LearnFlag(c, "dot"), kd := c.type
 	ot := (dt != "") ? " (+" dt " over time)" : ""
+	;(the kinds since 2026-10-26 - every spell type of the game's: LearnTypes)
+	ldTx := (c.text != "") ? " (" c.text ")" : ""
+	ldMore := {absorb: "an absorb (soaks " v " damage" (LearnHasFlag(c, "xpip") ? " a pip" : "") " - cast on you)"
+		, negaura: "a negative aura" (c.text != "" ? ldTx : " (+" v "% damage taken, on an enemy for 4 rounds)")
+		, sharpen: "a Sharpened Blade (+" v "% on a blade)", potent: "a Potent Trap (+" v "% on a trap)"
+		, curse: "a curse" ldTx, charm: "a charm, not a blade" ldTx, enchantother: "an enchantment" ldTx
+		, mutate: "a mutation (turns a spell in hand into another)", polymorph: "a polymorph / shift (Moon)"
+		, shadow: "a shadow form or creature (shadow pips)", minion: "a minion spell" ldTx, pips: "gives pips" (c.value != "" ? " (" c.value ")" : "")
+		, manipulation: "a manipulation spell" ldTx}
+	if (kd != "" && ldMore.HasKey(kd))
+		return (c.name != "" ? c.name ": " : "") ldMore[kd] ", " pips
 	if (kd = "damage")
 		d := "hits one enemy for " v ot
 	else if (kd = "aoe")
@@ -3151,6 +3300,8 @@ LearnDescribe(c)
 		d := "a trap (" (c.value != "" ? "+" c.value "%" : c.text) ")"
 	else if (kd = "aura")
 		d := "an aura (+" v "% for 4 rounds)"
+	else if (kd = "bubble")
+		d := "a bubble (a global" (c.value != "" ? ", " c.value "%" : "") (LearnFlag(c, "boost") != "" ? " - boosts " (LearnFlag(c, "boost") = "all" ? "every school" : StrReplace(LearnFlag(c, "boost"), "+", ", ")) : "") ")"
 	else if (kd = "enchant")
 		d := "an enchant (+" v " damage on a hit)"
 	else if (kd = "dot")
@@ -3247,7 +3398,7 @@ LearnSlotWithPicture(c)
 LearnSave()
 	{
 	out := "; Cards AutoFarmer learned by itself (CardLearn.ahk), one per line:`r`n"
-		. "; id|school it was learned for|kind (damage = one enemy, aoe = all, heal, ward = a shield, blade, trap, aura; not played: dot = damage over time, stun, dispel, prism, clear, weakness, xpip, keep; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it|name|flags`r`n"
+		. "; id|school it was learned for|kind (damage = one enemy, aoe = all, heal, ward = a shield, absorb, blade, trap, aura, bubble = a global, negaura = a negative aura, enchant, sharpen, potent, prism; not played: dot = damage over time, stun, dispel, clear, weakness, curse, charm, enchantother, mutate, polymorph, shadow, minion, pips, manipulation, xpip, keep; blank = unknown)|pips|pips guessed (1)|number on the card|single target (1)|slot it's used as|UI scale|picture set|when|text read off it|name|flags`r`n"
 		. "; flags: ok = checked, it's a card; icon=<its type icon>; tc = a treasure card; item = an item card (the game's); two = two reads agreed; dot=<damage over time>; xpip; mem = read from the game's memory (kind, number, pips); game=<its name in the game>; school=<its own school>; user = set on the Spells tab (never changed by itself); hold = never discarded; out=<id> = taken out of its slot by that card; snap=<backups folder of the hits it was put in by>`r`n"
 		. "; Pictures: <picture set>\learned\<id>.card.png (whole card) and .png (the picture cut from it). Older versions read the first 12 fields only.`r`n"
 	for i, c in LearnedCards

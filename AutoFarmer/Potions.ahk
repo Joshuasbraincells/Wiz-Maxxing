@@ -606,11 +606,16 @@ PotionReplay(route)
 				}
 			;(the mouse back where it was afterwards, unless that's done at the end of the run: mousereturn)
 			ownGrab := MouseGrab()
+			;(your mouse locked meanwhile - Settings.ahk MouseLockOn; its clicks too, once the pointer's on the game -
+			;MouseLockMoved)
+			MouseLockOn("route")
 			MouseMove, %x%, %y%, 3
+			MouseLockMoved()
 			Sleep, 120
 			Click
 			if (ownGrab)
 				MouseLetGo()
+			MouseLockOff("route")
 			}
 		else if (f[2] = "zone")
 			{

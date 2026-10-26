@@ -5,7 +5,8 @@
 ; changed there, each in its own line with its comment kept (one the file doesn't have yet goes at its end),
 ; and the bot uses them from its next click or round on: no restart. Point at a setting to see what it does.
 ;
-; Also here: the mouse put back where it was when the bot took it (MouseGrab / MouseLetGo, mousereturn).
+; Also here: the mouse put back where it was when the bot took it (MouseGrab / MouseLetGo, mousereturn), and your mouse
+; locked while the bot uses it (MouseLockOn / MouseLockOff, mouselock).
 
 ;The window; its help line and its note by the buttons; each setting's control (key -> hwnd), the value it
 ;showed (key -> value) and the help for each label and control (hwnd -> text); the help on show
@@ -32,6 +33,8 @@ CfgList()
 		, help: "While you use the keyboard or mouse yourself the bot waits: no battle rounds, no walking, no potions. (The dashboard's Wait for me button switches it too.) On again, with 3 seconds, every time the bot starts - it never takes the mouse from you as it starts."})
 	list.Push({key: "handsoff", label: "Wait for me: seconds after you stop", kind: "num", lo: 0, hi: 3600, def: 3
 		, help: "How long after your last key press, click or mouse move the bot carries on. 0 = it never waits for you."})
+	list.Push({key: "mouselock", label: "Lock my mouse while the bot uses it", kind: "check", def: 1
+		, help: "While the bot has the mouse - a battle round, a click, a mouse turn while walking, a potion or login click - your mouse can't move the pointer, and over Wizard101 its buttons and wheel do nothing (what you do with it then doesn't count as you playing). The keyboard always stays free: {key:bot} stops the bot and frees the mouse, and with Wait for me on any key leaves the round to you. Freed at once when Wizard101 isn't the window in front (Alt+Tab), and if nothing's renewed it for 15 s. Off: your mouse always works - moving it makes the bot wait for you, as Wait for me says."})
 	list.Push({key: "gamefront", label: "Bring Wizard101 to the front when needed", kind: "check", def: 0
 		, help: "When the quest arrow shows (walking) or a battle round is up and Wizard101 isn't the window in front, the bot brings it to the front - walking, only once you've left the keyboard and mouse alone 3 s. Off: click into it yourself. Also the dashboard's 'Game to front' button."})
 	list.Push({key: "hungload", label: "Restart Wizard101 stuck on a loading screen (minutes, 0 = never)", kind: "num", lo: 0, hi: 120, def: 5
@@ -138,7 +141,7 @@ CfgList()
 	list.Push({key: "netport", label: "...on the port", kind: "num", lo: 1024, hi: 65535, def: 47150
 		, help: "The same on every PC. UDP for finding each other, TCP for the log, the picture and commands."})
 	list.Push({key: "netpin", label: "...network PIN for commands (0 = none)", kind: "num", lo: 0, hi: 99999999, def: 0
-		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on needs pimpmeout typed at that PC."})
+		, help: "The Network tab's buttons (bot on, bot off, Play for me off, restart) only work between bots with the same PIN, not 0. Play for me can only be switched off from the network - on only at that PC (its dashboard's button or tray menu)."})
 	list.Push({key: "-", label: "UPDATES"})
 	list.Push({key: "autoupdate", label: "Update by itself: look every (minutes, 0 = never)", kind: "num", lo: 0, hi: 1440, def: 10
 		, help: "A new version on GitHub is downloaded while the bot plays on, then installed with no question: the bot closes itself for it once it's out of battle, nothing's loading and you've left the keyboard and mouse alone a minute (Play for me: no wait) - not during a dungeon run or a recording - and starts again as it was: on, off or in standby, Play for me, walking ({key:walk}), auto-reconnect and Learn every card as they were. Your settings, learned cards and routes are kept, as with the Updates button. A version that won't install 3 times is left to the Updates button. 0: only when you click it."})
@@ -170,7 +173,7 @@ CfgSimpleKeys()
 	if (!IsObject(keys))
 		{
 		keys := {}
-		for each, k in ["handsoffon", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
+		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}
@@ -584,6 +587,362 @@ MouseLetGo()
 MouseOnGame(x, y)
 	{
 	return x >= GameLeft && x < GameLeft + GameW && y >= GameTop && y < GameTop + GameH
+	}
+
+;---- Your mouse locked while the bot uses it ----
+
+;While the bot has the mouse - a battle round (its first look to "Round done"), a click, a mouse turn while walking, the
+;potion route's clicks, a login click - your own mouse is held off it (mouselock, on unless 0 - the Settings window's
+;"Lock my mouse while the bot uses it"): its moves (BlockInput MouseMove) and, with the pointer over Wizard101 in front,
+;its buttons and wheel (hook hotkeys that swallow them, on only while it's locked - not #If, which every click anywhere
+;would wait on the busy bot for, and which a busy bot lets through after a second). The bot's own clicks and moves go
+;through: a script's own input never sets off its hotkeys (SendLevel 0). The keyboard is never locked ({key:bot} stops
+;the bot). Who has it: MouseLockOn / MouseLockOff by why (nested - each Off gives back one On). Let go at once, whoever
+;has it (MouseLockRelease): the bot off, an error (OnError), the bot closing (OnExit), you playing, the round over (the
+;main loop); not held while Wizard101 isn't in front (locked again if it comes back while still held), while you pick a
+;boss or a plate (MouseLockPause) or record a route; the watchdog lets go once nobody's renewed it for 15 s, and of any
+;one hold not renewed for 15 s - an Off that never came - whatever else holds it (MouseLockOn renews its own hold;
+;MouseLockRenew - the bot's card and battle moves - every hold; MouseLockOn's ttl for longer). Whether your clicks are
+;swallowed is looked at again after each of the bot's own moves (MouseLockMoved - onto the game or off it) and four times
+;a second. mouselock:0: none of it
+;Who has it ({why: how many}), when it was last renewed and how long it may go unrenewed, whether it's on now (moves held)
+;and its clicks too, the span your mouse input isn't you (opened as it locks, kept through a pause: from, to - and your
+;last mouse input before it), open now, the pauses, what's been said when, the first who took it, set up, locked since,
+;the watchdog's timer running, each hold's own last taking and how long it may go unrenewed ({why: ms}), the last
+;MouseLockRenew (every hold's renewal)
+global MouseLockOwners, MouseLockAt, MouseLockTtl, MouseLocked, MouseLockClicks, MouseLockFrom, MouseLockTo, MouseLockPre
+global MouseLockSpan, MouseLockHold, MouseLockSaid, MouseLockWhy, MouseLockReady, MouseLockOnAt, MouseLockTicking
+global MouseLockOwnAt, MouseLockOwnTtl, MouseLockRenewAt
+
+;(once, at the first lock: the failsafes for closing and errors)
+MouseLockInit()
+	{
+	if (MouseLockReady)
+		return
+	MouseLockReady := 1
+	MouseLockOwners := {}, MouseLockAt := 0, MouseLockTtl := 15000, MouseLocked := 0, MouseLockClicks := 0
+	MouseLockFrom := 0, MouseLockTo := 0, MouseLockPre := 0, MouseLockSpan := 0, MouseLockHold := 0, MouseLockSaid := {}
+	MouseLockWhy := "", MouseLockOnAt := 0, MouseLockTicking := 0, MouseLockOwnAt := {}, MouseLockOwnTtl := {}, MouseLockRenewAt := 0
+	OnExit("MouseLockOnExit", -1)
+	OnError("MouseLockOnError", -1)
+	}
+
+;The bot takes the mouse for why ("round", "click", "turn"... - MouseLockWhat): your mouse held off it while it's held.
+;Nested: each MouseLockOff(why) gives back one. ttl: how long it may go unrenewed (ms) before the watchdog lets go
+MouseLockOn(why := "bot", ttl := 15000)
+	{
+	MouseLockInit()
+	;(its own hold's taking and ttl too - the watchdog lets go of it alone if it isn't renewed, whoever else takes the
+	;mouse; counted on the same line as its times are set, so the watchdog's tick never sees it counted with old ones)
+	mlHeld := MouseLockOwners.HasKey(why) ? MouseLockOwners[why] : 0
+	mlTtl := mlHeld > 0 && MouseLockOwnTtl.HasKey(why) ? Max(MouseLockOwnTtl[why], ttl) : ttl
+	MouseLockOwnTtl[why] := mlTtl, MouseLockOwnAt[why] := A_TickCount, MouseLockAt := A_TickCount, MouseLockTtl := Max(MouseLockTtl, ttl), MouseLockOwners[why] := mlHeld + 1
+	if (MouseLockWhy = "")
+		MouseLockWhy := why
+	;(started once - SetTimer again would start its countdown over, and clicks a moment apart would keep it from ever
+	;running)
+	if (!MouseLockTicking)
+		{
+		MouseLockTicking := 1
+		SetTimer, MouseLockTick, 250
+		}
+	MouseLockApply(why)
+	}
+
+;Gives back one MouseLockOn(why) - none held by why (let go already: a failsafe, the watchdog): nothing
+MouseLockOff(why := "bot")
+	{
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.HasKey(why))
+		return
+	MouseLockOwners[why] -= 1
+	if (MouseLockOwners[why] <= 0)
+		MouseLockOwners.Delete(why)
+	if (!MouseLockOwners.Count())
+		MouseLockTtl := 15000
+	MouseLockApply(why)
+	;(who has it now, for the log: one still holding it, or nobody)
+	if (!MouseLockOwners.HasKey(MouseLockWhy))
+		{
+		MouseLockWhy := ""
+		for mlWho in MouseLockOwners
+			{
+			MouseLockWhy := mlWho
+			break
+			}
+		}
+	}
+
+;Every hold let go at once (the failsafes) - because: for debug.log (only said when it was locked)
+MouseLockRelease(because)
+	{
+	if (!IsObject(MouseLockOwners))
+		return
+	MouseLockOwners := {}, MouseLockTtl := 15000, MouseLockHold := 0
+	MouseLockApply("", because)
+	MouseLockWhy := ""
+	}
+
+;Still at it (a long action - a battle round's card and target moves, lore farming): the watchdog's 15 s start again for
+;every hold (one line: the watchdog's tick never sees half of it); and the bot's move just made: whether your clicks are
+;swallowed (MouseLockMoved)
+MouseLockRenew()
+	{
+	if (IsObject(MouseLockOwners) && MouseLockOwners.Count())
+		MouseLockAt := A_TickCount, MouseLockRenewAt := A_TickCount
+	MouseLockMoved()
+	}
+
+;The bot's own move just put the pointer onto the game or off it: your clicks and wheel swallowed or let through now -
+;not at the watchdog's next tick, which never comes in a Critical mouse turn. Renews nothing (a walk's clicks and turns
+;don't keep a forgotten hold)
+MouseLockMoved()
+	{
+	if (MouseLocked && MouseLockClicks != MouseLockOverGame())
+		MouseLockApply()
+	}
+
+;You picking a boss or a plate (Alt+1, Alt+2, Windows+3 - pause 1): the lock let go meanwhile; pause 0: held again if
+;it still is. Your click for it isn't you playing (the span stays open)
+MouseLockPause(pause)
+	{
+	MouseLockInit()
+	MouseLockHold := pause ? MouseLockHold + 1 : Max(0, MouseLockHold - 1)
+	MouseLockApply("", pause ? "your pick (" HkText("boss") "...)" : "")
+	}
+
+;Whether your mouse is to be held off now; whyNot: why not ("free" - nobody has it)
+MouseLockWanted(ByRef whyNot)
+	{
+	whyNot := ""
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count())
+		whyNot := "free"
+	else if (MouseLockHold > 0)
+		whyNot := "your pick"
+	else if (!StatOr("mouselock", 1))
+		whyNot := "Lock my mouse is off (Settings)"
+	else if (PotionRecording || DgRecording)
+		whyNot := "a recording is on"
+	else if (!BotIsOn())
+		whyNot := "the bot's off"
+	else if (!GameActive())
+		whyNot := "Wizard101 isn't in front"
+	return whyNot = ""
+	}
+
+;The lock as it should be now - on (your moves held off; your clicks and wheel too while the pointer's over the game) or
+;off - said in debug.log when it changes (a battle round's each time, the rest once a minute). why: who just took it or
+;gave it back; because: why it's let go (a failsafe)
+MouseLockApply(why := "", because := "")
+	{
+	;(not interrupted half done - by the watchdog's tick, F6; Critical's SetBatchLines -1 put back after)
+	mlCrit := A_IsCritical, mlBatch := A_BatchLines
+	Critical
+	MouseLockInit()
+	mlWant := MouseLockWanted(mlNot)
+	mlClicks := mlWant && MouseLockOverGame()
+	if (mlWant && !MouseLocked)
+		{
+		;(the span your mouse input isn't you: from now - a pause's kept open; your last mouse input before it)
+		if (!MouseLockSpan)
+			MouseLockPre := MouseLockLastMouse(), MouseLockFrom := A_TickCount, MouseLockSpan := 1
+		;(the hotkeys first: a Hotkey command after BlockInput could take the mouse hook it needs off)
+		if (mlClicks)
+			MouseLockKeys(1)
+		MouseLockClicks := mlClicks
+		MouseLockBlock(1)
+		MouseLocked := 1, MouseLockOnAt := A_TickCount
+		mlWho := MouseLockWhat(MouseLockWhy != "" ? MouseLockWhy : why)
+		MouseLockSay("on " mlWho, "Mouse locked - " mlWho " (your keyboard stays free: " HkText("bot") " stops the bot)", mlWho = MouseLockWhat("round") ? 0 : 60000)
+		}
+	else if (!mlWant && MouseLocked)
+		{
+		MouseLockBlock(0)
+		if (MouseLockClicks)
+			MouseLockKeys(0)
+		MouseLockClicks := 0, MouseLocked := 0
+		mlHeld := Round((A_TickCount - MouseLockOnAt) / 1000, 1)
+		mlBy := because != "" ? because : mlNot = "free" ? "" : mlNot
+		if (mlBy != "")
+			MouseLockSay("off " mlBy, "Mouse unlocked - " mlBy " (locked " mlHeld " s)", InStr(mlBy, "in front") || InStr(mlBy, "pick") ? 60000 : 0)
+		else if (why = "round")
+			MouseLockSay("off round", "Mouse unlocked - the round's done (locked " mlHeld " s)", 0)
+		}
+	else if (mlWant && mlClicks != MouseLockClicks)
+		{
+		;(the pointer onto the game or off it: its clicks swallowed or let through; the moves' block kept on)
+		MouseLockKeys(mlClicks)
+		MouseLockClicks := mlClicks
+		MouseLockBlock(1)
+		}
+	;(the span closed once it's let go - not during a pause)
+	if (!mlWant && MouseLockSpan && MouseLockHold <= 0)
+		MouseLockSpan := 0, MouseLockTo := A_TickCount
+	if (!mlCrit)
+		Critical, Off
+	SetBatchLines, %mlBatch%
+	}
+
+;Four times a second while anyone has it: Wizard101 still in front, the pointer still over it, the watchdog. Stops itself
+;once nobody has it
+MouseLockTick()
+	{
+	if (!IsObject(MouseLockOwners) || !MouseLockOwners.Count())
+		{
+		SetTimer, MouseLockTick, Off
+		MouseLockTicking := 0
+		MouseLockApply()
+		return
+		}
+	if (A_TickCount - MouseLockAt > MouseLockTtl)
+		{
+		mlList := ""
+		for mlWho, mlN in MouseLockOwners
+			mlList .= (mlList = "" ? "" : ", ") MouseLockWhat(mlWho) (mlN > 1 ? " x" mlN : "")
+		MouseLockRelease("nobody renewed it for " Round((A_TickCount - MouseLockAt) / 1000) " s (the watchdog - held by " mlList ")")
+		return
+		}
+	;(a hold not renewed for its own ttl - its Off never came: that one let go, however often the others take the mouse)
+	mlStale := [], mlList := ""
+	for mlWho, mlN in MouseLockOwners
+		{
+		mlOwn := Max(MouseLockOwnAt.HasKey(mlWho) ? MouseLockOwnAt[mlWho] : MouseLockAt, MouseLockRenewAt ? MouseLockRenewAt : 0)
+		if (A_TickCount - mlOwn > (MouseLockOwnTtl.HasKey(mlWho) ? MouseLockOwnTtl[mlWho] : 15000))
+			mlStale.Push(mlWho), mlList .= (mlList = "" ? "" : ", ") MouseLockWhat(mlWho) (mlN > 1 ? " x" mlN : "") " (" Round((A_TickCount - mlOwn) / 1000) " s)"
+		}
+	if (mlStale.Length())
+		{
+		mlMsg := "the watchdog let go of " mlList ": not renewed, never given back"
+		if (mlStale.Length() = MouseLockOwners.Count())
+			{
+			MouseLockRelease(mlMsg)
+			return
+			}
+		DebugLog("Mouse lock: " mlMsg " - the others still hold it")
+		for mlI, mlWho in mlStale
+			MouseLockOwners[mlWho] := 1, MouseLockOff(mlWho)
+		}
+	MouseLockApply()
+	}
+
+;Your mouse's moves held off (on) or let through again - the bot's own moves aren't held (BlockInput MouseMove)
+MouseLockBlock(on)
+	{
+	if (on)
+		BlockInput, MouseMove
+	else
+		BlockInput, MouseMoveOff
+	}
+
+;Your mouse's buttons and wheel swallowed while Wizard101 is in front (on) - hook hotkeys (the hook decides, not the busy
+;script) made the first time - or let through again. (A wheel spun hard is many hotkeys a second: the "hotkeys received"
+;warning box only past 1000 in 2 s)
+#MaxHotkeysPerInterval 1000
+MouseLockKeys(on)
+	{
+	static made := 0, failSaid := 0
+	if (!on && !made)
+		return
+	Hotkey, IfWinActive, ahk_class Wizard Graphical Client ahk_exe WizardGraphicalClient.exe
+	for mlI, mlKey in MouseLockKeyList()
+		{
+		if (on)
+			{
+			Hotkey, %mlKey%, MouseLockSwallow, On UseErrorLevel
+			;(one the Hotkey command won't make: said once a run - that button isn't swallowed, the rest are)
+			if (ErrorLevel && !failSaid)
+				failSaid := 1, DebugLog("Mouse lock: " mlKey " couldn't be made a hotkey (ErrorLevel " ErrorLevel ") - that button isn't held off")
+			}
+		else
+			Hotkey, %mlKey%, Off, UseErrorLevel
+		}
+	Hotkey, IfWinActive
+	made := 1
+	}
+
+MouseLockKeyList()
+	{
+	return ["*LButton", "*RButton", "*MButton", "*XButton1", "*XButton2", "*WheelUp", "*WheelDown", "*WheelLeft", "*WheelRight"]
+	}
+
+;Was that hotkey (A_ThisHotkey...) one of the lock's - a click or wheel turn of yours it swallowed?
+MouseLockIsKey(hk)
+	{
+	return RegExMatch(hk, "i)^~?\*(LButton|RButton|MButton|XButton1|XButton2|WheelUp|WheelDown|WheelLeft|WheelRight)$")
+	}
+
+;(a click or wheel turn of yours while it's locked: nothing done - swallowed)
+MouseLockSwallow()
+	{
+	}
+
+;The pointer over the game's picture (where the lock swallows your clicks - elsewhere, the tray, the dashboard and your
+;other windows get them)
+MouseLockOverGame()
+	{
+	MouseGetPos, mlX, mlY
+	return MouseOnGame(mlX, mlY)
+	}
+
+;When your last mouse input was (A_TickCount) that counts as you: what came while it was locked doesn't - the time
+;before it does. (Nothing since the last lock let go: the time before that lock - MouseLockPre, taken as it locked,
+;already leaves out what an earlier lock swallowed; a move swallowed in one mouse turn isn't you once the next one locks)
+MouseLockLastMouse()
+	{
+	mlLast := A_TickCount - A_TimeIdleMouse
+	if (MouseLockFrom && (MouseLockSpan || mlLast <= MouseLockTo + 100))
+		return MouseLockPre
+	return mlLast
+	}
+
+;How long you've left the keyboard and mouse alone (ms - Walker.ahk UserIdle; the bot's own input never counts): what
+;the lock swallowed (your mouse moved, clicked or turned while it was locked) isn't you; your keys always are. Never
+;locked this run: A_TimeIdlePhysical, as ever
+MouseLockIdle()
+	{
+	if (!MouseLockFrom)
+		return A_TimeIdlePhysical
+	return A_TickCount - Max(A_TickCount - A_TimeIdleKeyboard, MouseLockLastMouse())
+	}
+
+;Who has it, in words (debug.log)
+MouseLockWhat(why)
+	{
+	mlNames := {round: "a battle round", click: "a click", turn: "a mouse turn while walking", route: "the potion route's click"
+		, login: "a login click", walker: "a walker click", stats: "a click in the spellbook", lore: "lore farming"
+		, dev: "dev mode's loop"}
+	return mlNames.HasKey(why) ? mlNames[why] : why
+	}
+
+;A line in debug.log - each kind at most once in every ms (0: each time)
+MouseLockSay(kind, msg, every := 0)
+	{
+	if (every && MouseLockSaid.HasKey(kind) && A_TickCount - MouseLockSaid[kind] < every)
+		return
+	MouseLockSaid[kind] := A_TickCount
+	DebugLog(msg (every ? " (said once a minute)" : ""))
+	}
+
+;The bot closing (OnExit): your mouse let go first
+MouseLockOnExit(reason, code)
+	{
+	if (MouseLocked)
+		MouseLockRelease("the bot is closing")
+	BlockInput, MouseMoveOff
+	BlockInput, Off
+	}
+
+;An error the script didn't expect (OnError): your mouse let go before its box shows (and the bot's thread stops)
+MouseLockOnError(e)
+	{
+	if (MouseLocked)
+		MouseLockRelease("an error in the script (" (IsObject(e) ? e.Message " at line " e.Line : e) ")")
+	else if (IsObject(MouseLockOwners))
+		MouseLockOwners := {}, MouseLockHold := 0
+	BlockInput, MouseMoveOff
+	BlockInput, Off
+	if (MouseLockClicks)
+		MouseLockKeys(0), MouseLockClicks := 0
+	return 0
 	}
 
 ;---- How it plays its cards ----

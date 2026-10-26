@@ -1435,6 +1435,32 @@ class NavMem:
                 return None, fwhy
         return None, "reading the game's card classes (once, about a second)"
 
+    def ui_root(self, wait=0.5):
+        """((w, h), why): the game's GUI root's size in GUI units - handmem's root (WorldView: the whole client), its
+        m_Window - read now; the client's pixels over it are the GUI's scale (1827 x 1027 at 2560x1440 borderless, UI
+        1.144: 1.4012 px a unit - castmem's POSITIONS.md). None and why when it can't be read (no game, the hand's reader
+        being made, no HUD yet - the login screen). Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            hm, why = self._hand_reader(st, wait)
+            if hm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or hm.st is not st:
+                    return None, "the game changed"
+                root = hm.root()
+                r = hm.rect(root) if root else None
+            if not r:
+                return None, "no GUI root (not in the world yet?)"
+            w, h = r[2] - r[0], r[3] - r[1]
+            if not (0 < w <= 20000 and 0 < h <= 20000):
+                return None, "the GUI root's size isn't plausible (%d x %d)" % (w, h)
+            return (w, h), ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the GUI root failed (%r)" % (e,)
+
     def battle(self, wait=0.5):
         """(parts, why): the battle's participants, read now - bossmem.BossMem.battle (every one the battle's GUI shows,
         and mine: me, team, health, max_health, boss - the game's flag -, player, minion, mob_level, owner...), each joined

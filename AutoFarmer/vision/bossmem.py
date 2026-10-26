@@ -246,6 +246,7 @@ class BossMem:
         self._next = {}
         self.cache = {}              # NPCBehaviorTemplate address -> (its vtable, its info)
         self.mismatch = set()        # templates whose title and boss flag disagree (logged once)
+        self.win_box, self.root_box = {}, None      # the last battle read's plates' rects and the root's (GUI units)
         self.attach_s = time.perf_counter() - t0
         self.log("bossmem: ready in %.2f s - titles %s (%s)" % (self.attach_s, self.titles, self.how_titles))
 
@@ -380,22 +381,34 @@ class BossMem:
                 "minion_health": i32("m_minionStartingHealth")}
 
     def combatant_windows(self, hm):
-        """the GUI's CombatantDataControl windows under handmem's root (one per participant)"""
+        """the GUI's CombatantDataControl windows under handmem's root (one per participant). Also self.win_box: each
+        one's rect in the root (GUI units - its own m_Window, which is its parent's, plus every ancestor's left / top
+        below the root: castmem's POSITIONS.md rule, checked on 2026-10-25's frames) - and self.root_box the root's own
+        rect (the whole client: 1827 x 1027 at 2560x1440), None when it can't be read"""
+        self.win_box, self.root_box = {}, None
         root = hm.root()
         if not root or not self.vt["CombatantDataControl"]:
             return []
-        out, stack = [], [(root, 0)]
+        self.root_box = hm.rect(root)
+        out, stack = [], [(root, 0, 0, 0)]
         while stack and len(out) < 32:
-            w, d = stack.pop()
+            w, d, ox, oy = stack.pop()
             if hm._vt(w) in self.vt["CombatantDataControl"]:
                 out.append(w)
+                r = hm.rect(w)
+                if r:
+                    self.win_box[w] = (r[0] + ox, r[1] + oy, r[2] + ox, r[3] + oy)
                 continue
             if d < 8:
-                stack.extend((k, d + 1) for k in hm.kids(w))
+                # (its children's place: its own left / top added - not the root's)
+                r = hm.rect(w) if w != root else None
+                cx, cy = (ox + r[0], oy + r[1]) if r else (ox, oy)
+                stack.extend((k, d + 1, cx, cy) for k in hm.kids(w))
         return out
 
     def battle(self, hm):
-        """([participant + {me, shown, window, source}], why) - every participant the battle's GUI shows (its
+        """([participant + {me, shown, window, source, box, root}], why) - box: its plate's rect in the root and root the
+        root's rect (GUI units - combatant_windows; None not read) - every participant the battle's GUI shows (its
         CombatantDataControl windows) and mine (handmem's) - in a battle's planning phase only: ([], why) out of a battle
         (the spell selection window keeps the wizard's participant out of a battle too - 2026-10-25: so the planning
         window has to show, and the battle's own windows have to hold a participant). Never raises"""
@@ -415,14 +428,15 @@ class BossMem:
                 r = self.participant(c)
                 if r:
                     seen.add(c)
-                    r.update(me=c == mine, shown=bool(hm.flags(w) & 1), window=hm.wname(w), source="window")
+                    r.update(me=c == mine, shown=bool(hm.flags(w) & 1), window=hm.wname(w), source="window",
+                             box=self.win_box.get(w), root=self.root_box)
                     out.append(r)
             if not out:
                 return [], "no participant in the battle's windows (not in a battle?)"
             if mine not in seen:
                 r = self.participant(mine)
                 if r:
-                    r.update(me=True, shown=None, window=None, source="handmem")
+                    r.update(me=True, shown=None, window=None, source="handmem", box=None, root=self.root_box)
                     out.append(r)
             return out, ""
         except Exception as e:  # noqa: BLE001

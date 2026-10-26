@@ -8,7 +8,8 @@
 ; the mouse left to you), at 5x or less, no window open over the middle of the game (a window's words there: Crowns,
 ; shop, buy, quest...). The right button is pressed at a point in the middle of the scene, the mouse slid, the button let
 ; go; the mouse back where it was. A right click that doesn't drag opens nothing (you checked it). Anything not sure: A/D
-; as before (turns on the spot always A/D). Setting: mousesteer (on unless 0).
+; as before (turns on the spot always A/D). Setting: mousesteer (on unless 0). In AutoFarmer your mouse is locked for the
+; turn (mouselock - Settings.ahk MouseLockOn): what it swallows doesn't end the turn, your keys still do.
 
 ;How far one mouse count turns the wizard (degrees, its sign the way it turns - "" not measured yet) and the WkNavSign it
 ;was measured under, off till (tick), probes that found no turn, the right button held by the bot, the window check
@@ -123,10 +124,12 @@ MouseSteerMove(c)
 	DllCall("winmm\timeEndPeriod", "UInt", 1)
 	}
 
-;The right button down (1) or up (0) where the mouse is
+;The right button down (1) or up (0) where the mouse is - sent by AutoHotkey itself (the same mouse_event the game sees,
+;marked as the script's own): AutoFarmer's mouse lock swallows your right button with a hotkey, and a raw mouse_event
+;call would look like yours to it (Settings.ahk MouseLockKeys)
 MouseSteerButton(down)
 	{
-	DllCall("mouse_event", "UInt", down ? 0x0008 : 0x0010, "Int", 0, "Int", 0, "UInt", 0, "UPtr", 0)
+	Send, % "{Blind}{RButton " (down ? "down" : "up") "}"
 	MsHeld := down ? 1 : 0
 	}
 
@@ -192,7 +195,13 @@ MouseTurn(h, byMem := true)
 		}
 	MouseGetPos, msX0, msY0
 	MouseSteerPoint(msPx, msPy)
+	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn; your keys still end the turn)
+	if (IsFunc("MouseLockOn"))
+		Func("MouseLockOn").Call("turn")
 	MouseMove, %msPx%, %msPy%, 0
+	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved: no tick runs in this Critical)
+	if (IsFunc("MouseLockMoved"))
+		Func("MouseLockMoved").Call()
 	sent := 0, turned := 0, probed := false, msUser := false, msFrom := A_TickCount
 	try
 		{
@@ -302,6 +311,8 @@ MouseTurn(h, byMem := true)
 		;(the mouse back where it was - not if you've taken it meanwhile)
 		if (!MouseSteerYours(msFrom))
 			MouseMove, %msX0%, %msY0%, 0
+		if (IsFunc("MouseLockOff"))
+			Func("MouseLockOff").Call("turn")
 		if (!wasCrit)
 			Critical, Off
 		}
@@ -370,7 +381,13 @@ MouseStandTurn(h)
 		}
 	MouseGetPos, msX0, msY0
 	MouseSteerPoint(msPx, msPy)
+	;(your mouse locked till it's back where it was, in AutoFarmer - Settings.ahk MouseLockOn)
+	if (IsFunc("MouseLockOn"))
+		Func("MouseLockOn").Call("turn")
 	MouseMove, %msPx%, %msPy%, 0
+	;(your clicks swallowed too now the pointer's on the game - Settings.ahk MouseLockMoved)
+	if (IsFunc("MouseLockMoved"))
+		Func("MouseLockMoved").Call()
 	yaw1 := ""
 	try
 		{
@@ -407,6 +424,8 @@ MouseStandTurn(h)
 		Sleep, 20
 		if (!MouseSteerYours(A_TickCount - 1000))
 			MouseMove, %msX0%, %msY0%, 0
+		if (IsFunc("MouseLockOff"))
+			Func("MouseLockOff").Call("turn")
 		if (!wasCrit)
 			Critical, Off
 		}

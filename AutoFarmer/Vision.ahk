@@ -166,7 +166,7 @@ VisionPicList()
 	Loop, Parse, BoostExtra, `,
 		if (A_LoopField != "" && A_LoopField != hitschool && A_LoopField != "balance")
 			list .= A_LoopField "/blade," A_LoopField "/trap,"
-	for each, name in ["sharpen", "potent", "blade3", "blade4", "trap3", "trap4", "tower", "reshuffle", "feint", "epic", "colossal", "gargantuan", "monstrous", "giant", "strong", "elementalblade", "elementaltrap", "spiritblade", "spirittrap"]
+	for each, name in ["sharpen", "potent", "blade3", "blade4", "trap3", "trap4", "tower", "absorb", "reshuffle", "feint", "epic", "colossal", "gargantuan", "monstrous", "giant", "strong", "elementalblade", "elementaltrap", "spiritblade", "spirittrap"]
 		list .= "resources/" name ","
 	return list "life/enchant"
 	}
@@ -229,8 +229,9 @@ VisionForget()
 ;         school (lower case), type (the game's: Damage, AOE, Charm, Ward, Jinx...), pips ("" unknown), xpip (1: X pips),
 ;         shadow, castable (1 / 0 - an estimate, the normal mode - "" unknown), tc, item, ench (its enchantment's name,
 ;         "" none), acc, value (as /cards writes it: "255-285", "45/pip", "35%", "+175", "" none), num (value's first
-;         number, "" none), kind (damage aoe heal ward blade trap aura weakness enchant dot stun dispel prism clear
-;         polymorph keep), dot (damage over time besides, "" none), schoolpips ("fire:1"), enchfx, valueench, tid (the
+;         number, "" none), kind (vision\handmem.py KINDS - damage aoe heal ward absorb blade trap aura negaura bubble
+;         weakness curse charm enchant sharpen potent enchantother mutate dot stun dispel prism clear polymorph shadow
+;         minion pips manipulation keep), dot (damage over time besides, "" none), schoolpips ("fire:1"), enchfx, valueench, tid (the
 ;         template id), text (about as the card says it), heads (a damage card's damage by school, every head of it:
 ;         "fire:230,ice:230,storm:230" - KillCalc.ahk HeadsParse), boosts (what a blade, trap or aura boosts by school:
 ;         "ice:35,storm:35,fire:35", "all:25" - BoostsParse; either "?" not to be trusted, "" none or an older helper), nf
@@ -394,6 +395,8 @@ global NavGoalWhy, NavGoalWaitUntil
 global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
+;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
+global NavUiWhy, NavUiWaitUntil, NavUiRootW
 
 ;The wizard and the quest goal from the game's memory, as an object:
 ;  ok        1
@@ -764,7 +767,8 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 ;The battle's participants from the game's memory (the helper's /battle - READ-ONLY, vision\bossmem.py), in a battle's
 ;planning phase: {me: the wizard's own (or ""), foes: the other side's, parts: all} - each {me (1 the wizard's own), team,
 ;name (the mob's - "" a wizard), health, max, boss (1: the game's own boss flag), title, rank, school (its mob's - "" not
-;known), player (1 a wizard), gid}. "" when it can't be read - navmem:0, the helper not running or older (no /battle), dual
+;known), player (1 a wizard), gid, x (the middle of its plate across the game's window, 0..1 - "" not read or an older
+;helper)}. "" when it can't be read - navmem:0, the helper not running or older (no /battle), dual
 ;mode, not in a battle's planning phase, the readers being made: NavBattleWhy says why (after an ERR or no answer not
 ;asked again for 5 s; an older helper's "unknown request": 60 s)
 NavBattle(timeoutMs := 700)
@@ -811,7 +815,7 @@ NavBattle(timeoutMs := 700)
 			continue
 		nbP := {me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
 			, boss: (nbF[7] = "1" ? 1 : nbF[7] = "0" ? 0 : ""), title: Trim(nbF[8]), rank: NavNum(nbF[9]), school: Trim(nbF[10])
-			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12])}
+			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length() >= 13 ? NavNum(nbF[13]) : ""}
 		nbOut.parts.Push(nbP)
 		if (nbP.me && !IsObject(nbOut.me))
 			nbOut.me := nbP
@@ -826,6 +830,53 @@ NavBattle(timeoutMs := 700)
 		if (!nbP.me && (nbOut.me.team = "" || nbP.team = "" ? !nbP.player : nbP.team != nbOut.me.team))
 			nbOut.foes.Push(nbP)
 	return nbOut
+	}
+
+;The game's UI scale from its memory (the helper's /uiroot - READ-ONLY: the GUI root's size in GUI units, vision\navmem.py
+;ui_root): a card's pitch is 67 GUI units at any size and 82 px at UI scale 1 (HalfPitch 41), so UiScale = GameW / the
+;root's width x 67 / 82 - 2560 / 1827 x 67 / 82 = 1.145 at 1440p borderless, where the cut pictures say 1.144. NavUiRootW
+;the width read. "" when it can't be read (navmem:0, the helper not running or older, dual mode, the game not in the world
+;yet): NavUiWhy says why - not asked again for 60 s after a failure
+NavUiScale(timeoutMs := 500)
+	{
+	NavUiWhy := ""
+	if (!Stat("navmem") || !VisionOn || dualmode == 1)
+		{
+		NavUiWhy := !Stat("navmem") ? "navmem:0 in PlayerStats.txt" : !VisionOn ? "the vision helper isn't running" : "dual mode"
+		return ""
+		}
+	if (NavUiWaitUntil && A_TickCount < NavUiWaitUntil)
+		{
+		NavUiWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	nuAns := Trim(VisionGet("/uiroot", timeoutMs, true), " `t`r`n")
+	nuF := StrSplit(nuAns, "|")
+	if (nuF[1] != "root" || NavNum(nuF[2]) = "" || NavNum(nuF[2]) <= 0 || GameW <= 0)
+		{
+		NavUiWhy := nuAns = "" ? (VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")) : nuF[1] = "none" ? Trim(SubStr(nuAns, 6)) : "an odd answer: " SubStr(nuAns, 1, 40)
+		NavUiWaitUntil := A_TickCount + 60000
+		return ""
+		}
+	NavUiWaitUntil := 0, NavUiRootW := NavNum(nuF[2])
+	return GameW / NavUiRootW * 67 / 82
+	}
+
+;A cross-check of the picture set in use (UiScale) against the game's memory's UI scale (NavUiScale) - nothing is switched
+;on it yet: a disagreement over 0.8% is logged, once per window size and set (tonight's 1.130 against the memory's 1.145
+;would have been). Asked at a round's start (the main loop), till the memory answers for that size and set
+PicMemCheck()
+	{
+	static done := {}
+	pmcKey := GameW "x" GameH "|" PicSet
+	if (done.HasKey(pmcKey) || !IsObject(PicSets) || !IsObject(PicSets[PicSet]))
+		return
+	pmcSc := NavUiScale()
+	if (pmcSc = "")
+		return
+	done[pmcKey] := 1
+	if (Abs(pmcSc / UiScale - 1) > 0.008)
+		DebugLog("UI size: the game's memory says UI scale " Round(pmcSc, 3) " (its GUI " NavUiRootW " units wide in a " GameW " px window) - the pictures in use are at " Round(UiScale, 3) " (" (PicSet = 1 ? "the main set" : SubStr(PicDir, StrLen(A_WorkingDir) + 2)) "): they disagree - nothing switched on it (only a cross-check for now)")
 	}
 
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob

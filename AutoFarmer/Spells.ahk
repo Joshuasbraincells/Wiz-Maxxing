@@ -3,8 +3,12 @@
 ; Autofarmer.ahk after Dungeons.ahk (Dashboard.ahk makes the tab's controls).
 ;
 ; Pick a spell (or several) and:
-;   Change kind...   what it is: a hit on one enemy or on all, a heal, a shield, a blade, a trap, an aura - or a kind
-;                    the bot doesn't play (kept in the list, never cast). It's taken out of its slot (a hit that made
+;   Change kind...   what it is: a hit on one enemy or on all, a heal, a shield, an absorb, a blade, a trap, an aura,
+;                    a bubble (a global: your school's bubble slot, <school>\bubble), a negative aura, an enchant, a
+;                    Sharpened Blade, a Potent Trap, a prism (your school's: <school>\convert) - or a kind the bot
+;                    doesn't play (a weakness, a curse, a charm that isn't a blade, another enchantment, a mutation, a
+;                    polymorph, a shadow form, a minion, pips, a manipulation spell, Not used: kept in the list, never
+;                    cast - every battle spell type of the game's has one). It's taken out of its slot (a hit that made
 ;                    room for itself in hit1-3 puts the hits it moved back) and gets the slot the new kind fits, if
 ;                    one is free
 ;   Edit...          its name, its number (damage, heal, %) and its pips - a misread number, guessed pips
@@ -64,11 +68,19 @@ SpKindList()
 				continue
 			list.Push({kind: t.kind, label: t.label != "" ? t.label : t.kind, played: t.played ? 1 : 0})
 			}
+	;(the learner's own kinds since 2026-10-26 - every battle spell type of the game's: CardLearn.ahk LearnTypes)
 	if (!list.Length())
-		for i, t in [["damage", "Hits one enemy"], ["aoe", "Hits all enemies"], ["heal", "Heals you"], ["ward", "Shield (cast on you)"], ["blade", "Blade"]
-			, ["trap", "Trap"], ["aura", "Aura"], ["dot", "Damage over time"], ["stun", "Stun"], ["dispel", "Dispel"], ["prism", "Prism (converts the school)"]
-			, ["clear", "Removes shields or charms (N times Clear)"], ["polymorph", "Polymorph / shift (Moon)"], ["keep", "Not used (stays in the list)"]]
-			list.Push({kind: t[1], label: t[2], played: InStr(",damage,aoe,heal,ward,blade,trap,aura,", "," t[1] ",") ? 1 : 0})
+		for i, t in [["damage", "Hits one enemy"], ["aoe", "Hits all enemies"], ["heal", "Heals you"], ["ward", "Shield (cast on you)"]
+			, ["absorb", "Absorb (soaks N damage - cast on you)"], ["blade", "Blade"], ["trap", "Trap"], ["aura", "Aura"]
+			, ["bubble", "Bubble (a global spell - all of the battle)"], ["negaura", "Negative aura (on an enemy for 4 rounds)"]
+			, ["enchant", "Enchant (+N damage on a hit)"], ["sharpen", "Sharpened Blade (+N% on a blade)"], ["potent", "Potent Trap (+N% on a trap)"]
+			, ["prism", "Prism (converts the school)"], ["dot", "Damage over time"], ["stun", "Stun"], ["dispel", "Dispel"]
+			, ["clear", "Removes shields or charms (N times Clear)"], ["weakness", "Weakness (-N% on an enemy's next hit)"]
+			, ["curse", "Curse (an enemy's accuracy or healing down)"], ["charm", "Charm, not a blade (spear, accuracy, healing)"]
+			, ["enchantother", "Enchantment, other (accuracy, protect, cloak...)"], ["mutate", "Mutation (turns a spell in hand into another)"]
+			, ["polymorph", "Polymorph / shift (Moon)"], ["shadow", "Shadow form or creature (shadow pips)"], ["minion", "Minion (summons one, or works on yours)"]
+			, ["pips", "Pips (gives you or an ally pips)"], ["manipulation", "Manipulation (steal charm / ward, aggro, push...)"], ["keep", "Not used (stays in the list)"]]
+			list.Push({kind: t[1], label: t[2], played: InStr(",damage,aoe,heal,ward,absorb,blade,trap,aura,bubble,negaura,enchant,sharpen,potent,prism,", "," t[1] ",") ? 1 : 0})
 	return list
 	}
 
@@ -256,7 +268,8 @@ SpValueText(c)
 	{
 	dot := SpFlag(c, "dot")
 	if (c.value = "")
-		return (c.type = "" || c.type = "keep" || c.type = "stun" || c.type = "dispel" || c.type = "prism" || c.type = "clear") ? "" : "?"
+		return (c.type = "" || c.type = "keep" || c.type = "stun" || c.type = "dispel" || c.type = "prism" || c.type = "clear" || c.type = "bubble"
+			|| InStr(",curse,charm,enchantother,mutate,polymorph,shadow,minion,pips,manipulation,", "," c.type ",")) ? "" : "?"
 	return c.value (dot != "" && dot != 1 ? " (+" dot " over time)" : "")
 	}
 
@@ -550,7 +563,7 @@ SpEditShow(hidden := false)
 	Gui, SpEd:Font, s9 w600 c8AB4F8, Segoe UI
 	Gui, SpEd:Add, Text, x12 y12 w380 h18, % SpName(c) " - " SpKindLabel(c.type) " (" c.sch ")"
 	Gui, SpEd:Font, s9 w400 c9AA0A6, Segoe UI
-	Gui, SpEd:Add, Text, x12 y34 w380 h62, % "Text read: " (c.text = "" ? "-" : c.text) "`nThe number: a hit's least damage, a heal's amount, the % of a blade, trap, shield or aura. Blank: not known. What you set is kept - the learner never changes it by itself."
+	Gui, SpEd:Add, Text, x12 y34 w380 h62, % "Text read: " (c.text = "" ? "-" : c.text) "`nThe number: a hit's least damage, a heal's amount, the % of a blade, trap, shield, aura or bubble. Blank: not known. What you set is kept - the learner never changes it by itself."
 	Gui, SpEd:Font, s9 w400 cDADADA, Segoe UI
 	Gui, SpEd:Add, Text, x12 y107 w80 h18, Name
 	Gui, SpEd:Add, Text, x12 y137 w80 h18, Number
@@ -728,7 +741,8 @@ SpCellPick(c, col, scX, scY, scW, scH)
 	Gui, SpCell:Margin, 0, 0
 	Gui, SpCell:Color, 111317, 111317
 	Gui, SpCell:Font, s9 w400 c000000, Segoe UI
-	Gui, SpCell:Add, DropDownList, % "x0 y0 w" Max(90, Round(scW / scDpi)) " R" Min(16, SpCellChoices.Length()) " AltSubmit vSpCellText", %items%
+	;(every kind shown at once - 29 since 2026-10-26, every spell type of the game's)
+	Gui, SpCell:Add, DropDownList, % "x0 y0 w" Max(90, Round(scW / scDpi)) " R" Min(30, SpCellChoices.Length()) " AltSubmit vSpCellText", %items%
 	if (now)
 		GuiControl, SpCell:Choose, SpCellText, %now%
 	Gui, SpCell:Show, % "x" scX " y" scY - 2 " AutoSize" (SpCellHidden ? " Hide" : "")

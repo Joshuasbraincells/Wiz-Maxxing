@@ -944,8 +944,27 @@ ENEMY_ALL = {"kEnemyTeam", "kEnemyTeamAllAtOnce"}
 FRIEND_ALL = {"kFriendlyTeam", "kFriendlyTeamAllAtOnce"}
 ENEMY = ENEMY_ALL | {"kEnemySingle", "kAtLeastOneEnemy", "kPreselectedEnemySingle", "kMultiTargetEnemy", "kEnemyMinion"}
 MINION = {"kMinion", "kFriendlyMinion", "kCasterMinion", "kTargetMinion"}
-KINDS = ("damage", "aoe", "heal", "ward", "blade", "trap", "aura", "weakness", "enchant", "dot", "stun", "dispel",
-         "prism", "clear", "polymorph", "keep")
+# (2026-10-26: every battle spell type of the game's own list - m_sTypeName, read off its files - has a kind; those the
+# bot doesn't play are named all the same, for the Spells tab. Absorbs soak N damage; a summon (or one that works on your
+# minion); a spell that gives pips; the game's three shadow types)
+ABSORB = {"kAbsorbDamage"}
+SUMMON = {"kSummonCreature", "kSpawnCreature"}
+PIPS = {"kModifyPips", "kModifyPowerPips", "kModifySchoolPips", "kModifyShadowPips"}
+SHADOW_TYPES = {"shadow", "shadow_self", "shadow_creature"}
+KINDS = ("damage", "aoe", "heal", "ward", "absorb", "blade", "trap", "aura", "negaura", "bubble", "weakness", "curse",
+         "charm", "enchant", "sharpen", "potent", "enchantother", "mutate", "dot", "stun", "dispel", "prism", "clear",
+         "polymorph", "shadow", "minion", "pips", "manipulation", "keep")
+# (what a global - a bubble - changes, for its text: the effect's type -> the words)
+GLOBAL_WORDS = {"kModifyOutgoingDamage": "damage", "kModifyIncomingDamage": "damage taken", "kModifyOutgoingHeal": "healing",
+                "kModifyIncomingHeal": "healing received", "kModifyOutgoingArmorPiercing": "pierce",
+                "kModifyAccuracy": "accuracy", "kModifyPowerPipChance": "power pip chance"}
+
+
+def global_heads(hs, tt=""):
+    """a global's heads (a bubble - all of the battle, everyone's spells): those aimed at kGlobal, every head when the card's
+    type is Global and none says so"""
+    g = [h for h in hs if h["target"] == "kGlobal"]
+    return g if g else (list(hs) if (tt or "").lower() == "global" else [])
 
 
 def _tree(effects):
@@ -1035,19 +1054,29 @@ def hits(hs, types=DAMAGE):
 def kind_of(card):
     """(kind, value, dot): what the bot calls the card - KINDS - from its template's type (m_sTypeName) and what its
     effects do; value: a hit's least damage, every head of it (its damage per pip for an X-pip hit), a heal's amount,
-    the % of a shield, blade, trap, aura or weakness, an enchant's damage - None none; dot: damage (or healing) over
-    time besides, None none"""
+    the % of a shield, blade, trap, aura or weakness, an enchant's damage, a bubble's (a global's) damage % (else its
+    biggest number), the damage an absorb soaks (a pip's for an X-pip one), a negative aura's % (the damage taken it adds,
+    else its biggest), a Sharpened Blade's / Potent Trap's +%, a curse's / charm's biggest number, the pips a pips spell
+    gives - None none; dot: damage (or healing) over time besides, None none"""
     # (its effects cut short: what it does isn't known for sure - no kind, rather than a wrong one from the part read)
     if card.get("effects_cut"):
         return None, None, None
     tt = (card.get("type") or "").lower()
     hs = heads(card.get("effects"), card.get("overrides"))
     types = {h["type"] for h in hs}
+    # (a shadow form - Shadow Shrike, Seraph, Sentinel...: the game's type Polymorph paid with a shadow pip - and the game's
+    # own shadow types, never in a wizard's hand: not played - backlash)
+    if tt in SHADOW_TYPES or (tt == "polymorph" and (card.get("shadow_pips") or 0) > 0):
+        return "shadow", None, None
     # (one that needs a minion of your own - Siphon Health heals by sacrificing it, Draw Power takes pips from it: cast
-    # with none it's no heal; not a learned card's job)
+    # with none it's no heal; not a learned card's job - a minion spell, like the summons below)
     if any(h["target"] in MINION for h in hs):
-        return "keep", None, None
+        return "minion", None, None
     dmg, dot = hits(hs), hits(hs, DOT)
+    # (a pip-power head whose number isn't damage - Mana Burn's and Steal Pips' -1: the enemy's pips decide it - is no
+    # hit; an X-pip card's is its damage a pip)
+    if not card.get("x_pips"):
+        dmg = [h for h in dmg if not (h["type"] == "kDamagePerTotalPipPower" and (h["lo"] or 0) < 0)]
     heal = [h for h in hs if h["type"] in HEAL]
     hot = [h for h in hs if h["type"] in HOT]
     dotv = sum(h["lo"] for h in dot) or None
@@ -1059,19 +1088,55 @@ def kind_of(card):
         return "dot", None, dotv
     if heal or (hot and (tt == "heal" or types <= HOT | CLEAR)):
         return "heal", (sum(h["lo"] for h in heal) if heal else sum(h["lo"] for h in hot)), (sum(h["lo"] for h in hot) if heal and hot else None)
+    # (a summon - Animate, a pet's minion, Spectral Minion: after the hits and heals, which may summon besides - Colossus)
+    if types & SUMMON:
+        return "minion", None, None
     if "kStun" in types:
         return "stun", None, None
     if "kDispel" in types:
         return "dispel", None, None
-    if types & PRISM:
+    # (an absorb - soaks N damage: Spirit Armor, Ice Armor (X pips: N a pip), Legion Absorb - on you or your team)
+    ab = [h for h in hs if h["type"] in ABSORB and h["target"] not in ENEMY]
+    if ab:
+        return "absorb", (ab[0]["lo"] if (card.get("x_pips") or any(h["per_pip"] for h in ab)) else sum(h["lo"] or 0 for h in ab)), None
+    # (a negative aura - the game's type AuraNegative: on one enemy for 4 rounds, not used up by a hit - Attenuate's +N%
+    # damage taken (a school's, a Weaving one's that converts besides), Starfall's -N% damage, Pathogen's healing down)
+    if tt == "auranegative":
+        up = [h["lo"] for h in hs if h["type"] == "kModifyIncomingDamage" and (h["lo"] or 0) > 0]
+        big = [abs(h["lo"]) for h in hs if h["type"] not in PRISM and isinstance(h["lo"], (int, float)) and h["lo"]]
+        return "negaura", (max(up) if up else (max(big) if big else None)), None
+    # (a prism - converts the school; not a trap, blade or aura that converts besides - the Weaving ones: Heat Trap's +40%
+    # twice and a conversion, Drought Blade's +35% twice, Dust Amplify's +30%: a trap, blade or aura, below)
+    if types & PRISM and not any((h["lo"] or 0) > 0 and ((h["type"] == "kModifyIncomingDamage" and h["target"] not in FRIEND_ALL
+                                                           and h["target"] not in ("kSelf", "kFriendlySingle"))
+                                                          or (h["type"] == "kModifyOutgoingDamage" and h["target"] not in ENEMY)) for h in hs):
         return "prism", None, None
     if "kPolymorph" in types or tt == "polymorph":
         return "polymorph", None, None
+    # (a mutation - turns one spell in hand into its mutated version: Mutate Kraken; an enchantment - played onto a card in
+    # hand: +N damage (enchant), Sharpened Blade's +N% on a blade (sharpen), Potent Trap's on a trap (potent), the others -
+    # accuracy, protect, cloak, rank, healing - enchantother)
+    if tt == "mutate" or "kModifyCardMutation" in types:
+        return "mutate", None, None
     if tt == "enchantment" or any(str(t).startswith("kModifyCard") for t in types):
         cd = [h for h in hs if h["type"] == "kModifyCardDamage" and h["lo"] > 0]
-        return ("enchant", cd[0]["lo"], None) if cd else ("keep", None, None)
-    if any(h["target"] == "kGlobal" for h in hs):
-        return "keep", None, None                          # (a global - a bubble: not a learned card's job)
+        if cd:
+            return "enchant", cd[0]["lo"], None
+        sh = [h["lo"] for h in hs if h["type"] == "kModifyCardOutgoingDamage" and (h["lo"] or 0) > 0]
+        if sh:
+            return "sharpen", max(sh), None
+        po = [h["lo"] for h in hs if h["type"] == "kModifyCardIncomingDamage" and (h["lo"] or 0) > 0]
+        if po:
+            return "potent", max(po), None
+        # (a card of another type that changes a card - Shroud, a Global that cloaks: kept, as before)
+        return ("enchantother" if tt == "enchantment" else "keep"), None, None
+    # (a global - a bubble: all of the battle, everyone's spells - its number the damage it adds, else its biggest; the
+    # bot casts your school's before a hit: CardLearn.ahk <school>\bubble, KillCalc.ahk BubbleMatches)
+    gl = global_heads(hs, tt)
+    if gl:
+        up = [h["lo"] for h in gl if h["type"] == "kModifyOutgoingDamage" and (h["lo"] or 0) > 0]
+        big = [abs(h["lo"]) for h in gl if isinstance(h["lo"], (int, float)) and h["lo"]]
+        return "bubble", (max(up) if up else (max(big) if big else None)), None
     out_d = [h for h in hs if h["type"] == "kModifyOutgoingDamage"]
     in_d = [h for h in hs if h["type"] == "kModifyIncomingDamage"]
     up = [h for h in out_d if h["lo"] > 0 and h["target"] not in ENEMY]
@@ -1089,17 +1154,44 @@ def kind_of(card):
             return "trap", max(h["lo"] for h in pos), None
         if neg and not any(h["rounds"] for h in neg):
             return "ward", max(-h["lo"] for h in neg), None
-        return "keep", None, None
+        return other_kind(tt, hs)
     if types & CLEAR:
         return "clear", None, None
     if hot:
         return "heal", sum(h["lo"] for h in hot), None
+    return other_kind(tt, hs)
+
+
+def other_kind(tt, hs):
+    """(kind, value, None) of a card kind_of found nothing else for, by the game's type: a curse (an enemy's accuracy or
+    healing down - Black Mantle, Infection, Smoke Screen; the game's Curse), a charm (spears, accuracy, a healing boost -
+    Firespear, Guidance, Guiding Light; the game's Charm) - their biggest number -, a pips spell (gives pips to you or an
+    ally, nothing on an enemy: Donate Power, Bestow, Empower - the pips given), any other Manipulation (steal a charm or
+    ward, aggro, push, Reshuffle, Mana Burn...: manipulation); else keep (a ward that isn't a shield - Stun Block -, an aura
+    that adds no damage, a jinx that adds a card...)"""
+    big = [abs(h["lo"]) for h in hs if h["type"] not in PRISM and isinstance(h["lo"], (int, float)) and h["lo"]]
+    if tt == "curse":
+        return "curse", (max(big) if big else None), None
+    if tt == "charm":
+        # (a Charm that lowers - its numbers aimed at an enemy all below 0, or every number below 0: Black Mantle, Smoke
+        # Screen, Tardiness, Mass Infection as the game types some of their copies, an "Unhelpful" one put on your team -
+        # is a curse; the review, 2026-10-26)
+        num = [h for h in hs if h["type"] not in PRISM and isinstance(h["lo"], (int, float)) and h["lo"]]
+        at_foe = [h for h in num if h["target"] in ENEMY]
+        if num and (all(h["lo"] < 0 for h in at_foe) if at_foe else all(h["lo"] < 0 for h in num)):
+            return "curse", max(big), None
+        return "charm", (max(big) if big else None), None
+    pp = [h for h in hs if h["type"] in PIPS and (h["lo"] or 0) > 0 and h["target"] not in ENEMY]
+    if pp and not any(h["target"] in ENEMY for h in hs):
+        return "pips", sum(h["lo"] for h in pp), None
+    if tt == "manipulation":
+        return "manipulation", None, None
     return "keep", None, None
 
 
 def value_text(card, kind, value):
     """the number as /cards writes it: a hit 'lo-hi' (every head added; lo alone when they're the same), 'N/pip' for an
-    X-pip hit, a heal 'N', a % 'N%', an enchant '+N'; '' none"""
+    X-pip hit or absorb, a heal or absorb 'N', a % 'N%', an enchant '+N', a Sharpened Blade / Potent Trap '+N%'; '' none"""
     if value is None:
         return ""
     if kind in ("damage", "aoe"):
@@ -1108,10 +1200,15 @@ def value_text(card, kind, value):
             return "%d/pip" % value
         hi = sum(h["hi"] for h in hs)
         return "%d-%d" % (value, hi) if hi > value else "%d" % value
-    if kind in ("ward", "blade", "trap", "aura", "weakness"):
+    if kind in ("ward", "blade", "trap", "aura", "weakness", "bubble", "negaura", "curse", "charm"):
         return "%d%%" % value
     if kind == "enchant":
         return "+%d" % value
+    if kind in ("sharpen", "potent"):
+        return "+%d%%" % value
+    if kind == "absorb" and (card.get("x_pips") or any(h["per_pip"] for h in heads(card.get("effects"), card.get("overrides"))
+                                                        if h["type"] in ABSORB)):
+        return "%d/pip" % value
     return "%d" % value
 
 
@@ -1186,6 +1283,39 @@ def describe(card):
                                                      max([h["rounds"] for h in hh] + [4])))
     elif kind == "enchant":
         words.append("+%d damage to a spell" % (value or 0))
+    elif kind == "bubble":
+        parts = []
+        for h in global_heads(hs, card.get("type")):
+            t, lo = h["type"], h["lo"] or 0
+            what = GLOBAL_WORDS.get(t) or (("effect %s" % t) if isinstance(t, int) or not str(t).startswith("k") else str(t)[1:])
+            sch = h["school"] if h["school"] and h["school"] != "All" else ""
+            p = ("%+d%% " % lo if lo else "") + (sch + " " if sch else "") + what
+            if p not in parts:
+                parts.append(p)
+        words.append("Global: " + (", ".join(parts[:4]) or "a bubble"))
+    elif kind == "absorb":
+        ab = [h for h in hs if h["type"] in ABSORB]
+        per = card.get("x_pips") or any(h["per_pip"] for h in ab)
+        words.append("Absorbs %d damage%s%s" % (value or 0, " per pip" if per else "",
+                                               " (all of you)" if any(h["target"] in FRIEND_ALL for h in ab) else ""))
+    elif kind in ("sharpen", "potent"):
+        words.append("+%d%% to a %s card" % (value or 0, "blade" if kind == "sharpen" else "trap"))
+    elif kind in ("negaura", "curse", "charm"):
+        # (what it changes, as a bubble's text: "+25% Fire damage taken", "-45% accuracy"; a negative aura's rounds)
+        parts = []
+        for h in hs:
+            t, lo = h["type"], h["lo"] or 0
+            if t in PRISM:
+                p = "changes the school"
+            else:
+                what = GLOBAL_WORDS.get(t) or (("effect %s" % t) if isinstance(t, int) or not str(t).startswith("k") else str(t)[1:])
+                sch = h["school"] if h["school"] and h["school"] != "All" else ""
+                p = ("%+d%% " % lo if lo and t in GLOBAL_WORDS else "") + (sch + " " if sch else "") + what
+            if p not in parts:
+                parts.append(p)
+        rounds = max([h["rounds"] or 0 for h in hs] + [0])
+        words.append(", ".join(parts[:4]) + ((" for %d rounds" % rounds) if kind == "negaura" and rounds else "")
+                     + (" (an enemy)" if kind != "charm" and any(h["target"] in ENEMY for h in hs) else ""))
     else:
         seen = []
         for h in hs:
@@ -1257,17 +1387,21 @@ def boosts_field(card):
     (Balanceblade: damage type All, or none - every school), the largest % per school, the card's own (a Sharpened Blade
     on it isn't added). A blade's or aura's: its kModifyOutgoingDamage effects of more than 0% not aimed at an enemy; a
     trap's: its kModifyIncomingDamage ones of more than 0% on an enemy or on no one said (Feint's +30% on yourself left
-    out). "" not a blade, trap or aura; "?" not read_complete, one of those from a conditional, one of another school
-    (Sun, Moon, Star, Shadow), or none at all"""
+    out). A bubble's (a global): the damage its global effects add, the same way ("myth:25" Time of Legend; a global that
+    adds no damage - healing, pierce - "?", like one with none). A negative aura's as a trap's: the damage an enemy takes
+    besides ("fire:25" Fire Attenuate, "all:20" Attenuate; Starfall, Pathogen - none - "?"). "" not a blade, trap, aura,
+    bubble or negative aura; "?" not read_complete, one of those from a conditional, one of another school (Sun, Moon,
+    Star, Shadow), or none at all"""
     kind = card.get("kind")
-    if kind not in ("blade", "trap", "aura"):
+    if kind not in ("blade", "trap", "aura", "bubble", "negaura"):
         return ""
     if not read_complete(card):
         return "?"
     out = {}
-    for h in heads(card.get("effects"), card.get("overrides")):
+    hs = heads(card.get("effects"), card.get("overrides"))
+    for h in (global_heads(hs, card.get("type")) if kind == "bubble" else hs):
         lo = h["lo"] or 0
-        if kind == "trap":
+        if kind in ("trap", "negaura"):
             if h["type"] != "kModifyIncomingDamage" or lo <= 0 or not (h["target"] in ENEMY or h["target"] in (None, 0, "kInvalidTarget")):
                 continue
         elif h["type"] != "kModifyOutgoingDamage" or lo <= 0 or h["target"] in ENEMY:
@@ -1346,8 +1480,8 @@ def me_line(me):
 def card_line(c):
     """card|slot|x|name|display|school|type|pips|xpip|shadow|castable|tc|item|enchantment|accuracy|value|kind|dot|
     school pips|enchantment's effect|value with it|template id|text|heads|boosts - heads (field 24): a damage card's
-    damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap or aura
-    boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be trusted, "" none"""
+    damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap, aura or
+    bubble boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be trusted, "" none"""
     sp = ",".join("%s:%d" % kv for kv in sorted((c.get("school_pips") or {}).items()))
     return "|".join(["card", _f(c.get("slot")), _f(c.get("x")), _f(c.get("name")), _f(c.get("display")),
                      _f(c.get("school")), _f(c.get("type")), _f(c.get("pips")), _b(bool(c.get("x_pips"))),

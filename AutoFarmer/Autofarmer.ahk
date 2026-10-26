@@ -248,7 +248,7 @@ global PipSaveBare := 0, PipSaveTarget := "", PipSaveLastPips := -1, PipSaveStal
 ;of) a round of this battle - the bot's record of blades/traps may be wrong, so no kill check till it ends.
 ;RoundLeft: the bot left the round that's up to you (seeing it again isn't a new round)
 global PlayerActive := 0, PlayerTookRound := 0, RoundLeft := 0, RoundAgain := 0
-;"Play for me" (the dashboard's red button, the tray menu): every check for you off - nothing waits for you or keeps its
+;"Play for me" (the dashboard's button - green while on -, the tray menu): every check for you off - nothing waits for you or keeps its
 ;hands off the mouse for you (UserIdle, Walker.ahk). Off at every start: the bot takes control only once you've said so
 global PlayForMe := 0
 ;Walking without a mob the quest doesn't want catching the wizard, since the last catch or the last time the mobs' reach
@@ -317,6 +317,16 @@ global BoostUnrec := [], BoostOneOfOff := {}
 ;(the boosts this look found by the game's hand alone - no picture found them: cast at their card box - KillCalc.ahk
 ;BoostSearch, BoostMemBox)
 global BoostMemOnly := {}
+;(the game's name of the global - bubble - the bot put up this battle: the same isn't cast again - KillCalc.ahk BubbleMem,
+;ClickBubble; ResetVariables empties it)
+global BubbleUp := ""
+;(2026-10-26 - KillCalc.ahk "Absorbs, negative auras and your school's prism": an absorb in hand this look - resources\absorb
+;or the game's hand - and whether one that costs no pips can go (the filler casts only such: AbsorbFiller sets
+;AbsorbOnlyFree for its box); a negative aura that adds damage taken in hand this look, and the enemies one went on this
+;battle - {each of its identities - KillCalc.ahk NegAuraKey: the round} - once in 4 rounds an enemy: UseNegAura; your
+;prism on the boss this battle - {hits: your hits counted then (PartyHits), round} - once till a hit of yours goes out:
+;UseConvert, KillCalc.ahk ConvertUp; ResetVariables empties them)
+global absorb := 0, absorbX := "", absorbY := "", AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, NegAuraOn := {}, ConvertOn := ""
 LoadStats()
 ;"Wait while I play" on, 3 s, at every start - the bot never takes the mouse from you as it starts (you asked,
 ;2026-10-23); the tray menu, the dashboard and Settings change it for the run
@@ -397,7 +407,7 @@ if (PlayForMe)
 LoadPicSets()
 ;(nothing to tell the size by yet: the set this window size was last played at, else the main one)
 if (!DetectPicSet())
-	UsePicSet(PicSetForSize())
+	UsePicSet(PicSetForSize(), "nothing on screen to tell the size by yet: " (PicScaleFor(GameW "x" GameH) != "" ? "the size this window was last played at (generated\scales.txt: " GameW "x" GameH "=" PicScaleFor(GameW "x" GameH) ")" : "no size remembered for " GameW "x" GameH " - the main set"))
 LastBeat := 0
 SeenOut := 0
 
@@ -474,6 +484,9 @@ ResetUsed()
 TestRound:
 loop,
 {
+	;(no round being played here: a battle round's hold on your mouse let go, however the round was left - Settings.ahk
+	;MouseLockOff)
+	MouseLockOff("round")
 	;Corrections made on the dashboard's Spells tab: applied here, out of battle only - never in a round, where a hit
 	;moved to another slot would take the round's enchants and saved pips with it (Spells.ahk). With the bot off too
 	;An update installed by itself (UpdAuto - Settings: autoupdate): out of battle only too
@@ -490,7 +503,8 @@ loop,
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		BlockInput, MouseMoveOff
+		;(your mouse never locked with the bot off - Settings.ahk MouseLockRelease)
+		MouseLockRelease("the bot's off")
 		if (BotStandby && !BotEverOn)
 			{
 			Process, Exist, %GameExe%
@@ -526,8 +540,8 @@ loop,
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		;(never your mouse frozen while you play - Alt+1/Alt+2/Windows+3 turn the block back on)
-		BlockInput, MouseMoveOff
+		;(never your mouse locked while you play - Settings.ahk MouseLockRelease)
+		MouseLockRelease("you're playing")
 		if (inbattle == 1 && !PlayerTookRound)
 			PlayerTookRound := 1, DebugLog("  (you're playing in this battle: no kill check till it ends - the bot can't know which blades and traps are left)")
 		;(the enemies' likely spells kept up on the dashboard while you play the rounds - once a round, by the game's log,
@@ -568,7 +582,7 @@ loop,
 		{
 		BookSeenAt := A_TickCount
 		if (!PicTooThin(PicPath("resources\roundfinish.png")))
-			PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
+			PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH, PicCutOk(PicPath("resources\roundfinish.png"))
 		}
 	if (bookSeen)
 		{
@@ -662,8 +676,11 @@ loop,
 					}
 				}
 			}
-		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH
+		;(PicCutOk: only the set's own cut Pass button counts - not one made for a card learner's folder at its size)
+		PicSetOkAt := A_TickCount, PicSetOkSize := GameW "x" GameH, PicCutOk(PicPath(PassHover ? "resources\roundstart_hover.png" : "resources\roundstart.png"))
 		PicRemember()
+		;(the set's UI scale against the game's memory's: a disagreement logged, nothing switched on it yet - Vision.ahk)
+		PicMemCheck()
 		;A battle round is up: stop walking first (a key could still be held from the last step)
 		if (KeysDown || HeldW)
 			ReleaseKeys()
@@ -765,7 +782,8 @@ if (!RoundAgain && Stat("roundwait") > 0)
 WalkNoteHide()
 ;(where the mouse is now: it goes back there when the round's done - mousereturn)
 MouseGrab()
-BlockInput, MouseMove
+;(your mouse locked till the round's done - Settings.ahk MouseLockOn; mouselock:0 not)
+MouseLockOn("round")
 ;(Pass drawn hovered - the mouse on it: moved onto the scene, so the buttons and cards look as their pictures)
 if (PassHover)
 	{
@@ -888,7 +906,7 @@ if (hitter != 0)
 ;that character's name, school icon and cards can be cut from it
 if (hitter = 0)
 	{
-	BlockInput, MouseMoveOff
+	MouseLockOff("round")
 	savedTo := SaveRoundPicture()
 	;(the mouse back once the picture's taken)
 	MouseLetGo()
@@ -967,11 +985,19 @@ Find("bubble", bubble, bubbleX, bubbleY, hitschool)
 
 global convert := 0
 Find("convert", convert, convertX, convertY, hitschool)
-if NeedsConvert()
+;(whether the boss needs it - the game's memory: of your school, it resists your hits - is asked when the chain gets to it:
+;NeedsConvert; your school's prism no picture finds: by the game's hand - KillCalc.ahk ConvertMem)
+
+;(an absorb - resources\absorb, its learned slot, by its picture when it has one; else the game's hand: KillCalc.ahk
+;AbsorbMem - and a negative aura, by the game's hand only: NegAuraMem)
+global absorb := 0
+absorbX := "", absorbY := "", AbsorbFreeOk := 0, negaura := 0
+if (AbsorbPicThere())
 	{
-	NeedsConvert := 1
+	Find("absorb", absorb, absorbX, absorbY, "resources")
+	AbsorbFreeOk := (absorb == 1) ? AbsorbSlotFree() : 0
 	}
-	
+
 ;Finds hit specific cards
 if (hitter != 0)
 	{
@@ -1026,7 +1052,7 @@ if (PlateByName || !PlayerPlates2())
 	if (BadgeNumber(school))
 		PartyMySchool := school
 	}
-DebugLog("  cards: hit1-4=" hit1 hit2 hit3 hit4 " wand=" wand " heal1-2=" heal1 heal2 " blade=" blade " blade2=" blade2 " blade3=" blade3 " blade4=" blade4 " sharpen=" sharpen " trap=" trap " trap2=" trap2 " trap3=" trap3 " potent=" potent " feint=" feint " aura=" aura " bubble=" bubble " convert=" convert " tower=" tower " reshuffle=" reshuffle)
+DebugLog("  cards: hit1-4=" hit1 hit2 hit3 hit4 " wand=" wand " heal1-2=" heal1 heal2 " blade=" blade " blade2=" blade2 " blade3=" blade3 " blade4=" blade4 " sharpen=" sharpen " trap=" trap " trap2=" trap2 " trap3=" trap3 " potent=" potent " feint=" feint " aura=" aura " bubble=" bubble " convert=" convert " tower=" tower " reshuffle=" reshuffle " absorb=" absorb " negaura=" negaura)
 
 ;Cards in hand the bot has no picture for yet: learned (CardLearn.ahk); one that went into a free slot is
 ;used this round, so look at the hand again
@@ -1062,7 +1088,7 @@ if (!BotOn)
 	DebugLog("  bot off (" HkText("bot") ") - leaving this round")
 	RoundLeft := 1
 	MouseLetGo()
-	BlockInput, MouseMoveOff
+	MouseLockOff("round")
 	Goto, TestRound
 	}
 
@@ -1092,7 +1118,7 @@ if (LearnAll)
 			Goto, EndRound
 		}
 	LearnAllRound()
-	Click("pass", pass, "resources")
+	ClickPass()
 	Goto, EndRound
 	}
 
@@ -1172,7 +1198,7 @@ if (!BotOn)
 	DebugLog("  bot off (" HkText("bot") ") - leaving this round")
 	RoundLeft := 1
 	MouseLetGo()
-	BlockInput, MouseMoveOff
+	MouseLockOff("round")
 	Goto, TestRound
 	}
 ;Where traps go: the boss picked with Alt+1; a party battle's blader or healer - the enemy the hitter goes for (Party.ahk
@@ -1202,10 +1228,19 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 	{
 	BoostRun++
 	Goto, EndRound
-	} else if (convert == 1) && (NeedsConvert == 1) && (BossChoosen == 1) && UseConvert("convert", convert, hitschool)
+	} else if (convert == 1) && (BossChoosen == 1) && BoostOk && NeedsConvert() && UseConvert("convert", convert, hitschool)
 		{
+		;(a boost - boostmax counts it -, once till a hit of yours goes out: NeedsConvert, KillCalc.ahk ConvertUp - the
+		;review, 2026-10-26)
+		BoostRun++
 		Goto, EndRound
-		} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used%TrapU1%, used%TrapU2%, TrapDir)
+		;(a negative aura - an Attenuate: +N% damage taken on the trap rule's enemy for 4 rounds, before the traps and blades;
+		;once in 4 rounds an enemy, only one that adds to the planned hit - UseNegAura, KillCalc.ahk NegAuraMem)
+		} else if (negaura == 1) && BoostOk && Stat("usetraps") && UseNegAura()
+			{
+			BoostRun++
+			Goto, EndRound
+			} else if (trap == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("trap", trap, used%TrapU1%, used%TrapU2%, TrapDir)
 			{
 			BoostRun++
 			Goto, EndRound
@@ -1237,10 +1272,11 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 										{
 										BoostRun++
 										Goto, EndRound
-										} else if (bubble == 1) && BoostOk && Stat("usebubble")
+										} else if (bubble == 1) && BoostOk && Stat("usebubble") && ClickBubble()
 											{
-											if Click("bubble", bubble, hitschool)
-												BoostRun++
+											;(by its picture, else at the game's card's box - ClickBubble; not clicked: on
+											;down the chain, not a round with nothing cast)
+											BoostRun++
 											} else if (aura == 1) && BoostOk && Stat("useaura") && (AuraRounds <= 0)
 												{
 												if Click("aura", aura, hitschool)
@@ -1260,13 +1296,14 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 														{
 														BoostRun := 0
 														Goto, EndRound
-														} else if (tower == 1) && Stat("usetower") && UseOnSelf("tower", tower, "resources")
+														} else if (tower == 1) && Stat("usetower") && UseOnSelf("tower", tower, "resources") || AbsorbFiller()
 															{
 															;(it has to go out, as when defending - CastWentOut; the card didn't go: passed,
 															;not left to the round's timer. Not clicked at all - the game's Tower Shield's box
-															;not lined up for sure (UseMemAt): on to Reshuffle, else Pass)
+															;not lined up for sure (UseMemAt): on to Reshuffle, else Pass. No Tower Shield: an
+															;absorb that costs no pips the same way - AbsorbFiller, 2026-10-26)
 															if (!CastWentOut())
-																Click("pass", pass, "resources")
+																ClickPass()
 															} else if (reshuffle == 1) && Stat("usereshuffle")
 																{
 																;(a party battle's blader or healer: on itself - hammerX/Y is the hitter's
@@ -1278,7 +1315,7 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap("fein
 																	UseOnHammer("reshuffle", reshuffle, "resources")
 																	ResetUsed()
 																	}
-																} else if Click("pass", pass, "resources")
+																} else if ClickPass()
 																	{
 																	Goto, EndRound
 																	}
@@ -1288,15 +1325,16 @@ DebugLog("Round done")
 ;if you've used the mouse or keys meanwhile (MouseLetGo -1: it's yours)
 if (MouseLetGo() = 0)
 	CenterMouse()
-BlockInput, MouseMoveOff
-	
+;(your mouse unlocked - Settings.ahk MouseLockOff)
+MouseLockOff("round")
+
 Switch()
 	
 Goto, TestRound
 	
 ;Functions
-;You're playing: a key, a click or a mouse move of yours (not the bot's own: A_TimeIdlePhysical leaves those
-;out) in the last handsoff seconds (PlayerStats.txt, default 3 - and 3 at every start; 0 = never wait for you), while "Wait while
+;You're playing: a key, a click or a mouse move of yours (not the bot's own, nor what the mouse lock swallowed: UserIdle
+;leaves those out) in the last handsoff seconds (PlayerStats.txt, default 3 - and 3 at every start; 0 = never wait for you), while "Wait while
 ;I play" is on (HandsOffOn). Logged when it starts and ends; PlayerActive tells the dashboard
 PlayerActing()
 	{
@@ -1307,8 +1345,13 @@ PlayerActing()
 	;on the boss / player that follows within 10 s)
 	if (acting && A_ThisHotkey != "")
 		{
-		lastInput := A_TickCount - A_TimeIdlePhysical, keyAt := A_TickCount - A_TimeSinceThisHotkey
-		if (lastInput >= keyAt - 50 && lastInput <= keyAt + (HkIsAny(A_ThisHotkey, "boss,boost,player") ? 11000 : 600))
+		;(a click or wheel turn of yours the mouse lock swallowed is a hotkey too - Settings.ahk MouseLockSwallow: the bot's
+		;own is the one before it. Your last input as UserIdle has it: what the lock swallowed isn't you)
+		hkNow := A_ThisHotkey, keyAt := A_TickCount - A_TimeSinceThisHotkey
+		if (MouseLockIsKey(hkNow))
+			hkNow := A_PriorHotkey, keyAt := A_TickCount - A_TimeSincePriorHotkey
+		lastInput := A_TickCount - UserIdle()
+		if (hkNow != "" && lastInput >= keyAt - 50 && lastInput <= keyAt + (HkIsAny(hkNow, "boss,boost,player") ? 11000 : 600))
 			acting := false
 		}
 	if (acting && !logged)
@@ -1352,7 +1395,8 @@ BotToggle()
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
-		BlockInput, MouseMoveOff
+		;(your mouse let go at once - Settings.ahk MouseLockRelease)
+		MouseLockRelease("the bot's off")
 		if (IsObject(DeckBoss))
 			DebugLog("Deck: no boss ahead now - " DeckBoss.name " (the bot's off)"), DeckBoss := ""
 		DebugLog("Bot off (" HkText("bot") ") - it does nothing till " HkText("bot") " again")
@@ -1502,28 +1546,19 @@ HandsOffToggle()
 	}
 
 ;The tray menu's tick and the dashboard button's label
-;"Play for me" on/off - the dashboard's red button, the tray menu. On: every check for you off (UserIdle) - the bot plays
-;on as if you've left the PC, taking the mouse and the game's window whenever it needs them. F6 / F8 still stop it.
-;Turned on only once you've typed pimpmeout in the box that asks (your say-so - you asked for it, 2026-10-23); off at a
-;click. Never kept: off at every start
+;"Play for me" on/off - the dashboard's button (red off, green on), the tray menu. On: every check for you off (UserIdle) -
+;the bot plays on as if you've left the PC, taking the mouse and the game's window whenever it needs them. F6 / F8 still
+;stop it. On and off at a click - no box to type in (you asked, 2026-10-26: the pimpmeout box of 2026-10-23 gone). Never
+;kept: off at every start
 PlayForMeToggle()
 	{
-	if (!PlayForMe)
-		{
-		InputBox, pfmTyped, Play for me, % "Type 'pimpmeout' To Turn This Feature On`n`n(The bot then stops waiting for you: it takes the mouse and Wizard101's window whenever it needs them. " HkText("bot") " stops it.)", , 420, 190
-		if (ErrorLevel || Trim(pfmTyped) != "pimpmeout")
-			{
-			DebugLog("Play for me: not turned on (" (ErrorLevel ? "cancelled" : "the word typed wasn't pimpmeout") ")")
-			return
-			}
-		}
 	PlayForMe := !PlayForMe
 	PlayForMeShow()
 	DebugLog("Play for me: " (PlayForMe ? "ON - every check for you is off: the bot takes the mouse and the game's window whenever it needs them (" HkText("bot") " stops it)" : "off - the bot waits for you and keeps its hands off while you play, as set"))
 	TrayTip, Wizard101 bot, % PlayForMe ? "PLAY FOR ME is on: the bot no longer waits for you - it takes the mouse and the game whenever it needs them. " HkText("bot") " stops it." : "Play for me is off: the bot waits for you again.", 5, PlayForMe ? 2 : 1
 	}
 
-;The tray menu's tick and the dashboard's red button
+;The tray menu's tick and the dashboard's button (green while it's on)
 PlayForMeShow()
 	{
 	if (PlayForMe)
@@ -1554,6 +1589,8 @@ ClickAt(x, y, after := 0)
 	{
 	;(not in a battle round: the mouse goes back where it was after the click - mousereturn)
 	ownGrab := MouseGrab()
+	;(your mouse locked meanwhile - a battle round has it locked already: Settings.ahk MouseLockOn)
+	MouseLockOn("click")
 	MoveToCard(x, y)
 	Sleep, % Stats.HasKey("clickwait") ? Stats["clickwait"] : 40
 	;(and a random bit more: clickrandom)
@@ -1567,6 +1604,7 @@ ClickAt(x, y, after := 0)
 		AfterClick(after)
 	if (ownGrab)
 		MouseLetGo()
+	MouseLockOff("click")
 	}
 
 ;A wait after a click: ms times clickafter % (PlayerStats.txt; lower is faster)
@@ -1582,10 +1620,14 @@ AfterClick(ms)
 ;down onto the card. Not on the hand's row (an enemy, Pass, yourself): straight there. Already on that card: just there
 MoveToCard(x, y)
 	{
+	;(the bot still at it: the mouse lock's watchdog starts again - Settings.ahk MouseLockRenew; after each move, your
+	;clicks swallowed now the pointer's on the game - MouseLockMoved)
+	MouseLockRenew()
 	top := ScreenY - Px(90), bottom := ScreenY + Px(80), above := ScreenY - Px(150)
 	if (y < top || y > bottom)
 		{
 		MouseMove, x, y, MouseSpeedNow()
+		MouseLockMoved()
 		return
 		}
 	MouseGetPos, mx, my
@@ -1594,9 +1636,11 @@ MoveToCard(x, y)
 		if (my >= top)
 			MouseMove, mx, above, MouseSpeedNow()
 		MouseMove, x, above, MouseSpeedNow()
+		MouseLockMoved()
 		Sleep, 120
 		}
 	MouseMove, x, y, MouseSpeedNow()
+	MouseLockMoved()
 	}
 
 MouseSpeedNow()
@@ -1607,7 +1651,9 @@ MouseSpeedNow()
 CenterMouse()
 	{
 	UpdateGameRect()
+	MouseLockRenew()
 	Mousemove, ScreenX, ScreenY + Px(100), MouseSpeedNow()
+	MouseLockMoved()
 	}
 
 ;This bot's version (version.txt in its folder: v0.25.1...), "" if there's none
@@ -1815,12 +1861,16 @@ PicPath(rel)
 	return A_WorkingDir "\" rel
 	}
 
-;Switches to picture set i and sizes the search areas to its UI scale
-UsePicSet(i)
+;Switches to picture set i and sizes the search areas to its UI scale; why: what chose it (the log - every switch says
+;why since 2026-10-25, when one at 23:14:47 didn't)
+UsePicSet(i, why := "")
 	{
+	static upsUsed := 0
+	upsWas := upsUsed ? PicSet : "", upsUsed := 1
 	PicSet := i, PicDir := PicSets[i].dir, UiScale := PicSets[i].scale
 	HandHalf := Px(400), HalfPitch := Px(41)
-	DebugLog("Pictures: " (i = 1 ? "main set (UI scale 1)" : SubStr(PicDir, StrLen(A_WorkingDir) + 2) " (UI scale " Round(UiScale, 3) (PicSets[i].gen ? ", made from the cut pictures" : "") ")") " - card area +-" HandHalf " px, card spacing " 2 * HalfPitch " px")
+	DebugLog("Pictures: " (i = 1 ? "main set (UI scale 1)" : SubStr(PicDir, StrLen(A_WorkingDir) + 2) " (UI scale " Round(UiScale, 3) (PicSets[i].gen ? (PicSets[i].copy ? ", the cut set's copy made 1:1" : ", made from the cut pictures") : "") ")") " - card area +-" HandHalf " px, card spacing " 2 * HalfPitch " px"
+		. (why != "" ? " - " why : "") (upsWas != "" && upsWas != i ? " (was " PicSetName(upsWas) ")" : ""))
 	}
 
 ;Finds the Wizard101 client area on screen so searches follow the window when it's moved or resized
@@ -1961,6 +2011,77 @@ Click(ByRef title, ByRef click, ByRef dir)
 			}
 	}
 	
+;Your school's bubble (<school>\bubble - a global, all of the battle; the battle chain casts it before a hit, usebubble):
+;by its picture (Click), or - no picture found it, or the picture may be on another global (KillCalc.ahk BubbleMem:
+;BoostMemOnly["<school>/bubble"]) - at the game's card's box, only while the hand's boxes and the game's cards line up for
+;sure (KillCalc.ahk BoostMemBox, as UseMemAt casts a Tower Shield); not sure: the picture's spot as before, unless there's
+;none or the global already up may be under it (BubbleUpHeld). A global has no target: the card alone is clicked. The
+;global it put up is noted (BubbleUp - the game's name: the same one isn't cast again this battle; the slot's learned card
+;up already: its picture not clicked, the game's hand read or not). True if clicked; false: nothing was (the chain goes on
+;to the next card)
+ClickBubble()
+	{
+	global
+	local cbKey, cbAt, cbName, cbSlot
+	cbKey := BoostKey("bubble", hitschool)
+	if (IsObject(BoostMemOnly) && BoostMemOnly.HasKey(cbKey))
+		{
+		cbAt := BoostMemBox(cbKey, 0, "", "")
+		if (cbAt.x != "")
+			{
+			DebugLog("  " cbKey ": " (bubbleX != "" ? "its picture found a global, the game has another in hand too" : "no picture found it") " - the game's " cbAt.name " is card " cbAt.n " of " cbAt.of " in hand: cast at its box " cbAt.x - GameLeft "," cbAt.y - GameTop cbAt.note)
+			ClickAt(cbAt.x, cbAt.y, 100)
+			bubble := 1, BubbleUp := cbAt.name
+			return true
+			}
+		if (bubbleX = "" || BubbleUpHeld())
+			{
+			DebugLog("  " cbKey ": in hand (the game), not cast: " cbAt.why (bubbleX != "" ? " - the global up already may be under its picture" : ""))
+			bubble := 0
+			return false
+			}
+		DebugLog("  " cbKey ": in hand (the game), its box not sure (" cbAt.why ") - its picture's spot")
+		}
+	;(the slot's picture is its learned card's own: that card the global the bot put up this battle - not cast again,
+	;whether or not the game's hand is read this look: the hand still changing after a discard, the helper restarting...)
+	cbSlot := BubbleSlotName(hitschool)
+	if (BubbleUp != "" && cbSlot = BubbleUp)
+		{
+		if (IsObject(BoostSaid) && !BoostSaid.HasKey("up|" BubbleUp))
+			BoostSaid["up|" BubbleUp] := 1, DebugLog("  " cbKey ": its picture is " cbSlot "'s, the global the bot put up this battle - not cast again")
+		bubble := 0
+		return false
+		}
+	;(the game's name of the global the picture is on - the one every global in hand has, else the slot's learned card's
+	;(KillCalc.ahk BubbleHandName) - before the hand changes; not known: the global known up stays known, never blanked)
+	cbName := BubbleHandName()
+	if (!Click("bubble", bubble, hitschool))
+		return false
+	if (cbName != "")
+		BubbleUp := cbName
+	return true
+	}
+
+;Pass: its picture in the hand's area (resources\pass.png - Click), else the round's Pass button where the round start
+;finds it (PassButtonAt: resources\roundstart.png, or drawn hovered with the mouse on it) - clicked in its middle. A made
+;pass.png can miss when roundstart.png matches (2026-10-25 at UI 1.130: made from the 1.265 cut, it missed 9 times running,
+;the round start's Pass found each time at 984,829 - nothing cast, the same planning phase played again every 3 s till the
+;timer ended it). True if clicked
+ClickPass()
+	{
+	global
+	local cpX, cpY
+	if (Click("pass", pass, "resources"))
+		return true
+	if (PassButtonAt(cpX, cpY) != 0)
+		return false
+	DebugLog("  Click pass: found=1 at " cpX - GameLeft "," cpY - GameTop " - the round's Pass button" (PassHover ? ", drawn hovered" : "") ", as the round start finds it (pass.png missed it)")
+	;(the button's middle: the Pass picture is 64 x 26 at UI 1 - 81 x 33 cut at 1.265)
+	ClickAt(cpX + Px(32), cpY + Px(13), 100)
+	pass := 1
+	return true
+	}
+
 UseOnSelf(ByRef title, ByRef card, ByRef dir) 
 	{
 	global
@@ -2015,7 +2136,63 @@ UseMemAt(title, dir, ByRef card, ByRef x, ByRef y)
 		}
 	umaPic := (card == 1)
 	card := 1, x := umaAt.x, y := umaAt.y
-	DebugLog("  " umaKey ": " (umaPic ? "its picture found a shield, the game has another shield in hand too" : "no picture found it") " - the game's " umaAt.name " is card " umaAt.n " of " umaAt.of " in hand: cast at its box " x - GameLeft "," y - GameTop)
+	DebugLog("  " umaKey ": " (umaPic ? "its picture found a shield, the game has another shield in hand too" : "no picture found it") " - the game's " umaAt.name " is card " umaAt.n " of " umaAt.of " in hand: cast at its box " x - GameLeft "," y - GameTop umaAt.note)
+	return true
+	}
+
+;The solo filler's absorb (the battle chain, when no Tower Shield went - 2026-10-26): one that costs no pips (AbsorbFreeOk -
+;an X-pip or 3-pip one would spend what the next hit needs), on you - by its picture, else at its card box (UseOnSelf /
+;UseMemAt with AbsorbOnlyFree: only such a card's box). With usetower and useabsorb (KillCalc.ahk AbsorbOn). True if clicked
+AbsorbFiller()
+	{
+	global absorb, AbsorbFreeOk, AbsorbOnlyFree
+	if (absorb != 1 || !AbsorbFreeOk || !AbsorbOn())
+		return false
+	AbsorbOnlyFree := 1
+	afGo := UseOnSelf("absorb", absorb, "resources")
+	AbsorbOnlyFree := 0
+	return afGo
+	}
+
+;The battle chain's negative aura (KillCalc.ahk NegAuraMem - an Attenuate: +N% damage taken for 4 rounds): one that adds to
+;the planned hit's schools (NegAuraMatches) at its card box - only while the hand's boxes and the game's cards line up for
+;sure (BoostMemBox) -, then the trap rule's enemy (NegAuraWhere: the Alt+1 boss, else the one with the most health) - not
+;one it went on in the last 4 rounds (NegAuraOn - the enemy by the game's memory's participant, else its most health, else
+;its plate's place: KillCalc.ahk NegAuraKey, NegAuraWhen, NegAuraNote). Never by a picture (it has no slot). True if cast;
+;false: nothing clicked, the chain goes on (said once a battle why)
+UseNegAura()
+	{
+	global negaura, roundnumber, GameLeft, GameTop, BoostSaid
+	if (negaura != 1 || !Stat("usetraps"))
+		return false
+	unHand := IsFunc("VisionCards") ? Func("VisionCards").Call(300, 5000) : ""
+	if (!IsObject(unHand) || !NegAuraMatches(unHand.cards).Length())
+		{
+		if (IsObject(BoostSaid) && !BoostSaid.HasKey("negaura|nofit"))
+			BoostSaid["negaura|nofit"] := 1, DebugLog("  negaura: none in hand adds to the planned hit's schools - not cast")
+		return false
+		}
+	if (!NegAuraWhere(unX, unY, unKey, unWho))
+		{
+		DebugLog("  negaura: no enemy's plate found to put it on - not cast")
+		return false
+		}
+	unWhen := NegAuraWhen(unKey)
+	if (unWhen != "" && roundnumber - unWhen < 4)
+		{
+		DebugLog("  negaura: " unWho " has one from round " unWhen " (4 rounds) - not cast again yet")
+		return false
+		}
+	unAt := BoostMemBox("negaura", 0, "", "")
+	if (unAt.x = "")
+		{
+		DebugLog("  negaura: in hand (the game), not cast: " unAt.why)
+		return false
+		}
+	DebugLog("  negaura: the game's " unAt.name " is card " unAt.n " of " unAt.of " in hand: cast at its box " unAt.x - GameLeft "," unAt.y - GameTop " on " unWho " (" unX - GameLeft "," unY - GameTop ")" unAt.note)
+	ClickAt(unAt.x, unAt.y, 150)
+	ClickAt(unX, unY, 200)
+	NegAuraNote(unKey, roundnumber), negaura := 0
 	return true
 	}
 
@@ -2044,7 +2221,7 @@ UseBlade(ByRef title, ByRef blade, ByRef Use1, ByRef Use2, ByRef dir)
 			return UseHeldBack("blade", title)
 			}
 		blade := 1, foundX := ubAt.x, foundY := ubAt.y, ubSrc := ubAt.src, ubItem := ubAt.item, ubMem := 1, ubEnch := ubAt.ench ? 1 : 0
-		DebugLog("  " ubKey ": no picture found it - the game's " ubAt.name " is card " ubAt.n " of " ubAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop)
+		DebugLog("  " ubKey ": no picture found it - the game's " ubAt.name " is card " ubAt.n " of " ubAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop ubAt.note)
 		}
 	else if (blade == 1 && IsObject(BoostHand) && BoostHand.HasKey(ubKey))
 		{
@@ -2167,7 +2344,7 @@ UseTrap(ByRef title, ByRef trap, ByRef Use1, ByRef Use2, ByRef dir)
 			return false
 			}
 		trap := 1, foundX := utAt.x, foundY := utAt.y, utSrc := utAt.src, utItem := utAt.item, utMem := 1, utEnch := utAt.ench ? 1 : 0
-		DebugLog("  " utKey ": no picture found it - the game's " utAt.name " is card " utAt.n " of " utAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop)
+		DebugLog("  " utKey ": no picture found it - the game's " utAt.name " is card " utAt.n " of " utAt.of " in hand: cast at its box " foundX - GameLeft "," foundY - GameTop utAt.note)
 		}
 	else if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.HasKey(utKey))
 		{
@@ -2275,14 +2452,24 @@ UseHeldBack(kind, title)
 	return false
 	}
 
+;Your school's prism (<school>\convert) on the boss picked with Alt+1 (the chain asks NeedsConvert first: it's of your
+;school): by its picture, else - no picture found it, the game's hand has it (KillCalc.ahk ConvertMem) - at its card box
+;(UseMemAt); then the boss. True if clicked (before 2026-10-26 it clicked where the picture had been even when it wasn't
+;found again, and gave nothing back - the chain went on to the next card). Noted as on the boss till a hit of yours goes
+;out (ConvertOn: your hits counted now - KillCalc.ahk ConvertUp)
 UseConvert(ByRef title, ByRef convert, ByRef dir)
 	{
 	global
 	CenterMouse()
 	Find(title, convert, foundX, foundY, dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" convert " at " foundX - GameLeft "," foundY - GameTop)
+	UseMemAt(title, dir, convert, foundX, foundY)
+	if (convert != 1)
+		return false
 	ClickAt(foundX, foundY, 150)
 	ClickAt(bossX, bossY, 200)
+	ConvertOn := {hits: PartyHits ? PartyHits : 0, round: roundnumber}
+	return true
 	}
 	
 UseHit(ByRef title, ByRef hit, ByRef dir, useEnchant := 1)
@@ -2557,11 +2744,17 @@ TargetClick(x, y)
 		return 0
 		}
 	ownGrab := MouseGrab()
+	;(your mouse locked meanwhile - Settings.ahk MouseLockOn)
+	MouseLockOn("click")
 	MouseMove, x, y, MouseSpeedNow()
+	;(a battle move: the round's hold renewed, your clicks swallowed now the pointer's on the game - Settings.ahk
+	;MouseLockRenew)
+	MouseLockRenew()
 	Sleep, % Max(150, Stats.HasKey("clickwait") ? Stats["clickwait"] : 40)
 	Click
 	if (ownGrab)
 		MouseLetGo()
+	MouseLockOff("click")
 	return 1
 	}
 
@@ -2716,7 +2909,9 @@ ResetVariables()
 	HeadsMemo := {}, BoostPctMem := {}, AuraSch := "", PartyLastSch := "", PlanHit := "", PlanHeads := "", PlanList := ""
 	BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
 	SbFound := {}, GbFound := {}, BoostHand := {}, BoostSrcUsed := {}, BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := {}, BoostMisfitDone := 0
-	BoostUnrec := [], BoostOneOfOff := {}, BoostMemOnly := {}
+	BoostUnrec := [], BoostOneOfOff := {}, BoostMemOnly := {}, BubbleUp := ""
+	;(the negative auras put up this battle, an absorb or one in hand, your prism on the boss - 2026-10-26)
+	NegAuraOn := {}, absorb := 0, AbsorbFreeOk := 0, AbsorbOnlyFree := 0, negaura := 0, ConvertOn := ""
 	EnemyHP := ""
 	BossSlot := 0
 	BossMax := 0
@@ -2725,16 +2920,28 @@ ResetVariables()
 	ToolTip,,,, 20
 }
 	
+;Whether the boss picked with Alt+1 needs your school's prism (the chain's convert): the game's memory says it's of your
+;school - it resists your hits (KillCalc.ahk ConvertNeedMem, read-only). Not known - the memory not read: no. (Before
+;2026-10-26 it looked for <school>\convertN.png by the boss with a folder that was always blank, so it never found it - a
+;10 px badge at tolerance 100 would match about anything: not looked for). Your prism on it already and no hit of yours since
+;(KillCalc.ahk ConvertUp - the review, 2026-10-26: one went out every round while one was in hand): no
 NeedsConvert()
 	{
-	if (BossChoosen == 1)
+	global BossChoosen, hitschool, BoostSaid, ConvertOn
+	if (BossChoosen != 1 || !IsFunc("ConvertNeedMem"))
+		return false
+	if (IsFunc("ConvertUp") && Func("ConvertUp").Call())
 		{
-		ImageSearch, nX, nY, BossX - Px(100), BossY - Px(100), BossX + Px(100), BossY + Px(100), % PicOpt(dir "\convertN.png", 100)
-		if (Errorlevel == 0)
-			{
-			return true
-			}
+		if (IsObject(BoostSaid) && !BoostSaid.HasKey("convert|up" ConvertOn.round))
+			BoostSaid["convert|up" ConvertOn.round] := 1, DebugLog("  convert: your prism went on the boss in round " ConvertOn.round " and no hit of yours has gone out since - not a second one")
+		return false
 		}
+	ncMem := Func("ConvertNeedMem").Call()
+	ncSay := "convert|" (ncMem = "" ? "unknown" : ncMem)
+	if (IsObject(BoostSaid) && !BoostSaid.HasKey(ncSay))
+		BoostSaid[ncSay] := 1, DebugLog("  convert: the boss " (ncMem = 1 ? "is " hitschool " (the game's memory) - it resists your hits: your prism first"
+			: ncMem = 0 ? "isn't " hitschool " (the game's memory) - no prism" : "- its school not read from the game's memory (" NavBattleWhy "): no prism"))
+	return (ncMem = 1)
 	}
 	
 LockMove(ByRef direction)
@@ -2916,7 +3123,8 @@ LoreLoop:
 		} else if ((loremode == 1) && (dualmode == 1))
 			{
 			;Joins Battles with same wizard you started the loop in
-			BlockInput, MouseMove
+			;(your mouse locked the whole way - about a minute: Settings.ahk MouseLockOn, 2 minutes before its watchdog)
+			MouseLockOn("lore", 120000)
 			num := Mod(%battles% + 1, 50)
 			if (num == 0)
 				{
@@ -2947,7 +3155,7 @@ LoreLoop:
 			LockMove("w")
 			s(5000)
 			switch()
-			BlockInput, MouseMoveOff
+			MouseLockOff("lore")
 			return
 			} else 
 				{
@@ -3060,7 +3268,8 @@ return
 HkBoss:
 if ((on == 1) && (inbattle == 1))
 	{
-	BlockInput, MouseMoveOff
+	;(your mouse free for the pick - Settings.ahk MouseLockPause; locked again after if a round still has it)
+	MouseLockPause(1)
 	NewStaticGui("Please Select Boss Location.", 10, 10, 140, 30)
 	KeyWait, LButton, D, 10
 		If (Errorlevel = 0)
@@ -3075,7 +3284,7 @@ if ((on == 1) && (inbattle == 1))
 			BossTraps := {}, TrapFoeX := "", TrapFoeY := "", TrapFoeMax := "", TrapFoeN := 0, TrapSlot := 0
 			Gui, 1:Destroy
 			}
-	BlockInput, MouseMove
+	MouseLockPause(0)
 	CenterMouse()
 	}
 return
@@ -3090,7 +3299,7 @@ return
 HkBoost:
 if ((on == 1) && (inbattle == 1))
 	{
-	BlockInput, MouseMoveOff
+	MouseLockPause(1)
 	NewStaticGui("Please Select Hammer Location.", 10, 10, 140, 30)
 	KeyWait, LButton, D, 10
 		If (Errorlevel == 0)
@@ -3101,17 +3310,17 @@ if ((on == 1) && (inbattle == 1))
 			ManualSchool := BestBadge(ManualX - Px(75), ManualY - Px(75), ManualX + Px(75), ManualY + Px(75), manualBX, manualBY, ManualX, ManualY)
 			DebugLog(HkText("boost") ": the boosts go to the plate at " ManualX - GameLeft "," ManualY - GameTop " (" (ManualSchool = "" ? "its school not read" : ManualSchool) ") this battle")
 			Gui, 1:Destroy
-			BlockInput, MouseMove
 			CenterMouse()
 			}
-
+	;(locked again whether or not a plate was picked - if a round still has it)
+	MouseLockPause(0)
 }
 return
 
 HkPlayer:
 if ((on == 1) && (inbattle == 1))
 	{
-	BlockInput, MouseMoveOff
+	MouseLockPause(1)
 	NewStaticGui("Please Select New Player Location.", 10, 10, 140, 30)
 	KeyWait, LButton, D, 10
 		If (Errorlevel = 0)
@@ -3119,8 +3328,8 @@ if ((on == 1) && (inbattle == 1))
 			global ManualPlayer := 1
 			MouseGetPos, ManualPlayerX, ManualPlayerY
 			Gui, 1:Destroy
-			}	
-	BlockInput, MouseMove
+			}
+	MouseLockPause(0)
 	CenterMouse()
 	}
 return
@@ -3253,7 +3462,7 @@ CommandHit()
 								} else 
 									{
 									Respond("It Seems There Are No Hits In Hand, I'll Pass Instead.")
-									Click("pass", pass, "resources")
+									ClickPass()
 									}
 				}
 			} else if (Errorlevel == 1)
@@ -3465,7 +3674,8 @@ if (on = 1)
 			loop 
 				{
 				BlockInput, SendAndMouse
-				BlockInput, Mousemove
+				;(your mouse locked - Settings.ahk MouseLockOn; a loop's turn takes about 20 s)
+				MouseLockOn("dev", 120000)
 				sleep, %Wait%
 				send, x
 				sleep, %Wait%
@@ -3479,7 +3689,7 @@ if (on = 1)
 				sleep, %Buffer%
 				Mousemove, A_ScreenWidth/2, A_ScreenHeight/2,%Mousespeedfast%
 				BlockInput, SendAndMouse
-				BlockInput, Mousemove 
+				MouseLockRenew()
 				sleep, %Loading%
 				loop, 600
 					{
@@ -3521,6 +3731,7 @@ if (on = 1)
 				Mousemove, A_ScreenWidth/2, A_ScreenHeight/2, %Mousespeedslow%
 				sleep, %Loading%
 				BlockInput, Off
+				MouseLockOff("dev")
 				}
 			}
 		}

@@ -30,6 +30,7 @@ PORT = 47140            # the leader's LAN port (a setting)
 BEAT = 0.4              # how often each helper reads its wizard and (a follower) calls the leader
 STALE = 10.0            # a follower not heard from this long is dropped
 MAX_FOLLOWERS = 3
+LOG_EVERY = 60.0        # the same party log line at most this often (s)
 NAME_RE = re.compile(r"^[\w .'-]{1,24}$")
 ZONE_RE = re.compile(r"^[\w/\\ .'-]{1,120}$")
 HOLD_RE = re.compile(r"^[\w .,'()/-]{0,80}$")
@@ -135,7 +136,21 @@ class Party:
         self.server, self.server_key = None, None
         self.fails, self.next_beat = 0, 0.0
         self.id = '%08x' % random.getrandbits(32)
+        self._said = {}                     # a log line -> (when it was last written, how many times it came since)
         threading.Thread(target=self._loop, name='party', daemon=True).start()
+
+    def _log_once(self, msg, every=LOG_EVERY):
+        """msg into the log - the same line again at most every `every` s, with how many times it came in between (a
+        fault that repeats every beat: 2026-10-25's "'tuple' object has no attribute 'get'", 3 a second all evening)"""
+        now = time.time()
+        at, n = self._said.get(msg, (None, 0))
+        if at is not None and now - at < every:
+            self._said[msg] = (at, n + 1)
+            return
+        if len(self._said) > 50:
+            self._said.clear()
+        self._said[msg] = (now, 0)
+        self.log(msg + (f' (and {n} times more in the last {every:.0f} s)' if n else ''))
 
     # ------------------------------------------------------------------ from AutoFarmer
     def update(self, q):
@@ -314,8 +329,8 @@ class Party:
                         self.state, self.why = 'off', ''
                 if role == 'follower' and t0 >= self.next_beat:
                     self._beat_out()
-            except Exception as e:  # noqa: BLE001 - one bad beat mustn't end the thread
-                self.log(f'party: {e!r}')
+            except Exception as e:  # noqa: BLE001 - one bad beat mustn't end the thread (said once a minute)
+                self._log_once(f'party: {e!r}')
             time.sleep(max(0.05, BEAT - (time.time() - t0)))
 
     def _read(self):
@@ -324,7 +339,10 @@ class Party:
             if self.cfg['role'] == 'off':
                 return
         r = self.reader()
-        if not r or not r.get('zone') or r.get('pos') is None:
+        # (a reader answering navmem's (reading, why) pair: its reading)
+        if isinstance(r, tuple):
+            r = r[0] if r else None
+        if not isinstance(r, dict) or not r.get('zone') or r.get('pos') is None:
             return
         now = time.time()
         x, y, z = r['pos'][:3]

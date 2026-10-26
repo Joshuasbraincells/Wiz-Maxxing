@@ -35,16 +35,17 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   spell...), tc a treasure card, item an item card (a wand's...),
                                                   enchantment its enchantment's name ("" none), value its number as the
                                                   bot keeps it - a hit "lo-hi" (every head added), "N/pip" (X pips), a
-                                                  heal "N", "N%" (shield, blade, trap, aura, weakness), "+N" (an enchant)
+                                                  heal "N", "N%" (shield, blade, trap, aura, bubble, weakness), "+N" (an enchant)
                                                   - the card's own, without the enchantment, which is in the next fields
                                                   ("kModifyCardDamage +175", the value with it); kind the bot's name for
-                                                  it: damage aoe heal ward blade trap aura weakness enchant dot stun
-                                                  dispel prism clear polymorph keep; dot the damage (healing) over time
-                                                  besides; school pips the pips of a school it wants besides "fire:1";
+                                                  it: damage aoe heal ward blade trap aura bubble (a global) weakness
+                                                  enchant dot stun dispel prism clear polymorph keep; dot the damage
+                                                  (healing) over time besides; school pips the pips of a school it
+                                                  wants besides "fire:1";
                                                   text about as the card says it; heads a damage card's damage by
                                                   school, every head of it, each its least: "fire:230,ice:230,storm:230"
-                                                  (Hydra; the enchantment not added); boosts what a blade, trap or aura
-                                                  boosts by school: "ice:35,storm:35,fire:35", "all:25" (every school);
+                                                  (Hydra; the enchantment not added); boosts what a blade, trap, aura
+                                                  or bubble boosts by school: "ice:35,storm:35,fire:35", "all:25" (every school);
                                                   either "?" when it can't be trusted (not all of the card read, a head
                                                   of an odd kind or school), "" none - handmem.heads_field /
                                                   boosts_field; an older helper has no fields 24-25)
@@ -180,16 +181,22 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /battle                                 -> the battle's participants, read from the game's memory (read-only, see
                                              vision\bossmem.py) - in a battle's planning phase - one line each, the
                                              wizard's own first:
-                                               part|me|team|name|health|max|boss|title|rank|school|player|gid
+                                               part|me|team|name|health|max|boss|title|rank|school|player|gid|x
                                                                      (me 1: the wizard's own; team the game's number -
                                                                      the wizard's side vs the enemies'; name the mob's
                                                                      ("" a wizard); health and max its health now and
                                                                      its most; boss 1 the game's own boss flag; title,
                                                                      rank, school its mob's template's (as /mobs');
-                                                                     player 1 a wizard; gid its owner's global id -
-                                                                     "" a field not read)
+                                                                     player 1 a wizard; gid its owner's global id; x
+                                                                     the middle of its plate across the game's window,
+                                                                     0..1 (its GUI rect over the root's) - "" a field
+                                                                     not read)
                                              or one line "none|<why>" (not in a battle's planning phase, the readers
                                              being made - once per game -, the game not running...)
+  /uiroot                                 -> the game's GUI root's size in GUI units, read from the game's memory
+                                             (read-only - navmem.ui_root): "root|<w>|<h>" (1827|1027 at 2560x1440,
+                                             UI 1.144 - the window's pixels over it are the GUI's scale; AutoFarmer
+                                             cross-checks its picture set's UI scale with it), or "none|<why>"
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -1012,6 +1019,14 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
             continue
         bx1, by1, bx2, by2 = box(ART_BOX, scale, c['left'] - x1, c['top'] - y1)
         around = img[max(0, by1 - LIKE_PAD):by2 + LIKE_PAD, max(0, bx1 - LIKE_PAD):bx2 + LIKE_PAD]
+        # (every learned picture is compared - and every slot or hand-cut one the plain match missed, below - and the
+        # closest names the box, not the first one under its limit: 2026-10-25 Balanceblade's picture, learned before
+        # Bladestorm's, came to 16 on Bladestorm's copies and named 142 of 177 Bladestorm boxes - Bladestorm's learned
+        # picture sits 8 px off the art box, out of reach here, while its slot's picture, resources\blade4, matches it at 7
+        # below, never looked at once a learned picture had named the box. A slot's picture names the box over a learned
+        # card in no slot that comes up less than LIKE_SLOT_GAP closer: two pictures of one card, the slot's the one the
+        # bot plays it by)
+        hits = []
         for ent in learned or ():
             if not learned_is_card(ent.split(':', 1)[0]):
                 continue
@@ -1020,36 +1035,51 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
                 continue
             d, (dy, dx), diff = like(around, pic['tpl'], pic['mask'])
             if d < LIKE_DIST:
-                c['known'], c['kdist'] = pic['name'], d
-                if pic['files']:
-                    c['liked'] = int(refine(pic, diff) and pic['slot'] != '')
-                elif here:
-                    h, w = pic['mask'].shape
-                    c['liked'] = int(cut_here(around[dy:dy + h, dx:dx + w], pic, here))
-                break
+                hits.append((d, len(hits), pic, dy, dx, diff))
+        got = None
+        if hits:
+            got = min(hits, key=lambda h_: h_[:2])
+            if not got[2]['slot']:
+                slots = [h_ for h_ in hits if h_[2]['slot'] and h_[0] - got[0] < LIKE_SLOT_GAP]
+                if slots:
+                    got = min(slots, key=lambda h_: h_[:2])
         # (or a card the bot has a picture for that the plain match missed: never learned twice. A
         # hand-cut picture can be anywhere on its card: its best place by the plain match, then compared
         # there leaving out the pixels that differ most)
-        if not c['known']:
-            L, T = c['left'] - x1, c['top'] - y1
-            whole = img[max(0, T):T + int(round(ch)), max(0, L):L + int(round(cw))]
-            region = Region(whole)
-            for want in pics:
-                if '/' not in want or want.startswith('learned/'):
-                    continue
-                sub, name = want.split('/', 1)
-                pic = LIB.get(f'{sub}{os.sep}{name}.png', scale)
-                if pic is None:
-                    continue
-                dmap = region.distance_map(pic[0], pic[1])
-                if dmap is None:
-                    continue
-                py, px = np.unravel_index(np.argmin(dmap), dmap.shape)
-                h, w = pic[1].shape
-                d = like(whole[max(0, py - 1):py + h + 1, max(0, px - 1):px + w + 1], pic[0], pic[1])[0]
-                if d < LIKE_CUT:
-                    c['known'], c['kdist'] = want, d
-                    break
+        L, T = c['left'] - x1, c['top'] - y1
+        whole = img[max(0, T):T + int(round(ch)), max(0, L):L + int(round(cw))]
+        region = Region(whole)
+        cut = None
+        for want in pics:
+            if '/' not in want or want.startswith('learned/'):
+                continue
+            sub, name = want.split('/', 1)
+            pic = LIB.get(f'{sub}{os.sep}{name}.png', scale)
+            if pic is None:
+                continue
+            # (its FFTs kept, as find_cards' - every unknown card is looked at so now: a card-sized set per picture)
+            dmap = region.distance_map(pic[0], pic[1], ('card ' + want, round(scale, 3)))
+            if dmap is None:
+                continue
+            py, px = np.unravel_index(np.argmin(dmap), dmap.shape)
+            h, w = pic[1].shape
+            d = like(whole[max(0, py - 1):py + h + 1, max(0, px - 1):px + w + 1], pic[0], pic[1])[0]
+            if d < LIKE_CUT and (cut is None or d < cut[0]):
+                cut = (d, want)
+        # (the slot or hand-cut picture when it's closer than the learned one - or it's the same slot's: the learned
+        # picture then, made see-through as ever; a learned card in no slot gives way to it within LIKE_SLOT_GAP)
+        if cut and got and cut[1] != got[2]['name'] and (cut[0] < got[0] or (not got[2]['slot'] and cut[0] - got[0] < LIKE_SLOT_GAP)):
+            got = None
+        if got:
+            d, _, pic, dy, dx, diff = got
+            c['known'], c['kdist'] = pic['name'], d
+            if pic['files']:
+                c['liked'] = int(refine(pic, diff) and pic['slot'] != '')
+            elif here:
+                h, w = pic['mask'].shape
+                c['liked'] = int(cut_here(around[dy:dy + h, dx:dx + w], pic, here))
+        elif cut:
+            c['known'], c['kdist'] = cut[1], cut[0]
         if c['known']:
             continue
         # the same as a card further left nobody knows (two copies in hand): same = that one's number
@@ -1078,6 +1108,10 @@ def read_hand(x1, y1, x2, y2, scale, pics, file=None, learned=None, here='', thu
 # more than LIKE_PIXEL goes see-through in the learned picture (so the plain match, under CARD_DIST over the
 # pixels left, finds the next copy like this one)
 LIKE_DIST, LIKE_PAD, LIKE_PIXEL = 27.0, 3, 10.0
+# Two learned pictures under LIKE_DIST on one box: the closest names it - but a slot's over one in no slot that's less than
+# this closer (the learned cards' own cuts at 1.144, 2026-10-25: a card's two pictures 1.1-4.1 apart; Hex's picture came to
+# 22.2 on an Ice card its own picture matched at 0.0)
+LIKE_SLOT_GAP = 8.0
 # A hand-cut picture (its shimmering pixels already see-through): under LIKE_CUT that way (another card
 # came to 26 against a thin, resized one)
 LIKE_CUT = 15.0
@@ -1758,8 +1792,11 @@ def party():
         import party as party_mod
 
         def read():
+            # (navmem's read() answers (reading, why): the reading - the pair itself, taken for one, failed on .get several
+            # times a second all of 2026-10-25's evening, and the party never had the wizard's place)
             try:
-                return nav_reader().read(path=False, wait=0.2)
+                r, _why = nav_reader().read(path=False, wait=0.2)
+                return r
             except Exception:  # noqa: BLE001 - no game, no place
                 return None
         PARTY = party_mod.Party(read, log=log)
@@ -2028,9 +2065,20 @@ def mob_line(m, me):
             + '|' + mob_cell(m.get('named')))
 
 
+def plate_x(p):
+    """the middle of a participant's plate across the client, 0..1 (its box - in the root, bossmem's GUI units - over the
+    root's width), '' not read"""
+    b, r = p.get('box'), p.get('root')
+    try:
+        w = r[2] - r[0]
+        return f'{(b[0] + b[2]) / 2 / w:.4f}' if w > 0 and b[2] > b[0] else ''
+    except (TypeError, IndexError):
+        return ''
+
+
 def battle_lines(parts, why=''):
-    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid a
-    participant (the wizard's own first), or none|<why>"""
+    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x a
+    participant (the wizard's own first), or none|<why> - x (plate_x) last: an older bot reads the first 12"""
     if not parts:
         return ['none|' + mob_cell(why or 'not in a battle')]
     out = []
@@ -2040,7 +2088,7 @@ def battle_lines(parts, why=''):
                              mob_cell(p.get('health')), mob_cell(p.get('max_health')), mob_cell(p.get('boss')),
                              mob_cell(mob.get('title')), mob_cell(mob.get('rank')),
                              mob_cell(mob.get('school') or (p.get('school') or '').capitalize() or None),
-                             mob_cell(p.get('player')), mob_cell(p.get('owner'))]))
+                             mob_cell(p.get('player')), mob_cell(p.get('owner')), plate_x(p)]))
     return out
 
 
@@ -2123,7 +2171,7 @@ PLACES_SAID = {'at': 0.0}   # (when a failure to read the zone's file may be log
 
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy)
-GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items'}
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot'}
 
 
 def places_busy(on):
@@ -3105,6 +3153,9 @@ class Handler(BaseHTTPRequestHandler):
             if u.path == '/battle':
                 parts, why = nav_reader().battle(wait=0.3)
                 return self.reply('\n'.join(battle_lines(parts, why)))
+            if u.path == '/uiroot':
+                size, why = nav_reader().ui_root(wait=0.3)
+                return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

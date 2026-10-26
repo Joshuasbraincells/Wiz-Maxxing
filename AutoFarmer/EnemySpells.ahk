@@ -399,6 +399,19 @@ EnemyDefend()
 			return true
 			}
 		}
+	;(no Tower Shield went: an absorb - it soaks N damage - on you, whatever it costs: by its picture (resources\absorb), else
+	;at its card box by the game's hand - KillCalc.ahk AbsorbMem, 2026-10-26)
+	if (absorb == 1 && IsFunc("AbsorbOn") && Func("AbsorbOn").Call())
+		{
+		DebugLog(edWhy " - an absorb")
+		UseOnSelf("absorb", absorb, "resources")
+		if (absorb == 1 && CastWentOut())
+			{
+			if (IsFunc("DashCast"))
+				Func("DashCast").Call("absorb")
+			return true
+			}
+		}
 	DebugLog(edWhy " - nothing to heal or shield with in hand")
 	return false
 	}

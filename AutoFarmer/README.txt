@@ -181,13 +181,28 @@ dashboard's "Wait for me" button; it's kept in PlayerStats.txt (handsoffon).
 It's on again, with 3 s, every time the bot starts - it never takes the mouse
 from you as it starts; switched off or changed, that holds for the run.
 
-Play for me (the dashboard's red button, or the tray menu): for leaving the
-PC for days. Every check for you is off - it no longer waits while you use the
+Your mouse locked while the bot uses it (Settings > THE MOUSE AND WAITS, "Lock
+my mouse while the bot uses it" - mouselock, on unless 0): while the bot has
+the mouse - a battle round (from its first look at the hand to "Round done"),
+a click out of battle, a mouse turn while walking, a potion route's or a login
+click - your mouse can't move the pointer, and with the pointer over Wizard101
+its buttons and wheel do nothing. What you do with the mouse then doesn't count
+as you playing. The keyboard always stays free: F6 stops the bot and frees the
+mouse, and with "Wait for me" on any key leaves the round to you (Alt+1 / Alt+2
+/ Windows+3 free the mouse for their pick). It's freed at once when the bot's
+done, when Wizard101 isn't the window in front (Alt+Tab), on an error and when
+the bot closes - and by itself if a hold of the bot's hasn't been renewed for
+15 s (one it forgot to give back too, however busy the rest of the bot is).
+Off: your mouse always works (moving it makes the bot wait for you, as "Wait
+for me" says). debug.log: "Mouse locked - ..." / "Mouse unlocked - ...".
+
+Play for me (the dashboard's button, or the tray menu): for leaving the PC for
+days. Every check for you is off - it no longer waits while you use the
 keyboard or mouse, gives the mouse back, keeps out of a window you're using or
 leaves a shop's window to you; it brings Wizard101 to the front whenever it
-needs it. It asks you to type pimpmeout to turn it on (your say-so); a click
-turns it off. It's off at every start - the bot only takes control once you've
-said so. F6 and F8 still stop it.
+needs it. One click turns it on - the button goes green, "PLAYING FOR ME" -
+and another turns it off (red again). It's off at every start - the bot only
+takes control once you've said so. F6 and F8 still stop it.
 
 Updates: opening Wiz-Maxxing (Start menu, desktop, ..\Wiz-Maxxing.exe) checks
 GitHub for a newer release and asks before installing it; tray menu "Check for
@@ -312,7 +327,7 @@ and a picture of its game (only while Wizard101 is the window in front there -
 nothing else on its screen is sent), every 6 s. Its buttons turn that bot on
 or off, switch its Play for me off, or restart it - only between bots with the
 same network PIN (netpin, not 0); Play for me can't be switched on from the
-network (pimpmeout at that PC). Windows asks once on each PC to let Python
+network (only at that PC: its button). Windows asks once on each PC to let Python
 through its firewall: allow it on Private networks. Both PCs' clocks have to
 be right (2 minutes apart at most). debug.log: "Network: ...".
 Updating by itself (Settings > UPDATES, autoupdate - on, every 10 minutes): the
@@ -792,7 +807,8 @@ pips - waits until it's castable), is learned:
 	- kinds it knows: a hit on one enemy or all (with a part over time:
 	  only the part up front counts), a heal, a shield (-50%), a trap (+N%
 	  with the shield icon), a blade (+N% with the charm icon), an aura
-	  (+N% to all spells, or your school's, for some rounds) - and kinds it
+	  (+N% to all spells, or your school's, for some rounds), a bubble (a
+	  global spell - all of the battle, e.g. +25% Ice damage) - and kinds it
 	  doesn't play: damage over time only, stun, dispel, prism (convert),
 	  "Clear", X-pip spells, weaknesses. Those are kept and recognised, never
 	  cast; one it can't be sure of is kept as "unsure" till it's seen at a
@@ -806,7 +822,13 @@ pips - waits until it's castable), is learned:
 	  pips -> wand, heal -> heal1/heal2, shield -> resources\tower, a trap ->
 	  resources\trap3 (only "+N% to next spell" at the % PlayerStats.txt has
 	  for trap3), an aura -> <school>\aura (only at its aura %), a blade as
-	  before (blade3, or your school's blade, at their %). Its numbers
+	  before (blade3, or your school's blade, at their %), a bubble ->
+	  <school>\bubble (one the game's memory says boosts your school's
+	  damage, or one you set to Bubble on the Spells tab), an absorb ->
+	  resources\absorb, a Sharpened Blade / Potent Trap -> resources\sharpen
+	  / potent (at least the sharpen: / potent: % PlayerStats.txt has), your
+	  school's prism -> <school>\convert (the game's memory says it's your
+	  school's, or you set it to Prism on the Spells tab). Its numbers
 	  go into PlayerStats.txt (<school>.hitN, hitNpips, hitNtarget, ...) under
 	  "Cards the bot learned by itself". The damage is read at three sizes
 	  and two must agree (and make sense, low-high); if not it's written as 0,
@@ -832,6 +854,37 @@ count then (generic 1, power and your school's pips 2, another school's 1),
 the pip row under your name still read each round, for the log and in case the game can't be read (debug.log:
 "pips=N (from the game; the pip row read M)" when they differ). navmem:0 in
 PlayerStats.txt switches it off with the walker's memory reading.
+Every battle spell type of the game's own list (its spells' type: Damage,
+AOE, Steal, Heal, Charm, Curse, Ward, Jinx, Aura, AuraNegative, Global,
+Manipulation, Enchantment, Mutate, Polymorph, Shadow) has a kind on the
+Spells tab, read from the game's memory by what the card does:
+	- played: a hit (Steal ones too), a heal, a shield, an absorb (soaks N
+	  damage - Spirit Armor, Ice Armor, Legion Absorb: cast on you on Tower
+	  Shield's turns, after it - when the bot defends you, and as the filler
+	  when nothing else can go, there only one that costs no pips; usetower,
+	  and useabsorb:0 in PlayerStats.txt switches absorbs off), a blade, a
+	  trap (the Weaving traps that convert too - Heat Trap - are traps), an
+	  aura, a bubble, a negative aura (Attenuate: +N% damage taken on one
+	  enemy for 4 rounds - cast at its card box by the game's hand on the
+	  enemy the traps go on (the Alt+1 boss, else the one with the most
+	  health) before the traps and blades, once in 4 rounds an enemy, only
+	  one that adds to the hit planned (a school's Attenuate for that
+	  school's damage; usetraps); Starfall and Pathogen aren't played), an
+	  enchant, Sharpened Blade and Potent Trap (resources\sharpen / potent),
+	  your school's prism (<school>\convert: cast at the boss picked with
+	  Alt+1 when the game's memory says it's of your school - it resists
+	  your hits; one, then none till a hit of yours has gone out; at its
+	  card box when no picture finds it)
+	- not played, kept in the list: damage over time, stun, dispel, Clear,
+	  a weakness, a curse (an enemy's accuracy or healing down - Black
+	  Mantle, Infection), a charm that isn't a blade (spears, Guidance,
+	  Guiding Light), another enchantment (Accurate, Aegis, Cloak...), a
+	  mutation (Mutate Kraken), a polymorph, a shadow form (Shadow Shrike...),
+	  a minion spell (Animate, Mend Minion), a pips spell (Donate Power,
+	  Empower), another manipulation (Steal Ward, Taunt, Shift, Mana Burn),
+	  Not used. Those are discarded as before (a Reshuffle never)
+A kind an older version doesn't know (its cards.txt read by it) is simply
+not played there.
 Copies of a card shimmer a little, so a learned picture is cut solid from one
 copy and the pixels that differ in the next copies turn see-through by
 themselves. A pip cost that couldn't be read is guessed as the pips you had
@@ -894,8 +947,9 @@ Pick one to see its picture. Pick one or more and:
 	  School: the card's own school - Fire, Ice, Storm, Myth, Life, Death,
 	  Balance, or Sun (enchants), Star (auras), Moon (polymorphs), Shadow;
 	  the card stays in the deck of the wizard it was learned for. TC: no
-	  stops the bot taking it for a treasure card again. Kind has Polymorph
-	  / shift (Moon), not played. Tab goes Name, Kind, School, Pips, Value,
+	  stops the bot taking it for a treasure card again. Kind lists every
+	  kind above (29 - "(not played)" in the Change kind menu for the ones
+	  the bot never casts). Tab goes Name, Kind, School, Pips, Value,
 	  TC. Other cells open the card's picture. A changed cell shows a * till
 	  the bot has made the change.
 	- Forget: out of the list, its pictures to backups\learned forgotten\. A
