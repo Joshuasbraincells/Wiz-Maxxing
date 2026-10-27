@@ -750,7 +750,17 @@ loop,
 		MouseMove, ScreenX, GameTop + Round(GameH * 0.4), 0
 		if (A_TickCount - PassNudgeSaidAt > 300000)
 			PassNudgeSaidAt := A_TickCount, DebugLog("In a battle, no round seen " (passLog ? "though the game's log says one is up (" Round((A_TickCount - BlPhaseAt) / 1000) " s)" : "for " Round((A_TickCount - PassSeenAt) / 1000) " s") " - the mouse moved onto the scene (a button the mouse was left on shows as hovered, and isn't known; said once in 5 minutes)")
+		;(the round still not seen with the mouse off Pass: the set's own cut Pass button looked for with more colour
+		;tolerance - learned and kept, the round seen from the next look on: PicScale.ahk PicCutPassSlack. 2026-10-26 14:42
+		;the remembered 1.144 set's spellbook matched at *3, its Pass button only at *16 - two battles passed by the game)
+		Sleep, 200
+		if (PicCutPassSlack(true))
+			continue
 		}
+	;(a battle's first round up by the game's log for 2 s, not seen - between those moves, and with you at the PC too: the
+	;same look, every 4 s at most - in the round's time)
+	else if (!bookSeen && inbattle != 1 && BattleLogPlanning(2000) && PicCutPassSlack())
+		continue
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).
 	;Not while afk, mob-loop or lore farming: those move the wizard themselves

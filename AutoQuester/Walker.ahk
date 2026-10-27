@@ -27,8 +27,9 @@ global WkPromptVerb
 global WkCloseLook
 ;"Play for me" (AutoFarmer's button - green while on -, off at every start): every check for you off - UserIdle
 global PlayForMe
-;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute
-global WkFroTurns, WkFroUntil, WkFroHolds
+;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute, the
+;third hold in a minute just made (1: taken as stuck in that same step - WalkStep - not after a turn that puts the watch off)
+global WkFroTurns, WkFroUntil, WkFroHolds, WkFroStuck
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -71,6 +72,10 @@ global WkGateAt, WkGateClicks, WkGateX, WkGateLook, WkSigilUntil, WkFarAt, WkSig
 ;pressed at one, its prompt's key and the zone it was in, the tries at each ({key: [ticks]})
 global WkSigilZones, WkSigilAt, WkSigilKey, WkSigilFromZone, WkSigilTries
 global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkMemFile, WkEsc
+;Walking on by the game's memory (the stuck watch - WalkMoveTrack): settings; its place reading by reading over the last
+;StuckTime ([{at, x, y, yaw, f}] - f: the units from the reading before the way it faces), their zone ("" none); when it last
+;walked on (0 not since the watch started over), whether the last reading did, when its place was last read (0 not since)
+global MovingStuckTime, MoveFrac, WkMoveLog, WkMoveZone, WkMovedAt, WkMoveNow, WkMoveSeen
 ;Turns made on the spot in a row with no walking between (a route point jumping behind the wizard): after 3 the next
 ;one's made walking on, so it never just spins
 global WkSpins
@@ -209,6 +214,11 @@ WalkerInit(prefix := "AutoQuester")
 	TransportWait := 15000 ;after using a boat or the like ("BOAT TO GOBBLERTON ... to Use"): stand still this long
 	FastStuckTime := 1200 ;...or stuck after this long already if the picture has stopped moving too (W held,
 	StillFrac := 0.15     ;   and less than this share of the picture changed between two looks, twice)
+	MovingStuckTime := 15000 ;by the game's memory, the wizard walking on all the while (the way it faces, within StuckTime):
+	                      ;stuck only once it's this long no closer - going round a wall gets no closer for a while, circling
+	                      ;still gets caught. Not walking on by it - pressed on a wall, sliding sideways along one: StuckTime
+	MoveFrac := 0.5       ;...walking on: over a second, its place this share of its walking speed (WkWalkSpeed, by SpeedNow)
+	                      ;or more the way it faces (the picture still or not)
 	MemNear := 15         ;a remembered obstacle: same zone and the distance to the goal within this of it
 	MemAhead := 25        ;...and on the way to one (this much further from the goal): keep to the side that worked
 	CollectWait := 5000   ;a "collect / defeat N things" goal (the line under the arrow): arrived and nothing changed for this long = collect
@@ -260,6 +270,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
 	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0, WkNavRest := 0, WkNavRestKey := ""
 	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := "", WkNavMirrorSaid := 0
+	WkMoveLog := [], WkMoveZone := "", WkMovedAt := 0, WkMoveNow := 0, WkMoveSeen := 0, WkFroStuck := 0
 	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
@@ -287,6 +298,8 @@ WalkReset()
 	WkApTries := 0, WkApOffUntil := 0, WkArrGoal := ""
 	;(a new goal: its line is read again)
 	WkGoalLineAt := 0
+	WalkMoveReset()
+	WkFroStuck := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -1304,6 +1317,10 @@ WalkStep()
 		StartTalk(dist)
 		return true
 		}
+	;(the third hold in a minute - WalkFroNote's WkFroStuck: stuck in this very step, the turn not made - a turn resets the watch.
+	;2026-10-26 15:00:28, 15:07:37 "taken as stuck", then a 169 / 173 degree turn and no Unstick)
+	if (WkFroStuck && !escaping)
+		steer := 0, fine := false
 	;(two back-outs in a row that hardly moved it - a wall behind: turned walking on instead)
 	if (escaping && Abs(steer) > 120 && WkNavOk && WkNavObj.x != "")
 		{
@@ -1433,11 +1450,23 @@ WalkStep()
 	still := WalkStill()
 	if (still != "")
 		WkStill := (still && dist != "") ? WkStill + 1 : 0
-	slowStuck := A_TickCount - WkBestTime > StuckTime
+	;(by the game's memory - its place read a moment ago, WalkMoveState: walking on the way it faces all the while, within
+	;StuckTime - is stuck only once it's MovingStuckTime no closer, along the route or straight: going round a wall gets no closer
+	;for a while; and a picture that hardly changes isn't the wizard standing while it walks on. Not walking on by it - W held into
+	;a wall, or sliding sideways along one: stuck as before; no memory: as before)
+	mvState := WalkMoveState()
+	if (mvState = 2)
+		WkStill := 0
+	;(going to and fro a third time in a minute: stuck now - WalkFroNote)
+	froStuck := WkFroStuck && !escaping
+	if (froStuck)
+		WkFroStuck := 0
+	slowStuck := froStuck || A_TickCount - WkBestTime > (mvState >= 1 ? MovingStuckTime : StuckTime)
+	stillStuck := WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime
 	;(not moving: a quest offer's window up holds the wizard still - accepted, not counted as stuck)
-	if ((slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime)) && WalkAcceptQuest("the wizard isn't moving"))
+	if ((slowStuck || stillStuck) && WalkAcceptQuest("the wizard isn't moving"))
 		return Walking ? true : false
-	if (slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime))
+	if (slowStuck || stillStuck)
 		{
 		zone := WalkZone()
 		stuckAt := WkBestDist != "" ? WkBestDist : dist
@@ -1508,12 +1537,20 @@ WalkStep()
 		gnStuck := WalkGoalNear()
 		if (IsObject(gnStuck) && gnStuck.r <= ApproachUnits && walkMs > 900)
 			walkMs := 900
-		WalkLog("stuck at distance " (nowAt = "" ? "?" : nowAt) " (" (slowStuck ? "no closer in " Round(StuckTime / 1000) " s" : "picture not moving: " WkMotion " changed") "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : ""))
+		;(which watch it was - by the game's memory: walking on all the while, or not walking on either; and what its place did:
+		;WalkMoveSay - the stucks of 2026-10-26 14:33 and 15:05 had the route's progress counted and the picture still, the wizard
+		;held by something no one could see)
+		stuckWhy := froStuck ? "going to and fro a third time in a minute" : slowStuck ? (mvState >= 1 ? "walking on but no closer for " Round(MovingStuckTime / 1000) " s - the game's memory" : "no closer in " Round(StuckTime / 1000) " s") : "picture not moving: " WkMotion " changed"
+		if (mvState = 0)
+			stuckWhy .= " - not walking on by the game's memory either"
+		WalkLog("stuck at distance " (nowAt = "" ? "?" : nowAt) " (" stuckWhy "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : "") WalkMoveSay())
 		Unstick(side, walkMs)
 		WkEsc := {zone: zone, dist: stuckAt, side: side, walkMs: walkMs, mem: fromMem, at: A_TickCount}
 		WkBias := UnstickBias * side, WkBiasUntil := A_TickCount + BiasTime
 		WkSide := -side, WkTries += 1
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0, WkSnapPrev := ""
+		;(the back-up, the turn and the walk along it are the bot's own: not the wizard walking on - the watch starts over)
+		WalkMoveReset()
 		if (!Walking)
 			return false
 		}
@@ -1871,6 +1908,9 @@ WalkFroNote(d, hRaw)
 		{
 		WkFroHolds := []
 		WkBestTime := A_TickCount - StuckTime - 1
+		;(stuck in this same step - WalkStep: the turn this note came before would reset the watch, and the course held after it
+		;walks on - the game's memory's longer watch)
+		WkFroStuck := 1
 		WalkLog("going to and fro a third time in a minute - taken as stuck")
 		}
 	return false
@@ -2179,7 +2219,7 @@ InteractPrompt()
 	if (RegExMatch(t, "i)\bpress\b") && RegExMatch(t, "i)\bto\s+[a-z]{3,}"))
 		{
 		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", cap) ? WalkLetters(cap1) : SubStr(WalkLetters(t), 1, 60)
-		WkPromptVerb := RegExMatch(t, "i)press.*?to\s+([a-z]{3,})", verb) ? verb1 : ""
+		WkPromptVerb := RegExMatch(t, "i)\bpress\b.*?\bto\s+([a-z]{3,})", verb) ? verb1 : ""
 		return "press"
 		}
 	return ""
@@ -3570,7 +3610,8 @@ CollectCheck(dist)
 		}
 	;(collecting before a battle or a prompt: check the goal line at once, wherever the arrow is)
 	;(not by the distance with the goal zones away by the game's memory: that's by the way out of this zone, not the goal)
-	there := going || (dist <= ArriveDist && !(WkNavOk && WkNavHops > 0)) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000)
+	;(no closer for 8 s: not while the game's memory has the wizard walking on - going round a wall by the goal isn't stuck by it)
+	there := going || (dist <= ArriveDist && !(WkNavOk && WkNavHops > 0)) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000 && WalkMoveState() < 1)
 	if (!there || A_TickCount - WkGoalReadAt < 3000)
 		return false
 	WkGoalReadAt := A_TickCount
@@ -4936,6 +4977,8 @@ WalkNav(hScr, dScr)
 				}
 			}
 		WalkNavMoveCheck(nav)
+		;(is the wizard walking on - the stuck watch's)
+		WalkMoveTrack(nav)
 		;(how the arrow's distance compares with the memory's differs from zone to zone - 41 in one, about 100
 		;in Pigswick Academy: each zone's own once worked out there)
 		if (nav.zone != WkNavScaleZone)
@@ -5099,6 +5142,95 @@ WalkNavMoveCheck(nav)
 	from := ""
 	if (mvOff <= 20)
 		WalkNavConfirm("the wizard walked " Round(Sqrt(mvX * mvX + mvY * mvY)) " units the way its facing says (" Round(mvOff) " degrees off)")
+	}
+
+;Is the wizard walking on, by the game's memory - WalkStep's stuck watch (each usable reading, from WalkNav): its place reading
+;by reading over the last StuckTime (WkMoveLog), each step's part the way it faces (forward is (-sin yaw, -cos yaw), as
+;WalkNavHeading has it). Walking on (WkMovedAt): over the last second or so, MoveFrac of its walking speed or more the way it
+;faces. W held into a wall a few degrees off square slides it sideways along the wall - a hundred units a second or more, no
+;nearer anything: not walking on (any 120 units in 4 s counted before: a wall slid along kept the picture's watch off and the
+;stuck watch 15 s). A gap in the readings (over 2 s - a battle, a loading screen, a talk), another zone, or a jump far beyond
+;walking (a teleport, a reading of something else): begun again there, nothing walked
+WalkMoveTrack(nav)
+	{
+	if (nav.x = "" || nav.y = "" || nav.yaw = "")
+		return
+	now := A_TickCount
+	WkMoveNow := 0
+	;(walking is about 0.9 units a ms at 1x - WkWalkSpeed once measured, a mount's faster; never less: sliding along a wall a while
+	;brings WkWalkSpeed's samples down -, sped up as the speedhack has it)
+	mvSpeed := (WkWalkSpeed > 0.9 ? WkWalkSpeed : 0.9) * (SpeedNow > 1 ? SpeedNow : 1)
+	mvLast := (IsObject(WkMoveLog) && WkMoveLog.Length()) ? WkMoveLog[WkMoveLog.Length()] : ""
+	if (!IsObject(mvLast) || !WkMoveSeen || now - WkMoveSeen > 2000 || nav.zone != WkMoveZone)
+		{
+		WkMoveLog := [{at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: 0}], WkMoveZone := nav.zone, WkMoveSeen := now
+		return
+		}
+	WkMoveSeen := now
+	mvDx := nav.x - mvLast.x, mvDy := nav.y - mvLast.y
+	;(over 3 times walking, and a margin: not walked)
+	if (Sqrt(mvDx * mvDx + mvDy * mvDy) > (now - mvLast.at) * 3 * mvSpeed + 1000)
+		{
+		WkMoveLog := [{at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: 0}]
+		return
+		}
+	;(the step's part the way it faced - halfway between the two readings' facings: a mouse turn swings it at once)
+	mvFwd := -(mvDx * (Sin(nav.yaw) + Sin(mvLast.yaw)) + mvDy * (Cos(nav.yaw) + Cos(mvLast.yaw))) / 2
+	WkMoveLog.Push({at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: mvFwd})
+	while (WkMoveLog.Length() > 2 && now - WkMoveLog[2].at > StuckTime)
+		WkMoveLog.RemoveAt(1)
+	;(the last second or so: back to the first reading a second or more before this one)
+	mvFwd := 0
+	mvFrom := now
+	mvI := WkMoveLog.Length()
+	while (mvI > 1 && now - mvFrom < 1000)
+		{
+		mvFwd += WkMoveLog[mvI].f
+		mvI -= 1
+		mvFrom := WkMoveLog[mvI].at
+		}
+	if (now - mvFrom >= 700 && mvFwd >= MoveFrac * mvSpeed * (now - mvFrom))
+		WkMovedAt := now, WkMoveNow := 1
+	}
+
+;What the game's memory says of the wizard walking on, for the stuck watch: -1 nothing (no usable reading in the last 2 s - navmem
+;off, the helper down or busy, the watch just begun again: the watch as without it), 0 not walking on (not within StuckTime),
+;1 walking on (within the last StuckTime), 2 walking on right now (the last reading's second - judged afresh each reading, so no
+;grace after it: walked into a wall, the picture's watch is back within half a second)
+WalkMoveState()
+	{
+	if (!WkMoveSeen || A_TickCount - WkMoveSeen > 2000)
+		return -1
+	if (!WkMovedAt || A_TickCount - WkMovedAt > StuckTime)
+		return 0
+	return WkMoveNow ? 2 : 1
+	}
+
+;The stuck watch's walking on by the game's memory begun again: WalkReset, after Unstick (its back-up, turn and walk are the
+;bot's own moves)
+WalkMoveReset()
+	{
+	WkMoveLog := [], WkMoveZone := "", WkMovedAt := 0, WkMoveNow := 0, WkMoveSeen := 0
+	}
+
+;For the stuck line: what the game's memory saw the wizard's place do over the last StuckTime - how far it went, how far that took
+;it from where it was, and how much of it the way it faces ("" no reading in the last 2 s). 2026-10-26 "stuck on nothing": this
+;says whether it stood, slid along something or walked on
+WalkMoveSay()
+	{
+	if (!WkMoveSeen || A_TickCount - WkMoveSeen > 2000 || !IsObject(WkMoveLog) || WkMoveLog.Length() < 2)
+		return ""
+	mvPath := 0
+	mvFwd := 0
+	Loop % WkMoveLog.Length() - 1
+		{
+		mvLast := WkMoveLog[A_Index], mvE := WkMoveLog[A_Index + 1]
+		mvPath += Sqrt((mvE.x - mvLast.x) ** 2 + (mvE.y - mvLast.y) ** 2)
+		mvFwd += mvE.f
+		}
+	mvFirst := WkMoveLog[1]
+	mvNet := Sqrt((mvE.x - mvFirst.x) ** 2 + (mvE.y - mvFirst.y) ** 2)
+	return "; the game's memory: its place moved " Round(mvPath) " units in the last " Round((mvE.at - mvFirst.at) / 1000, 1) " s (" Round(mvNet) " from where it was, " Round(mvFwd) " the way it faces)"
 	}
 
 ;One reading of how the memory's distance compares with the number on the arrow (game units per arrow unit).

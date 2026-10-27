@@ -23,11 +23,17 @@ global PicMeasuredSize, PicMeasureSize, PicMeasureTries, PicMeasureWhy
 ;window size a cut set's own picture (the spellbook, the Pass button) last matched with that set in use, and that set's
 ;index (PicCutOk)
 global PicCutTol, PicCutOkAt, PicCutOkSize, PicCutOkSet
+;The picture PicCutTol was learned on (PicCutFind's "roundstart" / "roundstart_hover" - the Pass button - or "roundfinish" -
+;the spellbook): only that one matching at *3 again puts *3 back (PicCutSlackSet - 2026-10-26 14:42 the cut 1.144 spellbook
+;matched at *3 while its Pass button needed *16); when PicCutOk last looked at *3 again; the window size and set PicCutOk
+;last looked up a kept tolerance for (generated\cutslack.txt - PicCutSlackLoad)
+global PicCutTolPic, PicCutLowAt, PicCutSlackKey
 
 ;Called by LoadPicSets
 PicScaleInit()
 	{
 	GenTol := 20, PicEnlarged := {}, PicMade := {}, PicCutTol := 0, PicCutOkAt := 0, PicCutOkSize := "", PicCutOkSet := ""
+	PicCutTolPic := "", PicCutLowAt := 0, PicCutSlackKey := ""
 	GenRoot := A_WorkingDir "\generated"
 	;Distance between the middles of the Pass and Flee buttons at UI scale 1 (521 px at UI 1.144,
 	;580 px at UI 1.265)
@@ -60,6 +66,9 @@ LoadPicSets()
 			for each2, cs in PicSets
 				if (Abs(cs.scale - set.scale) < 0.0005 && PicCutOwn(cs))
 					set.copy := 1
+	;(the colour tolerance the cut set this window size was last played at needed here before - generated\cutslack.txt: a
+	;restart searches with it at once, not first missing a round's Pass button)
+	PicCutSlackLoad(GameW "x" GameH, PicScaleFor(GameW "x" GameH))
 	}
 
 ;Cut set `set` has its own Pass button or spellbook picture (resources\roundstart.png, roundstart_hover.png or
@@ -286,7 +295,27 @@ PicCutOk(file := "")
 	{
 	pcoSet := PicSets[PicSet]
 	if (IsObject(pcoSet) && !pcoSet.gen && (file != "" ? (InStr(file, pcoSet.dir "\resources\") = 1 && SubStr(file, -3) = ".png" && FileExist(file)) : PicCutOwn(pcoSet)))
+		{
 		PicCutOkAt := A_TickCount, PicCutOkSize := GameW "x" GameH, PicCutOkSet := PicSet
+		;(a window size and cut set not looked up yet: the colour tolerance kept for them - generated\cutslack.txt - if more)
+		if (PicCutSlackKey != GameW "x" GameH "|" PicSet)
+			PicCutSlackKey := GameW "x" GameH "|" PicSet, PicCutSlackLoad(GameW "x" GameH, pcoSet.scale)
+		;(more colour tolerance in use: the picture that just matched, if it's the one the tolerance was learned on - the Pass
+		;button, or the spellbook - looked for at *3 again, once a minute at most: matching, the colours are drawn right again
+		;and *3 is back - PicCutSlackSet. The spellbook never for the Pass button's: 2026-10-26 14:42 it matched at *3 while the
+		;Pass button needed *16)
+		if (file != "" && PicCutTol > 3 && A_TickCount - PicCutLowAt > 60000)
+			{
+			pcoPic := RegExReplace(file, "i)^.*\\|\.png$")
+			if ((pcoPic = "roundfinish") = (PicCutTolPic = "roundfinish"))
+				{
+				PicCutLowAt := A_TickCount
+				ImageSearch, pcoX, pcoY, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, *3 *TransFF00FF %file%
+				if (ErrorLevel = 0)
+					PicCutSlackSet(3, pcoPic)
+				}
+			}
+		}
 	}
 
 ;Cut set `set`'s own pictures (names in its resources\, e.g. ["roundstart", "roundstart_hover"]) looked for in the
@@ -320,13 +349,121 @@ PicCutFind(set, pics, x1, y1, x2, y2, ByRef tolAt, ByRef picAt, above := 0)
 	}
 
 ;The colour tolerance the cut pictures need on this screen (PicCutFind found picture pic at *tol): kept (PicCutTol - PicOptFile
-;searches every cut picture with at least that) and said once per change
+;searches every cut picture with at least that), said once per change, and kept for this window size and the cut set in use
+;(generated\cutslack.txt - PicCutSlackSave: a restart starts with it). The picture it was learned on matching at *3 again
+;(tol 3 - PicCutOk, DetectUiScale) puts *3 back; another picture doesn't (the spellbook can match at *3 while the Pass button
+;needs *16)
 PicCutSlackSet(tol, pic)
 	{
-	if (tol = "" || tol <= 3 || tol <= PicCutTol)
+	if (tol = "")
 		return
-	PicCutTol := tol
+	if (tol <= 3)
+		{
+		if (PicCutTol > 3 && (pic = "roundfinish") = (PicCutTolPic = "roundfinish"))
+			{
+			pcsWas := PicCutTol, PicCutTol := 0, PicCutTolPic := "", PicCutLowAt := A_TickCount
+			PicCutSlackSave(0, pic)
+			DebugLog("Pictures: " PicSetName(PicSet) "'s " (pic = "roundfinish" ? "spellbook" : pic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " cut picture matches at *3 again - the colours are drawn right again: the cut pictures are searched with *3 from now on (not *" pcsWas ")")
+			}
+		return
+		}
+	if (tol <= PicCutTol)
+		return
+	PicCutTol := tol, PicCutTolPic := pic, PicCutLowAt := A_TickCount
 	DebugLog("Pictures: " PicSetName(PicSet) "'s " (pic = "roundfinish" ? "spellbook" : pic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " cut picture matches at *" tol " only - the game draws its colours a little off (another graphics adapter or display mode?): the cut pictures are searched with *" tol " from now on")
+	PicCutSlackSave(tol, pic)
+	}
+
+;The colour tolerance kept for the cut set at UI scale `scale` at window size `size` ("<w>x<h>"), from generated\cutslack.txt
+;("<w>x<h>|<scale>=<tol>|<picture>" lines - PicCutSlackSave) - "" none; pic: the picture it was learned on
+PicCutSlackFor(size, scale, ByRef pic)
+	{
+	pic := ""
+	if (scale = "")
+		return ""
+	key := size "|" Format("{:.3f}", scale) "="
+	FileRead, t, % GenRoot "\cutslack.txt"
+	Loop, Parse, t, `n, `r
+		if (InStr(A_LoopField, key) = 1)
+			{
+			pcfF := StrSplit(SubStr(A_LoopField, StrLen(key) + 1), "|")
+			pic := pcfF[2]
+			return pcfF[1]
+			}
+	return ""
+	}
+
+;The colour tolerance just learned (tol, on picture pic) - or, tol 0, *3 back - kept for this window size and the cut set in
+;use in generated\cutslack.txt (written only when it changes): PicCutSlackLoad takes it at the next start at this size
+PicCutSlackSave(tol, pic)
+	{
+	pssSet := PicSets[PicSet]
+	if (!IsObject(pssSet) || pssSet.gen)
+		return
+	PicCutSlackKey := GameW "x" GameH "|" PicSet
+	key := GameW "x" GameH "|" Format("{:.3f}", pssSet.scale) "="
+	FileRead, t, % GenRoot "\cutslack.txt"
+	out := "", had := ""
+	Loop, Parse, t, `n, `r
+		if (A_LoopField != "")
+			{
+			if (InStr(A_LoopField, key) = 1)
+				had := A_LoopField
+			else
+				out .= A_LoopField "`r`n"
+			}
+	line := tol > 3 ? key tol "|" pic : ""
+	if (had = line)
+		return
+	FileCreateDir, %GenRoot%
+	f := FileOpen(GenRoot "\cutslack.txt", "w")
+	if (IsObject(f))
+		f.Write(out (line != "" ? line "`r`n" : "")), f.Close()
+	}
+
+;The colour tolerance kept for window size `size` and the cut set at UI scale `scale` (PicCutSlackFor) taken when it's more
+;than the one in use, and said: every cut picture searched with it from now on (the picture it was learned on matching at *3
+;again puts *3 back - PicCutOk). LoadPicSets (the start: the set this window size was last played at - generated\scales.txt)
+;and PicCutOk (a cut set's own picture matched at a window size and set not looked up yet)
+PicCutSlackLoad(size, scale)
+	{
+	pclTol := PicCutSlackFor(size, scale, pclPic)
+	if pclTol is not integer
+		return
+	pclTol += 0
+	if (pclTol <= 3 || pclTol > GenTol || pclTol <= PicCutTol)
+		return
+	PicCutTol := pclTol, PicCutTolPic := pclPic, PicCutLowAt := 0
+	DebugLog("Pictures: the cut pictures are searched with *" PicCutTol " from now on - at this window size (" size ") the cut set at UI scale " Format("{:.3f}", scale) "'s " (pclPic = "roundfinish" ? "spellbook" : pclPic = "roundstart_hover" ? "Pass button (drawn hovered)" : "Pass button") " matched at *" PicCutTol " only before (generated\cutslack.txt; it matching at *3 again puts *3 back)")
+	}
+
+;In a battle by the game's log, its round not seen (the main loop: after its mouse move onto the scene - force - or between):
+;the set in use's own cut Pass button, as drawn and drawn hovered, looked for with more colour tolerance (PicCutFind from
+;*3: one that matches as it is isn't taken for one that needs more), every 4 s at most. Matching only with more than the
+;tolerance in use: looked for again 250 ms on (a button still changing as the mouse left it isn't taken for colours drawn
+;off), then that tolerance is kept - PicCutSlackSet: said once, kept for this window size (generated\cutslack.txt) - and the
+;round is seen from the next look on. Never another picture set. 2026-10-26 14:42: the remembered 1.144 set's spellbook
+;matched at *3 at the start, its Pass button only at *16 - no round of two battles seen, the game passed every one. True if
+;the Pass button is there
+PicCutPassSlack(force := false)
+	{
+	static ppsAt := 0
+	if (!force && ppsAt && A_TickCount - ppsAt < 4000)
+		return false
+	ppsAt := A_TickCount
+	ppsSet := PicSets[PicSet], ppsPics := ["roundstart", "roundstart_hover"]
+	if (!PicCutFind(ppsSet, ppsPics, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, ppsTol, ppsPic))
+		return false
+	ppsUse := PicCutTol > 3 ? PicCutTol : 3
+	if (ppsTol <= ppsUse)
+		return true
+	Sleep, 250
+	if (!PicCutFind(ppsSet, ppsPics, GameLeft, GameTop, GameLeft + GameW, GameTop + GameH, ppsTol2, ppsPic2))
+		return false
+	if (ppsTol2 <= ppsUse)
+		return true
+	PicCutSlackSet(ppsTol2 > ppsTol ? ppsTol2 : ppsTol, ppsTol2 > ppsTol ? ppsPic2 : ppsPic)
+	return true
 	}
 
 ;The copy of cut set i (a made set at its very size - generated\ui<scale>, copy: 1 - whose pictures are the cut ones
