@@ -129,9 +129,55 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      goal from the game's memory as /goal's - all
                                                                      empty when it can't be read; an older bot
                                                                      doesn't look at it)
-  /navto?x=&y=&z=[&avoid=1&mobr=300]      -> where the wizard is and the route to a spot of the bot's own (the potion
-                                             seller): ok|1, zone|, pos|, route|x|y|left (all mobs kept away from with
-                                             avoid=1)
+  /navto?x=&y=&z=[&avoid=1&mobr=300][&spare=700]
+                                          -> where the wizard is and the route to a spot of the bot's own (the potion
+                                             seller, a puzzle's guards): ok|1, zone|, pos|, route|x|y|left (all mobs kept
+                                             away from with avoid=1 - but those within spare of the spot: the camp
+                                             walked to, to fight it)
+  /blockers                               -> the doors, gates and collision walls of the wizard's zone, nearest first -
+                                             what holds the walker at a blocked way (a dungeon's gate the zone's
+                                             triggers open after two kills):
+                                               door|template|x|y|z|distance|gid|src|state
+                                             src mem: an object in the game's memory now (read-only - navmem.blockers:
+                                             no name key, a template named like a door, a gate, a portcullis, a barrier,
+                                             a collision - vision\puzzlefile.py's is_blocker:
+                                             DynaTrigger_KT_DoorCollision; one gone from memory has been taken away: the
+                                             way's open);
+                                             state "" (not read). src file: where the zone's file places one
+                                             (vision\placements.py, as /items?far=1 - built in its thread at each zone
+                                             change: until then the memory's alone), state its starting state (On, Off,
+                                             Open),
+                                             gid "f:<template>:<n>" / "f:<template>@<where>" (the same every time).
+                                             "none" when there are none; "ERR <why>" when the zone's objects can't be
+                                             read now (a new zone being looked at) - never "none" then: not read isn't
+                                             gone
+  /zonepuzzle?zone=<zone path>            -> what the zone's own files (its triggers.xml - vision\puzzlefile.py; files
+                                             only, no memory) say opens its blocked ways, one line each:
+                                               kill|<template>      (a monster whose kill sets an object's state or fires
+                                                                     an activation: CL-DeepOne-GreenHead-R10)
+                                               spawn|<object>|x|y|z (an object a trigger makes -
+                                                                     DynaTrigger_KT_DoorCollision instance - and where;
+                                                                     x|y|z empty when the file doesn't say)
+                                               hint|<volume>|x|y|z|r|<text>   (a dialogue a trigger plays as the wizard
+                                                                     walks into the volume, its centre and radius: the
+                                                                     game's own hint - NearGateVolume "The gate has
+                                                                     defenders. ...")
+                                               use|<event>          (another object event: PedestalUsed, UsedBook - a
+                                                                     hint only)
+                                             "none" when there's none of these; "ERR <why>" when the file can't be read.
+                                             Kept per zone (read in placements' thread at each zone change)
+  /navpass?fx=&fy=&fz=&tx=&ty=&tz=&vx=&vy=[&vr=200][&zone=<zone path>]
+                                          -> does the way along the zone's nav graph (its walked links -
+                                             vision\navroute.py, the zone's .wad: files only) from f to t go through
+                                             the spot v:
+                                               pass|<1/0>|<its nearest to v>|<its length>   (1: within vr of v, or
+                                                                     across the line through v square to f -> v
+                                                                     within 2 vr of v - the nav nodes can be far
+                                                                     apart; both across the ground)
+                                             or "ERR <why>" (no nav graph, no way, or the graph's way ends far from t).
+                                             The zone: zone=, else the wizard's (the game's memory). fz= / tz= empty:
+                                             not known - the floor under it (the nav graph's nearest node's height).
+                                             Kept per question
   /snap?x1=&y1=&x2=&y2=&out=<...\Wiz-Maxxing logs\<PC>\snap_<when>.jpg>[&keep=15] -> the screen rectangle (the
                                              game: the bot checks it's on top) saved as a JPEG (half size when wider
                                              than 1600) - the log's OneDrive copy; that folder's oldest snap_*.jpg
@@ -145,7 +191,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
                                              faces to the wizard (0: straight ahead of it)|title|rank|health|school|
-                                             boss|gid|named, or "none (<why>)"
+                                             boss|gid|named|template, or "none (<why>)"
                                              (9-14, what the mob is - vision\bossmem.py: title as the game names it,
                                              Boss, Elite, Normal, Easy, Minion; rank the one the game shows ("Rank 9
                                              Boss"); health its starting - max - health; school its school of focus
@@ -153,7 +199,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              while not known - the reader being made once per game, about half a second,
                                              a build it can't read. 15, named: 1 the quest's by its name or its goal
                                              only - quest without the same-family match ("Gobbler King" for "Defeat
-                                             Gobblers" is quest 1, named 0). An older helper's lines stop at 8 or 14)
+                                             Gobblers" is quest 1, named 0. 16, template: its template's name as the
+                                             game's memory holds it - CL-DeepOne-GreenHead-R10 for a Water Lurker: the
+                                             same in every instance, as the zone's triggers name it. An older helper's
+                                             lines stop at 8, 14 or 15)
   /items[?goal=<the quest's goal line>][&far=1]
                                           -> the zone's things with a name that aren't mobs (the game's memory,
                                              read-only - an item lying about a quest has you collect, Piece Of Coral; an
@@ -2068,8 +2117,9 @@ def mob_cell(v):
 
 def mob_line(m, me):
     """/mobs' line for a mob m (mobs_now's) seen from me (the wizard's x, y, z): mob|name|x|y|z|distance|quest|degrees
-    off its facing|title|rank|health|school|boss|gid|named - 9-14 what it is (navmem / bossmem: each "" while not known),
-    15 the quest's by its name or its goal only (quest_named: 1/0, "" not known)"""
+    off its facing|title|rank|health|school|boss|gid|named|template - 9-14 what it is (navmem / bossmem: each "" while
+    not known), 15 the quest's by its name or its goal only (quest_named: 1/0, "" not known), 16 its template's name
+    (navmem's - "" not read; a mob with no template field at all, an older reader's, ends at 15 as before)"""
     off = ''
     if m.get('yaw') is not None:
         dx, dy = me[0] - m['pos'][0], me[1] - m['pos'][1]
@@ -2079,7 +2129,8 @@ def mob_line(m, me):
     return (f"mob|{mob_cell(m['name'])}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
             f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m.get('quest') else 0}|{off}|"
             + '|'.join(mob_cell(m.get(k)) for k in ('title', 'rank', 'health', 'school', 'boss', 'gid'))
-            + '|' + mob_cell(m.get('named')))
+            + '|' + mob_cell(m.get('named'))
+            + ('|' + mob_cell(m.get('template')) if 'template' in m else ''))
 
 
 def plate_x(p):
@@ -2184,11 +2235,12 @@ def merge_things(live, placed):
 
 
 PLACES_SAID = {'at': 0.0}   # (when a failure to read the zone's file may be logged again)
+PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - places_want)
 
 
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy)
-GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot'}
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass'}
 
 
 def places_busy(on):
@@ -2207,6 +2259,11 @@ def places_want(r, game_dir=''):
     try:
         import placements
         placements.want_zone(r['zone'], game_dir)
+        # (and its triggers - /zonepuzzle's -, read in the same thread: once per zone)
+        if PUZZLE_WANTED.get('zone') != (r['zone'], game_dir):
+            PUZZLE_WANTED['zone'] = (r['zone'], game_dir)
+            import puzzlefile
+            puzzlefile.want_zone(r['zone'], game_dir, zone_volumes)
     except Exception as e:  # noqa: BLE001 - never into /nav (said once a minute)
         if time.monotonic() >= PLACES_SAID['at']:
             PLACES_SAID['at'] = time.monotonic() + 60.0
@@ -2480,9 +2537,10 @@ def zone_volumes(zone, game_dir=''):
     return out
 
 
-def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None):
+def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0.0):
     """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
-    bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob"""
+    bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob - but those
+    within spare of target (a puzzle's guard camp walked to, to fight it: its mobs aren't routed round)"""
     nm = nav_reader()
     r, why = nm.read(path=False, wait=3.0)
     if r is None:
@@ -2504,8 +2562,13 @@ def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None):
         import navroute
         # (kept on the map's rings and in the trail /caught looks back along, as /nav's)
         mobs = mobs_now(r, '', trail=True)[0] if avoid else None
+        spared = set()
+        if mobs and spare and spare > 0:
+            # (the camp walked to: not kept away from - on the map as the ones walked to)
+            spared = {m['gid'] for m in mobs if math.hypot(m['pos'][0] - target[0], m['pos'][1] - target[1]) <= spare}
+            mobs = [m for m in mobs if math.hypot(m['pos'][0] - target[0], m['pos'][1] - target[1]) > spare]
         if avoid:
-            MOBS_SHOWN.update(quest=set(), near=mob_near or navroute.MOB_NEAR, avoid=True, at=time.time(), cone=cone or navroute.MOB_CONE)
+            MOBS_SHOWN.update(quest=spared, near=mob_near or navroute.MOB_NEAR, avoid=True, at=time.time(), cone=cone or navroute.MOB_CONE)
         res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False, mobs=mobs or None,
                       mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
     except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot
@@ -2514,6 +2577,155 @@ def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None):
     if res.get('aim') is None:
         return lines + ['route|||', 'routewhy|' + (res.get('why') or '?')]
     return lines + [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}"]
+
+
+# ---------------------------------------------------------------- a blocked way (vision\puzzlefile.py)
+# What holds the walker in front of a dungeon's gate, what the zone's triggers say opens it, and whether a route goes
+# through it - for AutoFarmer's Puzzle.ahk (the way to the goal blocked for good at one spot: before telling the user, it
+# tries what usually opens one). Memory read-only (navmem's objects thread), files read-only; the answers kept, so the
+# walker's 1 s steps aren't slowed: /blockers reads only the few objects it lists, /zonepuzzle and /navpass are kept
+BLOCKERS_SAID = {'at': 0.0}     # (when a failure to read the zone's file's blockers may be logged again)
+
+
+def blocker_cell(v):
+    return '' if v is None else re.sub(r'[|\r\n]+', ' ', str(v)).strip()
+
+
+def blockers_now(r, nm):
+    """(the doors of reading r's zone [{template, pos, gid, src, state}], why) - the game's memory's (navmem.blockers, src
+    mem) and the zone's file's (placements.built_things, src file: a placement whose template is a blocker's -
+    puzzlefile.is_blocker - not an NPC; as built so far, never built here). None and why when the memory's can't be
+    read (not read isn't gone: the walker takes a door missing from memory for the way opening)"""
+    import puzzlefile
+    live, why = nm.blockers()
+    if live is None:
+        return None, why or "the zone's objects can't be read"
+    out = [{'template': b.get('template') or b.get('name') or '', 'pos': tuple(b['pos']), 'gid': b.get('gid'),
+            'src': 'mem', 'state': ''} for b in live]
+    placed = None
+    try:
+        import placements
+        placed = placements.built_things(r['zone'], nm.game_dir) if r.get('zone') else None
+    except Exception as e:  # noqa: BLE001 - the memory's alone (said once a minute)
+        if time.monotonic() >= BLOCKERS_SAID['at']:
+            BLOCKERS_SAID['at'] = time.monotonic() + 60.0
+            log(f"/blockers: the zone's file couldn't be read ({e!r})")
+    gids = set()
+    for p in placed or ():
+        tpl = p.get('template') or ''
+        if not puzzlefile.is_blocker(tpl) or p.get('kind') == 'npc':
+            continue
+        gid = f"f:{tpl}:{p['n']}" if p.get('n') is not None else ''
+        if not gid or gid in gids:
+            gid = f"f:{tpl}@{p.get('at')}"
+        gids.add(gid)
+        out.append({'template': tpl, 'pos': tuple(p['pos']), 'gid': gid, 'src': 'file', 'state': p.get('state') or ''})
+    return out, ''
+
+
+def blocker_lines(r, nm):
+    """/blockers' answer for reading r: door|template|x|y|z|distance|gid|src|state each, nearest first; none; ERR <why>"""
+    doors, why = blockers_now(r, nm)
+    if doors is None:
+        return ['ERR ' + blocker_cell(why)]
+    me = r.get('pos') or (0.0, 0.0, 0.0)
+    doors.sort(key=lambda d: math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]))
+    return [f"door|{blocker_cell(d['template'])}|{d['pos'][0]:.1f}|{d['pos'][1]:.1f}|{d['pos'][2]:.1f}|"
+            f"{math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]):.0f}|{blocker_cell(d['gid'])}|{d['src']}|"
+            f"{blocker_cell(d['state'])}" for d in doors] or ['none']
+
+
+def zonepuzzle_lines(zone, game_dir=''):
+    """/zonepuzzle's answer: the zone's triggers (puzzlefile.zone_triggers - files only, kept per zone): kill|template,
+    spawn|object|x|y|z, hint|volume|x|y|z|r|text, use|event; none; ERR <why>"""
+    import puzzlefile
+    t = puzzlefile.zone_triggers(zone, game_dir, zone_volumes)
+    if t['why'] and t['why'] != 'no triggers.xml':
+        return ['ERR ' + blocker_cell(t['why'])]
+    out = ['kill|' + blocker_cell(k) for k in t['kills']]
+    for name, pos in t['spawns']:
+        out.append('spawn|' + blocker_cell(name) + '|' + ('||' if pos is None else '|'.join(f'{c:.1f}' for c in pos)))
+    for vol, (x, y, z), rad, text in t['hints']:
+        out.append(f'hint|{blocker_cell(vol)}|{x:.1f}|{y:.1f}|{z:.1f}|{rad:.0f}|{blocker_cell(text)}')
+    out += ['use|' + blocker_cell(e) for e in t['uses']]
+    return out or ['none']
+
+
+NAVPASS_REACH = 800.0       # the nav graph's way ending further than this from where it's asked to go: it doesn't go there
+NAVPASS_KEPT = 512
+NAVPASS = collections.OrderedDict()     # (zone, game folder, the question rounded) -> answer
+NAVPASS_LOCK = threading.Lock()
+NAVPASS_JUMPS = {}                       # (zone, id of its nav graph's links) -> its teleport links
+
+
+def navpass_lines(q, nm):
+    """/navpass's answer: pass|1/0|nearest|length - the way along the zone's nav graph (walked links only, as /navto's)
+    from f to t, and whether it goes through v (puzzlefile.path_pass: within vr of it, or across its line square to f -> v
+    within 2 vr) - or ERR <why>. The zone: zone=, else the wizard's (the game's memory, read-only). Kept per question"""
+    import puzzlefile
+    try:
+        f = [float(q[k]) for k in ('fx', 'fy')]
+        t = [float(q[k]) for k in ('tx', 'ty')]
+        vx, vy = float(q['vx']), float(q['vy'])
+        vr = float(q.get('vr') or 200.0)
+        # (a height not known - fz= / tz= empty: the floor under it, the nav graph's nearest node's, below)
+        fz, tz = (float(q[k]) if q.get(k, '') != '' else None for k in ('fz', 'tz'))
+    except (KeyError, ValueError):
+        return ['ERR fx, fy, fz, tx, ty, tz, vx, vy wanted'], 400
+    if not all(math.isfinite(c) and abs(c) < 1e6 for c in f + t + [vx, vy, vr] + [c for c in (fz, tz) if c is not None]):
+        return ['ERR the numbers must be finite'], 400
+    zone = q.get('zone', '')
+    if not zone:
+        r, why = nm.read(path=False)
+        if r is None:
+            return ['ERR ' + why], 200
+        zone = r.get('zone') or ''
+        if not zone:
+            return ['ERR the game\'s memory can\'t say which zone the wizard is in'], 200
+    gd = nm.game_dir
+    key = (zone, gd) + tuple(round(c) for c in f + t + [vx, vy, vr]) + tuple(None if c is None else round(c) for c in (fz, tz))
+    with NAVPASS_LOCK:
+        got = NAVPASS.get(key)
+        if got is not None:
+            NAVPASS.move_to_end(key)
+            return list(got), 200
+    try:
+        geo = router_to(gd)._geo(zone)
+        g = None if geo.why else geo.navgraph()
+        if g is None:
+            ans = ['ERR the zone has no nav graph' + (f' ({geo.why})' if geo.why else '')]
+        else:
+            P, adj = g
+            jk = (zone, id(adj))
+            jumps = NAVPASS_JUMPS.get(jk)
+            if jumps is None:
+                # (walked links only - a teleport isn't a way through a gate)
+                jumps = {(a, b) for a in range(len(P)) for b, _, j in adj[a] if j}
+                if len(NAVPASS_JUMPS) > 8:
+                    NAVPASS_JUMPS.clear()
+                NAVPASS_JUMPS[jk] = jumps
+
+            def floor_z(x, y):
+                """the height of the nav graph's node nearest (x, y) across the ground"""
+                return float(P[int(np.argmin(np.hypot(P[:, 0] - x, P[:, 1] - y))), 2])
+            f = (f[0], f[1], fz if fz is not None else floor_z(f[0], f[1]))
+            t = (t[0], t[1], tz if tz is not None else floor_z(t[0], t[1]))
+            path = geo.nav_path(f, t, jumps)
+            if not path:
+                ans = ['ERR no way on the nav graph from there']
+            elif math.hypot(path[-1][0] - t[0], path[-1][1] - t[1]) > NAVPASS_REACH:
+                ans = [f'ERR the nav graph\'s way ends {math.hypot(path[-1][0] - t[0], path[-1][1] - t[1]):.0f} from there']
+            else:
+                ok, near, length = puzzlefile.path_pass(list(path) + [t], vx, vy, vr, f[0], f[1])
+                ans = [f'pass|{1 if ok else 0}|{near:.0f}|{length:.0f}']
+    except Exception as e:  # noqa: BLE001 - not known: the bot's own fallback (its half-plane test)
+        log(f'/navpass: {e!r}')
+        return ['ERR ' + blocker_cell(repr(e))], 200
+    with NAVPASS_LOCK:
+        NAVPASS[key] = list(ans)
+        while len(NAVPASS) > NAVPASS_KEPT:
+            NAVPASS.popitem(last=False)
+    return ans, 200
 
 
 def mob_cone(q):
@@ -3141,7 +3353,27 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR x, y, z wanted', 400)
                 avoid = q.get('avoid', '0') not in ('', '0')
                 near, cone = mob_avoid(q)
-                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone)))
+                # (spare=<r>: the mobs within r of the spot not kept away from - the camp walked to, to fight it)
+                try:
+                    spare = min(5000.0, max(0.0, float(q.get('spare') or 0)))
+                except ValueError:
+                    spare = 0.0
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone, spare)))
+            if u.path == '/blockers':
+                nm = nav_reader()
+                r, why = nm.read(path=False)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                return self.reply('\n'.join(blocker_lines(r, nm)))
+            if u.path == '/zonepuzzle':
+                zone = q.get('zone', '')
+                if not zone:
+                    return self.reply('ERR zone wanted', 400)
+                # (files only: the game's folder as last attached - none yet: the usual one)
+                return self.reply('\n'.join(zonepuzzle_lines(zone, nav_reader().game_dir)))
+            if u.path == '/navpass':
+                lines, code = navpass_lines(q, nav_reader())
+                return self.reply('\n'.join(lines), code)
             if u.path == '/snap':
                 if not snap_out_ok(q.get('out', '')):
                     return self.reply('ERR out must be a snap_*.jpg in a Wiz-Maxxing logs\\<PC> folder', 400)
@@ -3367,6 +3599,11 @@ def main():
         placements.warm()
     except Exception as e:  # noqa: BLE001 - /items without the zone files
         log(f"placements: couldn't start ({e!r})")
+    try:
+        import puzzlefile
+        puzzlefile.set_log(log)
+    except Exception as e:  # noqa: BLE001 - /zonepuzzle answers ERR
+        log(f"puzzlefile: couldn't start ({e!r})")
     if args.parent:
         def watch():
             while parent_alive(args.parent):

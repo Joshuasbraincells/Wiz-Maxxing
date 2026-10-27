@@ -8,6 +8,9 @@
                                     # health, school, boss, kind}], or None and why (title...kind: bossmem.py - None each
                                     # while not known)
 
+    doors, why = nm.blockers()      # the zone's doors, gates and collision walls (no name key, a blocker's template
+                                    # name - puzzlefile.is_blocker): [{name, pos, yaw, gid, template}], or None and why
+
     hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
 
     parts, why = nm.battle()        # the battle's participants (bossmem.py: team, health, max, boss flag...), each joined
@@ -78,7 +81,11 @@ by a signature in its code, or checked by a type name / window name it carries):
              can borrow a mob's name). Every other object with a name key is a thing (items()): an item (WizItems -
              Piece Of Coral), an object (WizQst371C7_00000008 - the Inactive Protector a USAGE goal names by that very
              key), an NPC, an ambient one (a mob's name, no school); its name from placements.py's name tables (read in
-             its worker, kept). An object is re-checked at each read
+             its worker, kept). An object with no name key whose template's name is a door, a gate, a collision wall
+             (puzzlefile.is_blocker: DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate) is a blocker (blockers()):
+             the walker held in front of one may have a puzzle to open it - and it going from memory is the way
+             opening (the same template name and position reads as the mobs': no other offset). An object is re-checked
+             at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
            no place: a goal the game shows no way to (no arrow - "Use Inactive Protector in District of the Stars
@@ -515,6 +522,21 @@ def thing_kind(key):
     t = m.group(1)
     return ("ambient" if MOB_KEY.match(key) else "item" if t in ITEM_TABLES else "npc" if NPC_TABLE.match(t)
             else "object")
+
+
+_BLOCKER_FN = []
+
+
+def _is_blocker(name):
+    """puzzlefile.is_blocker (a door's, a gate's, a collision wall's template name) - imported on first use (puzzlefile
+    imports navgeo - numpy - which the rest of navmem doesn't need); False when it can't be"""
+    if not _BLOCKER_FN:
+        try:
+            import puzzlefile
+            _BLOCKER_FN.append(puzzlefile.is_blocker)
+        except Exception:  # noqa: BLE001 - no blockers, the rest as before
+            _BLOCKER_FN.append(lambda n: False)
+    return _BLOCKER_FN[0](name)
 
 
 def scan(code):
@@ -1044,6 +1066,9 @@ class NavMem:
         # address: (gid, name - "" while its table isn't read -, template name, vtable, display key, kind)}
         self._objs, self._obj_cz, self._obj_why, self._obj_asked = {}, 0, "not looked yet", 0.0
         self._items = {}
+        # (the zone's doors, gates and collision walls - no name key, a blocker's template name: {object address: (gid,
+        # template name, template name, vtable)})
+        self._blockers = {}
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
         self._names_said = 0.0           # (when a failure to ask for the things' name tables may be logged again)
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
@@ -1653,8 +1678,17 @@ class NavMem:
         read (placements.py reads it, kept). None and why as mobs(). Never raises."""
         return self._live("items")
 
+    def blockers(self):
+        """(doors, why): doors = [{name, pos (x, y, z), yaw, gid, template}] - the zone's objects with no name key whose
+        template's name is a door, a gate, a portcullis, a collision wall... (puzzlefile.is_blocker:
+        DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate), read now (name: the template's name). One gone from
+        memory has been taken away (a door collision a trigger removes when the way opens). None and why as mobs() -
+        never "none" then: not read isn't gone. Never raises."""
+        return self._live("blockers")
+
     def _live(self, which):
-        """mobs() / items(): the objects thread's of that kind still the same live objects, their places read now"""
+        """mobs() / items() / blockers(): the objects thread's of that kind still the same live objects, their places read
+        now"""
         try:
             with self.lock:
                 self._obj_asked = time.monotonic()
@@ -1662,7 +1696,7 @@ class NavMem:
                     self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
                     self._obj_thread.start()
                 st, cz, why = self.st, self._obj_cz, self._obj_why
-                objs = list((self._objs if which == "mobs" else self._items).items())
+                objs = list({"mobs": self._objs, "items": self._items, "blockers": self._blockers}[which].items())
             if st is None or not cz or why:
                 return None, why or "not attached"
             out, gids, live = [], set(), []
@@ -1770,9 +1804,10 @@ class NavMem:
             want.append(key)
         return t or ""
 
-    def _set_objs(self, cz, objs, why, items=None):
+    def _set_objs(self, cz, objs, why, items=None, blockers=None):
         with self.lock:
             self._obj_cz, self._objs, self._obj_why, self._items = cz, objs, why, items or {}
+            self._blockers = blockers or {}
 
     def _objects_run(self):
         """the objects thread: the zone's mobs looked for every OBJ_QUICK s (see the top) while anyone asks"""
@@ -1808,7 +1843,7 @@ class NavMem:
                     found, where = st.scan_objects(cz, None if full else regions)
                     if full:
                         regions, last_full = where, t0
-                    objs, items, want = {}, {}, []
+                    objs, items, doors, want = {}, {}, {}, []
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -1826,6 +1861,9 @@ class NavMem:
                             # (a thing with a name key: its name from navmem's tables, else placements' - its table read
                             # in placements' worker, outside this thread: "" till then)
                             items[obj] = (gid, k[2] or self._thing_name(k[3], want), k[1], vt, k[3], k[4])
+                        elif k and not k[3] and k[1] and k[4] != "mob" and _is_blocker(k[1]):
+                            # (no name key, a door's or a gate's template name: a blocker - its name its template's)
+                            doors[obj] = (gid, k[1], k[1], vt)
                     if want:
                         try:
                             import placements
@@ -1834,8 +1872,9 @@ class NavMem:
                             if time.monotonic() >= self._names_said:
                                 self._names_said = time.monotonic() + 60.0
                                 self.log("navmem: the things' name tables couldn't be asked for (%r)" % (e,))
-                    self._set_objs(cz, objs, "", items)
-                    self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "full": full,
+                    self._set_objs(cz, objs, "", items, doors)
+                    self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "doors": len(doors),
+                                      "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
             except Exception as e:  # noqa: BLE001 - tried again next time
                 self._set_objs(0, {}, "the zone's objects couldn't be read (%r)" % (e,))

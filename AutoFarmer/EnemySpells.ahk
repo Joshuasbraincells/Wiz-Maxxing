@@ -72,8 +72,14 @@ BattleLogRead(force := false)
 		return
 	blChunk := SubStr(blChunk, 1, blNl)
 	BlPos += StrLen(blChunk)
+	;(each line to Puzzle.ahk's journal too, first - duels, the goal moving on, zones, prompts in reach: looked up once a read)
+	pzLine := V1IsFunc("PuzzleLogLine") ? %"PuzzleLogLine"% : ""
 	Loop Parse, blChunk, "`n", "`r"
+		{
+		if (pzLine)
+			pzLine.Call(A_LoopField)
 		BattleLogLine(A_LoopField)
+		}
 	}
 
 ;A battle on by the game's log: a combat phase in the last minute and the spellbook (it shows only out of battle) not

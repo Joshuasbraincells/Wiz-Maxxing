@@ -152,6 +152,9 @@ global WkGoalType, WkGoalNpc, WkGoalId, WkTalkXs, WkTalkGoal, WkArrGoal, WkGoalI
 ;(...and the thing it names, its count and total, and the game's own keys for the thing, the mob and the NPC's first and last
 ;name - a newer helper's; "" an older one's. All cleared when the goal isn't read: a kind of before is stale - WalkGoalKind)
 global WkGoalItem, WkGoalCount, WkGoalTotal, WkGoalItemKey, WkGoalMobKey, WkGoalNpcFirst, WkGoalNpcLast
+;...and the quest's title (NavGoal's quest - the game's memory): the notices' link to its Wizard101 Central page (WalkWikiUrl)
+;(v2-only - not known to the port tools: set in WalkerInit and WalkGoalText; WalkerBlank doesn't have it)
+global WkGoalQuest
 ;A goal the game shows no way to (the game's memory, a newer helper: noplace 1 held 2 s, two readings running with the same
 ;goal id - 2026-10-25 "Use Inactive Protector"): the arrow on screen is a phantom then (shadow matches 0.62-0.78, its heading
 ;flipping 180 standing still) - not followed, not arrived at: the goal's kind's own way instead. The readings in a row and
@@ -165,6 +168,7 @@ global WkArr1Key, WkArr1Look, WkPromptText
 ;Settings and starting state. Returns false if the arrow shapes (resources\arrow_refs.txt) are missing
 WalkerInit(prefix := "AutoQuester")
 	{
+	global WkGoalQuest ; (v2-only: the port tools don't know it)
 	global ArriveDist, ArriveUnits, PushUnits, ApproachUnits, TalkUnits, TalkReach, TurnRate, TurnSettle, AheadAngle, AheadMem ; (v1 globals it sets)
 	global SpotTurnMem, ArcBlind, TurnRadius, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch, NearDist, TalkMax ; (v1 globals it sets)
 	global TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime ; (v1 globals it sets)
@@ -271,6 +275,7 @@ WalkerInit(prefix := "AutoQuester")
 	SpeedExitUnits := 600
 	WkTalkXs := [], WkTalkGoal := "", WkArrGoal := "", WkGoalIdWas := "", WkTalkNoted := "", WkGoalType := "", WkGoalNpc := "", WkGoalId := ""
 	WkGoalItem := "", WkGoalCount := "", WkGoalTotal := "", WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
+	WkGoalQuest := ""
 	WkNavNoPlace := 0, WkNpN := 0, WkNpGoal := "", WkNpAt := 0, WkNavLast := "", WkNpTarget := "", WkArr1Key := "", WkArr1Look := 0, WkPromptText := ""
 	WkGoalZones := [], WkTransUsed := V1Obj(), WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := V1Obj(), WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
@@ -495,6 +500,13 @@ WalkStep()
 	;and the zone's paths have no other: walking off, and a notice - the arrow would lead back to one
 	if (WkJumpStuck = 1)
 		{
+		;(AutoFarmer's Puzzle.ahk: what usually opens a blocked way tried first - it takes over, or it doesn't and this goes on as
+		;before)
+		if (V1IsFunc("PuzzleBeforeNotice") && %"PuzzleBeforeNotice"%.Call("teleport", "a teleport on the way that doesn't take the wizard"))
+			{
+			WkJumpStuck := 0
+			return true
+			}
 		WkJumpStuck := 2
 		Walking := 0
 		ReleaseKeys()
@@ -598,9 +610,24 @@ WalkStep()
 	if (WkArrived = 1 && !inbattle)
 		{
 		if (!WkWaitFrom)
+			{
 			WkWaitFrom := A_TickCount
-		else if (seen && A_TickCount - WkWaitFrom > WaitNotify)
+			;(AutoFarmer's Puzzle.ahk: "arrived" well short of the goal by the game's memory - a blocked way's evidence; it may take over)
+			if (V1IsFunc("PuzzleEvidence"))
+				{
+				pzGn := WalkGoalNear()
+				if (IsObject(pzGn) && %"PuzzleEvidence"%.Call("short", pzGn.r))
+					return true
+				}
+			}
+		;(held at a blocked way - Puzzle.ahk: its own notice says so)
+		else if (seen && A_TickCount - WkWaitFrom > WaitNotify && !(V1IsFunc("PuzzleHeld") && %"PuzzleHeld"%.Call()))
+			{
+			;(Puzzle.ahk: what usually opens a blocked way tried first - once, before the notice)
+			if (WkNoteKind != "wait" && V1IsFunc("PuzzleBeforeNotice") && %"PuzzleBeforeNotice"%.Call("wait", "waiting at the goal " Round((A_TickCount - WkWaitFrom) / 60000) " minutes"))
+				return true
 			WalkNotify("wait", "Waiting at the quest goal", "The wizard has been at the quest goal for " Round((A_TickCount - WkWaitFrom) / 60000) " minutes and the quest hasn't moved on - it may need something the bot can't do. It walks on by itself once there's a new goal.")
+			}
 		}
 	else if (WkArrived != 1)
 		{
@@ -1178,8 +1205,9 @@ WalkStep()
 			if (WkArrDist = "")
 				WkArrDist := dist
 			changed := DistChanged(dist, WkArrDist)
-			;(waiting on a collect goal it gave up on - it stopped wherever it was: only a new goal moves it on)
-			gaveUpWait := IsObject(WkCollect) && WkCollect.gaveUp
+			;(waiting on a collect goal it gave up on - it stopped wherever it was: only a new goal moves it on; held at a blocked way
+			;- AutoFarmer's Puzzle.ahk - the same)
+			gaveUpWait := (IsObject(WkCollect) && WkCollect.gaveUp) || (V1IsFunc("PuzzleHeld") && %"PuzzleHeld"%.Call())
 			WkFar := (!gaveUpWait && (changed || dist > ArriveDist + (WkPushes >= 2 ? 60 : 5))) ? WkFar + 1 : 0
 			;(the goal zones away by the game's memory - waiting by this zone's way out, which didn't take the wizard: the arrow's
 			;number counts the zones beyond too and stays big there - walked on only once well off the way out, or a new goal)
@@ -1244,6 +1272,10 @@ WalkStep()
 		WkProgStep := A_TickCount
 		if (WkProgBest = "" || dist < WkProgBest - 30 || dist > WkProgBest + 300)
 			WkProgBest := dist, WkProgAt := A_TickCount
+		;(AutoFarmer's Puzzle.ahk: what usually opens a blocked way tried first - inside a dungeon the Commons would leave it)
+		else if (A_TickCount - WkProgAt > StuckForever && V1IsFunc("PuzzleBeforeNotice")
+			&& %"PuzzleBeforeNotice"%.Call("stuck", "no closer to the goal in " Round(StuckForever / 60000) " minutes of walking", dist))
+			return true
 		else if (A_TickCount - WkProgAt > StuckForever && WalkCommonsReset("no closer to the goal in " Round(StuckForever / 60000) " minutes of walking", dist))
 			return true
 		;Got round an obstacle: clearly closer than where it got stuck. Remember which way worked there
@@ -1552,8 +1584,15 @@ WalkStep()
 			SetStatus("arrived (by the goal) - waiting for the next goal")
 			return true
 			}
+		;(AutoFarmer's Puzzle.ahk: held against something - not walking on by the game's memory - is a blocked way's evidence; it may
+		;take over)
+		if (mvState <= 0 && V1IsFunc("PuzzleEvidence") && %"PuzzleEvidence"%.Call("stuck", ""))
+			return true
 		if (WkTries >= UnstickTries)
 			{
+			;(Puzzle.ahk: what usually opens a blocked way tried first - inside a dungeon the Commons would leave it)
+			if (V1IsFunc("PuzzleBeforeNotice") && %"PuzzleBeforeNotice"%.Call("stuck", "couldn't get round an obstacle in " UnstickTries " tries"))
+				return true
 			;(what the game showed, to see what held it - AutoFarmer: Windows temp, "Wizard101 bot rounds")
 			stuckPic := V1IsFunc("SaveRoundPicture") ? %"SaveRoundPicture"%.Call() : ""
 			WalkLog("stuck: gave up after " UnstickTries " tries" (stuckPic != "" ? " (the game's picture: " stuckPic ")" : ""))
@@ -1703,6 +1742,11 @@ StartPush(why, d)
 		}
 	if (WkPushes >= 2)
 		{
+		;(AutoFarmer's Puzzle.ahk: the way out of this zone pushed into twice and it didn't load - a blocked way's evidence; it may
+		;take over)
+		;(v1: hops blank - an older helper's - > 0 compared as text, false)
+		if (WkNavOk && V1Gt(WkNavHops, 0) && V1IsFunc("PuzzleEvidence") && %"PuzzleEvidence"%.Call("door", ""))
+			return
 		WalkLog("push: " why " - already pushed twice here, waiting for the next goal")
 		WkArrived := 1, WkFar := 0, WkArrDist := (d = "?" ? "" : d)
 		SetStatus("arrived - waiting for the next goal")
@@ -2062,6 +2106,9 @@ WalkResume()
 	WalkReset()
 	if (keepUntil)
 		WkArrived := 5, WkSigilUntil := keepUntil, WkWaitWhat := keepWhat
+	;(held at a blocked way - AutoFarmer's Puzzle.ahk: still waiting there, not walked back into the gate)
+	else if (V1IsFunc("PuzzleHeld") && %"PuzzleHeld"%.Call())
+		WkArrived := 1
 	}
 
 ;Walked right past the goal, by the game's memory: it was ahead and close, and is now behind and as close - its point a
@@ -2472,6 +2519,9 @@ WalkApproachStep(gn, dist)
 	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
 	asNow := WalkGoalNear()
 	if (asWhy = "" || asWhy = "new goal" || asWhy = "you" || !IsObject(asNow))
+		return true
+	;(AutoFarmer's Puzzle.ahk: stopped by something well short of the goal - a blocked way's evidence; it may take over)
+	if (asWhy = "blocked" && V1IsFunc("PuzzleEvidence") && %"PuzzleEvidence"%.Call("approach", asNow.r))
 		return true
 	;("there": let go a look's walking early - it may read a few dozen units over stopR; "blocked" with the route going round -
 	;a fence, a wall: a try that didn't get there, the route's way after 3)
@@ -3298,6 +3348,9 @@ WalkToggle()
 			}
 		;(teleports the helper gave up get another go - you may have done what opens one: NavRead, AutoFarmer)
 		WkJumpStuck := 0, WkJumpKey := "", NavUnblock := 1
+		;(a blocked way's hold and tries - AutoFarmer's Puzzle.ahk - forgotten: walking on)
+		if (V1IsFunc("PuzzleForget"))
+			%"PuzzleForget"%.Call("walking on with " WalkKeyText())
 		WalkReset()
 		SetStatus("walking on")
 		}
@@ -3711,6 +3764,9 @@ SpeedWalking()
 	;(DgRun: AutoFarmer's dungeon run - blank in AutoQuester, as in v1)
 	if (IsObject(DgRun))
 		return SpeedSet(0, "a dungeon run")
+	;(a blocked way's tries - AutoFarmer's Puzzle.ahk: guards walked into, a gate looked at - at 1x throughout)
+	if (V1IsFunc("PuzzleRunning") && %"PuzzleRunning"%.Call())
+		return SpeedSet(0, "a puzzle")
 	if (WkArrived = 7)
 		return SpeedSet(0, "collecting")
 	if (WkNavJump != "")
@@ -3794,6 +3850,9 @@ SetStatus(text)
 CollectCheck(dist)
 	{
 	global WkArr1At, WkGoalReadAt, WkCollect, WkArrived, WkFar, WkArrDist, WkBestDist, WkBestTime, WkTries ; (v1 globals it sets)
+	;(held at a blocked way - AutoFarmer's Puzzle.ahk: no use mode walked into the gate)
+	if (V1IsFunc("PuzzleHeld") && %"PuzzleHeld"%.Call())
+		return false
 	if (WkArrived = 1 && !WkArr1At)
 		WkArr1At := A_TickCount
 	;(collecting a fight goal's things, or using a use goal's - carried on; going to a place or talking to an NPC the game shows no
@@ -3856,6 +3915,10 @@ CollectCheck(dist)
 CollectGiveUp(dist, why, title := "Collect quest needs you")
 	{
 	global WkArrived, WkArrDist, WkFar ; (v1 globals it sets)
+	;(AutoFarmer's Puzzle.ahk: what usually opens a blocked way tried first, in a zone that may hold one - it takes over, or this goes
+	;on as before)
+	if (V1IsFunc("PuzzleBeforeNotice") && %"PuzzleBeforeNotice"%.Call("collect", why))
+		return
 	WkCollect.gaveUp := 1
 	ReleaseKeys()
 	WkArrived := 1, WkArrDist := dist, WkFar := 0
@@ -3871,6 +3934,9 @@ CollectGiveUp(dist, why, title := "Collect quest needs you")
 CollectNoPlace()
 	{
 	global WkGoalReadAt, WkCollect ; (v1 globals it sets)
+	;(held at a blocked way - AutoFarmer's Puzzle.ahk: no use mode walked into the gate)
+	if (V1IsFunc("PuzzleHeld") && %"PuzzleHeld"%.Call())
+		return false
 	if (A_TickCount - WkGoalReadAt < 3000 && WkGoalReadAt)
 		return false
 	WkGoalReadAt := A_TickCount
@@ -4142,6 +4208,7 @@ WalkUseSpotX(goal := "")
 ;screen"). "" if it can't be read
 WalkGoalText()
 	{
+	global WkGoalQuest ; (v2-only: the port tools don't know it)
 	global WkGoalType, WkGoalNpc, WkGoalId, WkGoalItem, WkGoalCount, WkGoalTotal, WkGoalItemKey, WkGoalMobKey, WkGoalNpcFirst ; (v1 globals it sets)
 	global WkGoalNpcLast, WkGoalFrom ; (v1 globals it sets)
 	if (V1IsFunc("NavGoal"))
@@ -4150,13 +4217,14 @@ WalkGoalText()
 		;(its kind, the NPC it names and its id kept - a talk goal's NPC: WalkTalkGoal; the thing it names, its count and total and
 		;the game's own keys - WalkGoalKind, Collect.ahk's use / go / talk steps; an older helper's has no keys: "". Nothing read:
 		;none kept - the kind of a goal before is stale)
+		;(the quest's title too - the notices' Wizard101 Central link, WalkNotify)
 		if (IsObject(g) && g.text != "")
 			WkGoalType := g.type, WkGoalNpc := g.npc, WkGoalId := g.goalid, WkGoalItem := g.item, WkGoalCount := V1At(g, "count")
 				, WkGoalTotal := g.total, WkGoalItemKey := g.itemkey, WkGoalMobKey := g.mobkey, WkGoalNpcFirst := g.npcfirst
-				, WkGoalNpcLast := g.npclast
+				, WkGoalNpcLast := g.npclast, WkGoalQuest := g.quest
 		else
 			WkGoalType := "", WkGoalNpc := "", WkGoalId := "", WkGoalItem := "", WkGoalCount := "", WkGoalTotal := ""
-				, WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
+				, WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := "", WkGoalQuest := ""
 		if (IsObject(g) && g.text != "" && g.shown != 0)
 			{
 			WkGoalFrom := "the game"
@@ -4629,12 +4697,33 @@ WalkNotify(kind, title, text, withKeep := false)
 	;(one at a time: one up for something as or more important stays - two causes can't take turns)
 	if (WkNoteKind != "" && WalkNoteRank(WkNoteKind) >= WalkNoteRank(kind))
 		return
+	global WkGoalQuest ; (v2-only: the port tools don't know it)
 	WalkNotifyClose()
 	WkNoteKind := kind, WkNoteTitle := title, WkNoteShown := 0, WkNoteOff := 0
 	WalkLog("NEEDS YOU - " title ": " text)
+	;(the quest's page on Wizard101 Central, for a notice about the quest - in the notice, the log and Discord: yours to open, the bot
+	;never fetches it. The quest's title by the game's memory - asked once more if it isn't known yet)
+	wkLink := "", wkFind := "", wkTitle := ""
+	if (kind = "stuck" || kind = "collect" || kind = "wait" || kind = "puzzle" || kind = "arrow")
+		{
+		if (WkGoalQuest = "" && V1IsFunc("NavGoal"))
+			{
+			wkG := %"NavGoal"%.Call(400)
+			if (IsObject(wkG) && wkG.quest != "")
+				WkGoalQuest := wkG.quest
+			}
+		wkLink := WalkWikiUrl(WkGoalQuest), wkFind := WalkWikiUrl(WkGoalQuest, true)
+		;(the title shown: no markup, & as "and" - the link control's text)
+		wkTitle := Trim(RegExReplace(RegExReplace(StrReplace(WkGoalQuest, "&", "and"), "<[^>]*>|[<>]", " "), "\s+", " "))
+		if (wkLink != "")
+			WalkLog("the quest on Wizard101 Central: " wkLink)
+		}
+	;(what you do now is recorded - AutoFarmer's Puzzle.ahk: learned for next time)
+	if (V1IsFunc("PuzzleNoticed"))
+		%"PuzzleNoticed"%.Call(kind, title)
 	;(and to Discord, if alerts are set up: AutoFarmer's Alerts.ahk)
 	if (V1IsFunc("AlertSend"))
-		%"AlertSend"%.Call("walk-" kind, title, text)
+		%"AlertSend"%.Call("walk-" kind, title, text, wkLink)
 	;(+E0x08000000: clicking it never takes the focus from the game)
 	WkNote := Gui("+AlwaysOnTop +ToolWindow +E0x08000000", "Wizard101 bot needs you"), WkNoteHwnd := WkNote.Hwnd
 	;(v1 called WkNoteGuiClose by the GUI's name: the title-bar X)
@@ -4644,6 +4733,9 @@ WalkNotify(kind, title, text, withKeep := false)
 	WkNote.Add("Text", "w400", title)
 	WkNote.SetFont("s9 w400", "Segoe UI")
 	WkNote.Add("Text", "w400 y+6", text)
+	;(a click on it is yours: the page opens in your browser)
+	if (wkLink != "")
+		WkNote.Add("Link", "w400 y+6", 'The quest on Wizard101 Central: <a href="' wkLink '">' wkTitle '</a>  (<a href="' wkFind '">search</a>)')
 	if (withKeep)
 		{
 		ogcButtonKeeptrying := WkNote.Add("Button", "w120 y+12", "Keep trying")
@@ -4664,10 +4756,39 @@ WalkNotify(kind, title, text, withKeep := false)
 	TrayTip(title ": " SubStr(text, 1, 200), "Wizard101 bot needs you", 2)
 	}
 
-;How important a notice is: stuck > collect > no arrow > waiting at a goal
+;How important a notice is: stuck > collect, a blocked way (AutoFarmer's Puzzle.ahk) > no arrow > waiting at a goal
 WalkNoteRank(kind)
 	{
-	return (kind = "stuck" || kind = "shop") ? 4 : kind = "collect" ? 3 : kind = "arrow" ? 2 : 1
+	return (kind = "stuck" || kind = "shop") ? 4 : (kind = "collect" || kind = "puzzle") ? 3 : kind = "arrow" ? 2 : 1
+	}
+
+;The quest's page on Wizard101 Central (search: its search, which lands on the page when one has exactly that name - and finds the
+;titles that need a world in brackets): "" no title. Only a URL - the bot never fetches it. The title's markup and the characters a
+;page title can't hold left out ([ ] { } | < >, from a # on), spaces as _ (the search's %20), its UTF-8 bytes %XX but for letters,
+;digits and - _ . ~ ! * ' ( ) , : ; @ $ / (an apostrophe stays readable: Storm_Lord's_Temple)
+WalkWikiUrl(title, search := false)
+	{
+	t := RegExReplace(title, "<[^>]*>")
+	if (wuHash := InStr(t, "#"))
+		t := SubStr(t, 1, wuHash - 1)
+	t := Trim(RegExReplace(RegExReplace(t, "[\[\]{}|<>]"), "\s+", " "))
+	if (t = "")
+		return ""
+	wuBuf := Buffer(StrPut(t, "UTF-8"), 0)
+	wuLen := StrPut(t, wuBuf.Ptr, "UTF-8") - 1
+	wuOut := ""
+	Loop wuLen
+		{
+		wuB := NumGet(wuBuf, A_Index - 1, "UChar")
+		if (wuB = 32)
+			wuOut .= search ? "%20" : "_"
+		else if ((wuB >= 48 && wuB <= 57) || (wuB >= 65 && wuB <= 90) || (wuB >= 97 && wuB <= 122) || InStr("-_.~!*'(),:;@$/", Chr(wuB), true))
+			wuOut .= Chr(wuB)
+		else
+			wuOut .= "%" Format("{:02X}", wuB)
+		}
+	return search ? "https://wiki.wizard101central.com/wiki/index.php?title=Special:Search&search=Quest%3A" wuOut "&go=Go"
+		: "https://wiki.wizard101central.com/wiki/Quest:" wuOut
 	}
 
 ;The notice's title-bar X: the same as OK
@@ -4755,6 +4876,14 @@ WalkNoteKeep(args*)
 	{
 	local v1KeepGui := V1Thread()  ; (v1: a GUI event ran as its own thread - the ErrorLevel its WalkLog leaves stayed in it)
 	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	;(a blocked way's notice - AutoFarmer's Puzzle.ahk: its tries once more)
+	if (WkNoteKind = "puzzle" && V1IsFunc("PuzzleKeep"))
+		{
+		WalkNotifyClose()
+		%"PuzzleKeep"%.Call()
+		WalkGameFocus()
+		return
+		}
 	if (IsObject(WkCollect))
 		{
 		WkCollect.gaveUp := 0, WkCollect.from := A_TickCount, WkCollect.progressAt := A_TickCount, WkCollect.stepAt := A_TickCount

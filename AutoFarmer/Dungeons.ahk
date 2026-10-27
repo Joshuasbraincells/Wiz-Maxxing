@@ -151,7 +151,10 @@ DgRecordStart()
 	DgRecSteps := [], DgRecZone := nav.zone, DgRecBattleAt := 0, DgRecLast := "", DgRecPrev := nav, DgRecOut := 1
 	DgRecAdd("walk", nav)
 	DgRecording := 1
-	Hotkey("~*x", DgRecXKey, "On")
+	;(the X key's hotkey is Puzzle.ahk's when it has one - it calls DgRecX while recording: two hotkeys of the same variant would
+	;replace each other)
+	if (!(V1IsFunc("PuzzleXHook") && %"PuzzleXHook"%.Call()))
+		Hotkey("~*x", DgRecXKey, "On")
 	DgRecKey := HkKeyOf("record")
 	;(v1's UseErrorLevel: a key that can't be a hotkey - nothing made, no error; v2 throws. Nothing here reads ErrorLevel)
 	if (DgRecKey != "")
@@ -247,7 +250,9 @@ DgRecordStop(save := true)
 		return
 	DgRecording := 0
 	SetTimer(DgRecTick,0)
-	Hotkey("~*x", "Off")
+	;(Puzzle.ahk's X hotkey stays on: it's the bot's own)
+	if (!(V1IsFunc("PuzzleXHook") && %"PuzzleXHook"%.Call()))
+		Hotkey("~*x", "Off")
 	if (DgRecKey != "")
 		V1Do(Hotkey, "$" DgRecKey, "Off")
 	;(Stop recording's caption: the key set now again, if it was changed meanwhile)

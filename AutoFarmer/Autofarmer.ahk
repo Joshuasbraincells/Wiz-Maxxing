@@ -228,6 +228,9 @@ PlayerActing()
 		hkNow := A_ThisHotkey, keyAt := A_TickCount - A_TimeSinceThisHotkey
 		if (MouseLockIsKey(hkNow))
 			hkNow := A_PriorHotkey, keyAt := A_TickCount - (A_TimeSincePriorHotkey = "" ? -1 : A_TimeSincePriorHotkey)  ; (v1: -1 with no prior hotkey - v2: blank)
+		;(the X key's pass-through hotkey - Puzzle.ahk's, the dungeon recorder's - is your own X, not one of the bot's hotkeys)
+		if (hkNow = "~*x")
+			hkNow := ""
 		lastInput := A_TickCount - UserIdle()
 		if (hkNow != "" && lastInput >= keyAt - 50 && lastInput <= keyAt + (HkIsAny(hkNow, "boss,boost,player") ? 11000 : 600))
 			acting := false
@@ -3021,6 +3024,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\BugReport.ahk"
 #Include "%A_ScriptDir%\Dungeons.ahk"
 #Include "%A_ScriptDir%\Collect.ahk"
+#Include "%A_ScriptDir%\Puzzle.ahk"
 #Include "%A_ScriptDir%\Network.ahk"
 #Include "%A_ScriptDir%\Decks.ahk"
 #Include "%A_ScriptDir%\QuickSell.ahk"
@@ -3481,6 +3485,9 @@ else
 ;Auto-reconnect (Reconnect.ahk): on from the start (tray menu switches it off and on)
 ReconnectInit()
 
+;A blocked way's tries, the journal, what you do learned (Puzzle.ahk - Settings: puzzles, puzzlelearn)
+PuzzleInit()
+
 ;(started again by an update: walking, auto-reconnect and Learn every card as they were - Wiz-Maxxing /check passes
 ;them on, UpdBotArgs)
 for each, botArg in A_Args
@@ -3840,6 +3847,10 @@ Loop
 	;(a dungeon run on the Dungeons tab: its way instead of the quest's - Dungeons.ahk)
 	else if (IsObject(DgRun))
 		DungeonStep()
+	;(a blocked way's tries - Puzzle.ahk: its way instead of the walker's, till the way's open or it's told you; what a timer or a
+	;button asked of it done first)
+	else if (PuzzleRunning(true))
+		PuzzleStep()
 	else
 		WalkStep()
 }

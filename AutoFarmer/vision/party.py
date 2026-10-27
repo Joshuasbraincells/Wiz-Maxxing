@@ -31,6 +31,10 @@ BEAT = 0.4              # how often each helper reads its wizard and (a follower
 STALE = 10.0            # a follower not heard from this long is dropped
 MAX_FOLLOWERS = 3
 LOG_EVERY = 60.0        # the same party log line at most this often (s)
+REBIND_JOIN = 1.0       # s a new server on the port of one still closing waits for it (in a thread of its own)...
+REBIND_TRIES = 6        # ...then its bind tried this many times...
+REBIND_GAP = 0.25       # ...this far apart (s): about 1.5 s in all
+REBIND_RECENT = 3.0     # an old server on the port closed this recently (s): the new one's bind is waited and retried too
 NAME_RE = re.compile(r"^[\w .'-]{1,24}$")
 ZONE_RE = re.compile(r"^[\w/\\ .'-]{1,120}$")
 HOLD_RE = re.compile(r"^[\w .,'()/-]{0,80}$")
@@ -134,6 +138,11 @@ class Party:
         self.leader = None                  # follower: the leader's answer (with 'at')
         self.state, self.why = 'off', ''
         self.server, self.server_key = None, None
+        # (the server's lifecycle: one change at a time; the old servers still closing, by port - {port: [(thread, when
+        # it closed or None)]}; which change a background bind belongs to)
+        self.srv_lock = threading.RLock()
+        self.closing = {}
+        self.srv_gen = 0
         self.fails, self.next_beat = 0, 0.0
         self.id = '%08x' % random.getrandbits(32)
         self._said = {}                     # a log line -> (when it was last written, how many times it came since)
@@ -171,16 +180,96 @@ class Party:
         return self.lines()
 
     def _serve(self):
-        """the leader's LAN server running (on its port) only while the role is leader"""
+        """the leader's LAN server running (on its port) only while the role is leader. A change of the server wanted
+        closes the old one in a thread (/party isn't held up: its shutdown takes up to half a second); a new one on the
+        same port as one still closing - or just closed - is bound in a thread too, once the old one's gone (2026-10-26
+        22:18:11: bound before the old socket was closed - "port 47140 taken or blocked")"""
         with self.lock:
             want = (self.cfg['bind'] or '0.0.0.0', self.cfg['port']) if self.cfg['role'] == 'leader' else None
-        if want == self.server_key:
-            return
-        if self.server is not None:
-            srv, self.server, self.server_key = self.server, None, None
-            threading.Thread(target=lambda: (srv.shutdown(), srv.server_close()), daemon=True).start()
-        if want is None:
-            return
+        with self.srv_lock:
+            if want == self.server_key:
+                return
+            self.srv_gen += 1
+            gen = self.srv_gen
+            if self.server is not None:
+                srv, old = self.server, self.server_key
+                self.server = None
+                self._close_later(srv, old[1] if old else None)
+            # (set now: a failure isn't tried again every call - a role or port change tries again)
+            self.server_key = want
+            if want is None:
+                return
+            if not self._closing_on(want[1]):
+                self._start(want, gen, 1)
+                return
+        threading.Thread(target=self._start, args=(want, gen, REBIND_TRIES, True), name='party-bind', daemon=True).start()
+
+    def _close_later(self, srv, port):
+        """srv shut down and its socket closed in a thread (noted under its port till REBIND_RECENT s after)"""
+        rec = [None, None]                  # the thread, when it had closed
+
+        def close():
+            try:
+                srv.shutdown()
+            except Exception:  # noqa: BLE001 - closed all the same
+                pass
+            try:
+                srv.server_close()
+            except OSError:
+                pass
+            rec[1] = time.monotonic()
+        rec[0] = threading.Thread(target=close, name='party-close', daemon=True)
+        if port is not None:
+            self.closing.setdefault(port, []).append(rec)
+        rec[0].start()
+
+    def _closing_on(self, port):
+        """the old servers on port still closing or closed under REBIND_RECENT s ago (the others forgotten)"""
+        now = time.monotonic()
+        for p in list(self.closing):
+            keep = [r for r in self.closing[p] if r[1] is None or now - r[1] < REBIND_RECENT]
+            if keep:
+                self.closing[p] = keep
+            else:
+                del self.closing[p]
+        return list(self.closing.get(port, ()))
+
+    def _start(self, want, gen, tries, wait_old=False):
+        """the leader's server bound on want - tries times REBIND_GAP s apart; wait_old: first the old ones on its port
+        waited for (REBIND_JOIN s each at most). Not when the server wanted has changed meanwhile (gen)"""
+        if wait_old:
+            with self.srv_lock:
+                old = self._closing_on(want[1])
+            for rec in old:
+                if rec[0] is not None and rec[0] is not threading.current_thread():
+                    rec[0].join(REBIND_JOIN)
+        err = None
+        for i in range(max(1, tries)):
+            with self.srv_lock:
+                if gen != self.srv_gen:
+                    return                  # (another change since: that one's own)
+                try:
+                    srv = PartyServer(want, self._handler())
+                except OSError as e:
+                    err = e
+                else:
+                    self.server = srv
+                    threading.Thread(target=srv.serve_forever, name='party-server', daemon=True).start()
+                    self.log(f'party: leader - serving the party on {want[0]}:{want[1]}'
+                             + (f' (bound at try {i + 1})' if i else ''))
+                    return
+            if i + 1 < tries:
+                time.sleep(REBIND_GAP)
+        with self.srv_lock:
+            if gen != self.srv_gen:
+                return
+            with self.lock:
+                self.state, self.why = 'error', f'port {want[1]} taken or blocked ({err.strerror or err})'
+            self.log(f'party: the leader\'s server can\'t start on port {want[1]} ({err!r})'
+                     + (f' - {tries} tries' if tries > 1 else ''))
+
+    def _handler(self):
+        """the leader's server's request handler (GET /party/beat only, from private addresses)"""
         party = self
 
         class Handler(BaseHTTPRequestHandler):
@@ -209,21 +298,14 @@ class Party:
                 self.end_headers()
                 self.wfile.write(body)
 
-        try:
-            srv = PartyServer(want, Handler)
-        except OSError as e:
-            with self.lock:
-                self.state, self.why = 'error', f'port {want[1]} taken or blocked ({e.strerror or e})'
-            self.server_key = want      # (not tried again every call - a role or port change tries again)
-            self.log(f'party: the leader\'s server can\'t start on port {want[1]} ({e!r})')
-            return
-        self.server, self.server_key = srv, want
-        threading.Thread(target=srv.serve_forever, name='party-server', daemon=True).start()
-        self.log(f'party: leader - serving the party on {want[0]}:{want[1]}')
+        return Handler
 
     def stop(self):
-        if self.server is not None:
+        with self.srv_lock:
+            # (a bind still waiting in its thread: not made now)
+            self.srv_gen += 1
             srv, self.server, self.server_key = self.server, None, None
+        if srv is not None:
             srv.shutdown()
             srv.server_close()
 

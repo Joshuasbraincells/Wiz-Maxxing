@@ -98,6 +98,15 @@ mobshape:2
 ; it waits)
 mobradius:300
 mobcone:60
+; puzzles: 1 = the way to the goal blocked for good at one spot (a gate or a door, in a dungeon or a building, or a door
+; or gate there by the game's memory): before the notice the bot tries what usually opens one - the enemies standing off
+; to the sides fought, things with a prompt nearby X'd (never with Crowns), the zone's NPCs talked to - checking after
+; each. At most twice an hour at one spot. 0 = the notice at once
+puzzles:1
+; puzzlelearn: 1 = after a notice, what you do to get past (the enemies you fight, what you press X at or talk to,
+; where) is saved in learned\puzzles.txt once the way opens or the goal moves on, and done by the bot itself next time
+; (any character; copy the file to another PC). 0 = nothing recorded
+puzzlelearn:1
 
 ; ---- Clicking ----
 ; mousereturn: 1 = when the bot takes the mouse (a battle round, a click out of battle) it puts it back where it

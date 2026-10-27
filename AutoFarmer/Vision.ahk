@@ -646,8 +646,8 @@ NavGoal(timeoutMs := 800)
 ;where it faces to the wizard, "" not known), title (as the game names it: Boss, Elite, Normal, Easy, Minion), rank (the
 ;one the game shows: "Rank 9 Boss"), health (its starting - max - health), school (Ice...), boss (1: the game's own boss
 ;flag, 0 not), gid, named (1: the quest's by its name or its goal only - quest without a same-family match elsewhere in
-;the zone, 0 not)} - title...named "" while not known (the helper's reader being made, a build it can't read, an older
-;helper). [] when there are none (the helper's plain "none"); "" when they can't be read - navmem:0, the helper not
+;the zone, 0 not), template (its template's name - "CL-DeepOne-GreenHead-R10": a newer helper's 16th field)} - title...template
+;"" while not known (the helper's reader being made, a build it can't read, an older helper). [] when there are none (the helper's plain "none"); "" when they can't be read - navmem:0, the helper not
 ;running, dual mode (one client's memory), "none (<why>)" (not attached, a new zone being looked at...), an ERR or no
 ;answer: NavMobsWhy says why, and after an ERR or no answer it isn't asked again for 5 s
 NavMobs(goalLine := "", timeoutMs := 400)
@@ -700,7 +700,7 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		if (V1At(nmF, 1) != "mob" || nmF.Length < 8)   ; (v1: an empty line's first field read blank)
 			continue
 		nmM := V1Obj({name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
-			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: ""})
+			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: "", template: ""})
 		;(9-14: what it is - an older helper's lines have none)
 		if (nmF.Length >= 14)
 			nmM.title := Trim(nmF[9]), nmM.rank := NavNum(nmF[10]), nmM.health := NavNum(nmF[11]), nmM.school := Trim(nmF[12])
@@ -708,6 +708,10 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		;(15: the quest's by its name or its goal - an older helper's lines stop at 14)
 		if (nmF.Length >= 15)
 			nmM.named := (Trim(nmF[15]) = "1" ? 1 : Trim(nmF[15]) = "0" ? 0 : "")
+		;(16: its template's name - CL-DeepOne-GreenHead-R10; a blocked way's guards are known by it, Puzzle.ahk - an older helper's
+		;lines stop at 15)
+		if (nmF.Length >= 16)
+			nmM.template := Trim(nmF[16])
 		nmOut.Push(nmM)
 		}
 	return nmOut
@@ -1091,7 +1095,8 @@ MobGrow(f, s)
 	mgName := f[2], mgDist := V1Round(f[3]), mgOff := f[4]   ; (v1: Round of a blank or text was 0)
 	;(collecting: walking into mobs is the point - but not on the way to a quest item lying about: Collect.ahk)
 	mgWhy := (WkArrived = 7 && CiGid = "") ? "collecting" : (WkLastX && A_TickCount - WkLastX < 15000) ? "X was just pressed - the goal's battle?"
-		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : PlayerActive ? "you were playing" : ""
+		: (IsObject(DgRun) && !DgRun.avoid) ? "a dungeon run" : (V1IsFunc("PuzzleFighting") && %"PuzzleFighting"%.Call(mgName)) ? "a puzzle's fight - the way's guards"
+		: PlayerActive ? "you were playing" : ""
 	;(the quest's mob by the helper's own verdict - the game's memory's goal: its name, its kind, or one by a fight goal -
 	;left off the avoid list: /caught's 7th field; an older helper's has none)
 	if (mgWhy = "" && V1At(f, 7) = 1)   ; (v1: an older helper's 6 fields - the 7th blank)

@@ -76,8 +76,9 @@ AlertUrlOk(url)
 	}
 
 ;An alert, if they're on and a webhook's set: kind - one of each kind at most once in 10 minutes; title, text - what's
-;wrong and what to do. Sent in the background
-AlertSend(kind, title, text)
+;wrong and what to do; link - a page about it (the quest's Wizard101 Central page: Walker.ahk WalkNotify), its own line right
+;under the title - before the text, so the 1900-character cut can't drop it - in <...> (no preview). Sent in the background
+AlertSend(kind, title, text, link := "")
 	{
 	global AlertLast, AlertWait ; (v1 globals it sets)
 	;(the log's OneDrive copy, when it's on: what the game showed - at most every 20 s)
@@ -102,7 +103,7 @@ AlertSend(kind, title, text)
 		for i, w in AlertWait
 			if (w.kind = kind)
 				return
-		AlertWait.Push(V1Obj({kind: kind, title: title, text: text}))
+		AlertWait.Push(V1Obj({kind: kind, title: title, text: text, link: link}))
 		DebugLog("Discord: alert '" title "' held - another went less than 20 s ago")
 		SetTimer(AlertFlush,-(20000 - (now - AlertLast[""]) + 200))
 		return
@@ -110,7 +111,7 @@ AlertSend(kind, title, text)
 	AlertLast[kind] := now, AlertLast[""] := now
 	zone := V1IsFunc("WalkZone") ? WalkZone.Call() : ""
 	at := FormatTime(, "HH:mm")
-	AlertPost(url, "**Wizard101 bot needs you: " title "**`n" text "`n_" (zone != "" ? zone " - " : "") at "_", kind)
+	AlertPost(url, "**Wizard101 bot needs you: " title "**" (link != "" ? "`n<" link ">" : "") "`n" text "`n_" (zone != "" ? zone " - " : "") at "_", kind)
 	}
 
 ;Posts content to the webhook in the background (wait: until Discord answers, up to 10 s - the HTTP status, or ""
@@ -249,7 +250,7 @@ AlertFlush() { ; (v1: a label - its code ran in the global scope)
 	if (IsObject(AlertWait) && AlertWait.Length)
 		{
 		AlertFlushOne := AlertWait.RemoveAt(1)
-		AlertSend(AlertFlushOne.kind, AlertFlushOne.title, AlertFlushOne.text)
+		AlertSend(AlertFlushOne.kind, AlertFlushOne.title, AlertFlushOne.text, AlertFlushOne.link)
 		if (AlertWait.Length)
 			SetTimer(AlertFlush,-20200)
 		}

@@ -543,6 +543,9 @@ UseStuck(nav, d, what)
 		if (A_TickCount - UsStillAt <= 3000)
 			return false
 		UsTries := UsTries ? UsTries + 1 : 1, UsStillAt := 0
+		;(Puzzle.ahk: stuck on the way to the thing - a blocked way's evidence; it may take over)
+		if (V1IsFunc("PuzzleEvidence") && IsObject(UsIt) && %"PuzzleEvidence"%.Call("use", d, UsIt.x, UsIt.y, UsIt.z))
+			return true
 		if (UsTries > 4)
 			return UseLeave("stuck on the way (" Round(d) " off)")
 		WalkLog(what ": stuck on the way to " UsIt.name " (" Round(d) " away) - backing up and turning, try " UsTries)

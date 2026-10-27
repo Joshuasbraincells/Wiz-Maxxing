@@ -13,10 +13,13 @@ The walker gets anywhere a quest sends it, without help.
 - [ ] Pass behind moving mobs: which way each mob is walking, its sight cone projected along it, the route behind it; a line of mobs treated as one wall and routed all the way round
 - [ ] Keep away from other players' battles (active duel circles in the game's memory)
 - [ ] Measure it: badly-stuck count and time lost per run
-- [ ] Puzzles: a way blocked (a gate) tried first - the side guards fought, levers / switches X'd, the zone's NPCs talked to - then the notice
-- [ ] Puzzles learned from you: after a notice, what you did to solve it recorded (enemies fought, X / talks, where) and repeated next time; the quest's Wizard101 Central link in the notice
+- [x] Puzzles: a way blocked (a gate) tried first - the side guards fought, levers / switches X'd, the zone's NPCs talked to - then the notice
+- [x] Puzzles learned from you: after a notice, what you did to solve it recorded (enemies fought, X / talks, where) and repeated next time; the quest's Wizard101 Central link in the notice
+- [ ] Puzzle things with no name key (a lever the game names nowhere): found by the zone's triggers' use events
+- [ ] A gate's open / shut read from its state in the game's memory (ObjectStateBehavior), not only the door collision going
+- [ ] A sigil that never starts after a relog (2026-10-26 21:44): leave it, go home and come back
 
-Done: mob rings and sight cones avoided, the quest's goal and its kind read from the game's memory, walking up to goals, "Use ..." / go-to / talk goals with no map marker.
+Done: mob rings and sight cones avoided, the quest's goal and its kind read from the game's memory, walking up to goals, "Use ..." / go-to / talk goals with no map marker, a blocked way (a gate) tried first - side guards, levers, NPCs - and learned from you after a notice; the quest's Wizard101 Central link in every notice.
 
 ## 3. Battles: reliable, then smart
 Every card known from the game's memory and played well, with a deck that fits the fight.

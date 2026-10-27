@@ -249,6 +249,35 @@ debug.log: "Walk: use: ...", "Walk: go: ...", "Walk: talk: ...".
 Mobs kept off: a catch by a mob the quest doesn't need raises how far they're
 kept off (mobgrow); every 10 minutes of walking without one it's made a tenth
 smaller again - never below what you set yourself in Settings (mobshrink).
+Puzzles: a blocked way (puzzles, puzzlelearn - Settings > WALKING, both on).
+The way to the goal blocked for good at one spot - a gate or a door that won't
+open (2026-10-26, Storm Lord's Temple: its gate opens only once the two guards
+off to the sides are beaten): a door, gate or collision object by the spot in
+the game's memory (read-only), or the wizard still stopped there after the
+usual tries, in a dungeon or a building. Before telling you, the bot tries what
+usually opens one, looking after each try whether the way's open: the enemies
+standing off to the sides fought (one camp at a time, the ones the zone's own
+file says open something first - never a boss, never one beyond the block or
+on another floor), things with a prompt nearby X'd (never with Crowns on the
+prompt, never a teleporter, sigil, lock or shop), the zone's NPCs talked to.
+Then it waits at the spot and the notice "Way blocked - the quest needs you"
+says what it tried and what the game said there (Keep trying: the tries once
+more). At most twice an hour at one spot, 12 minutes of tries; at 1x; never
+for a party's follower, in a dungeon run or a battle. What you do to get past
+after a notice (or while it waits there) is recorded - the enemies you fight
+(which kind, where), what you press X at or talk to (its name, where), nothing
+else you type - and saved in learned\puzzles.txt once the way opens or the
+goal moves on; the bot does it itself first the next time (any character; copy
+the file to another PC). The file is yours to edit (its first lines say how),
+even while the bot runs: it reads the file again before it changes it. Mouse
+clicks on things aren't seen - press X. A restart keeps a recording under way
+(learned\puzzle_recording.txt), a fight under way, and the wait at a blocked
+way with the hour's tries (generated\puzzle_journal.txt, puzzle_hold.txt).
+debug.log: "Puzzle: ...".
+The quest's page: every "needs you" notice about the quest (stuck, collect,
+waiting, no arrow, a blocked way) has a link to the quest on Wizard101 Central
+(and its search) - in the notice, in debug.log and in the Discord alert. A
+click is yours: the bot never opens it.
 A collect goal keeps them off too (all but the mobs its goal line names).
 The quest's goal line from the game's memory (navmem:1, read-only - the
 helper's /goal, vision\questmem.py): the line under the quest arrow ("Defeat

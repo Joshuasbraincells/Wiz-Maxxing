@@ -1,0 +1,17 @@
+; Wiz-Maxxing - puzzles known (the seed that ships with the bot - replaced by updates; yours are in learned\puzzles.txt, and
+; one there for the same spot or goal wins). The same form as learned\puzzles.txt: a puzzle is a "puzzle|" line, its steps,
+; then "end"; ; starts a note. Positions are the zone's own (game units) - the same in every instance; ids are never kept.
+;   puzzle|zone|key (spot / goal)|x|y|z|dir x|dir y|goal letters|quest title|goal line|door template|from (you / bot)|learned|ok|failed|last used
+;   fight|mob templates (+)|names (+)|x|y|z|you / bot
+;   x|prompt letters|thing template|thing name|kind|x|y|z|you / bot
+;   talk|npc name|npc template|x|y|z|you / bot
+;   walk|x|y|z
+;   end
+
+; Storm Lord's Temple (Celestia): the gate to the Storm Altar opens once both guards off to the sides are beaten - the Water
+; Lurker and the Wing-Fish, each with a Voltic Eel (which side holds which is random each time: the bot finds them by kind).
+; Learned from the game's own log of 2026-10-26.
+puzzle|Celestia/Interiors/CL_Z07i1_Storm_Lord_Temple|spot|-1.0|-629.0|-1033.0|0.00|-1.00|USESTORMALTARINSTORMLORDSTEMPLE||Use Storm Altar in Storm Lord's Temple|DynaTrigger_KT_DoorCollision|you|2026-10-26 22:15|0|0|
+fight|CL-DeepOne-GreenHead-R10+CL-Eel-Green-R9|Water Lurker+Voltic Eel|2981.4|596.3|-1032.9|you
+fight|CL-Eel-Green-R9+CL-FlyingFish-Green-R9|Voltic Eel+Wing-Fish|-2009.7|667.3|-1032.9|you
+end
