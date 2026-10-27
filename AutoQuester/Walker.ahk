@@ -27,8 +27,9 @@ global WkPromptVerb
 global WkCloseLook
 ;"Play for me" (AutoFarmer's button - green while on -, off at every start): every check for you off - UserIdle
 global PlayForMe
-;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute
-global WkFroTurns, WkFroUntil, WkFroHolds
+;Going to and fro (WalkFroNote): the last big turns ([{at, x, y, d}]), the course held till then, the holds this minute, the
+;third hold in a minute just made (1: taken as stuck in that same step - WalkStep - not after a turn that puts the watch off)
+global WkFroTurns, WkFroUntil, WkFroHolds, WkFroStuck
 global NearDist, TalkMax, TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime
 global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait
 global FastStuckTime, StillFrac, MemNear, MemAhead, TurnSettle, TransportWait, WkAcceptLook
@@ -68,9 +69,14 @@ global WkDialog, WkPushes, WkPushStart, WkStraight, WkStraightAt
 global WkTalkDist, WkArrDist, WkLoadAt, WkSpaceAt, WkGoneSpaces
 global WkGateAt, WkGateClicks, WkGateX, WkGateLook, WkSigilUntil, WkFarAt, WkSigilSeen
 ;Sigils: the zones entered through one ({zone: 1} - coming out of those puts you on their sigil), when X was last
-;pressed at one, its prompt's key and the zone it was in, the tries at each ({key: [ticks]})
+;pressed at one, its prompt's key and the zone it was in, the tries at each ({key: [ticks]}; "zone:" and a dungeon's zone: the times
+;back into it just out of it - WalkSigilGo)
 global WkSigilZones, WkSigilAt, WkSigilKey, WkSigilFromZone, WkSigilTries
 global WkSnapPrev, WkSnapAt, WkTurnAt, WkWalkFrom, WkStill, WkMotion, WkMem, WkMemFile, WkEsc
+;Walking on by the game's memory (the stuck watch - WalkMoveTrack): settings; its place reading by reading over the last
+;StuckTime ([{at, x, y, yaw, f}] - f: the units from the reading before the way it faces), their zone ("" none); when it last
+;walked on (0 not since the watch started over), whether the last reading did, when its place was last read (0 not since)
+global MovingStuckTime, MoveFrac, WkMoveLog, WkMoveZone, WkMovedAt, WkMoveNow, WkMoveSeen
 ;Turns made on the spot in a row with no walking between (a route point jumping behind the wizard): after 3 the next
 ;one's made walking on, so it never just spins
 global WkSpins
@@ -163,23 +169,23 @@ WalkerInit(prefix := "AutoQuester")
 	global SpotTurnMem, ArcBlind, TurnRadius, TurnInPlace, StuckTime, UnstickTries, UnreadLimit, MinMatch, NearDist, TalkMax ; (v1 globals it sets)
 	global TalkGap, PushTime, PushStraightDist, PushStraightTime, BackupTime, UnstickTurn, UnstickBias, BiasTime ; (v1 globals it sets)
 	global HiddenWalkTime, PushHiddenTime, LoadSpaceWait, LoadSpaceMax, GateDist, GateWait, SigilWait, SkipGap, DialogQuiet ; (v1 globals it sets)
-	global TransportWait, FastStuckTime, StillFrac, MemNear, MemAhead, CollectWait, RoamRadius, ChaseTime, CollectMax ; (v1 globals it sets)
-	global CollectStall, NoArrowNotify, WaitNotify, ResetTeleport, ResetEvery, StuckForever, OnTopDist, NavAgreeNeed ; (v1 globals it sets)
-	global NavTurnTol, NavTurnCap, NavRoute, Walking, HeldW, KeysDown, Refocus, WkFarAt, WkTurnAt, WkWalkFrom, SpeedNow ; (v1 globals it sets)
-	global SpeedSentAt, WkSpeedHold, SpeedSlowDist, SpeedSlowUnits, SpeedOff, SpeedMiss, SpeedExitUnits, WkTalkXs, WkTalkGoal ; (v1 globals it sets)
-	global WkArrGoal, WkGoalIdWas, WkTalkNoted, WkGoalType, WkGoalNpc, WkGoalId, WkGoalItem, WkGoalCount, WkGoalTotal ; (v1 globals it sets)
-	global WkGoalItemKey, WkGoalMobKey, WkGoalNpcFirst, WkGoalNpcLast, WkNavNoPlace, WkNpN, WkNpGoal, WkNpAt, WkNavLast ; (v1 globals it sets)
-	global WkNpTarget, WkArr1Key, WkArr1Look, WkPromptText, WkGoalZones, WkTransUsed, WkTransSeen, WkTransStep, WkTransStepAt ; (v1 globals it sets)
-	global WkWaitWhat, WkPromptUsed, WkZoneFrom, WkZoneAt, WkPressAt, WkQuietUntil, WkQuietLogged, WkSigilZones, WkSigilAt ; (v1 globals it sets)
-	global WkSigilKey, WkSigilFromZone, WkSigilTries, WkWalkSpeed, WkWalkSamples, WkWUpAt, WkFrontLook, WkMetAt, WkMet ; (v1 globals it sets)
-	global WkPassMin, WkPassKey, WkPromptSkip, WkPreXText, WkQmLooked, WkQmTalked, WkNavJump, WkNavJumpAt, WkJumpKey ; (v1 globals it sets)
+	global TransportWait, FastStuckTime, StillFrac, MovingStuckTime, MoveFrac, MemNear, MemAhead, CollectWait, RoamRadius ; (v1 globals it sets)
+	global ChaseTime, CollectMax, CollectStall, NoArrowNotify, WaitNotify, ResetTeleport, ResetEvery, StuckForever, OnTopDist ; (v1 globals it sets)
+	global NavAgreeNeed, NavTurnTol, NavTurnCap, NavRoute, Walking, HeldW, KeysDown, Refocus, WkFarAt, WkTurnAt, WkWalkFrom ; (v1 globals it sets)
+	global SpeedNow, SpeedSentAt, WkSpeedHold, SpeedSlowDist, SpeedSlowUnits, SpeedOff, SpeedMiss, SpeedExitUnits, WkTalkXs ; (v1 globals it sets)
+	global WkTalkGoal, WkArrGoal, WkGoalIdWas, WkTalkNoted, WkGoalType, WkGoalNpc, WkGoalId, WkGoalItem, WkGoalCount ; (v1 globals it sets)
+	global WkGoalTotal, WkGoalItemKey, WkGoalMobKey, WkGoalNpcFirst, WkGoalNpcLast, WkNavNoPlace, WkNpN, WkNpGoal, WkNpAt ; (v1 globals it sets)
+	global WkNavLast, WkNpTarget, WkArr1Key, WkArr1Look, WkPromptText, WkGoalZones, WkTransUsed, WkTransSeen, WkTransStep ; (v1 globals it sets)
+	global WkTransStepAt, WkWaitWhat, WkPromptUsed, WkZoneFrom, WkZoneAt, WkPressAt, WkQuietUntil, WkQuietLogged, WkSigilZones ; (v1 globals it sets)
+	global WkSigilAt, WkSigilKey, WkSigilFromZone, WkSigilTries, WkWalkSpeed, WkWalkSamples, WkWUpAt, WkFrontLook, WkMetAt ; (v1 globals it sets)
+	global WkMet, WkPassMin, WkPassKey, WkPromptSkip, WkPreXText, WkQmLooked, WkQmTalked, WkNavJump, WkNavJumpAt, WkJumpKey ; (v1 globals it sets)
 	global WkJumpStuck, WkJumpPushUntil, WkNavMob, WkNavMobName, WkMobLogged, WkNavMobAt, WkBlindAt, WkBlindBackSaid ; (v1 globals it sets)
 	global WkBlindMob, WkLoading, WkLoadedAt, WkDlgLook, WkCloseLook, WkNavEscAt, WkCollect, WkGoalReadAt, WkAfterXLooked ; (v1 globals it sets)
 	global WkGoalLine, WkGoalLineAt, WkRealSeenAt, WkArrowAtX, WkGoalFrom, WkNoteKind, WkNoteTitle, WkNoteHwnd, WkNoteShown ; (v1 globals it sets)
 	global WkNoteOff, WkWaitFrom, WkLastX, WkResetAt, WkNavOk, WkNavUse, WkNavH, WkNavD, WkNavHops, WkNavObj, WkNavState ; (v1 globals it sets)
 	global WkNavTrusted, WkNavAgree, WkNavMirror, WkNavOdd, WkNavScales, WkNavScaleBad, WkNavPrev, WkNavTurns, WkNavTurnLog ; (v1 globals it sets)
 	global WkStandIn, WkNavRest, WkNavRestKey, WkNavRouted, WkNavLeft, WkRouteBest, WkRouteProg, WkRouteState, WkNavMirrorSaid ; (v1 globals it sets)
-	global StatusText, StatusKind, StatusPrefix ; (v1 globals it sets)
+	global WkMoveLog, WkMoveZone, WkMovedAt, WkMoveNow, WkMoveSeen, WkFroStuck, StatusText, StatusKind, StatusPrefix ; (v1 globals it sets)
 	;---- Settings ----
 	ArriveDist := 15     ;stop when the distance on the arrow is this or less (walks again when a new goal appears)
 	ArriveUnits := 150   ;...by the game's memory (when it can be used): this many game units from the goal - the
@@ -230,6 +236,11 @@ WalkerInit(prefix := "AutoQuester")
 	TransportWait := 15000 ;after using a boat or the like ("BOAT TO GOBBLERTON ... to Use"): stand still this long
 	FastStuckTime := 1200 ;...or stuck after this long already if the picture has stopped moving too (W held,
 	StillFrac := 0.15     ;   and less than this share of the picture changed between two looks, twice)
+	MovingStuckTime := 15000 ;by the game's memory, the wizard walking on all the while (the way it faces, within StuckTime):
+	                      ;stuck only once it's this long no closer - going round a wall gets no closer for a while, circling
+	                      ;still gets caught. Not walking on by it - pressed on a wall, sliding sideways along one: StuckTime
+	MoveFrac := 0.5       ;...walking on: over a second, its place this share of its walking speed (WkWalkSpeed, by SpeedNow)
+	                      ;or more the way it faces (the picture still or not)
 	MemNear := 15         ;a remembered obstacle: same zone and the distance to the goal within this of it
 	MemAhead := 25        ;...and on the way to one (this much further from the goal): keep to the side that worked
 	CollectWait := 5000   ;a "collect / defeat N things" goal (the line under the arrow): arrived and nothing changed for this long = collect
@@ -281,6 +292,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkNavTrusted := 0, WkNavAgree := 0, WkNavMirror := 0, WkNavOdd := 0, WkNavScales := [], WkNavScaleBad := 0
 	WkNavPrev := "", WkNavTurns := 0, WkNavTurnLog := 0, WkStandIn := 0, WkNavRest := 0, WkNavRestKey := ""
 	WkNavRouted := 0, WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := "", WkNavMirrorSaid := 0
+	WkMoveLog := [], WkMoveZone := "", WkMovedAt := 0, WkMoveNow := 0, WkMoveSeen := 0, WkFroStuck := 0
 	WalkNavLoad()
 	WalkMemLoad()
 	WalkZonesLoad()
@@ -299,7 +311,7 @@ WalkReset()
 	global WkEsc, WkArr1At, WkFoesAt, WkChaseFrom, WkChaseSkipUntil, WkRoamLeg, WkRoamLegAt, WkRoamSide, WkNoArrowFrom ; (v1 globals it sets)
 	global WkNoGuideFrom, WkEscTried, WkLastDist, WkLastDistAt, WkOnTop, WkOnTopAt, WkOnTopBacked, WkOnTopDone, WkStuckNearDone ; (v1 globals it sets)
 	global WkStuckTalk, WkTalkAt, WkProgBest, WkProgAt, WkProgStep, WkNavDoor, WkStandIn, WkRouteBest, WkRouteProg, WkPassMin ; (v1 globals it sets)
-	global WkApTries, WkApOffUntil, WkArrGoal, WkGoalLineAt ; (v1 globals it sets)
+	global WkApTries, WkApOffUntil, WkArrGoal, WkGoalLineAt, WkFroStuck ; (v1 globals it sets)
 	WkBestDist := "", WkBestTime := A_TickCount, WkLastRead := A_TickCount
 	WkSide := 1, WkTries := 0, WkNear := 0, WkFar := 0, WkArrived := 0, WkTalk := 0, WkPushUntil := 0
 	WkDialog := 0, WkPushes := 0, WkPushStart := 0, WkStraight := 0, WkStraightAt := 0, WkSpins := 0
@@ -316,6 +328,8 @@ WalkReset()
 	WkApTries := 0, WkApOffUntil := 0, WkArrGoal := ""
 	;(a new goal: its line is read again)
 	WkGoalLineAt := 0
+	WalkMoveReset()
+	WkFroStuck := 0
 	}
 
 ;A line in AutoFarmer's debug.log (when the including script has DebugLog), so walker problems leave evidence
@@ -343,8 +357,8 @@ WalkStep()
 	global WkStuckTalk, WkStraight, WkStraightAt, WkPushes, WkGoneSpaces, WkOnTopDone, WkOnTopAt, WkBackups, WkBackupsFrom ; (v1 globals it sets)
 	global WkBestDist, WkRouteBest, WkTries, WkNavDoor, WkArrDist, WkJumpKey, WkMobLogged, WkNavMobAt, WkJumpPushUntil ; (v1 globals it sets)
 	global WkArrGoal, WkNear, WkRouteProg, WkProgAt, WkProgStep, WkProgBest, WkEsc, WkBias, WkBiasUntil, WkPrevMovedH, WkSpins ; (v1 globals it sets)
-	global WkBackOutStill, WkBackOutX, WkBackOutY, WkSpotTurn, WkBlindAt, WkBlindMob, WkStill, WkSnapPrev, WkStuckNearDone ; (v1 globals it sets)
-	global WkSide ; (v1 globals it sets)
+	global WkBackOutStill, WkBackOutX, WkBackOutY, WkSpotTurn, WkBlindAt, WkBlindMob, WkFroStuck, WkStill, WkSnapPrev ; (v1 globals it sets)
+	global WkStuckNearDone, WkSide ; (v1 globals it sets)
 	;(stood still 1.5 s - the walker's own short stops keep the speed: back to 1x; the minute's line)
 	if (!HeldW && SpeedNow > 1 && WkWUpAt && A_TickCount - WkWUpAt > 1500)
 		SpeedSet(0, "standing")
@@ -660,19 +674,15 @@ WalkStep()
 			prompt := ""
 			}
 		;A sigil: always in (once per 10 minutes for the same one) - but not straight back into the
-		;dungeon just left: coming out puts you right at its sigil
+		;dungeon just left: coming out puts you right at its sigil (unless the quest's goal is in it - WalkSigilGo)
 		WkSigilSeen := 0
 		if (prompt = "sigil")
 			{
 			WalkZone()
-			if (WalkSigilJustLeft(near))
+			sgWhy := WalkSigilGo(near)
+			if (sgWhy != "")
 				{
-				if (!WkPromptUsed.Has("exitlog") || A_TickCount - WkPromptUsed["exitlog"] > 30000)
-					WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " (its dungeon) - not going straight back in")
-				}
-			else if (WalkPromptFree(WkPromptDest, 600000))
-				{
-				StartSigil("sigil prompt showing (" (near ? "the arrow led here" : "pressing X at every prompt") ")")
+				StartSigil(sgWhy)
 				return true
 				}
 			}
@@ -1346,6 +1356,10 @@ WalkStep()
 		StartTalk(dist)
 		return true
 		}
+	;(the third hold in a minute - WalkFroNote's WkFroStuck: stuck in this very step, the turn not made - a turn resets the watch.
+	;2026-10-26 15:00:28, 15:07:37 "taken as stuck", then a 169 / 173 degree turn and no Unstick)
+	if (WkFroStuck && !escaping)
+		steer := 0, fine := false
 	;(two back-outs in a row that hardly moved it - a wall behind: turned walking on instead)
 	if (escaping && Abs(steer) > 120 && WkNavOk && WkNavObj.x != "")
 		{
@@ -1432,7 +1446,8 @@ WalkStep()
 			{
 			if (KeysDown || HeldW)
 				ReleaseKeys(true)
-			WkBestTime := A_TickCount, WkLastRead := A_TickCount
+			;(the wait puts the stuck watch off - a to-and-fro taken as stuck in this step too: WkFroStuck is this step's only)
+			WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkFroStuck := 0
 			SetStatus("waiting - " WkNavObj.blindahead " ahead on the arrow's way (no route to keep to)")
 			Sleep(300)
 			return true
@@ -1477,11 +1492,22 @@ WalkStep()
 	still := WalkStill()
 	if (still != "")
 		WkStill := (still && dist != "") ? WkStill + 1 : 0
-	slowStuck := A_TickCount - WkBestTime > StuckTime
+	;(by the game's memory - its place read a moment ago, WalkMoveState: walking on the way it faces all the while, within
+	;StuckTime - is stuck only once it's MovingStuckTime no closer, along the route or straight: going round a wall gets no closer
+	;for a while; and a picture that hardly changes isn't the wizard standing while it walks on. Not walking on by it - W held into
+	;a wall, or sliding sideways along one: stuck as before; no memory: as before)
+	mvState := WalkMoveState()
+	if (mvState = 2)
+		WkStill := 0
+	;(going to and fro a third time in a minute: stuck now - WalkFroNote; this step's only - getting out of a mob's reach puts the
+	;stuck watch off, as the blind wait above does)
+	froStuck := WkFroStuck && !escaping, WkFroStuck := 0
+	slowStuck := froStuck || A_TickCount - WkBestTime > (mvState >= 1 ? MovingStuckTime : StuckTime)
+	stillStuck := WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime
 	;(not moving: a quest offer's window up holds the wizard still - accepted, not counted as stuck)
-	if ((slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime)) && WalkAcceptQuest("the wizard isn't moving"))
+	if ((slowStuck || stillStuck) && WalkAcceptQuest("the wizard isn't moving"))
 		return Walking ? true : false
-	if (slowStuck || (WkStill >= 2 && A_TickCount - WkBestTime > FastStuckTime))
+	if (slowStuck || stillStuck)
 		{
 		zone := WalkZone()
 		stuckAt := WkBestDist != "" ? WkBestDist : dist
@@ -1552,12 +1578,20 @@ WalkStep()
 		gnStuck := WalkGoalNear()
 		if (IsObject(gnStuck) && gnStuck.r <= ApproachUnits && walkMs > 900)
 			walkMs := 900
-		WalkLog("stuck at distance " (nowAt = "" ? "?" : nowAt) " (" (slowStuck ? "no closer in " Round(StuckTime / 1000) " s" : "picture not moving: " WkMotion " changed") "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : ""))
+		;(which watch it was - by the game's memory: walking on all the while, or not walking on either; and what its place did:
+		;WalkMoveSay - the stucks of 2026-10-26 14:33 and 15:05 had the route's progress counted and the picture still, the wizard
+		;held by something no one could see)
+		stuckWhy := froStuck ? "going to and fro a third time in a minute" : slowStuck ? (mvState >= 1 ? "walking on but no closer for " Round(MovingStuckTime / 1000) " s - the game's memory" : "no closer in " Round(StuckTime / 1000) " s") : "picture not moving: " WkMotion " changed"
+		if (mvState = 0)
+			stuckWhy .= " - not walking on by the game's memory either"
+		WalkLog("stuck at distance " (nowAt = "" ? "?" : nowAt) " (" stuckWhy "): try " WkTries + 1 " - back up, turn " UnstickTurn " degrees " (side > 0 ? "right" : "left") ", walk " walkMs " ms" (fromMem ? " (the way that worked here before)" : "") WalkMoveSay())
 		Unstick(side, walkMs)
 		WkEsc := V1Obj({zone: zone, dist: stuckAt, side: side, walkMs: walkMs, mem: fromMem, at: A_TickCount})
 		WkBias := UnstickBias * side, WkBiasUntil := A_TickCount + BiasTime
 		WkSide := -side, WkTries += 1
 		WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkStill := 0, WkSnapPrev := ""
+		;(the back-up, the turn and the walk along it are the bot's own: not the wizard walking on - the watch starts over)
+		WalkMoveReset()
 		if (!Walking)
 			return false
 		}
@@ -1887,7 +1921,7 @@ WalkDialogOpen()
 ;(WkFroUntil), and the third hold in a minute is taken as stuck (got round as any obstacle). Logged with what it steered by
 WalkFroNote(d, hRaw)
 	{
-	global WkFroTurns, WkFroHolds, WkFroUntil, WkBestTime ; (v1 globals it sets)
+	global WkFroTurns, WkFroHolds, WkFroUntil, WkBestTime, WkFroStuck ; (v1 globals it sets)
 	if (!IsObject(WkFroTurns))
 		WkFroTurns := []
 	if (!IsObject(WkFroHolds))
@@ -1928,6 +1962,9 @@ WalkFroNote(d, hRaw)
 		{
 		WkFroHolds := []
 		WkBestTime := A_TickCount - StuckTime - 1
+		;(stuck in this same step - WalkStep: the turn this note came before would reset the watch, and the course held after it
+		;walks on - the game's memory's longer watch)
+		WkFroStuck := 1
 		WalkLog("going to and fro a third time in a minute - taken as stuck")
 		}
 	return false
@@ -1946,6 +1983,61 @@ WalkSigilJustLeft(near)
 	if (!InStr(WkZoneFrom, "/Interiors/"))
 		return false
 	return !near || (WkNavOk && WkNavHops = 0)
+	}
+
+;A sigil's prompt showing (WalkStep): the why for X at it (StartSigil), or "" - no X. Not straight back into the dungeon just come
+;out of (WalkSigilJustLeft - said once in 30 s), unless the quest's goal is in it: the game's memory had this goal in that zone
+;(WalkGoalZone), or its route leads into this sigil (zone changes to go, and the teleporter to take - the memory's goal point then -
+;within 300, the sigil the wizard's on: a door further off isn't it). Then X even within its 10 minutes: 2 minutes apart, 3 times in
+;10 for the same dungeon - by its zone's name, not the prompt's OCR'd letters (they differ read to read); more: as any (said, no X).
+;Any other: once in 10 minutes for the same one. 2026-10-26 16:08:11-16:09:14 "Defeat Karolak Nightspinner and Collect Celestian
+;Portal in Stormriven": out of Celestia/Interiors/CL_Z06i1_StormHaven where he is - "just came out", 3 minutes outside, NEEDS YOU
+WalkSigilGo(near)
+	{
+	sgIn := ""
+	if (WkZoneFrom != "" && A_TickCount - WkZoneAt < 90000)
+		{
+		if (WalkSameZone(WalkGoalZone(), WkZoneFrom))
+			sgIn := "the game's memory had this goal in it"
+		;(hops blank - an older helper's: not zones away)
+		else if (WkNavOk && IsObject(WkNavObj) && V1Gt(WkNavHops, 0) && WkNavObj.gx != "" && WkNavObj.gy != "" && WkNavObj.x != "" && WkNavObj.y != ""
+			&& Sqrt((WkNavObj.gx - WkNavObj.x) ** 2 + (WkNavObj.gy - WkNavObj.y) ** 2) <= 300)
+			sgIn := "the game's route leads into this sigil - " WkNavHops " zone change" (WkNavHops = 1 ? "" : "s") " to go, the way on " Round(Sqrt((WkNavObj.gx - WkNavObj.x) ** 2 + (WkNavObj.gy - WkNavObj.y) ** 2)) " off"
+		}
+	;(the times back into this dungeon - WkSigilTries' "zone:" key: WalkSigilTriesLeft keeps the last 10 minutes')
+	sgKey := "zone:" WkZoneFrom
+	if (sgIn != "" && IsObject(WkSigilTries) && WalkSigilTriesLeft(sgKey) && WalkPromptFree(WkPromptDest, 120000)
+		&& !(WkSigilTries.Has(sgKey) && WkSigilTries[sgKey].Length && A_TickCount - WkSigilTries[sgKey][WkSigilTries[sgKey].Length] < 120000))
+		{
+		if (!WkSigilTries.Has(sgKey))
+			WkSigilTries[sgKey] := []
+		WkSigilTries[sgKey].Push(A_TickCount)
+		return "just came out of " WkZoneFrom " (its dungeon), and the quest's goal is in it (" sgIn ") - back in"
+		}
+	if (WalkSigilJustLeft(near))
+		{
+		if (!WkPromptUsed.Has("exitlog") || A_TickCount - WkPromptUsed["exitlog"] > 30000)
+			WkPromptUsed["exitlog"] := A_TickCount, WalkLog("sigil: just came out of " WkZoneFrom " (its dungeon) - not going straight back in")
+		return ""
+		}
+	return WalkPromptFree(WkPromptDest, 600000) ? "sigil prompt showing (" (near ? "the arrow led here" : "pressing X at every prompt") ")" : ""
+	}
+
+;The zone the quest's goal is in, by the game's memory. nav: WalkNav's usable reading - one with no zone change to go notes its
+;goal's zone ({goal id: zone}); "" returned. None: the current goal's zone ("" not known - never read in its own zone)
+WalkGoalZone(nav := "")
+	{
+	static gzOf := ""
+	if (!IsObject(gzOf))
+		gzOf := V1Obj()
+	if (IsObject(nav))
+		{
+		if (nav.hops = 0 && nav.goalid != "" && nav.zone != "")
+			gzOf[nav.goalid] := nav.zone
+		return ""
+		}
+	gzId := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.goalid : IsObject(WkNavLast) ? WkNavLast.goalid : ""
+	return (gzId != "" && gzOf.Has(gzId)) ? gzOf[gzId] : ""
 	}
 
 ;Tries left at the sigil whose prompt key is key: 3 X presses in 10 minutes (the old ones dropped)
@@ -2081,12 +2173,13 @@ WalkTransport(dest, arrowSeen := false)
 WalkTransportLeads(dest, zone)
 	{
 	destName := WalkLetters(dest)
-	if (StrLen(destName) < 3 || !WkGoalZones.Length)
+	;(v1: the lists blank till WalkerInit / WalkZone read them - .Length() blank, a for over blank nothing; v2 throws on a blank)
+	if (StrLen(destName) < 3 || !IsObject(WkGoalZones) || !WkGoalZones.Length)
 		return ""
 	;The zone whose name is closest to it - the game's title font fools OCR ("GOBBLERTON" can come out
 	;as "coeeLERTON"), so up to a third of the letters may be off, if no other zone is as close
 	destKey := "", best := "", tie := false
-	for knownZone in WkKnownZones
+	for knownZone in (IsObject(WkKnownZones) ? WkKnownZones : [])
 		{
 		zoneName := WalkLetters(RegExReplace(RegExReplace(knownZone, "^.*/"), "i)^[A-Z]+_Z\d+_"))
 		if (zoneName = "")
@@ -2714,13 +2807,14 @@ WalkTalkGoal()
 	}
 
 ;Is the prompt key (its name's letters - WkPromptDest) the talk goal's NPC (tg: WalkTalkGoal)? Its name like the one the goal
-;names (OCR slips allowed - "EDITHBERHLEY"); not read: in the goal line
+;names (OCR slips allowed - "EDITHBERHLEY"), or each of its words in the key in any order (WalkNameLike's name); not read: in the
+;goal line
 WalkIsGoalNpc(key, tg)
 	{
 	if (StrLen(key) < 4 || !IsObject(tg))
 		return false
 	if (tg.npc != "")
-		return WalkNameLike(key, WalkLetters(tg.npc))
+		return WalkNameLike(key, WalkLetters(tg.npc), tg.npc)
 	ignLine := WalkLetters(WkGoalLine)
 	return ignLine != "" && InStr(ignLine, key)
 	}
@@ -2918,14 +3012,50 @@ WalkQuestMarkerTalk(key)
 	}
 
 ;Two names' letters (WalkLetters) alike, allowing for OCR's misreadings: one inside the other (4 letters at least), or
-;at most a quarter of the longer one's letters different ("MRLIKOLN" for MR LINCOLN)
-WalkNameLike(a, b)
+;at most a quarter of the longer one's letters different ("MRLIKOLN" for MR LINCOLN). name: b as the game writes it - then a
+;holding each of its words of 3 letters or more also counts, in any order, each with one letter in four changed, dropped or
+;added: the prompt panel's letters come out of order, others among them (2026-10-26 15:18:48 'TALKTONIGHTSPINNERRMVENKAROLAK',
+;'NIEMTORRLNKAROLAKNIGHTSPINRTOTALKPRESS' for Karolak Nightspinner's own prompt: no X, NEEDS YOU). A word of 4 letters or fewer
+;only whole - one off is 3 letters anywhere ("BILL" in WILLOW, HILL, SKILL) -, and those words three quarters of its letters at
+;least ("Mo Lee" isn't LEE anywhere: another NPC's prompt)
+WalkNameLike(a, b, name := "")
 	{
 	if (StrLen(a) < 4 || StrLen(b) < 4)
 		return false
 	if (InStr(a, b) || InStr(b, a))
 		return true
-	return WalkEditDist(a, b) <= Max(StrLen(a), StrLen(b)) // 4
+	if (WalkEditDist(a, b) <= Max(StrLen(a), StrLen(b)) // 4)
+		return true
+	if (name = "")
+		return false
+	;(each word: the fewest letters changed, dropped or added that put it somewhere in a - the edit distance with the match free to
+	;start and end anywhere in a)
+	nlGot := 0
+	for each, nlWord in StrSplit(RegExReplace(name, "[^A-Za-z]+", " "), " ")
+		{
+		nlWord := WalkLetters(nlWord), nlLen := StrLen(nlWord)
+		if (nlLen < 3)
+			continue
+		nlCol := []
+		Loop nlLen + 1
+			nlCol.Push(A_Index - 1)
+		nlBest := nlLen
+		Loop Parse, a
+			{
+			nlC := A_LoopField, nlDiag := 0
+			Loop nlLen
+				{
+				nlOld := nlCol[A_Index + 1]
+				nlCol[A_Index + 1] := Min(nlOld + 1, nlCol[A_Index] + 1, nlDiag + (SubStr(nlWord, A_Index, 1) == nlC ? 0 : 1))
+				nlDiag := nlOld
+				}
+			nlBest := Min(nlBest, nlCol[nlLen + 1])
+			}
+		if (nlBest > (nlLen >= 5 ? nlLen // 4 : 0))
+			return false
+		nlGot += nlLen
+		}
+	return nlGot * 4 >= StrLen(b) * 3
 	}
 
 ;How many letters added, dropped or changed turn a into b (Levenshtein)
@@ -3679,7 +3809,8 @@ CollectCheck(dist)
 	;(collecting before a battle or a prompt: check the goal line at once, wherever the arrow is)
 	;(not by the distance with the goal zones away by the game's memory: that's by the way out of this zone, not the goal)
 	;(v1: hops blank - an older helper's - > 0 compared as text, false)
-	there := going || (dist <= ArriveDist && !(WkNavOk && V1Gt(WkNavHops, 0))) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000)
+	;(no closer for 8 s: not while the game's memory has the wizard walking on - going round a wall by the goal isn't stuck by it)
+	there := going || (dist <= ArriveDist && !(WkNavOk && V1Gt(WkNavHops, 0))) || (WkArrived = 1 && A_TickCount - WkArr1At > CollectWait) || (A_TickCount - WkBestTime > 8000 && WalkMoveState() < 1)
 	if (!there || A_TickCount - WkGoalReadAt < 3000)
 		return false
 	WkGoalReadAt := A_TickCount
@@ -3885,6 +4016,10 @@ CollectStep(seen, h, dist)
 		{
 		if (%csKind = "use" ? "UseStep" : csKind = "go" ? "GoStep" : "TalkStep"%.Call(csGoal))
 			return Walking ? true : false
+		;(a use goal with no thing it names to go for, the wizard on its spot by the game's memory: X once at a prompt there not
+		;naming the thing - one naming it is UseStep's)
+		if (csKind = "use" && WalkUseSpotX(csGoal))
+			return true
 		}
 	;Things lying about the zone that the goal names, by the game's memory (AutoFarmer Collect.ahk): walked to and picked
 	;up one by one. None seen: monsters and roaming as before
@@ -3967,6 +4102,36 @@ CollectStep(seen, h, dist)
 	SetStatus("collecting - roaming the area (leg " WkRoamLeg ")")
 	Sleep(100)
 	return Walking ? true : false
+	}
+
+;A use goal (WkCollect.kind "use") with no thing it names to go for (Collect.ahk UseStep said so - looking about) and the wizard on
+;its spot by the game's memory - within 300 of the goal, the same floor: X once at a prompt showing there that doesn't name the
+;thing - one naming it is UseStep's own (its X, the count watched, its tries and Crowns remembered: one tried twice or with Crowns
+;on it is never X'd again) - never a teleporter's, a vendor's (a shop's verb), nor one with Crowns on it. Then as after any X on
+;the way (StartPressX: what it opened Spaced through or closed), the goal and its count watched by the collect step as ever; once
+;per goal and count. goal: the goal line as UseStep was given it ("" the last read). True if it pressed X. 2026-10-26 16:31-16:34
+;"Collect Artifact in Stormriven Hall": circling the spot 1-7 off for 3 minutes, no thing named Artifact in the game's memory or
+;the zone's file - the notice
+WalkUseSpotX(goal := "")
+	{
+	static usxDone := "", usxLook := 0
+	usxGn := WalkGoalNear()
+	if (!IsObject(usxGn) || usxGn.r > 300 || (usxGn.dz != "" && Abs(usxGn.dz) > 150) || WkNavNoPlace || !IsObject(WkCollect))
+		return false
+	;(WkCollect["count"]: a data key named like the V1Obj's - a Map's - own Count)
+	usxKey := (WkNavObj.goalid != "" ? WkNavObj.goalid : WkCollect.text) "|" WkCollect["count"]
+	if (usxKey = usxDone || A_TickCount - usxLook < 700)
+		return false
+	usxLook := A_TickCount
+	;(a teleporter by its name, its verb or anywhere on the panel - "Press X to Teleport" under a place's name)
+	if (InteractPrompt() != "press" || StrLen(WkPromptDest) < 3 || RegExMatch(WkPromptDest " " WkPromptText, "i)teleport")
+		|| RegExMatch(WkPromptVerb, "i)^(shop|trade|buy|sell|browse|craft|learn|train)") || RegExMatch(WkPromptText, "i)cr[o0]wn")
+		|| WalkUseNames(WkPromptDest, goal))
+		return false
+	usxDone := usxKey
+	WalkLog("use: on the goal's spot (the game's memory: " Round(usxGn.r) " off) and no thing it names to go for - X once at the prompt there ('" SubStr(WkPromptDest, 1, 30) "')")
+	StartPressX(WkPromptDest)
+	return true
 	}
 
 ;The quest goal's line under the arrow (e.g. "Defeat Frost Fins in Kataba IceBlock (2 of 5)"): from the game's memory
@@ -4833,7 +4998,9 @@ WalkZonesLoad()
 
 WalkZoneSeen(zoneName)
 	{
-	if (zoneName = "" || WkKnownZones.Has(zoneName))
+	;(v1: the list blank before WalkerInit's WalkZonesLoad - WalkZone runs earlier: DashInit - HasKey blank, the key set and the
+	;append to the blank file name did nothing; v2 throws on a blank: "no method named Has")
+	if (zoneName = "" || !IsObject(WkKnownZones) || WkKnownZones.Has(zoneName))
 		return
 	WkKnownZones[zoneName] := 1
 	;(the "`n" option: v1's FileAppend wrote each `n as `r`n - v2's only with it)
@@ -5033,6 +5200,8 @@ WalkNav(hScr, dScr)
 		;(set again below if this reading has a route - only a route's offset is carried over a missed reading)
 		relKeep := ""
 		WkNavOk := 1, WkNavObj := nav, WkNavHops := nav.hops
+		;(the goal in this zone: noted - a dungeon walked out of with the goal in it is gone back into, WalkSigilGo)
+		WalkGoalZone(nav)
 		;(a new goal - another zone, quest goal or zone changes to go: "getting on" along the route, and the
 		;badly-stuck watch, start over from it)
 		goalKey := nav.zone "|" nav.goalid "|" nav.hops
@@ -5097,6 +5266,8 @@ WalkNav(hScr, dScr)
 				}
 			}
 		WalkNavMoveCheck(nav)
+		;(is the wizard walking on - the stuck watch's)
+		WalkMoveTrack(nav)
 		;(how the arrow's distance compares with the memory's differs from zone to zone - 41 in one, about 100
 		;in Pigswick Academy: each zone's own once worked out there)
 		if (nav.zone != WkNavScaleZone)
@@ -5264,6 +5435,99 @@ WalkNavMoveCheck(nav)
 	from := ""
 	if (mvOff <= 20)
 		WalkNavConfirm("the wizard walked " Round(Sqrt(mvX * mvX + mvY * mvY)) " units the way its facing says (" Round(mvOff) " degrees off)")
+	}
+
+;Is the wizard walking on, by the game's memory - WalkStep's stuck watch (each usable reading, from WalkNav): its place reading
+;by reading over the last StuckTime (WkMoveLog), each step's part the way it faces (forward is (-sin yaw, -cos yaw), as
+;WalkNavHeading has it). Walking on (WkMovedAt): over the last second or so, MoveFrac of its walking speed or more the way it
+;faces. W held into a wall a few degrees off square slides it sideways along the wall - a hundred units a second or more, no
+;nearer anything: not walking on (any 120 units in 4 s counted before: a wall slid along kept the picture's watch off and the
+;stuck watch 15 s). A gap in the readings (over 2 s - a battle, a loading screen, a talk), another zone, or a jump far beyond
+;walking (a teleport, a reading of something else): begun again there, nothing walked
+;(v2: the watch's ticks are 0 or a tick, never blank - WalkerInit / WalkMoveReset - and each is looked at only once it's set;
+;the settings, WkWalkSpeed and SpeedNow by V1Ge / V1Gt / V1Mul - blank before WalkerInit or till measured, as v1 compared them)
+WalkMoveTrack(nav)
+	{
+	global WkMoveNow, WkMoveLog, WkMoveZone, WkMoveSeen, WkMovedAt ; (v1 globals it sets)
+	if (nav.x = "" || nav.y = "" || nav.yaw = "")
+		return
+	now := A_TickCount
+	WkMoveNow := 0
+	;(walking is about 0.9 units a ms at 1x - WkWalkSpeed once measured, a mount's faster; never less: sliding along a wall a while
+	;brings WkWalkSpeed's samples down -, sped up as the speedhack has it)
+	mvSpeed := (V1Gt(WkWalkSpeed, 0.9) ? WkWalkSpeed : 0.9) * (V1Gt(SpeedNow, 1) ? SpeedNow : 1)
+	mvLast := (IsObject(WkMoveLog) && WkMoveLog.Length) ? WkMoveLog[WkMoveLog.Length] : ""
+	if (!IsObject(mvLast) || !WkMoveSeen || now - WkMoveSeen > 2000 || nav.zone != WkMoveZone)
+		{
+		WkMoveLog := [V1Obj({at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: 0})], WkMoveZone := nav.zone, WkMoveSeen := now
+		return
+		}
+	WkMoveSeen := now
+	mvDx := nav.x - mvLast.x, mvDy := nav.y - mvLast.y
+	;(over 3 times walking, and a margin: not walked)
+	if (Sqrt(mvDx * mvDx + mvDy * mvDy) > (now - mvLast.at) * 3 * mvSpeed + 1000)
+		{
+		WkMoveLog := [V1Obj({at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: 0})]
+		return
+		}
+	;(the step's part the way it faced - halfway between the two readings' facings: a mouse turn swings it at once)
+	mvFwd := -(mvDx * (Sin(nav.yaw) + Sin(mvLast.yaw)) + mvDy * (Cos(nav.yaw) + Cos(mvLast.yaw))) / 2
+	WkMoveLog.Push(V1Obj({at: now, x: nav.x, y: nav.y, yaw: nav.yaw, f: mvFwd}))
+	while (WkMoveLog.Length > 2 && V1Gt(now - WkMoveLog[2].at, StuckTime))
+		WkMoveLog.RemoveAt(1)
+	;(the last second or so: back to the first reading a second or more before this one)
+	mvFwd := 0
+	mvFrom := now
+	mvI := WkMoveLog.Length
+	while (mvI > 1 && now - mvFrom < 1000)
+		{
+		mvFwd += WkMoveLog[mvI].f
+		mvI -= 1
+		mvFrom := WkMoveLog[mvI].at
+		}
+	if (now - mvFrom >= 700 && V1Ge(mvFwd, V1Mul(V1Mul(MoveFrac, mvSpeed), now - mvFrom)))
+		WkMovedAt := now, WkMoveNow := 1
+	}
+
+;What the game's memory says of the wizard walking on, for the stuck watch: -1 nothing (no usable reading in the last 2 s - navmem
+;off, the helper down or busy, the watch just begun again: the watch as without it), 0 not walking on (not within StuckTime),
+;1 walking on (within the last StuckTime), 2 walking on right now (the last reading's second - judged afresh each reading, so no
+;grace after it: walked into a wall, the picture's watch is back within half a second)
+WalkMoveState()
+	{
+	if (!WkMoveSeen || A_TickCount - WkMoveSeen > 2000)
+		return -1
+	if (!WkMovedAt || V1Gt(A_TickCount - WkMovedAt, StuckTime))
+		return 0
+	return WkMoveNow ? 2 : 1
+	}
+
+;The stuck watch's walking on by the game's memory begun again: WalkReset, after Unstick (its back-up, turn and walk are the
+;bot's own moves)
+WalkMoveReset()
+	{
+	global WkMoveLog, WkMoveZone, WkMovedAt, WkMoveNow, WkMoveSeen ; (v1 globals it sets)
+	WkMoveLog := [], WkMoveZone := "", WkMovedAt := 0, WkMoveNow := 0, WkMoveSeen := 0
+	}
+
+;For the stuck line: what the game's memory saw the wizard's place do over the last StuckTime - how far it went, how far that took
+;it from where it was, and how much of it the way it faces ("" no reading in the last 2 s). 2026-10-26 "stuck on nothing": this
+;says whether it stood, slid along something or walked on
+WalkMoveSay()
+	{
+	if (!WkMoveSeen || A_TickCount - WkMoveSeen > 2000 || !IsObject(WkMoveLog) || WkMoveLog.Length < 2)
+		return ""
+	mvPath := 0
+	mvFwd := 0
+	Loop WkMoveLog.Length - 1
+		{
+		mvLast := WkMoveLog[A_Index], mvE := WkMoveLog[A_Index + 1]
+		mvPath += Sqrt((mvE.x - mvLast.x) ** 2 + (mvE.y - mvLast.y) ** 2)
+		mvFwd += mvE.f
+		}
+	mvFirst := WkMoveLog[1]
+	mvNet := Sqrt((mvE.x - mvFirst.x) ** 2 + (mvE.y - mvFirst.y) ** 2)
+	return "; the game's memory: its place moved " Round(mvPath) " units in the last " Round((mvE.at - mvFirst.at) / 1000, 1) " s (" Round(mvNet) " from where it was, " Round(mvFwd) " the way it faces)"
 	}
 
 ;One reading of how the memory's distance compares with the number on the arrow (game units per arrow unit).
@@ -5670,8 +5934,8 @@ WalkerBlank()
 	global ArriveDist := "", TurnRate := "", AheadAngle := "", TurnInPlace := "", StuckTime := "", UnstickTries := "", UnreadLimit := ""
 	global MinMatch := "", SpotTurnMem := "", ArcBlind := "", AheadMem := "", TurnRadius := "", WkWalkSpeed := "", WkWUpAt := "", WkMet := ""
 	global WkMetAt := "", WkWalkSamples := "", WkPassMin := "", WkPassKey := "", WkPassAt := "", WkPromptVerb := "", WkCloseLook := ""
-	global PlayForMe := "", WkFroTurns := "", WkFroUntil := "", WkFroHolds := "", NearDist := "", TalkMax := "", TalkGap := "", PushTime := ""
-	global PushStraightDist := "", PushStraightTime := "", BackupTime := "", UnstickTurn := "", UnstickBias := "", BiasTime := ""
+	global PlayForMe := "", WkFroTurns := "", WkFroUntil := "", WkFroHolds := "", WkFroStuck := "", NearDist := "", TalkMax := "", TalkGap := ""
+	global PushTime := "", PushStraightDist := "", PushStraightTime := "", BackupTime := "", UnstickTurn := "", UnstickBias := "", BiasTime := ""
 	global HiddenWalkTime := "", PushHiddenTime := "", LoadSpaceWait := "", LoadSpaceMax := "", GateDist := "", GateWait := "", SigilWait := ""
 	global FastStuckTime := "", StillFrac := "", MemNear := "", MemAhead := "", TurnSettle := "", TransportWait := "", WkAcceptLook := ""
 	global SpeedNow := "", SpeedSentAt := "", WkSpeedHold := "", SpeedSlowDist := "", SpeedSlowUnits := "", SpeedExitUnits := "", SpeedOff := ""
@@ -5692,19 +5956,20 @@ WalkerBlank()
 	global WkArrDist := "", WkLoadAt := "", WkSpaceAt := "", WkGoneSpaces := "", WkGateAt := "", WkGateClicks := "", WkGateX := "", WkGateLook := ""
 	global WkSigilUntil := "", WkFarAt := "", WkSigilSeen := "", WkSigilZones := "", WkSigilAt := "", WkSigilKey := "", WkSigilFromZone := ""
 	global WkSigilTries := "", WkSnapPrev := "", WkSnapAt := "", WkTurnAt := "", WkWalkFrom := "", WkStill := "", WkMotion := "", WkMem := ""
-	global WkMemFile := "", WkEsc := "", WkSpins := "", WkSpotTurn := "", inbattle := "", NavTurnTol := "", NavTurnCap := "", NavAgreeNeed := ""
-	global WkNavOk := "", WkNavUse := "", WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavSign := "", WkNavTrusted := ""
-	global WkNavAgree := "", WkNavMirror := "", WkNavOdd := "", WkNavRest := "", WkNavRestKey := "", WkNavRel := "", WkNavByArrow := ""
-	global WkNavEscAt := "", WkBackOutX := "", WkBackOutY := "", WkBackOutStill := "", WkBlindAt := "", WkBlindBackSaid := "", WkBlindMob := ""
-	global WkNavScale := "", WkNavScales := "", WkNavScaleBad := "", WkNavState := "", WkNavPrev := "", WkNavTurns := "", WkNavTurnLog := ""
-	global WkNavFile := "", WkNavSignSaved := "", NavWhy := "", WkNavChecked := "", WkNavZScales := "", WkNavScaleZone := "", WkNavScaleAll := ""
-	global WkStandIn := "", NavRoute := "", WkNavRouted := "", WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := ""
-	global ArriveUnits := "", PushUnits := "", WkAfterXLooked := "", WkGoalLine := "", WkGoalLineAt := "", WkGoalFrom := "", WkQmLooked := ""
-	global WkQmTalked := "", WkPromptSkip := "", WkPreXText := "", WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := ""
-	global WkJumpPushUntil := "", WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := "", WkRealSeenAt := "", WkArrowAtX := ""
-	global WkNavMirrorSaid := "", WkNavDoor := "", ApproachUnits := "", TalkUnits := "", TalkReach := "", WkApTries := "", WkApOffUntil := ""
-	global WkGoalType := "", WkGoalNpc := "", WkGoalId := "", WkTalkXs := "", WkTalkGoal := "", WkArrGoal := "", WkGoalIdWas := "", WkTalkNoted := ""
-	global WkGoalItem := "", WkGoalCount := "", WkGoalTotal := "", WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
+	global WkMemFile := "", WkEsc := "", MovingStuckTime := "", MoveFrac := "", WkMoveLog := "", WkMoveZone := "", WkMovedAt := "", WkMoveNow := ""
+	global WkMoveSeen := "", WkSpins := "", WkSpotTurn := "", inbattle := "", NavTurnTol := "", NavTurnCap := "", NavAgreeNeed := "", WkNavOk := ""
+	global WkNavUse := "", WkNavH := "", WkNavD := "", WkNavHops := "", WkNavObj := "", WkNavSign := "", WkNavTrusted := "", WkNavAgree := ""
+	global WkNavMirror := "", WkNavOdd := "", WkNavRest := "", WkNavRestKey := "", WkNavRel := "", WkNavByArrow := "", WkNavEscAt := ""
+	global WkBackOutX := "", WkBackOutY := "", WkBackOutStill := "", WkBlindAt := "", WkBlindBackSaid := "", WkBlindMob := "", WkNavScale := ""
+	global WkNavScales := "", WkNavScaleBad := "", WkNavState := "", WkNavPrev := "", WkNavTurns := "", WkNavTurnLog := "", WkNavFile := ""
+	global WkNavSignSaved := "", NavWhy := "", WkNavChecked := "", WkNavZScales := "", WkNavScaleZone := "", WkNavScaleAll := "", WkStandIn := ""
+	global NavRoute := "", WkNavRouted := "", WkNavLeft := "", WkRouteBest := "", WkRouteProg := "", WkRouteState := "", ArriveUnits := ""
+	global PushUnits := "", WkAfterXLooked := "", WkGoalLine := "", WkGoalLineAt := "", WkGoalFrom := "", WkQmLooked := "", WkQmTalked := ""
+	global WkPromptSkip := "", WkPreXText := "", WkNavJump := "", WkNavJumpAt := "", WkJumpKey := "", WkJumpStuck := "", WkJumpPushUntil := ""
+	global WkNavMob := "", WkNavMobName := "", WkMobLogged := "", WkNavMobAt := "", WkRealSeenAt := "", WkArrowAtX := "", WkNavMirrorSaid := ""
+	global WkNavDoor := "", ApproachUnits := "", TalkUnits := "", TalkReach := "", WkApTries := "", WkApOffUntil := "", WkGoalType := ""
+	global WkGoalNpc := "", WkGoalId := "", WkTalkXs := "", WkTalkGoal := "", WkArrGoal := "", WkGoalIdWas := "", WkTalkNoted := "", WkGoalItem := ""
+	global WkGoalCount := "", WkGoalTotal := "", WkGoalItemKey := "", WkGoalMobKey := "", WkGoalNpcFirst := "", WkGoalNpcLast := ""
 	global WkNavNoPlace := "", WkNpN := "", WkNpGoal := "", WkNpAt := "", WkNavLast := "", WkNpTarget := "", WkArr1Key := "", WkArr1Look := ""
 	global WkPromptText := ""
 	}

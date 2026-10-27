@@ -24,10 +24,11 @@ global CiStepAt, CiLine, CiLineAt
 ;count and the goal id then, a blind one (no prompt at it), what it opened looked at; since when it's been right by it; since
 ;when nothing's been known to go for; the last prompt look and what it saw; standing still (since when, where) and the tries at
 ;it; the last step; the count's last look; the goal it's all for; the count at the last step and the distance to the thing then;
-;the count read when the wizard first came within 600 of the thing ("" not yet, "-" not read)
+;the count read when the wizard first came within 600 of the thing ("" not yet, "-" not read); the ones tried and left, how many
+;times ({goal: [{t, x, y, n}]} - twice: not gone for again)
 global UsIt, UsFrom, UsBudget, UsThings, UsAskAt, UsDone, UsSkip, UsXs, UsXAt, UsCount0, UsGoalX, UsBlind, UsAfterX
 global UsBareAt, UsNoneFrom, UsPromptAt, UsPrompt, UsStillAt, UsStillX, UsStillY, UsTries, UsStepAt, UsCountAt, UsGoalWas
-global UsLastCount, UsD, UsNearCount
+global UsLastCount, UsD, UsNearCount, UsFails
 ;(the zone's volumes - /volumes: [{name, x, y, z, r}] - the zone they're for and when they were asked; at the place since when,
 ;walked through it since when; the notice given for this goal; X at a talk goal's NPC from here: [ticks]; when the walker's own
 ;talk logic was last handed the NPC)
@@ -214,14 +215,16 @@ CollectItemsWaiting()
 ;what was used. Time away (a battle, a prompt, F8) isn't counted on the thing or the looking
 UseBegin(kind)
 	{
-	global UsDone, UsSkip, UsTalkXs, CiGid, UsGoalWas, UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsNoneFrom, UsLastCount, UsAtFrom ; (v1 globals it sets)
-	global UsThrough, UsNoted, UsBudget, UsPromptAt, UsPrompt, UsD, UsAskAt, UsFrom, UsTries, UsStillAt, UsStepAt ; (v1 globals it sets)
+	global UsDone, UsSkip, UsTalkXs, UsFails, CiGid, UsGoalWas, UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsNoneFrom, UsLastCount ; (v1 globals it sets)
+	global UsAtFrom, UsThrough, UsNoted, UsBudget, UsPromptAt, UsPrompt, UsD, UsAskAt, UsFrom, UsTries, UsStillAt, UsStepAt ; (v1 globals it sets)
 	if (!IsObject(UsDone))
 		UsDone := V1Obj()
 	if (!IsObject(UsSkip))
 		UsSkip := []
 	if (!IsObject(UsTalkXs))
 		UsTalkXs := []
+	if (!IsObject(UsFails))
+		UsFails := V1Obj()
 	;(not collecting by walking into mobs: a mob that catches the wizard here gets its reach made bigger - Vision.ahk MobGrow)
 	CiGid := "(" kind ")"
 	ubKey := kind ":" (WkCollect.goalid != "" ? WkCollect.goalid : WalkLetters(RegExReplace(WkCollect.text, "i)\(?\s*\d+\s*(of|/)\s*\d+\s*\)?")))
@@ -243,11 +246,12 @@ UseBegin(kind)
 	return ubKey
 	}
 
-;Forget what was left for a while - Keep trying on the notice (Walker.ahk WalkNoteKeep)
+;Forget what was left for a while, and the tries at each - Keep trying on the notice (Walker.ahk WalkNoteKeep), F8 off and on
 UseForget()
 	{
-	global UsSkip, UsNoneFrom, UsIt, UsXAt, UsXs, UsTalkXs, UsNoted, UsAtFrom, UsThrough ; (v1 globals it sets)
+	global UsSkip, UsNoneFrom, UsIt, UsXAt, UsXs, UsTalkXs, UsNoted, UsAtFrom, UsThrough, UsFails ; (v1 globals it sets)
 	UsSkip := [], UsNoneFrom := 0, UsIt := "", UsXAt := 0, UsXs := 0, UsTalkXs := [], UsNoted := "", UsAtFrom := 0, UsThrough := 0
+	UsFails := V1Obj()
 	}
 
 ;A thing's template (its name when an older helper gives none) - with its place, what tells one from another
@@ -256,11 +260,15 @@ UseT(x)
 	return x.template != "" ? x.template : x.name
 	}
 
-;Is thing x in list ([{t, x, y}])? The same template within 400: a zone file's spot and the game's own object there are one
+;Is thing x in list ([{t, x, y, gid, src}])? The same template within 400: a zone file's spot and the game's own object there are
+;one - but two of the game's own objects (src mem) with gids of their own are two: a used one is gone from the game's memory, so
+;one standing there now is another (2026-10-26 "Find Portal Piece in Stormriven (2 of 3)": the third X'd by the second's spot
+;after the notice - by the used one's spot it was never gone for)
 UseIn(list, x)
 	{
 	for i, e in list
-		if (e.t = UseT(x) && (e.x - x.x) ** 2 + (e.y - x.y) ** 2 <= 160000)
+		if (e.t = UseT(x) && (e.x - x.x) ** 2 + (e.y - x.y) ** 2 <= 160000
+			&& !(e.src = "mem" && x.src = "mem" && e.gid != "" && x.gid != "" && e.gid "|" != x.gid "|"))
 			return true
 	return false
 	}
@@ -281,40 +289,88 @@ UseSkipped(x)
 	return usHit
 	}
 
-;A thing used for this goal (key: UseBegin's) or left for a while within 400 of the wizard (the game's memory's last reading -
-;WkNavLast; not read: true, no X on a guess)? A prompt naming the thing there is that one's
-UseTriedNear(key)
+;A thing used for this goal (key: UseBegin's), left for a while or tried twice within 400 of the wizard (the game's memory's last
+;reading - WkNavLast; not read: true, no X on a guess)? A prompt naming the thing there is that one's. more: looking about for more
+;of them with some used and the count not full - by a used one a prompt naming the thing may well be another one, one the game's
+;memory doesn't hold (2026-10-26 "Find Portal Piece in Stormriven (2 of 3)": the third was X'd by the second's spot, after the
+;notice): used ones don't count then
+UseTriedNear(key, more := false)
 	{
 	if (!IsObject(WkNavLast) || WkNavLast.x = "" || WkNavLast.y = "")
 		return true
 	utMe := V1Obj({x: WkNavLast.x, y: WkNavLast.y})
-	for i, e in UsDone[key]
-		if ((e.x - utMe.x) ** 2 + (e.y - utMe.y) ** 2 <= 160000)
-			return true
+	if (!more)
+		for i, e in UsDone[key]
+			if ((e.x - utMe.x) ** 2 + (e.y - utMe.y) ** 2 <= 160000)
+				return true
 	for i, e in UsSkip
 		if (A_TickCount < e.until && (e.x - utMe.x) ** 2 + (e.y - utMe.y) ** 2 <= 160000)
 			return true
+	if (IsObject(UsFails) && IsObject(UsFails[key]))
+		for i, e in UsFails[key]
+			if (e.n >= 2 && (e.x - utMe.x) ** 2 + (e.y - utMe.y) ** 2 <= 160000)
+				return true
 	return false
 	}
 
-;The thing walked to (UsIt) left for 5 minutes; why: for the log. True (the step's done)
-UseLeave(why)
+;How many times the thing (template t, at x, y) was tried for this goal (key: UseBegin's) and left - X did nothing, or it couldn't
+;be got to - 0 never; 2 (twice): not gone for again for this goal, nor X'd at while looking about (Crowns on its prompt: 2 at once)
+UseFails(key, t, x, y)
+	{
+	if (!IsObject(UsFails) || !IsObject(UsFails[key]))
+		return 0
+	for i, e in UsFails[key]
+		if (e.t = t && (e.x - x) ** 2 + (e.y - y) ** 2 <= 160000)
+			return e.n
+	return 0
+	}
+
+;Thing it tried and left once more for this goal (key: UseBegin's; never: one never to be X'd - Crowns on its prompt - counted as
+;twice at once): how many times now
+UseFailMore(key, it, never := false)
+	{
+	global UsFails ; (v1 globals it sets)
+	if (!IsObject(UsFails))
+		UsFails := V1Obj()
+	if (!IsObject(UsFails[key]))
+		UsFails[key] := []
+	for i, e in UsFails[key]
+		if (e.t = UseT(it) && (e.x - it.x) ** 2 + (e.y - it.y) ** 2 <= 160000)
+			{
+			e.n := never ? 2 : e.n + 1, e.never := never ? 1 : e.never
+			return e.n
+			}
+	UsFails[key].Push(V1Obj({t: UseT(it), x: it.x, y: it.y, n: never ? 2 : 1, never: never ? 1 : 0}))
+	return never ? 2 : 1
+	}
+
+;The thing walked to (UsIt) left for 5 minutes; why: for the log; never: never to be X'd (Crowns on its prompt). A goal to use
+;things counts the tries at each (UseFailMore): left the second time - or never - it isn't gone for again (UseStep). True (the
+;step's done)
+UseLeave(why, never := false)
 	{
 	global UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsBudget, UsD ; (v1 globals it sets)
+	ulN := 0
 	if (IsObject(UsIt))
+		{
 		UsSkip.Push(V1Obj({t: UseT(UsIt), x: UsIt.x, y: UsIt.y, until: A_TickCount + 300000}))
-	WalkLog("use: " (IsObject(UsIt) ? UsIt.name : "the thing") " - " why " - left for 5 minutes")
+		if (SubStr(UsGoalWas, 1, 4) = "use:")
+			ulN := UseFailMore(UsGoalWas, UsIt, never)
+		}
+	WalkLog("use: " (IsObject(UsIt) ? UsIt.name : "the thing") " - " why " - " (ulN < 2 ? "left for 5 minutes" : never ? "not gone for again"
+		: "tried twice now - not gone for again"))
 	UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsBudget := 0, UsD := ""
 	ReleaseKeys()
 	return true
 	}
 
-;The thing walked to (UsIt) used: kept as used for this goal (key: UseBegin's), on to the next; why: for the log. True
+;The thing walked to (UsIt) used: kept as used for this goal (key: UseBegin's - its gid and where it was read from too: UseIn),
+;on to the next; why: for the log. True
 UseUsed(key, why)
 	{
 	global UsIt, UsXAt, UsXs, UsBlind, UsBareAt, UsNoneFrom, UsBudget, UsD ; (v1 globals it sets)
 	if (IsObject(UsIt))
-		UsDone[key].Push(V1Obj({t: UseT(UsIt), x: UsIt.x, y: UsIt.y}))
+		UsDone[key].Push(V1Obj({t: UseT(UsIt), x: UsIt.x, y: UsIt.y, gid: UsIt.gid, src: UsIt.src}))
 	WalkLog("use: " (IsObject(UsIt) ? UsIt.name : "the thing") " used - " why)
 	SetStatus("using - " (IsObject(UsIt) ? UsIt.name : "the thing") " used")
 	UsIt := "", UsXAt := 0, UsXs := 0, UsBlind := 0, UsBareAt := 0, UsNoneFrom := 0, UsBudget := 0, UsD := ""
@@ -344,9 +400,9 @@ UseX(it, why, key)
 		UsFrom := A_TickCount, UsBudget := 60000, UsXs := 0, UsBlind := 0
 		}
 	UsIt := it
-	;(Crowns on the prompt: never an X - left, so it isn't looked at again here for a while)
+	;(Crowns on the prompt: never an X - left, not gone for again for this goal nor looked at again here)
 	if (RegExMatch(WkPromptText, "i)cr[o0]wn"))
-		return UseLeave("Crowns on its prompt - never an X there")
+		return UseLeave("Crowns on its prompt - never an X there", true)
 	ReleaseKeys()
 	UsCount0 := UseCount(), UsGoalX := WkGoalId
 	;(no prompt at it and the count risen since the wizard came near it: picked up on contact - used, no X at its empty spot. The
@@ -407,22 +463,74 @@ UseWait(key)
 	return UseLeave("X " UsXs " time" (UsXs = 1 ? "" : "s") " and the count didn't rise")
 	}
 
-;Nothing to go for (a use / go / talk goal the game shows no way to): looked about for 3 minutes - or each one known tried and
-;left for a while (left) - and the notice, waiting there (Walker.ahk CollectGiveUp: Keep trying looks again); no endless
-;roaming. what: what was looked for, for the notice. True if it gave up
-UseNothing(left, what)
+;Nothing to go for (a use / go / talk goal the game shows no way to): looking about (the walker's roaming) - never the notice
+;while a thing known is only left for a while (left: how many - its 5 minutes not up; then it's gone for again), and 3 minutes of
+;looking about after the last of them, or after the last use, finding nothing new - then the notice, waiting there (Walker.ahk
+;CollectGiveUp: Keep trying looks again); no endless roaming. 2026-10-26 "Find Portal Piece in Stormriven": a piece left at
+;15:12, one used at 15:14:46, and the notice at once - "X at each did nothing". what: what was looked for; goal: the goal line
+;now; used: how many were used for it, out: how many were tried twice (or have Crowns on their prompt) - for the notice. True if
+;it gave up
+UseNothing(left, what, goal := "", used := 0, out := 0)
 	{
 	global UsNoneFrom ; (v1 globals it sets)
+	if (left)
+		{
+		UsNoneFrom := A_TickCount
+		return false
+		}
 	if (!UsNoneFrom)
 		UsNoneFrom := A_TickCount
-	if (!left && A_TickCount - UsNoneFrom <= 180000)
+	if (A_TickCount - UsNoneFrom <= 180000)
 		return false
 	UsNoneFrom := 0
-	unWhy := left ? "X at each " what " the bot found did nothing (the count didn't rise) - used already, or the quest isn't there yet"
+	UseLine(goal)
+	unLine := UseLine(WalkGoalText())
+	;(the ones it found with Crowns on their prompt, never X'd, and the ones X'd twice for nothing - not a prompt met looking about,
+	;"prompt:": by a used one it may be that one's own)
+	unCrown := 0, unTwice := 0
+	if (IsObject(UsFails) && IsObject(UsFails[UsGoalWas]))
+		for i, e in UsFails[UsGoalWas]
+			{
+			if (SubStr(e.t, 1, 7) = "prompt:")
+				continue
+			if (e.never)
+				unCrown += 1
+			else if (e.n >= 2)
+				unTwice += 1
+			}
+	;(some used: the ones found that weren't said too - the notice's "no more" is about new ones)
+	unOut := (unTwice ? " - X at " unTwice " more it found did nothing, tried twice" : "")
+		. (unCrown ? " - " unCrown " more it found " (unCrown = 1 ? "has" : "have") " Crowns on the prompt - never an X there" : "")
+	unWhy := used ? "used " used " thing" (used = 1 ? "" : "s") " it names - the count is " UseCountText(unLine) unOut " - and found no more in 3 minutes of looking about (more may lie beyond the game's memory's reach, not in the zone's file)"
+		: out && unCrown && !unTwice ? "each " what " the bot found has Crowns on its prompt - never an X there - and nothing more was found in 3 minutes of looking about"
+		: out ? "X at each " what " the bot found did nothing, tried twice (the count didn't rise) - used already, or the quest isn't there yet" (unCrown ? " (Crowns on the prompt of " unCrown " - never an X there)" : "") " - and nothing more was found in 3 minutes of looking about"
 		: "the game shows no way to it, and no " what " was found in the game's memory or the zone's file in 3 minutes of looking"
-	WalkLog("use: " unWhy " - stopping here, telling you")
+	WalkLog("use: '" unLine "' - " unWhy " - stopping here, telling you")
 	CollectGiveUp("", unWhy, "Quest needs you")
 	return true
+	}
+
+;The goal's line as it reads now (goal: the walker's last read of it) kept as the use goal's own (WkCollect.text) when it's the
+;same goal letter for letter but the count: the notice (Walker.ahk CollectGiveUp) and the walker's log lines show the count now,
+;not the one use mode began with (2026-10-26: "(0 of 3)" in the notice with 2 of 3 done). The goal's own line
+UseLine(goal)
+	{
+	if (!IsObject(WkCollect))
+		return goal
+	ulCut := "i)\(?\s*\d+\s*(of|/)\s*\d+\s*\)?"
+	if (goal != "" && goal != WkCollect.text && CollectCount(goal) != ""
+		&& WalkLetters(RegExReplace(goal, ulCut)) = WalkLetters(RegExReplace(WkCollect.text, ulCut)))
+		WkCollect.text := goal
+	return WkCollect.text
+	}
+
+;The goal's count for the notice: "2 of 3" from its line, else the game's memory's (UseCount, WkGoalTotal); "not known"
+UseCountText(line)
+	{
+	if (RegExMatch(line, "i)(\d+)\s*(?:of|/)\s*(\d+)", &uc))
+		return uc[1] " of " uc[2]
+	ucN := UseCount()
+	return ucN = "" ? "not known" : ucN (WkGoalTotal != "" ? " of " WkGoalTotal : "")
 	}
 
 ;Walking to the thing (UsIt) and hardly moving for 3 s with W down: backed up and turned (true); after 4 tries left for a while
@@ -453,12 +561,13 @@ UseStuck(nav, d, what)
 ;and the zone file's, even far off (/items far) - and the nearest not used yet nor left for a while (never an NPC, a mob) walked
 ;to round walls and mobs (as a follower walks to its leader: /navto), 30 s and a second per 600 units of the way given; within 400
 ;its prompt read every 0.7 s - X at the one naming it (never a teleporter's, never with Crowns), the count watched (UseWait);
-;right by it with no prompt at all for 3 s: one X in case. None known: the walker looks about (no monsters) while the prompts
-;naming the thing are X'd; 3 minutes of that - or each one known tried and left - the notice. goal: the goal line. True when it
-;did this step; false when there's nothing to go for (the walker roams)
+;right by it with no prompt at all for 3 s: one X in case. None to go for: the walker looks about (no monsters) while the prompts
+;naming the thing are X'd; one left for a while is gone for again once its 5 minutes are up, one tried twice isn't; the notice
+;only once none waits and 3 minutes of looking about found nothing new (UseNothing). goal: the goal line. True when it did this
+;step; false when there's nothing to go for (the walker roams)
 UseStep(goal)
 	{
-	global UsLastCount, UsAskAt, UsThings, UsIt, UsD, UsPromptAt, UsNoneFrom, UsFrom, UsBudget, UsXs, UsBlind, UsBareAt ; (v1 globals it sets)
+	global UsNoneFrom, UsLastCount, UsAskAt, UsThings, UsIt, UsD, UsPromptAt, UsFrom, UsBudget, UsXs, UsBlind, UsBareAt ; (v1 globals it sets)
 	global UsTries, UsStillAt, UsPrompt, UsNearCount ; (v1 globals it sets)
 	if ((Stats.Has("collectmem") && !Stats["collectmem"]) || !VisionOn)
 		return false
@@ -469,6 +578,9 @@ UseStep(goal)
 	usCount := WkCollect["count"]
 	if (IsObject(UsIt) && UsLastCount != "" && usCount != "" && usCount > UsLastCount && UsD != "" && UsD <= 300)
 		UseUsed(usKey, "the count rose to " usCount " by it")
+	;(the count risen while looking about - an X at the goal's spot, Walker.ahk WalkUseSpotX: progress - its 3 minutes start again)
+	if (UsLastCount != "" && usCount != "" && usCount > UsLastCount)
+		UsNoneFrom := 0
 	UsLastCount := usCount
 	if (!UsAskAt || A_TickCount - UsAskAt > 1500)
 		{
@@ -476,12 +588,20 @@ UseStep(goal)
 		usGot := CollectItems(goal, true)
 		UsThings := IsObject(usGot) ? usGot : []
 		}
-	;(the one walked to while it's still there - a file spot read now as the game's own object is the same one; else the nearest)
-	usPick := "", usLeft := 0
+	;(the goal's line now kept as its own: its count in the notice and the walker's log lines)
+	UseLine(goal)
+	;(the one walked to while it's still there - a file spot read now as the game's own object is the same one; else the nearest; one
+	;tried twice - or with Crowns on its prompt - not gone for again)
+	usPick := "", usLeft := 0, usOut := 0
 	for i, usX in UsThings
 		{
 		if (!usX.quest || usX.kind = "npc" || usX.kind = "mob" || UseIn(UsDone[usKey], usX))
 			continue
+		if (UseFails(usKey, UseT(usX), usX.x, usX.y) >= 2)
+			{
+			usOut += 1
+			continue
+			}
 		if (UseSkipped(usX))
 			{
 			usLeft += 1
@@ -497,21 +617,24 @@ UseStep(goal)
 		}
 	if (!IsObject(usPick))
 		{
-		if (IsObject(UsIt))
+		usUsed := UsDone[usKey].Length
+		if (IsObject(UsIt) || !UsNoneFrom)
 			{
-			WalkLog("use: none of the goal's things left to go for" (usLeft ? " (" usLeft " left for a while)" : "") " - looking about")
+			WalkLog("use: none of the goal's things left to go for" (usLeft || usUsed || usOut ? " (" SubStr((usLeft ? ", " usLeft " left for a while" : "")
+				. (usUsed ? ", " usUsed " used" : "") (usOut ? ", " usOut " tried twice" : ""), 3) ")" : "") " - looking about"
+				. (usLeft ? " till the one left for a while is due again (its 5 minutes)" : usUsed ? " for more (the count isn't full)" : ""))
 			UsIt := "", UsD := ""
 			ReleaseKeys()
 			}
-		;(looking about meanwhile - the walker's roaming: X at a prompt that names the thing, never another's - nor one by a thing used
-		;or left for a while already: its own prompt, tried)
+		;(looking about meanwhile - the walker's roaming: X at a prompt that names the thing, never another's - nor one by a thing left
+		;for a while or tried twice already: its own prompt, tried; by a used one only once some are used - it may be another one)
 		if (!UsPromptAt || A_TickCount - UsPromptAt >= 700)
 			{
 			UsPromptAt := A_TickCount
-			if (InteractPrompt() = "press" && WalkUseNames(WkPromptDest, goal) && !UseTriedNear(usKey))
+			if (InteractPrompt() = "press" && WalkUseNames(WkPromptDest, goal) && !UseTriedNear(usKey, usUsed > 0))
 				return UseX("", "its prompt, met looking about", usKey)
 			}
-		return UseNothing(usLeft, "thing it names")
+		return UseNothing(usLeft, "thing it names", goal, usUsed, usOut)
 		}
 	UsNoneFrom := 0
 	if (!IsObject(UsIt) || UseT(usPick) != UseT(UsIt) || (usPick.x - UsIt.x) ** 2 + (usPick.y - UsIt.y) ** 2 > 160000)
@@ -645,7 +768,7 @@ GoStep(goal)
 			UsIt := "", UsD := ""
 			ReleaseKeys()
 			}
-		return UseNothing(0, "place by that name")
+		return UseNothing(0, "place by that name", goal)
 		}
 	UsNoneFrom := 0
 	if (!IsObject(UsIt) || (gsPick.x - UsIt.x) ** 2 + (gsPick.y - UsIt.y) ** 2 > 160000)
@@ -768,7 +891,7 @@ TalkStep(goal)
 			UsIt := "", UsD := ""
 			ReleaseKeys()
 			}
-		return UseNothing(0, "NPC by that name")
+		return UseNothing(0, "NPC by that name", goal)
 		}
 	UsNoneFrom := 0
 	tsGid := WkNpGoal != "" ? WkNpGoal : WkGoalId
@@ -849,6 +972,6 @@ CollectBlank()
 	global CiOnAt := "", CiXAt := "", CiStepAt := "", CiLine := "", CiLineAt := "", UsIt := "", UsFrom := "", UsBudget := "", UsThings := ""
 	global UsAskAt := "", UsDone := "", UsSkip := "", UsXs := "", UsXAt := "", UsCount0 := "", UsGoalX := "", UsBlind := "", UsAfterX := ""
 	global UsBareAt := "", UsNoneFrom := "", UsPromptAt := "", UsPrompt := "", UsStillAt := "", UsStillX := "", UsStillY := "", UsTries := ""
-	global UsStepAt := "", UsCountAt := "", UsGoalWas := "", UsLastCount := "", UsD := "", UsNearCount := "", UsVols := "", UsVolsZone := ""
-	global UsVolsAt := "", UsAtFrom := "", UsThrough := "", UsNoted := "", UsTalkXs := "", UsHandAt := ""
+	global UsStepAt := "", UsCountAt := "", UsGoalWas := "", UsLastCount := "", UsD := "", UsNearCount := "", UsFails := "", UsVols := ""
+	global UsVolsZone := "", UsVolsAt := "", UsAtFrom := "", UsThrough := "", UsNoted := "", UsTalkXs := "", UsHandAt := ""
 	}
