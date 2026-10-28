@@ -701,13 +701,18 @@ PartyNavTo(p, avoid)
 ;the settings written as the Settings window's Save writes them (PlayerStats.txt, read again at once - the party link
 ;takes them on its next tick). Open already: brought to the front. (v2: the two InputBoxes this was opened out of
 ;sight, behind the game - a window as the Settings one, always on top)
+;(v1.2.1: Party... still did nothing on two PCs and nothing said why - every step is logged now: "Party: opening the
+;party window (where the mouse is...)", "... made ... shown at", "... opened - hwnd, place, monitor, visible, always on
+;top, active", an error MenuParty's; and the window comes up in the middle of the monitor the mouse is on - where the
+;tray icon was just clicked -, always on top again, activated, with a tray tip)
 PartySetup()
 	{
 	;(the window, and its hwnd: one at a time - the object kept, a window without one would be gone)
 	static pwWin := "", pwHwnd := 0
+	DebugLog("Party: opening the party window (" PartyWinWhere() ")")
 	if (pwHwnd && GuiFromHwnd(pwHwnd) && WinExist("ahk_id " pwHwnd))
 		{
-		WinActivate("ahk_id " pwHwnd)
+		PartyWinFront(pwHwnd, "was open already - brought to the front", true)
 		return
 		}
 	;(the name: party.ini's, else the wizard's in-game name if the bot knows it, else this PC's)
@@ -755,34 +760,148 @@ PartySetup()
 	pwWin.Add("Button", "x+8 yp w90 h26", "Cancel").OnEvent("Click", PartyWinCancel)
 	pwWin.SetFont("s9 w400 cB9E2B9", "Segoe UI")
 	pwWin.Add("Text", "x+14 yp+5 w280 h18 vPartyWinNote")
-	;(where the Settings window opens: next to the dashboard when it's up, else in the middle of the main monitor - all
-	;of it on that monitor)
-	pwPos := "", pwAtX := A_ScreenWidth // 2, pwAtY := A_ScreenHeight // 2
-	if (DashHwnd && DashShown)
+	;(v1.2.1: in the middle of the monitor the mouse is on - where the tray icon was just clicked -, all of it on that
+	;monitor's work area. It opened next to the dashboard before (as the Settings window does), on the dashboard's
+	;monitor - another one than the game's or the tray's on a PC with two. Laid out hidden first: its size is known
+	;before it's placed, and it shows once, there)
+	pwWin.Show("Hide AutoSize")
+	PartyMouseMonitor(&pwMon, &pwML, &pwMT, &pwMR, &pwMB)
+	PartyWinRect(pwHwnd, &pwWx, &pwWy, &pwWw, &pwWh)
+	pwX := pwML + Max(0, (pwMR - pwML - pwWw) // 2), pwY := pwMT + Max(0, (pwMB - pwMT - pwWh) // 2)
+	DebugLog("Party: the party window made (hwnd " Format("0x{:X}", pwHwnd) ", " pwWw "x" pwWh ") - shown at " pwX "," pwY ", the middle of monitor " pwMon)
+	pwWin.Show("x" pwX " y" pwY)
+	PartyWinFront(pwHwnd, "opened", false)
+	}
+
+;The party window brought up (v1.2.1): restored when it's minimised; an open one (move) moved to the middle of the
+;monitor the mouse is on when it isn't on that one; always on top set again (that puts it first among the always-on-top
+;windows too) and activated - then how it is logged (PartyWinState) and said in a tray tip
+PartyWinFront(hwnd, what, move)
+	{
+	;(v1: WinGet MinMax of a window not found gave a blank - v2 throws)
+	if (V1Try(WinGetMinMax, "ahk_id " hwnd) = -1)
+		try WinRestore("ahk_id " hwnd)
+	if (move)
 		{
-		;(not a minimised dashboard's place: -32000. v1: WinGet MinMax / WinGetPos of a window not found gave blanks; v2
-		;throws, and its WinGetPos unsets the output variables first - the blanks are set in the catch)
-		pwMm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
-		try WinGetPos(&pwDx, &pwDy, , , "ahk_id " DashHwnd)
-		catch
-			pwDx := "", pwDy := ""
-		if (pwDx != "" && pwMm != -1)
-			pwPos := "x" pwDx + 30 " y" pwDy + 60 " ", pwAtX := pwDx + 30, pwAtY := pwDy + 60
+		PartyMouseMonitor(&pfMon, &pfML, &pfMT, &pfMR, &pfMB)
+		PartyWinRect(hwnd, &pfX, &pfY, &pfW, &pfH)
+		pfCx := pfX + pfW // 2, pfCy := pfY + pfH // 2
+		if !(pfCx >= pfML && pfCx < pfMR && pfCy >= pfMT && pfCy < pfMB)
+			try WinMove(pfML + Max(0, (pfMR - pfML - pfW) // 2), pfMT + Max(0, (pfMB - pfMT - pfH) // 2), , , "ahk_id " hwnd)  ; (v1: WinMove on a window gone did nothing)
 		}
-	pwWin.Show(pwPos "AutoSize")
-	try WinGetPos(&pwWx, &pwWy, &pwWw, &pwWh, "ahk_id " pwHwnd)
-	catch
-		pwWx := "", pwWy := "", pwWw := "", pwWh := ""
-	if (pwWx != "")
-		{
-		DashMonitorAt(pwAtX, pwAtY, &pwML, &pwMT, &pwMR, &pwMB)
-		pwNx := Max(pwML, Min(pwWx, pwMR - pwWw)), pwNy := Max(pwMT, Min(pwWy, pwMB - pwWh))
-		if (pwNx != pwWx || pwNy != pwWy)
-			try WinMove(pwNx, pwNy, , , "ahk_id " pwHwnd)  ; (v1: WinMove on a window gone did nothing)
-		}
+	try WinSetAlwaysOnTop(1, "ahk_id " hwnd)
 	;(in front, with the keyboard)
-	try WinActivate("ahk_id " pwHwnd)
-	DebugLog("Party: the party window opened")
+	try WinActivate("ahk_id " hwnd)
+	DebugLog("Party: the party window " what " - " PartyWinState(hwnd))
+	TrayTip(move ? "The party window was open already - it's in front now." : "The party window is open - in the middle of the screen the mouse is on.", "Wizard101 bot", 1)
+	}
+
+;Party... couldn't open the window (MenuParty caught it): why, logged and said in a tray tip - not the error's box,
+;which could open out of sight behind the game as the InputBoxes did (v1.2.1)
+PartyWinFailed(e)
+	{
+	;(an object's Type when nothing better can be said - this mustn't throw in its turn. Braces: v2's try takes an else
+	;of its own)
+	pxWhy := Type(e)
+	if (e is Error)
+		{
+		try pxWhy := e.Message (e.Extra != "" ? " (" e.Extra ")" : "") " - " e.What " at line " e.Line
+		}
+	else
+		{
+		try pxWhy := String(e)
+		}
+	DebugLog("Party: the party window couldn't open - " pxWhy)
+	TrayTip("The party window couldn't open: " pxWhy " (debug.log has it too)", "Wizard101 bot", 2)
+	}
+
+;Where things are as Party... is picked, for the log: the mouse (on which monitor, of how many), the dashboard, and
+;the window in front
+PartyWinWhere()
+	{
+	PartyMouseAt(&pwhX, &pwhY)
+	pwhMon := PartyMonitorOf(pwhX, pwhY), pwhCount := "?", pwhFront := "?"
+	try pwhCount := MonitorGetCount()
+	try pwhFront := WinGetClass("A") " of " WinGetProcessName("A")
+	return "the mouse at " pwhX "," pwhY " on monitor " (pwhMon ? pwhMon : "none") " of " pwhCount
+		. ", the dashboard " (DashHwnd ? (DashShown ? "shown" : "hidden") : "not made") ", in front: " pwhFront
+	}
+
+;How the party window is now, for the log: its handle, its place and size, the monitor its middle is on (of how many,
+;and that one's work area), visible, always on top, active - and the window in front when it isn't
+PartyWinState(hwnd)
+	{
+	PartyWinRect(hwnd, &psX, &psY, &psW, &psH)
+	psMon := PartyMonitorOf(psX + psW // 2, psY + psH // 2), psOn := "on no monitor"
+	if (psMon)
+		{
+		try
+			{
+			MonitorGetWorkArea(psMon, &psL, &psT, &psR, &psB)
+			psOn := "on monitor " psMon " of " MonitorGetCount() " (its work area " psL "," psT " to " psR "," psB ")"
+			}
+		}
+	psFg := DllCall("GetForegroundWindow", "Ptr"), psFront := ""
+	if (psFg != hwnd)
+		{
+		psFront := "?"
+		try psFront := WinGetClass("ahk_id " psFg) " of " WinGetProcessName("ahk_id " psFg)
+		psFront := ", in front: " psFront
+		}
+	return "hwnd " Format("0x{:X}", hwnd) ", at " psX "," psY " " psW "x" psH " " psOn
+		. ", visible " (DllCall("IsWindowVisible", "Ptr", hwnd) ? 1 : 0)
+		. ", always on top " ((DllCall("GetWindowLong", "Ptr", hwnd, "Int", -20, "Int") & 0x8) ? 1 : 0)
+		. ", active " (psFg = hwnd ? 1 : 0) psFront
+	}
+
+;A window's place and size on the screen, in pixels (GetWindowRect: shown or not - WinGetPos can't see a hidden one)
+PartyWinRect(hwnd, &x, &y, &w, &h)
+	{
+	prRc := Buffer(16, 0)
+	DllCall("GetWindowRect", "Ptr", hwnd, "Ptr", prRc)
+	x := NumGet(prRc, 0, "Int"), y := NumGet(prRc, 4, "Int")
+	w := NumGet(prRc, 8, "Int") - x, h := NumGet(prRc, 12, "Int") - y
+	}
+
+;The mouse on the screen (GetCursorPos - no CoordMode; it fails while the desktop is locked: the main monitor's middle)
+PartyMouseAt(&x, &y)
+	{
+	pmPt := Buffer(8, 0)
+	if (DllCall("GetCursorPos", "Ptr", pmPt))
+		x := NumGet(pmPt, 0, "Int"), y := NumGet(pmPt, 4, "Int")
+	else
+		x := A_ScreenWidth // 2, y := A_ScreenHeight // 2
+	}
+
+;The monitor whose whole area holds x, y (the taskbar's part too - the tray icon is on it, outside the work area); 0 none
+PartyMonitorOf(x, y)
+	{
+	try
+		{
+		Loop MonitorGetCount()
+			{
+			MonitorGet(A_Index, &pmL, &pmT, &pmR, &pmB)
+			if (x >= pmL && x < pmR && y >= pmT && y < pmB)
+				return A_Index
+			}
+		}
+	return 0
+	}
+
+;The monitor the mouse is on (its number - the main one when it's on none) and its work area (the taskbar left out)
+PartyMouseMonitor(&mon, &mLeft, &mTop, &mRight, &mBottom)
+	{
+	PartyMouseAt(&pmX, &pmY)
+	mon := PartyMonitorOf(pmX, pmY)
+	if (!mon)
+		{
+		try mon := MonitorGetPrimary()
+		catch
+			mon := 1
+		}
+	try MonitorGetWorkArea(mon, &mLeft, &mTop, &mRight, &mBottom)
+	catch
+		mLeft := 0, mTop := 0, mRight := A_ScreenWidth, mBottom := A_ScreenHeight
 	}
 
 ;This PC's addresses on the home network - its IPv4s, not the loopback or a link-local (169.254) one: "a, b"

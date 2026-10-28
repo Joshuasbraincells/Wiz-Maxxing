@@ -380,7 +380,10 @@ partywaitmax s at most. The others are Followers - instead of their own quest
 they walk to the leader (stopping partynear from it), into its battles (where it
 stood when the battle started), and through the door it took (its last spot in
 the zone, then on the way it was going). The tray menu's Party... opens the
-party window (in front of the game, always on top; open already: brought to the
+party window (in the middle of the screen the mouse is on - where you clicked
+the tray icon -, in front of the game, always on top, with a tray tip; open
+already: brought to the front, onto that screen; debug.log: "Tray: Party...
+picked", then "Party: ..." - each step, where the window is and whether it's in
 front): this wizard's name in the party (its in-game name is best - party.ini's,
 else the one the bot has learned, else this PC's name is filled in), its role
 (Off / Leader / Follower - the same setting as Settings > PARTY's), the leader
