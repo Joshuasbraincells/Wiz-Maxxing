@@ -187,7 +187,8 @@ MenuLogin()
 return
 
 ;Discord alerts when the wizard needs you (Alerts.ahk): the webhook set, tested or removed
-;This wizard's party name and the leader's address (Party.ahk; the role is in Settings > PARTY)
+;The party window: this wizard's party name, its role, the leader's address, its battle part (Party.ahk; the role and
+;the battle part are Settings > PARTY's too)
 MenuParty:
 MenuParty()
 return
@@ -3231,10 +3232,24 @@ QsMenuNow(true)
 return
 }
 ;##############################################
+;A hidden always-on-top window owning the boxes this thread opens from now on (InputBox, MsgBox: Gui +OwnDialogs -
+;one per thread, so a menu's own thread asks for it): they open in front of the game instead of out of sight behind it
+;(v2: the tray menu's InputBoxes did). Destroy it when they're done (a local's is when its function ends, too)
+DialogsInFront()
+	{
+	;(local - a name given Gui(...) is taken for a v1 GUI's global otherwise: v2port globals_tool)
+	local dfGui := Gui("+AlwaysOnTop -Caption +ToolWindow")
+	dfGui.Opt("+OwnDialogs")
+	return dfGui
+	}
+;##############################################
 MenuLogin(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+;(v2: its boxes in front of the game - they opened behind it)
+local dlgFront := DialogsInFront()
 ReconnectSetLogin()
+dlgFront.Destroy()
 return
 }
 ;##############################################
@@ -3248,7 +3263,10 @@ return
 MenuAlerts(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+;(v2: its boxes in front of the game - they opened behind it)
+local dlgFront := DialogsInFront()
 AlertSetup()
+dlgFront.Destroy()
 return
 }
 ;##############################################

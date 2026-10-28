@@ -348,18 +348,25 @@ Party (Settings > PARTY; tray menu Party...): up to 4 wizards, one per PC on the
 same home network. One is the Leader - it quests as now, and stops while a
 follower is far (partywaitdist), in another zone, loading or not ready, for
 partywaitmax s at most. The others are Followers - instead of their own quest
-they walk to the leader (stopping partynear from it), into its battles (where
-it stood when the battle started), and through the door it took (its last spot
-in the zone, then on the way it was going). Set each wizard's party name, and on
-each follower the leader PC's name or IP, with Party... (kept in party.ini). The
-leader's PC asks once to let Python through Windows' firewall - allow it on
-Private networks (the home network has to be set to Private). The bots share
-where each wizard is and what it's doing, and each one's battle part, its
-wizard's name, school and hits. Nothing one sends makes another press anything:
-a blader's boosts go to the hitter's plate as its own screen shows it, found by
-the name the game's own log gives for its side. Still to come: teleport to
-friend when the leader is somewhere a door doesn't lead (the follower waits and
-says so).
+they walk to the leader (stopping partynear from it), into its battles (where it
+stood when the battle started), and through the door it took (its last spot in
+the zone, then on the way it was going). The tray menu's Party... opens the
+party window (in front of the game, always on top; open already: brought to the
+front): this wizard's name in the party (its in-game name is best - party.ini's,
+else the one the bot has learned, else this PC's name is filled in), its role
+(Off / Leader / Follower - the same setting as Settings > PARTY's), the leader
+PC's address (a follower's only: the leader PC's name or IP - the window shows
+this PC's own IP address, to type on the followers) and its part in a party
+battle (Settings > PARTY's too). OK keeps the name and the address in party.ini
+and the settings in PlayerStats.txt, used at once (no restart); Cancel keeps
+nothing. The leader's PC asks once to let Python through Windows' firewall -
+allow it on Private networks (the home network has to be set to Private). The
+bots share where each wizard is and what it's doing, and each one's battle part,
+its wizard's name, school and hits. Nothing one sends makes another press
+anything: a blader's boosts go to the hitter's plate as its own screen shows it,
+found by the name the game's own log gives for its side. Still to come: teleport
+to friend when the leader is somewhere a door doesn't lead (the follower waits
+and says so).
 	- Your own plate in a party battle: found by your wizard's name (learned
 	  from a battle with no other wizard on your side - the game's log; one
 	  such battle first), read off the plates along the bottom.
