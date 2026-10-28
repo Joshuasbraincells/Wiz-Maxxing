@@ -3216,6 +3216,7 @@ LogMirrorGameShown()
 MenuBotToggle(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 BotToggle()
 return
 }
@@ -3223,6 +3224,7 @@ return
 MenuWalk(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 WalkToggle()
 return
 }
@@ -3230,6 +3232,7 @@ return
 MenuWatch(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 SplitPath(A_ScriptDir, , &watchRoot)
 watchOn := !WatchIsOn()
 if (WatchSet(watchRoot, watchOn))
@@ -3244,6 +3247,7 @@ MenuReconnect(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1:
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
+TrayPicked(A_ThisMenuItem, MyMenu)
 ReconnectToggle()
 return
 }
@@ -3251,6 +3255,7 @@ return
 MenuHandsOff(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 HandsOffToggle()
 return
 }
@@ -3258,20 +3263,23 @@ return
 MenuPlayForMe(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 PlayForMeToggle()
 return
 }
 ;##############################################
 ;(the tray menu's Battles only - Settings: battlesonly)
-MenuBattlesOnly(*)
+MenuBattlesOnly(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *)
 	{
 	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	TrayPicked(A_ThisMenuItem, MyMenu)
 	BattlesOnlyToggle()
 	}
 ;##############################################
 MenuGameFront(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 GameFrontToggle()
 return
 }
@@ -3279,12 +3287,14 @@ return
 MenuLearnAll(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 LearnAllToggle()
 return
 }
 ;##############################################
 MenuStats(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+TrayPicked(A_ThisMenuItem, MyMenu)
 StatsWanted := 1
 TrayTip("Reading your stats at the next quiet moment out of battle (hands off the mouse and keys for 5 s).", "Wizard101 bot", 1)
 return
@@ -3293,6 +3303,7 @@ return
 MenuDash(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 DashToggle()
 return
 }
@@ -3300,6 +3311,7 @@ return
 MenuSpells(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 SpShowTab()
 return
 }
@@ -3308,6 +3320,7 @@ MenuSettings(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: 
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
+TrayPicked(A_ThisMenuItem, MyMenu)
 CfgShow()
 return
 }
@@ -3315,12 +3328,14 @@ return
 MenuSpeedKeyFast(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label - it fell into MenuSpeedKeyNormal's lines)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 MenuSpeedKey(true)
 }
 ;##############################################
 MenuSpeedKeyNormal(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 MenuSpeedKey(false)
 }
 ;(v1: the lines of the labels MenuSpeedKeyFast / MenuSpeedKeyNormal, told apart by A_ThisLabel = "MenuSpeedKeyFast" - fast)
@@ -3342,6 +3357,7 @@ MenuMap(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a lab
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
 local v1Own := V1Thread()  ; (v1: a menu item ran as a thread of its own, with its own ErrorLevel - it logs or writes an ini)
+TrayPicked(A_ThisMenuItem, MyMenu)
 DashMapToggle()
 return
 }
@@ -3349,6 +3365,7 @@ return
 MenuUpdates(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 UpdCheckNow()
 return
 }
@@ -3356,6 +3373,7 @@ return
 MenuBug(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 BugShow()
 return
 }
@@ -3385,6 +3403,7 @@ return
 MenuPotionRoute(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 PotionRecordStart()
 return
 }
@@ -3392,6 +3411,7 @@ return
 MenuPotionRun(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 ;(battles only - Settings: battlesonly: no run - its Recall or Home / End, the walk to the seller - said, a tray tip)
 if (BattlesOnlyNo("run to buy potions", true))
 	return
@@ -3411,6 +3431,7 @@ return
 MenuQuickSell(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 QsMenuNow(false)
 return
 }
@@ -3418,6 +3439,7 @@ return
 MenuQuickSellRehearse(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 QsMenuNow(true)
 return
 }
@@ -3433,9 +3455,19 @@ DialogsInFront()
 	return dfGui
 	}
 ;##############################################
+;A tray menu pick logged: "Tray: Party... picked" (v1.2.1: Party... did nothing on two PCs and nothing said whether the
+;click even reached the bot - no such line now means it didn't). Only a pick in a menu: the same functions run for
+;their hotkeys (Hotkeys.ahk HkRun - no menu then)
+TrayPicked(item, inMenu)
+	{
+	if (inMenu is Menu)
+		DebugLog("Tray: " item " picked")
+	}
+;##############################################
 MenuLogin(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 ;(v2: its boxes in front of the game - they opened behind it)
 local dlgFront := DialogsInFront()
 ReconnectSetLogin()
@@ -3446,13 +3478,20 @@ return
 MenuParty(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
-PartySetup()
+local pwErr
+TrayPicked(A_ThisMenuItem, MyMenu)
+;(v1.2.1: an error opening it logged and said in a tray tip - Party.ahk PartyWinFailed - not a box out of sight. Any:
+;whatever is thrown - a bare catch takes Error objects only)
+try PartySetup()
+catch Any as pwErr
+	PartyWinFailed(pwErr)
 return
 }
 ;##############################################
 MenuAlerts(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 ;(v2: its boxes in front of the game - they opened behind it)
 local dlgFront := DialogsInFront()
 AlertSetup()
@@ -3463,12 +3502,14 @@ return
 MenuRestart(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+TrayPicked(A_ThisMenuItem, MyMenu)
 BotRestart()
 return
 }
 ;##############################################
 MenuExit(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
+TrayPicked(A_ThisMenuItem, MyMenu)
 ExitApp()
 }
 ;##############################################
@@ -3668,6 +3709,8 @@ GameFrontShow()
 BotOnShow()
 WatchShow()
 DebugLog("Started " BotVersion() ". Game area " GameLeft "," GameTop " " GameW "x" GameH)
+;(the tray menu's picks are logged - TrayPicked: this line says the running program has that, whatever version.txt says)
+DebugLog("Tray: the menu is ready (" DllCall("GetMenuItemCount", "Ptr", A_TrayMenu.Handle, "Int") " items) - each pick is logged")
 if (PlayForMe)
 	DebugLog("Play for me kept on: started again by an update while it was on")
 LoadPicSets()
