@@ -3776,7 +3776,7 @@ SetStatus(text)
 		return
 	StatusText := text
 	A_IconTip := StatusPrefix ": " SubStr(text, 1, 110)
-	kind := StrSplit(text, " ")[1]
+	kind := V1At(StrSplit(text, " "), 1)
 	if (kind != StatusKind)
 		{
 		StatusKind := kind
@@ -5829,7 +5829,7 @@ WalkNavZoneScale(zone)
 	global WkNavScaleZone, WkNavScales, WkNavScaleBad, WkNavScale, WkNavTrusted, WkNavAgree, WkNavOdd ; (v1 globals it sets)
 	WkNavScaleZone := zone, WkNavScales := [], WkNavScaleBad := 0
 	zsOwn := WalkNavOwnScale(zone)
-	WkNavScale := zsOwn != "" ? zsOwn : WalkNavMiddleScale(StrSplit(zone, "/")[1])
+	WkNavScale := zsOwn != "" ? zsOwn : WalkNavMiddleScale(V1At(StrSplit(zone, "/"), 1))
 	;(nothing worked out anywhere yet - a new install: a first guess, 100 (every zone worked out with the goal in it); two
 	;fair readings that disagree put this zone's own in its place, WalkNavLearnScale)
 	if (WkNavScale = "")
@@ -5851,7 +5851,7 @@ WalkNavMiddleScale(world := "")
 		if (WalkNavOwnScale(zoneName) = "")
 			continue
 		vals.Push(sc)
-		if (world != "" && StrSplit(zoneName, "/")[1] = world)
+		if (world != "" && V1At(StrSplit(zoneName, "/"), 1) = world)
 			inWorld.Push(sc)
 		}
 	;(v1: none kept - blank >= 50 compared as text, false)

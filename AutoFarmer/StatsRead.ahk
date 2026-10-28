@@ -693,7 +693,7 @@ SrSnap(what)
 	files := Sort(files)
 	list := StrSplit(Trim(files, "`n"), "`n")
 	while (list.Length >= 8)
-		Try FileDelete(dir "\" StrSplit(list.RemoveAt(1), "|")[2])
+		Try FileDelete(dir "\" V1At(StrSplit(list.RemoveAt(1), "|"), 2))
 	w := GameW, h := GameH
 	hdc := DllCall("GetDC", "Ptr", 0, "Ptr")
 	mdc := DllCall("CreateCompatibleDC", "Ptr", hdc, "Ptr")
