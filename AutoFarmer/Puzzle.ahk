@@ -1035,7 +1035,7 @@ PzPass(from, to, via, vr, zone := "")
 		. "&tz=" z(to.z) "&vx=" Round(via.x, 1) "&vy=" Round(via.y, 1) "&vr=" vr (zone != "" ? "&zone=" NavUri(zone) : ""), 1500, true)
 	if (ans = "" || SubStr(ans, 1, 3) = "ERR")
 		return ""
-	f := StrSplit(Trim(StrSplit(ans, "`n")[1], " `t`r"), "|")
+	f := StrSplit(Trim(V1At(StrSplit(ans, "`n"), 1), " `t`r"), "|")
 	if (V1At(f, 1) != "pass" || f.Length < 4)
 		return ""
 	return V1Obj({pass: Trim(f[2]) = "1" ? 1 : 0, near: NavNum(f[3]), len: NavNum(f[4])})

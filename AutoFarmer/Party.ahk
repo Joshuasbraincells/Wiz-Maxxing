@@ -4,7 +4,8 @@
 ; Settings (PARTY): partyrole - Off, Leader (quests as now; waits while a follower is far, in another zone or not ready -
 ; partywaitdist, partywaitmax) or Follower (goes where the leader goes - partynear - instead of following its own quest
 ; arrow; into the leader's battles; through the door the leader took). The party's port: partyport. This wizard's party
-; name and (a follower) the leader PC's address: the tray menu's Party... (party.ini - not secret: a name, an address).
+; name and (a follower) the leader PC's address: the tray menu's Party... window (party.ini - not secret: a name, an
+; address), with the role and the battle part too (the same settings as Settings > PARTY's).
 ;
 ; The vision helper does the talking (vision\party.py): every half second PartyTick tells it this bot's state (/party)
 ; and gets the party back - the leader's place, door and battle spot; the followers'; each one's battle part
@@ -694,22 +695,165 @@ PartyNavTo(p, avoid)
 	return (nav.x = "" || nav.yaw = "") ? "" : nav
 	}
 
-;Tray menu "Party...": this wizard's party name, and (a follower) the leader PC's address - kept in party.ini
+;Tray menu "Party...": the party window - this wizard's name in the party, its part (Off / Leader / Follower: the
+;Settings window's PARTY setting partyrole - the same one), the leader PC's address (a follower's; this PC's own shown,
+;to type on the others) and its part in a party battle (partybattle). OK: the name and the address kept in party.ini,
+;the settings written as the Settings window's Save writes them (PlayerStats.txt, read again at once - the party link
+;takes them on its next tick). Open already: brought to the front. (v2: the two InputBoxes this was opened out of
+;sight, behind the game - a window as the Settings one, always on top)
 PartySetup()
 	{
-	global ErrorLevel ; (v1 globals it sets)
-	name := PartyIni("name"), leader := PartyIni("leader")
-	IB := InputBox("A name for this wizard in the party (shown on the other PCs' dashboards) - its in-game name is best.`n`nThe role (Off / Leader / Follower) is in Settings > PARTY.", "Party - this wizard's name", "w420 h190", name != "" ? name : A_ComputerName), newName := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
-	if (ErrorLevel)
+	;(the window, and its hwnd: one at a time - the object kept, a window without one would be gone)
+	static pwWin := "", pwHwnd := 0
+	if (pwHwnd && GuiFromHwnd(pwHwnd) && WinExist("ahk_id " pwHwnd))
+		{
+		WinActivate("ahk_id " pwHwnd)
 		return
-	newName := RegExReplace(Trim(newName), "[^\w .'-]")
-	V1Do(IniWrite, newName, A_ScriptDir "\party.ini", "party", "name")
-	IB := InputBox("Followers only: the leader PC's address on your home network - its name (e.g. " A_ComputerName ") or its IP (e.g. 192.168.1.20: on the leader PC, Settings > Network > Properties > IPv4 address).`n`nLeave it empty on the leader.", "Party - the leader's PC", "w460 h220", leader), newLeader := IB.Value, ErrorLevel := IB.Result="OK" ? 0 : IB.Result="CANCEL" ? 1 : IB.Result="Timeout" ? 2 : "ERROR"
-	if (ErrorLevel)
+		}
+	;(the name: party.ini's, else the wizard's in-game name if the bot knows it, else this PC's)
+	pwName := PartyIni("name"), pwLeader := PartyIni("leader")
+	if (pwName = "")
+		pwName := OwnName()
+	if (pwName = "")
+		pwName := A_ComputerName
+	;(the two settings as the Settings window shows them - PlayerStats.txt's value, else the default - with its words;
+	;a school's own value is used when it fights as that school: said where it is, as the Settings window's help does)
+	pwShown := V1Obj(), pwPicks := V1Obj(), pwOwn := ""
+	for each, pwS in CfgList()
+		if (pwS.key = "partyrole" || pwS.key = "partybattle")
+			{
+			pwV := (IsObject(Stats) && Stats.Has(pwS.key)) ? Stats[pwS.key] : pwS.def
+			pwShown[pwS.key] := Max(1, Min(pwS.picks.Length, Round(pwV))), pwPicks[pwS.key] := pwS.picks
+			for each, pwSch in ["storm", "fire", "ice", "life", "death", "myth", "balance"]
+				if (IsObject(Stats) && Stats.Has(pwSch "." pwS.key))
+					pwOwn .= " Your " pwSch " wizard has its own: " pwSch "." pwS.key ":" Stats[pwSch "." pwS.key] " in PlayerStats.txt (change it there)."
+			}
+	pwWin := Gui("+AlwaysOnTop -MaximizeBox -MinimizeBox", "Wizard101 bot " BotVersion() " - party"), pwHwnd := pwWin.Hwnd
+	pwWin.OnEvent("Close", PartyWinClose)
+	pwWin.OnEvent("Escape", PartyWinClose)
+	;(the Settings window's colours: 111317 behind each Edit and DropDownList)
+	pwWin.BackColor := "1B1D22"
+	pwWin.MarginX := 12, pwWin.MarginY := 10
+	pwWin.SetFont("s9 w600 c8AB4F8", "Segoe UI")
+	pwWin.Add("Text", "x12 y12 w480 h18", "PARTY - up to 4 wizards, one on each PC of your home network")
+	pwWin.SetFont("s9 w400 cDADADA", "Segoe UI")
+	pwWin.Add("Text", "x12 y+12 w170 h18", "This wizard's name in the party")
+	pwWin.Add("Edit", "x190 yp-3 w302 h22 Background111317 vPartyWinName", pwName)
+	pwWin.Add("Text", "x12 y+10 w170 h18", "This wizard in the party")
+	pwWin.Add("DropDownList", "x190 yp-3 w302 AltSubmit Background111317 vPartyWinRole Choose" pwShown["partyrole"], pwPicks["partyrole"]).OnEvent("Change", PartyWinRoleChange)
+	pwWin.Add("Text", "x12 y+10 w170 h18", "The leader PC's address")
+	pwWin.Add("Edit", "x190 yp-3 w302 h22 Background111317 vPartyWinLeader" (pwShown["partyrole"] = 3 ? "" : " Disabled"), pwLeader)
+	pwWin.SetFont("s9 w400 c9AA0A6", "Segoe UI")
+	pwWin.Add("Text", "x190 y+4 w302 vPartyWinIP", "Followers only: the leader PC's name or IP. This PC's address: " PartyMyAddresses() " (its name: " A_ComputerName ")")
+	pwWin.SetFont("s9 w400 cDADADA", "Segoe UI")
+	pwWin.Add("Text", "x12 y+10 w170 h18", "In a party battle it's the")
+	pwWin.Add("DropDownList", "x190 yp-3 w302 AltSubmit Background111317 vPartyWinBattle Choose" pwShown["partybattle"], pwPicks["partybattle"])
+	pwWin.SetFont("s9 w400 c9AA0A6", "Segoe UI")
+	pwWin.Add("Text", "x12 y+12 w480 vPartyWinHelp", "Its part and its battle part are the Settings window's (PARTY) - the same settings. OK keeps the name and the address in party.ini and the settings in PlayerStats.txt: used at once." pwOwn)
+	pwWin.SetFont("s9 w400 c000000", "Segoe UI")
+	pwWin.Add("Button", "x12 y+10 w90 h26 Default", "OK").OnEvent("Click", PartyWinOk.Bind(pwShown))
+	pwWin.Add("Button", "x+8 yp w90 h26", "Cancel").OnEvent("Click", PartyWinCancel)
+	pwWin.SetFont("s9 w400 cB9E2B9", "Segoe UI")
+	pwWin.Add("Text", "x+14 yp+5 w280 h18 vPartyWinNote")
+	;(where the Settings window opens: next to the dashboard when it's up, else in the middle of the main monitor - all
+	;of it on that monitor)
+	pwPos := "", pwAtX := A_ScreenWidth // 2, pwAtY := A_ScreenHeight // 2
+	if (DashHwnd && DashShown)
+		{
+		;(not a minimised dashboard's place: -32000. v1: WinGet MinMax / WinGetPos of a window not found gave blanks; v2
+		;throws, and its WinGetPos unsets the output variables first - the blanks are set in the catch)
+		pwMm := V1Try(WinGetMinMax, "ahk_id " DashHwnd)
+		try WinGetPos(&pwDx, &pwDy, , , "ahk_id " DashHwnd)
+		catch
+			pwDx := "", pwDy := ""
+		if (pwDx != "" && pwMm != -1)
+			pwPos := "x" pwDx + 30 " y" pwDy + 60 " ", pwAtX := pwDx + 30, pwAtY := pwDy + 60
+		}
+	pwWin.Show(pwPos "AutoSize")
+	try WinGetPos(&pwWx, &pwWy, &pwWw, &pwWh, "ahk_id " pwHwnd)
+	catch
+		pwWx := "", pwWy := "", pwWw := "", pwWh := ""
+	if (pwWx != "")
+		{
+		DashMonitorAt(pwAtX, pwAtY, &pwML, &pwMT, &pwMR, &pwMB)
+		pwNx := Max(pwML, Min(pwWx, pwMR - pwWw)), pwNy := Max(pwMT, Min(pwWy, pwMB - pwWh))
+		if (pwNx != pwWx || pwNy != pwWy)
+			try WinMove(pwNx, pwNy, , , "ahk_id " pwHwnd)  ; (v1: WinMove on a window gone did nothing)
+		}
+	;(in front, with the keyboard)
+	try WinActivate("ahk_id " pwHwnd)
+	DebugLog("Party: the party window opened")
+	}
+
+;This PC's addresses on the home network - its IPv4s, not the loopback or a link-local (169.254) one: "a, b"
+PartyMyAddresses()
+	{
+	pwOut := ""
+	try pwAll := SysGetIPAddresses()
+	catch
+		pwAll := []
+	for each, pwA in pwAll
+		if !(InStr(pwA, "127.") = 1 || InStr(pwA, "169.254.") = 1 || pwA = "0.0.0.0")
+			pwOut .= (pwOut = "" ? "" : ", ") pwA
+	return pwOut = "" ? "none found (is the network connected?)" : pwOut
+	}
+
+;The party window's part changed: the leader's address is a follower's only
+PartyWinRoleChange(pwCtl, *)
+	{
+	pwCtl.Gui["PartyWinLeader"].Enabled := (pwCtl.Value = 3)
+	}
+
+;The party window's OK: the name and the leader's address (cleaned as ever) to party.ini, the settings changed to
+;PlayerStats.txt as the Settings window's Save writes them (CfgWrite - read again at once), the Settings window, open
+;too, showing them. Closed then - not when PlayerStats.txt couldn't be written (nothing saved). pwShown: the settings'
+;values as the window opened ({partyrole, partybattle})
+PartyWinOk(pwShown, pwCtl, *)
+	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	;(not halfway through while the bot writes PlayerStats.txt itself: as the Settings window's Save)
+	Critical()
+	pwG := pwCtl.Gui
+	pwName := RegExReplace(Trim(pwG["PartyWinName"].Value), "[^\w .'-]")
+	pwLeader := RegExReplace(Trim(pwG["PartyWinLeader"].Value), "[^\w.-]")
+	pwRole := pwG["PartyWinRole"].Value, pwBattle := pwG["PartyWinBattle"].Value
+	;(only what was changed here, as Save writes only what was changed there: one changed in Settings meanwhile stays)
+	pwPairs := [], pwSaid := ""
+	for each, pwKv in [["partyrole", pwRole], ["partybattle", pwBattle]]
+		if (pwKv[2] != pwShown[pwKv[1]])
+			pwPairs.Push(pwKv), pwSaid .= ", " pwKv[1] " " pwShown[pwKv[1]] " -> " pwKv[2]
+	if (pwPairs.Length && !CfgWrite(pwPairs))
+		{
+		pwG["PartyWinNote"].Value := "Couldn't write PlayerStats.txt - nothing was saved"
+		DebugLog("Party: couldn't write PlayerStats.txt - nothing was saved")
 		return
-	newLeader := RegExReplace(Trim(newLeader), "[^\w.-]")
-	V1Do(IniWrite, newLeader, A_ScriptDir "\party.ini", "party", "leader")
-	DebugLog("Party: this wizard's name '" newName "'" (newLeader != "" ? ", the leader at " newLeader : ""))
+		}
+	V1Do(IniWrite, pwName, A_ScriptDir "\party.ini", "party", "name")
+	V1Do(IniWrite, pwLeader, A_ScriptDir "\party.ini", "party", "leader")
+	;(the Settings window open too: it shows what's saved now - its Save won't take it back)
+	if (CfgHwnd && WinExist("ahk_id " CfgHwnd) && IsObject(CfgCtls) && IsObject(CfgShownVals))
+		for each, pwKv in pwPairs
+			if (CfgCtls.Has(pwKv[1]))
+				GuiCtrlFromHwnd(CfgCtls[pwKv[1]]).Choose(pwKv[2]), CfgShownVals[pwKv[1]] := pwKv[2]
+	;(the role and the battle part in use now - as PartyRoleSet / PartyBattleSet read them; one not changed here may have
+	;been changed in Settings meanwhile)
+	pwRole := (IsObject(Stats) && Stats.Has("partyrole")) ? Stats["partyrole"] : pwRole
+	pwBattle := (IsObject(Stats) && Stats.Has("partybattle")) ? Stats["partybattle"] : pwBattle
+	DebugLog("Party: saved - name '" pwName "', role " (pwRole = 2 ? "leader" : pwRole = 3 ? "follower" : "off") ", leader '" pwLeader "'"
+		. ", in battle the " (pwBattle = 2 ? "blader" : pwBattle = 3 ? "healer" : "hitter") (pwSaid = "" ? "" : " (PlayerStats.txt: " SubStr(pwSaid, 3) ")"))
+	pwG.Destroy()
+	}
+
+;The party window's Cancel: closed, nothing saved
+PartyWinCancel(pwCtl, *)
+	{
+	pwCtl.Gui.Destroy()
+	}
+
+;The party window's X or Esc: closed, nothing saved
+PartyWinClose(pwWin, *)
+	{
+	pwWin.Destroy()
 	}
 
 ;(v1: the label PartyTimer: - Autofarmer.ahk's SetTimer, PartyTimer, 500; it ran in the global scope)

@@ -259,7 +259,7 @@ ReadSidePlates()
 				rsSlot := A_Index + 3
 				if (!IsObject(BlNames) || !BlNames.Has(rsSlot) || SidePlates.Has(rsSlot))
 					continue
-				rsName := WalkLetters.Call(BlNames[rsSlot]), rsFirst := WalkLetters.Call(StrSplit(Trim(BlNames[rsSlot]), " ")[1])
+				rsName := WalkLetters.Call(BlNames[rsSlot]), rsFirst := WalkLetters.Call(V1At(StrSplit(Trim(BlNames[rsSlot]), " "), 1))
 				if (StrLen(rsName) < 3 || (rsPass = 3 && StrLen(rsFirst) < 4))
 					continue
 				rsBest := 0, rsBestScore := ""
@@ -371,7 +371,7 @@ EnemyDanger()
 			}
 		edWhat := edF[4] = "pending" ? "looking it up on the wiki" : edF[4] = "missing" ? "not on the wiki" : edTop
 		edText .= (edText = "" ? "" : " | ") edF[3] " (~" Round(edF[5]) " pips): " edWhat
-		edDash .= (edDash = "" ? "" : " | ") edF[3] ": " (edF[4] = "ok" ? StrSplit(edTop, ",")[1] : edWhat)
+		edDash .= (edDash = "" ? "" : " | ") edF[3] ": " (edF[4] = "ok" ? V1At(StrSplit(edTop, ","), 1) : edWhat)
 		}
 	EnemyLethal := edLethal
 	edRisk := edLethal = "" ? "your health unknown" : Round(edLethal * 100) "% chance their hits kill you this round"
