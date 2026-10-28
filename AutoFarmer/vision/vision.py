@@ -304,9 +304,23 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              amber; the nearest named). No zone
                                              file: the overlay on a blank background. "ERR <why>" as /nav, or when the
                                              wizard's position can't be read
+  POST /rec?ev=round|hello|who|state      -> the battle recorder (vision\battlerec.py - its docstring has the body's
+                                             format and the record's): the bot's round lines and state, put on the
+                                             recorder's queue as they are (64 KB at most; nothing parsed, written or
+                                             read here) - "ok", or "off" when the recorder is off. Also GET
+                                             /rec?ev=who&bot=&acting=&pfm=&tk= (who plays: a takeover, F6)
+  /recstat                                -> rec|on|<recorded today>|<bytes>|<last result>|<why>|<orphan posts>|
+                                             <queue drops>|<errors>|<records>|<waiting>|<log lines>|<posts>
+  /deck[?fresh=1]                         -> the worn deck from the game's memory (read-only, vision\deckmem.py):
+                                             deckmem.deck_lines (deck|..., card|..., item|..., excl|..., decks|...) of
+                                             the last reading + deckage|<s>, or none|<why>; fresh=1 reads it now
+                                             (paced, refused "none|in a battle" while a battle is on - and while the
+                                             battle recorder isn't following the game's log)
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
+/cards (memory) and /battle hand the battle recorder a copy of their reading (a queue put, no read): it writes every
+battle down in AutoFarmer\learned\battles\ (battlerec.py) - it never slows a request.
 
 Only numpy and Pillow (katsuba is used for a zone .wad only if installed and the built-in reader can't read
 it). Stops by itself when the AutoFarmer process (--parent <pid>) is gone.
@@ -1857,6 +1871,11 @@ def party_stop():
         PARTY.stop()
     if NETMON is not None:
         NETMON.stop()
+    if REC is not None:
+        try:
+            REC.stop()          # (the battle in progress kept in learned\battles\current.json)
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def nav_reader():
@@ -1876,6 +1895,7 @@ def cards_answer():
     vision\\handmem.py), logged when the answer changes"""
     import handmem
     r, why = nav_reader().cards()
+    _rec_hook('saw_hand', r)
     text = handmem.answer(r, why)
     key = '\n'.join(ln for ln in text.split('\n') if not ln.startswith('hand|'))
     if key != CARDS_LOGGED['text']:
@@ -2239,8 +2259,65 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 
 
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
-# for them (placements.busy)
-GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass'}
+# for them (placements.busy), and so does the battle recorder (GATE)
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck'}
+
+
+class Gate:
+    """the gated requests in flight (memory /cards too) and when the last one ended: the battle recorder's own reads and
+    file writes wait for idle(), and its Python work stops while busy() - so a request the bot waits on gets the
+    GIL and navmem's lock at once"""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.n = 0
+        self.entered = 0
+        self.ended = 0.0
+
+    def enter(self):
+        with self.lock:
+            self.n += 1
+            self.entered += 1
+
+    def leave(self):
+        with self.lock:
+            self.n -= 1
+            self.ended = time.monotonic()
+
+    def busy(self):
+        return self.n > 0
+
+    def idle(self, d=0.1, own=0):
+        """nothing gated in flight (but own - the caller's own request) and nothing ended in the last d s"""
+        return self.n <= own and time.monotonic() - self.ended >= d
+
+
+GATE = Gate()
+REC = None      # the battle recorder (vision\battlerec.py), started by main(); None: off, the hooks do nothing
+
+
+def _rec_hook(name, *a):
+    """hands the recorder a copy of what a request already read (no read, no write: a queue put) - never raises"""
+    try:
+        REC and getattr(REC, name)(*a)
+    except Exception:  # noqa: BLE001 - the answer as it is
+        pass
+
+
+def deck_lines(fresh):
+    """/deck's answer: deckmem.deck_lines of the worn deck's last reading plus deckage|<s>, or none|<why>"""
+    import deckmem
+    # (a fresh read only while the recorder follows the game's log - on, not broken, its log found - and sees no duel:
+    # off, its parser isn't fed and in_duel() would say no in a battle too)
+    rec = REC if REC is not None and REC.on and not REC.broken and REC.started and REC.tail is not None else None
+    if fresh and (rec is None or rec.in_duel()):
+        return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
+                                                                   "battle can't be ruled out)")]
+    r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
+                               stop=rec.in_duel if fresh else None)
+    if r is None:
+        return ['none|' + mob_cell(why or 'not read')]
+    return deckmem.deck_lines(r) + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
 
 
 def places_busy(on):
@@ -3242,6 +3319,7 @@ class Handler(BaseHTTPRequestHandler):
         gated = u.path in GATED or (u.path == '/cards' and 'x1' not in q)
         if gated:
             places_busy(True)
+            GATE.enter()
         try:
             if u.path == '/ping':
                 return self.reply('OK ' + VERSION)
@@ -3401,7 +3479,15 @@ class Handler(BaseHTTPRequestHandler):
                     mob_line(m, me) for m in sorted(mobs, key=lambda m: math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]))))
             if u.path == '/battle':
                 parts, why = nav_reader().battle(wait=0.3)
+                _rec_hook('saw_battle', parts)
                 return self.reply('\n'.join(battle_lines(parts, why)))
+            if u.path == '/rec':
+                # (the bot's who-state as a GET: onto the battle recorder's queue - vision\battlerec.py)
+                return self.reply(REC.post(q, b'') if REC is not None else 'off')
+            if u.path == '/recstat':
+                return self.reply(REC.stat() if REC is not None else "rec|off|0|0||the battle recorder isn't running")
+            if u.path == '/deck':
+                return self.reply('\n'.join(deck_lines(q.get('fresh') == '1')))
             if u.path == '/uiroot':
                 size, why = nav_reader().ui_root(wait=0.3)
                 return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))
@@ -3560,7 +3646,35 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply('ERR ' + repr(e), 500)
         finally:
             if gated:
+                GATE.leave()
                 places_busy(False)
+
+    def do_POST(self):
+        """/rec only (the bot's round, hello, who and state posts - vision\\battlerec.py): its body (64 KB at most) put on
+        the recorder's queue as it is - no parsing, file or memory read here - "ok", or "off" when the recorder is off"""
+        try:
+            u = urlparse(self.path)
+            q = {k: v[0] for k, v in parse_qs(u.query).items()}
+            try:
+                n = int(self.headers.get('Content-Length') or 0)
+            except ValueError:
+                n = 0
+            body = self.rfile.read(min(max(n, 0), 64 * 1024)) if n > 0 else b''
+            if n > 64 * 1024:
+                left = n - 64 * 1024
+                while left > 0:
+                    got = self.rfile.read(min(left, 65536))
+                    if not got:
+                        break
+                    left -= len(got)
+            if u.path != '/rec':
+                return self.reply('ERR unknown request ' + u.path, 404)
+            return self.reply(REC.post(q, body) if REC is not None else 'off')
+        except Exception as e:  # noqa: BLE001 - the bot never waits on this
+            try:
+                return self.reply('ERR ' + repr(e), 500)
+            except Exception:  # noqa: BLE001
+                return None
 
 
 def parent_alive(pid):
@@ -3572,6 +3686,19 @@ def parent_alive(pid):
     ok = ctypes.windll.kernel32.GetExitCodeProcess(h, ctypes.byref(code))
     ctypes.windll.kernel32.CloseHandle(h)
     return bool(ok) and code.value == STILL_ACTIVE
+
+
+def rec_start():
+    """the battle recorder (vision\\battlerec.py) started - its thread idle till the bot's hello says on. Any problem:
+    REC stays None, the hooks do nothing and /rec answers off (one vision.log line)"""
+    global REC
+    try:
+        import battlerec
+        REC = battlerec.start(root=ROOT, nav=nav_reader, log=log, gate=GATE)
+    except Exception as e:  # noqa: BLE001
+        REC = None
+        log(f"battlerec: couldn't start ({e!r}) - no battle is recorded")
+    return REC
 
 
 def main():
@@ -3604,6 +3731,7 @@ def main():
         puzzlefile.set_log(log)
     except Exception as e:  # noqa: BLE001 - /zonepuzzle answers ERR
         log(f"puzzlefile: couldn't start ({e!r})")
+    rec_start()
     if args.parent:
         def watch():
             while parent_alive(args.parent):

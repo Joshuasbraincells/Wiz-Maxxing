@@ -149,6 +149,8 @@ CfgList()
 		, help: "A hit you haven't the pips for is discarded instead of kept for a later round."}))
 	list.Push(V1Obj({key: "learnupgrade", label: "Make room for stronger learned hits", kind: "check", def: 1
 		, help: "A learned hit 15% or more stronger than your weakest in hit1-3 takes its place, out of battle; hit1-3 stay weakest to strongest (the cheapest, your only all-enemies hit, X-pip and hitNkeep:1 slots stay put). Undo: Forget it or change its kind on the Spells tab. One school off: <school>.learnupgrade:0."}))
+	list.Push(V1Obj({key: "battlerec", label: "Record every battle (to learn from)", kind: "check", def: 1
+		, help: "Every battle - yours too - is written down from the game's own log and memory (read only): the enemies, each round's hand, what was played, on whom and why, the damage, the result, your deck. Kept in learned\battles\ (about 5 MB a day of play; old months zipped), never sent anywhere. Off: nothing is recorded."}))
 	list.Push(V1Obj({key: "-", label: "NETWORK (THE DASHBOARD'S NETWORK TAB)"}))
 	list.Push(V1Obj({key: "neton", label: "Show this bot to the others on your home network", kind: "check", def: 0
 		, help: "Its state (PC, version, wizard, zone, on/off, Play for me, what it's doing, health, mana, deaths, last log line) goes to every bot on your home network with this on, and theirs shows on the dashboard's Network tab - with their log and game when you pick one. Windows asks once to let Python through its firewall: allow it on Private networks (your network has to be set to Private). Off: nothing sent or listened for."}))
@@ -511,6 +513,9 @@ CfgSaveNow()
 	;(battles only switched: said, walking off - Autofarmer.ahk BattlesOnlyTick, the tray menu's tick)
 	if (V1IsFunc("BattlesOnlyTick"))
 		BattlesOnlyTick.Call()
+	;(the battle recorder switched on or off at once, the helper told out of a round - BattleRec.ahk BrecHello)
+	if (V1IsFunc("BrecHello"))
+		BrecHello.Call("later")
 	Cfg["CfgNote"].Value := "Saved " cfgPairs.Length " change" (cfgPairs.Length = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")")
 	}
 

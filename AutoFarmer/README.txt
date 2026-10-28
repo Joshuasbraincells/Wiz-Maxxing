@@ -667,6 +667,24 @@ each enemy's every spell with its chance, on the dashboard's Cards tab.
 	  show the odds. A hit at one target is counted at you 1 in however many
 	  wizards are on your side.
 
+Battle recorder (battlerec:1 - Settings, HOW IT PLAYS ITS CARDS): every battle,
+the ones you play too, is written down so the bot can learn battles later.
+	- From the game's own log (Bin\WizardClient.log, only read): every
+	  caster's spell, its targets, damage, crits, blades, traps and shields
+	  added and used, health after each round, deaths and the result.
+	- From the game's memory (read only): your hand each round (the cards'
+	  ids, enchants, treasure / item cards), your pips, the enemies' rank,
+	  school, boss flag and health, and the deck you wear.
+	- From the bot: which rule picked each card and why (its log lines for
+	  the round), and whether you or the bot played the round.
+	- Kept in learned\battles\ (one file a day, about 3-6 MB a day of play;
+	  months older than two are zipped; it pauses at 1 GB). Updates keep it;
+	  it is never sent anywhere. Read it with:
+	      python vision\battlereport.py          (the last 7 days)
+	      python vision\battlereport.py --days 30 --enemy "Bonestriker"
+	- It never slows a round: the bot hands its lines over after its last
+	  click, and the helper reads nothing extra while the bot plays a round.
+
 Enchants (Strong, Giant, Monstrous, Gargantuan, Colossal, Epic - treasure cards
 too) go on the hit about to be cast, a learned hit in no slot as well; an
 enchant or a treasure card is never discarded.

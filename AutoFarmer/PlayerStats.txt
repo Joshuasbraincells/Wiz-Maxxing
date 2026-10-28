@@ -61,6 +61,8 @@ useaura:1
 usewand:1
 usetower:1
 usereshuffle:1
+; battlerec: 1 = every battle recorded in learned\battles\ (read only, stays on this PC) - 0 = off
+battlerec:1
 
 ; ---- Alerts ----
 ; alertson: 1 = a Discord message when the wizard needs you (stuck, out of potions or mana, logged out, a quest

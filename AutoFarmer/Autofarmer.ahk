@@ -255,6 +255,9 @@ PlayerActing()
 			WalkReset.Call()
 		}
 	PlayerActive := acting
+	;(the battle recorder told who plays - only on a change: BattleRec.ahk)
+	if (V1IsFunc("BrecWho"))
+		BrecWho.Call(acting)
 	return acting
 	}
 
@@ -298,6 +301,9 @@ BotToggle()
 		TrayTip("Off - the bot does nothing till you press " HkText("bot") " again.", "Wizard101 bot", 1)
 		}
 	BotOnShow()
+	;(the battle recorder told - BattleRec.ahk)
+	if (V1IsFunc("BrecWho"))
+		BrecWho.Call(PlayerActive, 1)
 	}
 
 ;A restart (Windows+1, Alt+Esc, the tray menu) that keeps the bot off or in standby - Reload drops the arguments
@@ -2831,6 +2837,7 @@ CastResult(title, &hit, dir, enchanted, consume := true)
 		if (consume)
 			ConsumeBoosts(HitHeads(title))
 		DashCast(title)
+		BrecCast(title)
 		return true
 		}
 	DebugLog("  " title " didn't cast (not enough pips?)")
@@ -3095,6 +3102,9 @@ DebugLog(msg)
 	;(and onto the dashboard's log)
 	if (DashHwnd)
 		DashLog(now " " msg)
+	;(the battle recorder: a line of a round open kept for it - BattleRec.ahk; ErrorLevel untouched)
+	if (V1IsFunc("BrecNote"))
+		BrecNote.Call(msg)
 	}
 
 ;The log copied to OneDrive as well (logmirror:1 - Settings, ALERTS), for help from another PC (OneDrive syncs it
@@ -3194,6 +3204,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Flee.ahk"
 #Include "%A_ScriptDir%\Draw.ahk"
 #Include "%A_ScriptDir%\EnemySpells.ahk"
+#Include "%A_ScriptDir%\BattleRec.ahk"
 #Include "%A_ScriptDir%\Party.ahk"
 #Include "%A_ScriptDir%\Settings.ahk"
 #Include "%A_ScriptDir%\Alerts.ahk"
@@ -3695,6 +3706,8 @@ else
 
 ;Auto-reconnect (Reconnect.ahk): on from the start (tray menu switches it off and on)
 ReconnectInit()
+;The battle recorder (BattleRec.ahk - Settings: battlerec): set up; it's told to record by its hello, after the helper starts
+BrecInit()
 
 ;A blocked way's tries, the journal, what you do learned (Puzzle.ahk - Settings: puzzles, puzzlelearn)
 PuzzleInit()
@@ -3724,6 +3737,8 @@ OnMessage(0x5555, StatsAsked)
 ;The Python vision helper (Vision.ahk): finds the cards in hand and school badges; ImageSearch if it
 ;can't run
 VisionStart()
+;(the battle recorder's hello: recording on or off, the game's log, the bot's state - BattleRec.ahk)
+BrecHello()
 ;(the party - Party.ahk: this bot's state to the helper and the party back, every half second, battles too)
 SetTimer(PartyTimer,500)
 ;(the Network tab - Network.ahk: this bot's state to the others on your home network, theirs and commands back)
@@ -3772,6 +3787,8 @@ Loop
 	;(no round being played here: a battle round's hold on your mouse let go, however the round was left - Settings.ahk
 	;MouseLockOff)
 	MouseLockOff("round")
+	;(the battle recorder: the round just left - its lines and the bot's state - posted, never waited for: BattleRec.ahk)
+	BrecRoundClose()
 	;(battles only switched - Settings, the tray menu: said, and walking off - BattlesOnlyTick)
 	BattlesOnlyTick()
 	;Corrections made on the dashboard's Spells tab: applied here, out of battle only - never in a round, where a hit
@@ -3908,6 +3925,8 @@ Loop
 		if (V1IsFunc("LearnOutOfBattle"))
 			LearnOutOfBattle.Call()
 		StatsAuto()
+		;(the battle recorder: the stats, settings and deck after a battle - once a battle: BattleRec.ahk)
+		BrecState("end")
 		;Low on health: a potion, or a run to buy more (Potions.ahk)
 		PotionCheck()
 		;The backpack full after the battle (Prospector Zeke's alert, the game's memory): quick sold for gold - quicksell,
@@ -3981,9 +4000,12 @@ Loop
 		if (RoundAgain)
 			{
 			;(the round the bot left to you, still up: not a new round)
+			BrecRoundOpen(1)
 			DebugLog("Round start again (the round left to you is still up): Pass button at " startX - GameLeft "," startY - GameTop)
 			Goto("RoundStart")
 			}
+		;(the battle recorder: the round's lines kept from here - BattleRec.ahk)
+		BrecRoundOpen()
 		DebugLog("Round start: Pass button at " startX - GameLeft "," startY - GameTop)
 		;(a battle's first round: which mob started it, from how far and how far off its facing - Vision.ahk)
 		if (SeenOut)

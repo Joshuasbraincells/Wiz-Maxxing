@@ -1251,7 +1251,7 @@ DashRefresh()
 		casts .= "`n   " SubStr(DashCardName(title) "                              ", 1, 25) Format("{:6}", count)
 	;(the cards cast one by one last: what the box's height cuts off)
 	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
-		. "Battles          " DashNum(battles) "`n"
+		. "Battles          " DashNum(battles) (V1IsFunc("BrecToday") ? BrecToday.Call() : "") "`n"
 		. "Deaths           " DashNum(n.deaths) "   (all time: " DashDeathsAll() ")`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
