@@ -413,6 +413,34 @@ says so).
 	  that battle; your own cards are still looked for in your school.
 	- Ice's blades and traps are elemental now (they were taken for spirit).
 
+Battles only (Settings > WALKING, "Battles only - never move the wizard";
+battlesonly:1 in PlayerStats.txt; the tray menu's "Battles only"): for the
+wizards riding another's mount - a 4-player mount whose driver takes the other
+three everywhere - or wherever the bot must only fight. Out of battle the bot
+moves nothing: quest walking stays off at every start (an update's restart
+too) and F8 says why instead of walking; no party following (the party's link
+and battle roles - hitter, blader, healer - keep working: that's battle play,
+and a battles-only wizard counts as ready, so the leader doesn't wait for it),
+no dungeon run (Run on the Dungeons tab says why), no puzzle try, no run to buy
+potions (a potion is still drunk when health is low - Ctrl+O doesn't move the
+wizard; out of potions it alerts and says why; out of mana with no potion it
+alerts and plays on - no hold, the driver takes it into battles all the same),
+no mob-loop, lore or afk step, no chat command's walk, sigil or teleport, no
+developer loop or clicks. Switching it on stops walking, a dungeon run or a
+puzzle try at once. Battles are played exactly as ever - rounds, cards, the
+kill check, boosts, the deck for a boss, fleeing, potions - and auto-reconnect,
+quick sell, alerts and the log's copy stay as set. Quick sell can't tell a
+dungeon the driver takes this wizard into (it knows only the ones the bot went
+into itself): keep quick sell off on a passenger. Wizard101 behind another
+window is brought to the front once you've left the PC 5 minutes (with "Bring
+Wizard101 to the front" on: as soon as a battle round is up), as walking did -
+the driver waits for a passenger whose game isn't in front. Turn the bot on
+(F6) and it waits for battles and plays them. The dashboard's top line says
+"Battles only - waiting for a battle"; debug.log: "Battles only: on - the bot
+plays battles and moves nothing else (Settings)" at the start and at each
+switch, and "Battles only (Settings): no ..." once for each thing it kept from
+moving.
+
 Report a bug (the dashboard's button, top right, or the tray menu): say what
 went wrong; Send posts it as an issue on the Wiz-Maxxing repo on GitHub, with
 the version, this PC's name, the screen, what the dashboard's STATISTICS and

@@ -319,6 +319,9 @@ PzRefuse()
 		return "a try is under way"
 	if (IsObject(PzHeld))
 		return "held at a blocked way"
+	;(battles only - Autofarmer.ahk, Settings: battlesonly: no tries - they move the wizard)
+	if (V1IsFunc("BattlesOnly") && %"BattlesOnly"%.Call())
+		return "battles only (Settings)"
 	if (V1IsFunc("PartyFollowing") && %"PartyFollowing"%.Call())
 		return "a party's follower"
 	if (IsObject(DgRun))

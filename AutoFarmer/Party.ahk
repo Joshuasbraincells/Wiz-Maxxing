@@ -71,7 +71,9 @@ PartyTick()
 			schoolChar := psChar, PartyMySchool := StatsSchoolOf(psChar)
 		}
 	;(not while it's quick selling the backpack - QuickSell.ahk: a leader waits for a follower that is)
-	ready := BotOn && Walking && !PlayerActive && GameActive() && !PotionResting && !QsBusy ? 1 : 0
+	;(battles only - Autofarmer.ahk, Settings: battlesonly - is ready with walking off: it rides along and plays the battles; the
+	;leader mustn't hold for it)
+	ready := BotOn && (Walking || BattlesOnly()) && !PlayerActive && GameActive() && !PotionResting && !QsBusy ? 1 : 0
 	;(plan: the hitter's planned hit's schools - a support boosts for them; lasthit: its last hit's - a support's blades that
 	;fit none of those stay on it - KillCalc.ahk BoostPick, ConsumeBoosts)
 	q := "/party?role=" role "&name=" NavUri(PartyIni("name")) "&leader=" NavUri(PartyIni("leader"))
@@ -548,6 +550,13 @@ PartyHoldWhy()
 PartyFollowStep()
 	{
 	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY ; (v1 globals it sets)
+	;(battles only - Autofarmer.ahk, Settings: battlesonly: no following - the main loop doesn't ask then; never a step all the same)
+	if (BattlesOnlyNo("following the party's leader"))
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		return
+		}
 	if (!Walking || !GameActive() || inbattle = 1 || !BotNoBattle())
 		{
 		if (KeysDown || HeldW)

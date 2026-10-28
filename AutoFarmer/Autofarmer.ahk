@@ -47,6 +47,8 @@ Tray.Disable("Wiz-Maxxing " (BotVersion() = "" ? "(no version.txt)" : BotVersion
 Tray.Add()
 Tray.Add(HkMenu("bot"), MenuBotToggle)
 Tray.Add(HkMenu("walk"), MenuWalk)
+;(battles only - Settings: battlesonly: out of battle the bot moves nothing; ticked while it's on - BattlesOnlyShow)
+Tray.Add("Battles only (moves nothing out of battle)", MenuBattlesOnly)
 Tray.Add("Wait while I play", MenuHandsOff)
 Tray.Add("Play for me (leave it alone for days)", MenuPlayForMe)
 Tray.Add("Bring Wizard101 to the front", MenuGameFront)
@@ -270,8 +272,17 @@ BotToggle()
 		;(the walker starts afresh: the wizard may have moved meanwhile)
 		if (V1IsFunc("WalkReset"))
 			WalkReset.Call()
-		DebugLog("Bot on (" HkText("bot") ") - battles, quest walking and potions")
-		TrayTip("On - battles, quest walking and potions. " HkText("bot") " pauses it.", "Wizard101 bot", 1)
+		;(battles only - Settings: battlesonly: it waits for battles and plays them, and moves nothing else)
+		if (BattlesOnly())
+			{
+			DebugLog("Bot on (" HkText("bot") ") - battles only (Settings): it waits for battles and plays them, and moves nothing else")
+			TrayTip("On - battles only: the bot plays battles and moves nothing else. " HkText("bot") " pauses it.", "Wizard101 bot", 1)
+			}
+		else
+			{
+			DebugLog("Bot on (" HkText("bot") ") - battles, quest walking and potions")
+			TrayTip("On - battles, quest walking and potions. " HkText("bot") " pauses it.", "Wizard101 bot", 1)
+			}
 		}
 	else
 		{
@@ -468,6 +479,132 @@ HandsOffShow()
 		Tray.Uncheck("Wait while I play")
 	if (V1IsFunc("DashHandsShow"))
 		DashHandsShow.Call(waitOn)
+	}
+
+;"Battles only" (Settings: battlesonly - the tray menu; kept in PlayerStats.txt like the others): for a wizard riding another's
+;mount - the driver takes it everywhere -, or wherever the bot must only play battles. Out of battle it moves nothing: quest
+;walking stays off (every start, an update's restart too; F8 says why), no party following, dungeon run, puzzle try or potion
+;run (a potion is still drunk - Ctrl+O - when health is low; out of potions it only alerts), no mob-loop / lore / afk move, no
+;chat command's walk, sigil or teleport, no developer loop. Kept: battles as ever (rounds, cards, the kill check, boosts, the
+;deck for a boss, flee, potions in battle), the party's link and battle roles, auto-reconnect, quick sell, alerts, the log's copy
+BattlesOnly()
+	{
+	try
+		return (IsObject(Stats) && Stats.Has("battlesonly") && Stats["battlesonly"]) ? 1 : 0
+	catch
+		return 0
+	}
+
+;A move battles only keeps from happening (what: what it would have been - "run to buy potions"): true while it's on, the
+;reason in the log once while it's on (tell: each time, and a tray tip - a key or menu item of yours). what "": the ones said
+;forgotten (BattlesOnlyTick, at each switch)
+BattlesOnlyNo(what, tell := false)
+	{
+	static said := Map()
+	if (what = "")
+		{
+		said := Map()
+		return false
+		}
+	if (!BattlesOnly())
+		return false
+	if (tell || !said.Has(what))
+		{
+		said[what] := 1
+		DebugLog("Battles only (Settings): no " what " - the bot plays battles and moves nothing else")
+		if (tell)
+			TrayTip("Battles only is on: no " what " - the bot plays battles and moves nothing else. Settings or the tray menu switches it off.", "Wizard101 bot", 1)
+		}
+	return true
+	}
+
+;Battles only switched (Settings' Save, the tray menu - and the main loop's look at it, each pass): said in the log, the tray
+;menu's tick. On: walking off and every key let go, a dungeon run stopped, a puzzle try dropped, the walker's notice closed. At
+;the start (StartBot's call) said only when it's on
+BattlesOnlyTick()
+	{
+	static was := ""
+	global Walking
+	now := BattlesOnly()
+	if (was != "" && now = was)
+		return
+	first := (was = "")
+	was := now
+	BattlesOnlyShow()
+	BattlesOnlyNo("")
+	if (!now)
+		{
+		if (!first)
+			{
+			DebugLog("Battles only: off - walking (" HkText("walk") "), party following, dungeon runs, puzzle tries and potion runs as set (Settings)")
+			TrayTip("Battles only: OFF - walking (" HkText("walk") " starts it), following, dungeon and potion runs as set.", "Wizard101 bot", 1)
+			}
+		return
+		}
+	DebugLog("Battles only: on - the bot plays battles and moves nothing else (Settings)")
+	TrayTip("Battles only: ON - the bot plays battles and moves nothing else (no walking, following, dungeon or potion runs). Settings or the tray menu switches it off.", "Wizard101 bot", 1)
+	if (Walking)
+		{
+		Walking := 0
+		DebugLog("  walking off (" HkText("walk") " doesn't walk while battles only is on)")
+		}
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	if (IsObject(DgRun) && V1IsFunc("DgStop"))
+		DgStop.Call("battles only is on (Settings)", false)
+	if (V1IsFunc("PuzzleForget"))
+		PuzzleForget.Call("battles only is on (Settings)")
+	if (V1IsFunc("WalkNotifyClose"))
+		WalkNotifyClose.Call()
+	}
+
+;The tray menu's tick (the dashboard's top line and the Network tab say it too - DashRefresh, NetTick)
+BattlesOnlyShow()
+	{
+	if (BattlesOnly())
+		Tray.Check("Battles only (moves nothing out of battle)")
+	else
+		Tray.Uncheck("Battles only (moves nothing out of battle)")
+	}
+
+;The tray menu's Battles only: switched, and kept in PlayerStats.txt (battlesonly - Settings has it too)
+BattlesOnlyToggle()
+	{
+	boOn := !BattlesOnly()
+	if (!StatsSet([["battlesonly", boOn ? 1 : 0]]))
+		Stats["battlesonly"] := boOn ? 1 : 0
+	BattlesOnlyTick()
+	}
+
+;The main loop's step out of a battle round while battles only is on - instead of the walker's, a party follower's, a dungeon
+;run's, a puzzle try's or the farming modes': nothing moved, any key let go, a short wait - the round watch goes on
+BattlesOnlyWait()
+	{
+	;(when it last tried to bring the game to the front - at most every 1.5 s, as the walker)
+	static frontLook := 0
+	global Walking
+	;(nothing turns walking on while it's on - the start, F8 and a dungeon run's Run keep it off: never left on all the same)
+	if (Walking)
+		{
+		Walking := 0
+		BattlesOnlyNo("walking - it was on: off again")
+		}
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	;(Wizard101 behind another window: no walking or following brings it forward now. You away 5 minutes - or Play for me: to
+	;the front, as the walker and a party's follower do - else a battle the driver takes it into is never seen (its Pass is
+	;looked for on the screen), and the driver holds for it for good (ready only with its game in front - Party.ahk PartyTick).
+	;gamefront on: as soon as the game's log says a round is up. WinActivate only - nothing pressed or clicked)
+	if (!GameActive() && A_TickCount - frontLook > 1500)
+		{
+		if (UserIdle() > 300000)
+			frontLook := A_TickCount, GameToFront("battles only: nothing touched for 5 minutes, another window in front", true, true)
+		else if (GameFrontOn() && BattleLogPlanning(0))
+			frontLook := A_TickCount, GameToFront("battles only: a battle round is up (the game's log)")
+		}
+	if (inbattle != 1)
+		SetStatus("battles only - waiting for a battle")
+	Sleep(50)
 	}
 
 ;Moves the mouse to x, y and clicks, quickly: mousespeed (0 = jump there, 1 = fastest glide; it used to
@@ -1958,6 +2095,13 @@ CheckAfk()
 		waitRun := (AfkWhy = "mana" && Stat("fleeon") && V1Lt(A_TickCount, PotionFailUntil) && AfkRetries < 3)  ; (v1: no run failed - blank - compared as text: false)
 		Loop
 			{
+			;(battles only - Settings: battlesonly: a hold for mana let go - one from before it was switched on, or switched on
+			;meanwhile (checkmana and FleeAfter start none then): it would only leave the driver's battles unplayed)
+			if (AfkWhy = "mana" && BattlesOnly())
+				{
+				DebugLog("no mana: not holding - battles only is on (Settings), the battles are played on")
+				break
+				}
 			ihOutputVar := InputHook("T1","{w} {a} {s} {d}","w, a, s, d"), ihOutputVar.Start(), ErrorLevel := ihOutputVar.Wait(), OutputVar := ihOutputVar.Input
 			if (Errorlevel != "Timeout")
 				{
@@ -1993,7 +2137,10 @@ Afk(why := "")
 	global afkVar, AfkWhy ; (v1 globals it sets)
 	if (afkVar == 0)
 		{
-		LockMove(&_direction := "a")
+		;(battles only - Settings: battlesonly: not the step that keeps the wizard from timing out - it moves nothing; the hold
+		;itself is kept)
+		if (!BattlesOnlyNo("step to keep from timing out (afk)"))
+			LockMove(&_direction := "a")
 		afkVar := 1, AfkWhy := why
 		}
 	}
@@ -2002,8 +2149,14 @@ checkmana()
 	{
 	;(when the picture was last found with mana in the globe - logged at most every 5 minutes)
 	static wrongSaid := 0
+	;(battles only: when it last found no mana and none to be had - looked at again 2 minutes on; said and alerted when)
+	static boNoneAt := 0, boSaidAt := 0
 	if (afkVar == 0)
 		{
+		;(battles only - Settings: battlesonly: no mana and no potion a moment ago - not each pass of the loop: a Ctrl+O and its
+		;2.5 s wait every pass would keep the round watch from the driver's battles)
+		if (boNoneAt && A_TickCount - boNoneAt < 120000 && BattlesOnly())
+			return
 		V1ImageSearch(&manaX, &manaY, GameLeft, ScreenY, GameLeft + GameW / 4, GameBottom, PicOpt("resources\manaempty.png"))
 		if (Errorlevel == 0)
 			{
@@ -2031,6 +2184,20 @@ checkmana()
 			;(a potion first - or a run to buy some - so it can carry on; only then keep the character from timing out)
 			if (Stat("fleeon") && FleeRefillMana("no mana"))
 				return
+			;(battles only - Settings: battlesonly: no hold - the driver takes this wizard into its battles all the same, and a hold
+			;would only leave them unplayed (no pass, no support with the mana left): said and an alert - once in 10 minutes -, the
+			;battles played on, looked at again in 2 minutes)
+			if (BattlesOnly())
+				{
+				boNoneAt := A_TickCount
+				if (!boSaidAt || A_TickCount - boSaidAt > 600000)
+					{
+					boSaidAt := A_TickCount
+					DebugLog("no mana and no potion - not holding: battles only is on (Settings), the battles are played on (buy or drink potions yourself)")
+					AlertSend("mana", "out of mana", "No mana and no potion left, and battles only is on (Settings): the bot doesn't go to buy any and plays the battles on with what mana it has - drink or buy some yourself.")
+					}
+				return
+				}
 			Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
 			AlertSend("mana", "out of mana", "No mana and no potion to be had - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
 			afk("mana")
@@ -2268,6 +2435,9 @@ CommandWalk()
 		V1ImageSearch(&walkX, &walkY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\walk.png", 120))
 		if (ErrorLevel == 0) 
 			{
+			;(battles only - Settings: battlesonly: the command's walk not done - it moves nothing out of battle)
+			if (BattlesOnlyNo("walk the chat command asked for (command mode)"))
+				return false
 			Respond("I'm Not A Dog, But Ill Do It Anyways")
 			Send("{w Down}")
 			Sleep(2000)
@@ -2294,6 +2464,9 @@ CommandEnter()
 		V1ImageSearch(&enterX, &enterY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\enter.png", 120))
 		if (ErrorLevel == 0) 
 			{
+			;(battles only - Settings: battlesonly: no X at the sigil the command asked for)
+			if (BattlesOnlyNo("X at a sigil the chat command asked for (command mode)"))
+				return false
 			Respond("Entering Sigil. Make Sure You Have The Right Deck On.")
 			Send("{x}")
 			Sleep(Tick)
@@ -2344,6 +2517,9 @@ CommandPort()
 		V1ImageSearch(&wordportX, &wordportY, GameLeft, GameTop + GameH * 0.65, GameLeft + GameW / 7.4, GameTop + GameH * 0.775, PicOpt("resources\wordport.png", 120))
 		if (ErrorLevel == 0)
 			{
+			;(battles only - Settings: battlesonly: no teleport to the friend the command named)
+			if (BattlesOnlyNo("teleport the chat command asked for (command mode)"))
+				return false
 		
 			Send("{/}")
 			Sleep(Tick)
@@ -3085,6 +3261,13 @@ PlayForMeToggle()
 return
 }
 ;##############################################
+;(the tray menu's Battles only - Settings: battlesonly)
+MenuBattlesOnly(*)
+	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	BattlesOnlyToggle()
+	}
+;##############################################
 MenuGameFront(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
@@ -3208,6 +3391,9 @@ return
 MenuPotionRun(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
 local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+;(battles only - Settings: battlesonly: no run - its Recall or Home / End, the walk to the seller - said, a tray tip)
+if (BattlesOnlyNo("run to buy potions", true))
+	return
 ;(v1: nothing when the game isn't there - v2 throws)
 V1Try(WinActivate, "ahk_class " GameClass " ahk_exe " GameExe)
 Sleep(500)
@@ -3473,11 +3659,18 @@ if (!DetectPicSet())
 LastBeat := 0
 SeenOut := 0
 
-;Quest walking: on from the start (F8 switches it off and on)
+;Quest walking: on from the start (F8 switches it off and on) - not with battles only (Settings: battlesonly): then off at
+;every start, an update's restart too, and F8 doesn't walk (BattlesOnlyTick says so, and ticks the tray menu)
+BattlesOnlyTick()
 if (WalkerInit("Wizard101 bot " BotVersion()))
 	{
-	Walking := 1
-	DebugLog("Walking on (" HkText("walk") " switches it off)")
+	if (BattlesOnly())
+		DebugLog("Walking off: battles only (" HkText("walk") " doesn't walk while it's on)")
+	else
+		{
+		Walking := 1
+		DebugLog("Walking on (" HkText("walk") " switches it off)")
+		}
 	}
 else
 	DebugLog("Walking off: couldn't load the quest arrow shapes (AutoQuester\resources\arrow_refs.txt)")
@@ -3561,6 +3754,8 @@ Loop
 	;(no round being played here: a battle round's hold on your mouse let go, however the round was left - Settings.ahk
 	;MouseLockOff)
 	MouseLockOff("round")
+	;(battles only switched - Settings, the tray menu: said, and walking off - BattlesOnlyTick)
+	BattlesOnlyTick()
 	;Corrections made on the dashboard's Spells tab: applied here, out of battle only - never in a round, where a hit
 	;moved to another slot would take the round's enchants and saved pips with it (Spells.ahk). With the bot off too
 	;An update installed by itself (UpdAuto - Settings: autoupdate): out of battle only too
@@ -3829,7 +4024,11 @@ Loop
 	;No battle round to play right now: take a step towards the quest goal (with no quest arrow
 	;on screen, e.g. during the battle's spell animations, it just lets go of the keys and waits).
 	;Not while afk, mob-loop or lore farming: those move the wizard themselves
-	if (afkVar || loopmode || loremode)
+	;(battles only - Settings: battlesonly: no step at all - no walking, following, dungeon run, puzzle try or farming mode's
+	;move: it waits for the next round - BattlesOnlyWait)
+	if (BattlesOnly())
+		BattlesOnlyWait()
+	else if (afkVar || loopmode || loremode)
 		{
 		if (KeysDown || HeldW)
 			ReleaseKeys()
@@ -4454,7 +4653,8 @@ Goto("TestRound")
 ;##############################################
 mobloop() { ; (v1: a label)
 global
-if (loopmode == 1)
+;(battles only - Settings: battlesonly: no mob-loop step - S back, W on - it moves nothing out of battle)
+if (loopmode == 1 && !BattlesOnlyNo("mob-loop step (" HkText("loop") ")"))
 	{
 	Send("{s down}")
 	s(1000)
@@ -4480,6 +4680,9 @@ LoreLoop()
 	{ ; (v1: a label)
 	global
 	local _direction ; (v1 passed these literals as temporaries: locals here, not globals)
+	;(battles only - Settings: battlesonly: no lore farming's moves - its log out and join, X at the sigil, the walk in)
+	if (loremode == 1 && BattlesOnlyNo("lore farming (" HkText("lore") ")"))
+		return
 	if ((loremode == 1) && (dualmode == 0))
 		{
 		;(v1: "Mod(%battles% + 1, 50)" read the variable named by the number of battles - a command-line parameter or
@@ -4781,6 +4984,10 @@ if (on = 1)
 	{
 	if (devmode = 1)
 		{	
+		;(battles only - Settings: battlesonly: not the developer's loop - X, clicks, random W A S D - nor the clicks of
+		;Windows+`'s lines after it, which it runs on into)
+		if (inbattle = 0 && BattlesOnlyNo("developer loop (Alt+0)", true))
+			return
 		if (inbattle = 0)
 			{
 			InstallMouseHook()
@@ -4875,6 +5082,9 @@ if (on = 1)
 	{
 	if (devmode = 1)
 		{
+		;(battles only - Settings: battlesonly: not developer mode's endless clicks out of battle - as Alt+0's loop)
+		if (inbattle = 0 && BattlesOnlyNo("developer clicks (Windows+``)", true))
+			return
 		Loop
 			{
 			Click()

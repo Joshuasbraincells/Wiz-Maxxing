@@ -77,6 +77,8 @@ CfgList()
 	list.Push(V1Obj({key: "quicksellafterdungeon", label: "...even with a dungeon's drops in it", kind: "check", def: 0
 		, help: "Off: after a dungeon (a dungeon run, or a zone entered through a sigil) the next full backpack is not sold - you're told, so you can look through it first; it's sold again once 10 items have gone from it, or you ask from the tray. On: sold like any other. Inside a dungeon it's never sold (a dungeon run, one the bot went into through its sigil and its deeper zones - not one you walked into yourself)."}))
 	list.Push(V1Obj({key: "-", label: "WALKING"}))
+	list.Push(V1Obj({key: "battlesonly", label: "Battles only - never move the wizard", kind: "check", def: 0
+		, help: "For a wizard riding another's mount (the driver takes it everywhere), or wherever the bot must only fight: out of battle it moves nothing - quest walking stays off at every start ({key:walk} says why and doesn't walk), no party following, dungeon run, puzzle try or potion run (a potion is still drunk when health is low; out of potions it only alerts; out of mana it alerts and plays on, no hold), no mob-loop, lore or afk move. It waits for battles and plays them as ever - the party's battle roles too. Quick sell can't tell a dungeon the driver takes it into: keep quick sell off on a passenger. Also the tray menu's Battles only."}))
 	list.Push(V1Obj({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."}))
 	list.Push(V1Obj({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
@@ -185,7 +187,7 @@ CfgSimpleKeys()
 	if (!IsObject(keys))
 		{
 		keys := V1Obj()
-		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "mobavoid", "mousesteer", "speedhack"
+		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "battlesonly", "mobavoid", "mousesteer", "speedhack"
 			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
 			keys[k] := 1
 		}
@@ -506,6 +508,9 @@ CfgSaveNow()
 	;(the tray menu's tick and the dashboard's Wait for me button)
 	HandsOffShow()
 	DebugLog("Settings saved (used from now on): " SubStr(cfgSaid, 3) (cfgFixed = "" ? "" : " | " SubStr(cfgFixed, 3)))
+	;(battles only switched: said, walking off - Autofarmer.ahk BattlesOnlyTick, the tray menu's tick)
+	if (V1IsFunc("BattlesOnlyTick"))
+		BattlesOnlyTick.Call()
 	Cfg["CfgNote"].Value := "Saved " cfgPairs.Length " change" (cfgPairs.Length = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")")
 	}
 

@@ -6,7 +6,7 @@ Gold only, never Crowns. Game memory is read-only (the one exception: Cheat Engi
 Four bots, one per PC, quest together: a leader picks the quest, the others follow it into its battles and through its doors, each with a battle role.
 - [ ] Teleport to a friend when the leader is somewhere a door doesn't lead
 
-Done: the home network link, following and waiting, each bot's own name plate in party battles, battle roles (hitter, healer, blader).
+Done: the home network link, following and waiting, each bot's own name plate in party battles, battle roles (hitter, healer, blader), battles only (Settings: the wizards riding the driver's 4-player mount play its battles and move nothing else).
 
 ## 2. Never stuck
 The walker gets anywhere a quest sends it, without help.
@@ -24,7 +24,11 @@ Done: mob rings and sight cones avoided, the quest's goal and its kind read from
 ## 3. Battles: reliable, then smart
 Every card known from the game's memory and played well, with a deck that fits the fight.
 - [ ] Every card cast by the game's memory (where it sits in hand, its target's plate), pictures only a fallback - and every other on-screen check switched to memory where it can be
-- [ ] Battle logic learned: every battle recorded (enemies, cards, damage, rounds to the kill), which plays and deck make-ups kill each kind of enemy fastest learned from it, battles played by it and the deck changed to match (an enormous task)
+- [ ] Battle logic learned (an enormous task), in steps:
+  - [ ] Every battle recorded from the game's memory (enemies, hands, cards played and why, damage, rounds to the kill; school, deck, party seat and role)
+  - [ ] A battle simulator on the bot's damage maths, the deck's real cards, the wiki's spells and each enemy's cast history
+  - [ ] A planner that tries the plays in the simulator each round - learned plays kept per school, all schools' data while a school has few battles; decks matched to each enemy
+  - [ ] In a party: the leader plans the whole team's round (each bot told its card), and the hitter announces its hit round and schools so the others time their blades and traps to it (also when a bot doesn't answer the leader in time)
 - [ ] "Can this deck beat it": the deck's damage against an enemy's health, block and resists
 - [ ] Decks learned from the ones set up in the game
 

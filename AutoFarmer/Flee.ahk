@@ -237,6 +237,14 @@ FleeAfter()
 	;empty mana globe: checkmana)
 	if (!FleeRefillMana("after fleeing"))
 		{
+		;(battles only - Autofarmer.ahk, Settings: battlesonly: no hold - the driver takes this wizard into its battles all the
+		;same, and a hold would only leave them unplayed: said and an alert, the battles played on - as checkmana)
+		if (BattlesOnly())
+			{
+			DebugLog("after fleeing: no mana and no potion - not holding: battles only is on (Settings), the battles are played on")
+			AlertSend("mana", "out of mana", "Fled out of mana, no potion left, and battles only is on (Settings): the bot doesn't go to buy any and plays the battles on - drink or buy some yourself.")
+			return
+			}
 		Respond("Error, It Seems I Have No Mana. Preventing Timeout.")
 		TrayTip("Out of mana and couldn't get potions - the bot has stopped (kept from timing out).", "Wizard101 bot", 2)
 		AlertSend("mana", "out of mana", "Fled out of mana, and no potion to be had (none left, and buying didn't work) - the bot is holding (kept from timing out) and carries on by itself once there's mana again.")
@@ -260,6 +268,12 @@ FleeRefillMana(why)
 	if (V1Lt(A_TickCount, PotionFailUntil))  ; (v1: no failed run yet - blank, Potions.ahk's initializer never ran - compared as text: false)
 		{
 		DebugLog(why ": no potion left, and the last run to buy some failed - not trying again yet")
+		return false
+		}
+	;(battles only - Settings: battlesonly: no run to buy some - it moves nothing out of battle)
+	if (BattlesOnly())
+		{
+		DebugLog(why ": no potion left - not going to buy any: battles only is on (Settings)")
 		return false
 		}
 	DebugLog(why ": no potion left - going to buy some")

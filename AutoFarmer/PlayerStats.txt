@@ -79,6 +79,11 @@ handsoff:10
 handsoffon:1
 
 ; ---- Walking ----
+; battlesonly: 1 = battles only - for a wizard riding another's mount (the driver takes it everywhere): out of battle the
+; bot moves nothing - quest walking stays off at every start (F8 says why), no party following, dungeon run, puzzle try or
+; potion run (a potion is still drunk when health is low; out of potions it only alerts), no mob-loop, lore or afk move; it
+; waits for battles and plays them as ever, the party's battle roles too (tray menu "Battles only" switches it). 0 = off
+battlesonly:0
 ; navmem: 1 = walk by the game's memory when it can be read: where the wizard is, which way it faces and
 ; where the quest arrow points, read straight out of the game - READ-ONLY, nothing in the game is changed.
 ; It can't be hidden by scenery or misread like the arrow on screen, and turns are measured, not guessed.

@@ -3334,6 +3334,9 @@ PressKey(key)
 WalkToggle()
 	{
 	global Walking, WkJumpStuck, WkJumpKey, NavUnblock, Refocus ; (v1 globals it sets)
+	;(AutoFarmer's battles only - Settings: battlesonly: walking stays off, and F8 says why - a tray tip. AutoQuester has none)
+	if (!Walking && V1IsFunc("BattlesOnlyNo") && %"BattlesOnlyNo"%.Call("walking (" WalkKeyText() ")", true))
+		return
 	WalkNotifyClose()
 	Walking := !Walking
 	if (Walking)

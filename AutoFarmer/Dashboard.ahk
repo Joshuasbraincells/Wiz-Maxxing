@@ -1216,6 +1216,9 @@ DashRefresh()
 	;(v1: a round never started - roundAt blank - counted as just now: "" < 120000 as text)
 	else if (DashSees.mode = "battle" && V1Lt(V1Ago(DashSees.roundAt), 120000))
 		doing := "In battle (round " DashN.rounds ")"
+	;(battles only - Settings: battlesonly - Autofarmer.ahk: out of battle it waits for one and moves nothing)
+	else if (V1IsFunc("BattlesOnly") && BattlesOnly.Call())
+		doing := "Battles only - waiting for a battle (Settings)"
 	else if (!Walking)
 		doing := "Walking off (" HkText("walk") ")"
 	else if (StatusText != "")

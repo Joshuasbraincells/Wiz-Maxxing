@@ -83,6 +83,8 @@ global PotionResting, PotionNoneAt, PotionRestFrom
 ;Called out of battle from the main loop (every few seconds at most): low health -> drink, none -> run
 PotionCheck()
 	{
+	;(when battles only last said there are none left - not bought: once in 10 minutes)
+	static boSaidAt := 0
 	global PotionNextCheck, PotionResting, PotionNoneAt, PotionRestFrom, PotionFailUntil ; (v1 globals it sets)
 	;(not while a dungeon run is being recorded: you're playing it - Dungeons.ahk)
 	;(v1: PotionNextCheck blank at first - the tick isn't < a blank, compared as text)
@@ -117,6 +119,18 @@ PotionCheck()
 			return
 			}
 		PotionNoneAt := A_TickCount
+		}
+	;(battles only - Settings: battlesonly: no run to buy more - it moves nothing out of battle: an alert, why in the log -
+	;once in 10 minutes; no rest either - there's no walking to hold back)
+	if (BattlesOnly())
+		{
+		if (!boSaidAt || A_TickCount - boSaidAt > 600000)
+			{
+			boSaidAt := A_TickCount
+			DebugLog("Potions: health " hp "/" most " (" Round(pct) "%) and no potion left - not going to buy any: battles only is on (Settings), the bot moves nothing out of battle")
+			AlertSend("potions", "out of potions", "No potion left (health " Round(pct) "%), and battles only is on (Settings): the bot doesn't go to buy any - drink or buy some yourself.")
+			}
+		return
 		}
 	;(v1: PotionFailUntil blank till a run failed - the tick isn't < a blank, compared as text)
 	if (V1Lt(A_TickCount, PotionFailUntil))
@@ -228,6 +242,9 @@ PotionDrink(before)
 PotionRun()
 	{
 	global PotionMarkZone, PotionMarkAt ; (v1 globals it sets)
+	;(battles only - Settings: battlesonly: never a run - its Mark, Recall, Home / End and the walk move the wizard)
+	if (BattlesOnlyNo("run to buy potions"))
+		return false
 	;(by the zone's map - potionwalk:1: "" when it can't be done that way here, or didn't work and there's a recorded
 	;way to try - then the recorded ways)
 	if (PotionWalkOn())
@@ -1508,6 +1525,13 @@ PotionRecordStart()
 	if (DgRecording)
 		{
 		msgResult := MsgBox("A dungeon run is being recorded - finish that first (" HkName(DgRecKey) ").", "Record potion buying", 262192)
+		return
+		}
+	;(battles only - Settings: battlesonly: recording takes you to the seller - a Recall, or a Mark and Home / End)
+	if (BattlesOnly())
+		{
+		DebugLog("Potions: no recording of the potion buying - battles only is on (Settings): the bot moves nothing out of battle")
+		msgResult := MsgBox("Battles only is on (Settings): the bot moves nothing out of battle, and recording the potion buying takes you to the seller (a Recall). Switch battles only off first (Settings, or the tray menu).", "Record potion buying", 262192)
 		return
 		}
 	if (!VisionOn)

@@ -52,8 +52,9 @@ NetTick()
 	if (!schoolAt || A_TickCount - schoolAt > 20000)
 		schoolAt := A_TickCount, school := StatsSchoolOf(StatsCharID())
 	bot := (BotStandby && !BotEverOn) ? "standby" : BotOn ? "on" : "off"
+	;(battles only - Settings: battlesonly - Autofarmer.ahk: waiting for a battle, moving nothing)
 	doing := !BotOn ? "off" : inbattle = 1 ? "in a battle" : WkLoading ? "loading" : PlayerActive ? "you're playing"
-		: !Walking ? "walking off (" HkText("walk") ")" : WkArrived = 7 ? "collecting" : "walking"
+		: (V1IsFunc("BattlesOnly") && BattlesOnly.Call()) ? "battles only" : !Walking ? "walking off (" HkText("walk") ")" : WkArrived = 7 ? "collecting" : "walking"
 	see := IsObject(DashSees) ? DashSees : V1Obj()
 	hp := RegExReplace(see.hp, "\s*\(.*")
 	;(the bot picked - fetched by the helper's own thread only while the Network tab's up)

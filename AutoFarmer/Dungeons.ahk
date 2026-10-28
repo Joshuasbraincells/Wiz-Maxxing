@@ -299,6 +299,13 @@ DgRunStart(file, times, avoid)
 	global DgRun, Walking ; (v1 globals it sets)
 	if (DgRecording || IsObject(DgRun))
 		return
+	;(battles only - Settings: battlesonly: no run - it walks the wizard; said on the tab and in the log)
+	if (BattlesOnly())
+		{
+		DebugLog("Dungeons: no run - battles only is on (Settings): the bot moves nothing out of battle")
+		DgShow("Battles only is on (Settings): the bot moves nothing out of battle - switch it off to run a dungeon.")
+		return
+		}
 	d := DgLoad(file)
 	if (!IsObject(d))
 		{
@@ -498,6 +505,14 @@ DungeonStep()
 	r := DgRun
 	if (!IsObject(r))
 		return
+	;(battles only - Settings: battlesonly: no step - the main loop doesn't ask then, and switching it on stops a run; never a step
+	;all the same)
+	if (BattlesOnlyNo("dungeon run's step"))
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		return
+		}
 	;(paused since the last step - a battle, F8, you playing, F6, the game not in front: the clocks wait too)
 	gap := A_TickCount - r.lastStep
 	if (r.lastStep && gap > 1000)
