@@ -7,6 +7,8 @@ the vision helper hands it what navmem / deckmem / enemies already read (vision.
     r = simulate(cards, Me(school="balance", maxhp=4200, damage=95), foes, Opts(), n=400, seed=1)
     v = verdict(r, cards, me, foes)                # {word, text, best, hits...}: "can this deck beat it"
     learned = learn_decks(reading)                 # deckmem.read(kinds=True) -> one bot deck profile per in-game deck
+    st = State.of_deck(hand, cards, pips=5, fhp=[2400], blades=[...], rnd=3)    # a battle in the middle (vision.py /plan)
+    plan = plan_round(st, me, foes, opts, budget_ms=300, prior=plays.prior_fn("storm"))   # this round's plays, best first
 
     python battlesim.py --deck deck.json --foe "Governor Nereus" [--hp 4200] [--damage 95] [-n 400]   (a test run)
 
@@ -42,6 +44,16 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
   part, stuns, the party's other wizards (team only splits the enemies' single hits), Reshuffle, enchants (Epic...),
   the wizard's own minions. So the numbers lean optimistic against bosses that shield or heal - verdict() says so.
 
+THE PLANNER (TODO goal 3, step 3 - vision.py /plan, Planner.ahk: advice only)
+  State: a battle in the middle - the hand as dealt, the draw pile (the deck less the hand), pips, my health and each
+  enemy's, the blades (by their cards' names - bot_blades turns the bot's keys into them), traps and aura on, the round,
+  boosts since the last hit, who goes first; _Battle.from_state starts there and run_from plays it on: the round now
+  with a play forced (force: a card at an enemy, or a pass - no pip, no draw: they're this round's), then the bot's
+  chain (choose - my_round's picks) each round. plan_round tries every card that can go now (and a pass) in rollouts on
+  common random numbers within a time budget and ranks them (win %, then the sooner, then health left; a rollout still
+  going at the horizon valued by the enemies' health it took); a learned prior (battlelearn.Plays.prior_fn) only nudges
+  near-equal plays. plan_lines is /plan's answer.
+
 RESULTS  simulate() -> {n, won, lost, timeout (fractions), rounds (median rounds of the battles won), rounds_p90, hp_left
   (the wizard's mean health % left in won battles), dmg_in (mean damage taken a round), first_kill (median round of the
   first enemy's death), casts {card name: mean casts a battle}, why: [notes]}.
@@ -56,6 +68,7 @@ import random
 import re
 import statistics
 import sys
+import time
 
 SCHOOLS = ("balance", "death", "fire", "ice", "life", "myth", "storm")
 MAX_PIPS = 7
@@ -371,13 +384,22 @@ class FoeBook:
     def __init__(self, base=None, days=120, battles=None):
         self.by = {}
         self.why = ""
+        bad, err = 0, None
         try:
             if battles is None:
                 battles = self._read(base, days)
             for b in battles:
-                self._add(b)
+                # (an odd record - a part's max "?" - skips that battle, not the rest: the iteration goes on, and so
+                # does whatever else reads the same pass - vision.py _plan_load's learned plays)
+                try:
+                    self._add(b)
+                except Exception as e:  # noqa: BLE001 - that battle only
+                    bad, err = bad + 1, err or e
         except Exception as e:  # noqa: BLE001 - what was read so far
             self.why = "the battles couldn't all be read (%r)" % (e,)
+        if bad:
+            self.why = "; ".join(w for w in (self.why, "%d battle%s couldn't be read (%r)" % (
+                bad, "" if bad == 1 else "s", err)) if w)
 
     @staticmethod
     def _read(base, days):
@@ -488,6 +510,103 @@ class FoeBook:
         return f
 
 
+# ============================================================================ a battle in the middle
+class State:
+    """a battle in the middle - the round the planner looks at (vision.py /plan builds it from the game's memory and the
+    bot's own bookkeeping):
+      hand        [Card] as dealt now, left to right (the bot's discards this round already made)
+      pile        [Card] the draw pile: the deck less the hand (of_deck) - its order not known: shuffled each rollout
+      used        cards drawn from the pile before this round besides the hand (taken off it; None: round - 1, about one
+                  a round - a shuffled pile's mix is the same whatever is taken off, only its size counts)
+      pips, power my pips now, power pips counted 1 (as _Battle's), and how many of them are power pips
+      hp          my health now (None: Me's)
+      fhp         each enemy's health now, in foes' order (None for one: its max)
+      blades      [(name, {school: %})] on me - one of each name (identical blades don't stack): the cards' names (the
+                  bot's own keys through bot_blades, so a copy in hand of one on matches it)
+      traps       [[{school: %}] for each enemy] on it
+      aura        ({school: %}, rounds left - this one counted) or None
+      round       the battle's round (1 the first); boosts_run the boosts cast since my last hit (boostmax counts them)
+      me_first    True / False: my side casts first (the game's initiative); None not known (a coin each rollout)
+      fpips       each enemy's pips now, or None (not known: 1-3 as at a battle's start)
+    Never raises on junk: a value it can't read is the default"""
+
+    def __init__(self, hand, pile=None, pips=0, power=0, hp=None, fhp=None, blades=None, traps=None, aura=None, rnd=1,
+                 boosts_run=0, me_first=None, fpips=None, used=None):
+        self.hand = [c for c in (hand or []) if isinstance(c, Card)]
+        self.pile = [c for c in (pile or []) if isinstance(c, Card)]
+        self.pips, self.power = _int(pips), _int(power)
+        self.hp = _int(hp) or None
+        self.fhp = [None if h is None else _int(h) for h in (fhp or [])]
+        self.blades = [(str(n), dict(b)) for n, b in (blades or []) if isinstance(b, dict)]
+        self.traps = [[dict(t) for t in ts if isinstance(t, dict)] for ts in (traps or [])]
+        self.aura = (dict(aura[0]), _int(aura[1])) if aura and isinstance(aura[0], dict) and _int(aura[1]) > 0 else None
+        self.round = max(1, _int(rnd) or 1)
+        self.boosts_run = _int(boosts_run)
+        self.me_first = None if me_first is None else bool(me_first)
+        self.fpips = [None if x is None else _int(x) for x in fpips] if isinstance(fpips, (list, tuple)) and fpips else None
+        self.used = max(0, self.round - 1) if used is None else max(0, _int(used))
+
+    @classmethod
+    def of_deck(cls, hand, deck, **kw):
+        """the State with its pile the deck's cards ([Card] - deck_cards) less the hand's: each hand card takes one copy
+        of its template id (else its name) out - one the deck hasn't (a pet's card) takes nothing"""
+        pile = list(deck or [])
+        for c in hand or []:
+            k = next((j for j, d in enumerate(pile) if c.tid is not None and d.tid == c.tid), None)
+            if k is None:
+                k = next((j for j, d in enumerate(pile) if d.name == c.name and d.kind == c.kind), None)
+            if k is not None:
+                pile.pop(k)
+        return cls(hand, pile, **kw)
+
+
+def bot_blades(blades, cards):
+    """the blades on as the bot counts them (vision.py /plan's blades=: KillCalc.ahk AppliedBlades' keys - BoostKey's
+    "storm/blade", "blade3", "elementalblade"..., "@tc" / "@item" after it a treasure or item card's copy, "+" a
+    sharpened cast) in the simulator's names, which are its cards' (a blade on is one of each name - _Battle.cast,
+    pick_boost, _plannable): the deck's own plain cast named as the blade card of cards (the hand, then the draw pile -
+    not a treasure or item card) that boosts the same schools, the nearest % of them; so another copy of it in hand is
+    'on already' and never stacks in the rollouts - the bot's used flags never cast it plain again while it's on
+    (Autofarmer.ahk UseBlade's Use2; sharpened only with a Sharpen, which the simulator doesn't play). A sharpened cast
+    or a treasure / item card's copy keeps the bot's key - no card has it: the bot counts it on top of the deck's plain
+    one and still casts that (KillCalc.ahk AddBoost, BoostCopyCanGo - the user, 2026-10-24); (the simulator's names
+    don't tell a hand card's copies apart: a treasure / item card's in hand goes as the deck's does). A key no card fits
+    keeps it too. [(name, {school: %})] in blades' order; never raises (junk as it came)"""
+    def schools(b):
+        s = {k for k, v in b.items() if isinstance(v, (int, float)) and v > 0}
+        return frozenset(SCHOOLS) if "all" in s else frozenset(s)
+
+    def pct(b):
+        return max([v for v in b.values() if isinstance(v, (int, float))] or [0])
+    out = []
+    try:
+        own = [c for c in cards or [] if isinstance(c, Card) and c.kind == "blade" and not c.tc and not c.item]
+    except TypeError:
+        own = []
+    for nb in blades or []:
+        try:
+            n, b = nb
+        except (TypeError, ValueError):
+            out.append(nb)
+            continue
+        try:
+            m = re.match(r"(.*?)(@[a-z]+)?(\+)?$", str(n))
+            fit = [c for c in own if schools(c.boosts) == schools(b)] if b and not (m.group(2) or m.group(3)) else []
+            if fit:
+                n = min(fit, key=lambda c: abs(pct(c.boosts) - pct(b))).name
+        except Exception:  # noqa: BLE001 - that one as it came
+            pass
+        out.append((n, b))
+    return out
+
+
+def _int(v, d=0):
+    try:
+        return int(float(v))
+    except (TypeError, ValueError, OverflowError):
+        return d
+
+
 # ============================================================================ one battle
 class _Battle:
     def __init__(self, cards, me, foes, opts, rng):
@@ -510,6 +629,10 @@ class _Battle:
         self.dmg_in = 0
         self.first_kill = None
         self.plan = None
+        self.aim = None         # (the planner's: the enemy a single-target hit or trap of this round's forced play goes at)
+        self.round0 = 1         # (from_state: the battle's round the state is in)
+        self.me_first = None
+        self.rounds_run = 0
 
     # ---------------------------------------------------------------- helpers
     def alive(self):
@@ -567,9 +690,13 @@ class _Battle:
         return total
 
     def targets(self, card):
+        """the enemies card hits: an AoE every one left; else the planner's aim (alive), else the one with the most
+        health (the bot's trap target too)"""
         al = self.alive()
         if card.kind == "aoe":
             return al
+        if self.aim is not None and self.aim in al:
+            return [self.aim]
         return [max(al, key=lambda i: self.fhp[i])] if al else []
 
     def value(self, card):
@@ -666,15 +793,25 @@ class _Battle:
         self.blades = [b for k, b in enumerate(self.blades) if k not in used_blades]
         self.boosts_run = 0
 
-    def my_round(self):
-        self.draw()
-        self.discard()
+    def my_round(self, fresh=True):
+        """the bot's round: the draw and its discards (fresh - False: the hand as dealt, the bot's own discards made: the
+        planner's round now), then the card its chain picks (choose) cast - False nothing cast"""
+        if fresh:
+            self.draw()
+            self.discard()
+        card = self.choose()
+        return self.cast(card) if card is not None else False
+
+    def choose(self):
+        """the card the bot's chain plays now - Autofarmer.ahk's order: a heal under healat %, the kill check, then the
+        planned hit and its boosts (boost first or hit first), a payable hit with nothing better coming - None a pass.
+        Draws no random number (the planner asks it what the bot would play)"""
         o = self.opts
         # (a heal under healat %)
         if o.useheal and self.hp < self.me.maxhp * o.healat / 100.0:
             heals = [c for c in self.hand if c.kind == "heal" and self.pay(c)[0]]
             if heals:
-                return self.cast(max(heals, key=lambda c: c.value))
+                return max(heals, key=lambda c: c.value)
         hits = [c for c in self.hand if c.hit and o.usehit]
         payable = [c for c in hits if self.pay(c)[0]]
         # (the kill check: the cheapest hit that kills its target(s) at its least, killmargin to spare)
@@ -683,7 +820,7 @@ class _Battle:
                  all(self.least(c, i) >= self.fhp[i] * margin for i in self.targets(c))
                  and (c.kind == "aoe" or len(self.alive()) == 1)]
         if kills:
-            return self.cast(min(kills, key=lambda c: (c.pips if not c.x else MAX_PIPS, -self.value(c))))
+            return min(kills, key=lambda c: (c.pips if not c.x else MAX_PIPS, -self.value(c)))
         # (the planned hit: the one dealing the most to the enemies left)
         plan = max(hits, key=self.value) if hits else None
         boost = self.pick_boost(plan)
@@ -691,20 +828,20 @@ class _Battle:
         plan_paid = plan is not None and self.pay(plan)[0]
         if o.boost_first:
             if can_boost:
-                return self.cast(boost)
+                return boost
             if plan_paid:
-                return self.cast(plan)
+                return plan
         else:
             if plan_paid:
-                return self.cast(plan)
+                return plan
             if can_boost:
-                return self.cast(boost)
+                return boost
         # (nothing: with no hit in hand, any hit to be had - the best payable)
         if payable and not plan_paid and not can_boost:
             best = max(payable, key=self.value)
             if not self.hand_has_better(best):
-                return self.cast(best)
-        return False
+                return best
+        return None
 
     def hand_has_better(self, best):
         """a hit in hand worth waiting for: the plan not paid yet but within reach of pips (a pass builds them)"""
@@ -801,6 +938,82 @@ class _Battle:
                 return "timeout"
         return "timeout"
 
+    # ---------------------------------------------------------------- a battle in the middle (the planner's)
+    @classmethod
+    def from_state(cls, st, me, foes, opts, rng):
+        """a battle started from State st (the round now) instead of round 1 with a shuffled deck: its hand as dealt, its
+        draw pile shuffled (the cards drawn before it - st.used - taken off), pips, health (mine and each enemy's),
+        blades, traps, aura, boosts since my last hit; the enemies' pips st.fpips (not known: 1-3 as a battle's start);
+        who goes first st.me_first (not known: a coin - for a whole rollout, as the game's initiative). The random
+        numbers it draws come first and are the same for every play the planner tries (one rng a rollout)"""
+        b = cls([], me, foes, opts, rng)        # (no cards: nothing shuffled; the enemies' starting pips drawn)
+        b.pile = list(st.pile)
+        rng.shuffle(b.pile)
+        if st.used:
+            del b.pile[:min(len(b.pile), st.used)]
+        b.hand = list(st.hand)
+        b.hp = int(st.hp) if st.hp else me.hp
+        fhp = list(st.fhp or [])
+        b.fhp = [max(0, int(fhp[i])) if i < len(fhp) and fhp[i] is not None else f.maxhp for i, f in enumerate(foes)]
+        b.pips = max(0, min(MAX_PIPS, int(st.pips or 0)))
+        b.power = max(0, min(b.pips, int(st.power or 0)))
+        if st.fpips:
+            b.fpips = [max(0, min(MAX_PIPS, int(st.fpips[i]))) if i < len(st.fpips) and st.fpips[i] is not None
+                       else b.fpips[i] for i in range(len(foes))]
+        b.blades = []
+        for n, bb in st.blades or []:
+            if all(n != m for m, _b in b.blades):
+                b.blades.append((n, dict(bb)))
+        b.traps = [[dict(t) for t in (st.traps[i] if st.traps and i < len(st.traps) else [])] for i in range(len(foes))]
+        b.aura = (dict(st.aura[0]), int(st.aura[1])) if st.aura and st.aura[1] and int(st.aura[1]) > 0 else None
+        b.boosts_run = int(st.boosts_run or 0)
+        b.round0 = max(1, int(st.round or 1))
+        b.me_first = bool(st.me_first) if st.me_first is not None else rng.random() < 0.5
+        return b
+
+    def force(self, card, aim=None):
+        """this round's play forced: card (one of the hand) cast at enemy aim (a single-target hit's or trap's - None:
+        the bot's own pick, the most health); None a pass. As cast: False nothing went out"""
+        if card is None:
+            return False
+        self.aim = aim
+        try:
+            return self.cast(card)
+        finally:
+            self.aim = None
+
+    def run_from(self, play=False, aim=None, horizon=MAX_ROUNDS):
+        """the battle on from from_state's round: the round now as dealt (no pip, no draw: the hand and pips are this
+        round's) - play: the card cast in it (one of self.hand; None a pass; False the bot's chain: choose), aim its enemy
+        - then the bot's chain each round (my_round). 'won' / 'lost' / 'timeout' (the cards ran out) / 'cut' (horizon
+        rounds and nothing decided); rounds_run the rounds it took (1: decided this round)"""
+        self.round = self.round0
+        for k in range(max(1, int(horizon))):
+            if k:
+                self.round += 1
+                self.pips = min(MAX_PIPS, self.pips + 1)
+                if self.rng.random() < self.me.power_pip:
+                    self.power = min(self.pips, self.power + 1)
+            self.rounds_run = k + 1
+            if k:
+                mine = self.my_round
+            elif play is False:
+                mine = lambda: self.my_round(fresh=False)    # noqa: E731
+            else:
+                mine = lambda: self.force(play, aim)          # noqa: E731
+            order = (mine, self.foe_round) if self.me_first else (self.foe_round, mine)
+            for step in order:
+                step()
+                if self.hp <= 0:
+                    return "lost"
+                if not self.alive():
+                    return "won"
+            if self.aura:
+                self.aura = (self.aura[0], self.aura[1] - 1) if self.aura[1] > 1 else None
+            if not self.hand and not self.pile:
+                return "timeout"
+        return "cut"
+
 
 def simulate(cards, me, foes, opts=None, n=400, seed=None):
     """n battles of the deck's cards (deck_cards) against foes - see the docstring's RESULTS. Never raises"""
@@ -838,6 +1051,244 @@ def simulate(cards, me, foes, opts=None, n=400, seed=None):
                    casts={k: round(v / n, 2) for k, v in sorted(casts.items(), key=lambda kv: -kv[1])})
     except Exception as e:  # noqa: BLE001 - the result as far as it got
         out["why"].append("the simulation failed (%r)" % (e,))
+    return out
+
+
+# ============================================================================ the planner (the round's plays, tried)
+PLAN_N = 100                # rollouts a play at most
+PLAN_HORIZON = 10           # rounds a rollout looks ahead (one still going then is valued by the enemies' health left)
+PLAN_HORIZON_BOSS = 20      # ... against a boss (a longer fight)
+PLAN_BUDGET_MS = 300        # the time the rollouts may take (the bot's round waits on them)
+PLAN_PRUNE = (24, 48)       # after this many rollouts each, the worse half of the plays (5 or more) stop
+PRIOR_W = 0.05              # a learned play's nudge at most (a sure win scores about 1): it only tips near-equal plays
+
+
+def situation(state, me, foes):
+    """the round now as learned plays key it (battlelearn.key_of): {school, pips (mine, power counted 1), alive
+    (enemies left), boss (one of them a boss), hit (a hit in hand I can pay for), hp (my health %)} - the fields a
+    battle record gives for its rounds (battlelearn.round_situation)"""
+    b = _Battle.from_state(state, me, foes, Opts(), random.Random(0))
+    alive = b.alive()
+    return {"school": me.school, "pips": b.pips, "alive": len(alive), "boss": any(foes[i].boss for i in alive),
+            "hit": any(c.hit and b.pay(c)[0] for c in b.hand), "hp": int(round(100.0 * max(0, b.hp) / me.maxhp))}
+
+
+def _plannable(c, o, b):
+    """'' card c is a play to try now, else why not: a kind the simulator doesn't play, switched off, a blade of its
+    name already on, an aura up"""
+    if c.kind not in PLAYED or (c.kind in ("damage", "aoe") and not c.hit):
+        return "not simulated"
+    if (c.hit and not o.usehit) or (c.kind == "heal" and not o.useheal) or (c.kind == "blade" and not o.useblades) \
+            or (c.kind == "trap" and not o.usetraps) or (c.kind == "aura" and not o.useaura):
+        return "switched off"
+    if c.kind == "blade" and any(n == c.name for n, _b in b.blades):
+        return "on already"
+    if c.kind == "aura" and b.aura:
+        return "on already"
+    # (a heal with my health high: wasted - and in the simulator it would only free a hand slot for the next draw)
+    if c.kind == "heal" and b.me.maxhp - b.hp < c.value / 2.0:
+        return "health high"
+    return ""
+
+
+def _rollout(r, b, total0, horizon):
+    """(result, rounds, my health %, value) of one rollout - plan_round's docstring has the value"""
+    dealt = max(0.0, min(1.0, 1 - sum(max(0, h) for h in b.fhp) / total0))
+    hp = max(0.0, min(1.0, b.hp / float(b.me.maxhp)))
+    if r == "won":
+        v = 1 + 0.2 * (1 - (b.rounds_run - 1) / float(horizon)) + 0.05 * hp
+    elif r == "lost":
+        v = 0.05 * dealt
+    else:
+        v = 0.7 * dealt * (0.5 + 0.5 * hp)
+    return r, b.rounds_run, 100.0 * hp, v
+
+
+def plan_round(state, me, foes, opts=None, n=PLAN_N, horizon=None, budget_ms=PLAN_BUDGET_MS, seed=None,
+               prior=None):
+    """the plays for the round now (State), best first. Tried: every card in hand that can go now - a kind the simulator
+    plays (PLAYED), paid for, not switched off in opts, not a blade already on, an aura while one's up or a heal that
+    half goes to waste (my health high); copies once - a single-target hit or a trap at each enemy left, anything else
+    once; and a pass. Each in up to n rollouts (from_state, then run_from: this round with that play, then the bot's
+    chain - choose - till the battle's decided or horizon rounds - None: PLAN_HORIZON, PLAN_HORIZON_BOSS with a boss
+    among foes), every play on the same random numbers (rollout k's rng is the same for each: the gaps are the plays',
+    not luck's), round robin till budget_ms is spent (always one round of them; the worse half dropped at PLAN_PRUNE -
+    the bot's own pick and the pass kept). A rollout's value: won 1 + up to 0.2 the sooner + up to 0.05 my health left; lost
+    0.05 x the share of the enemies' health it took; cut at the horizon or out of cards 0.7 x that share x (0.5 + half
+    my health left). prior: a callable (battlelearn.Plays.prior_fn) situation(...) -> ({kind: -1..1}, why) - x PRIOR_W
+    added to each play of that kind.
+    -> {plays: [{i (in state.hand; None the pass), name, tid, kind ('pass'), aim (the enemy's index in foes; None not
+    aimed), n (rollouts), won, lost, kill (won this very round) - shares -, rounds (median rounds of the won: 1 this
+    one), hp_left (my health % in the won), value, bonus, score, chain (the bot's own pick, as the simulator plays your
+    settings), why}], chain (that play, None not known), n (the best's rollouts), ms, why [notes], learned (the prior's
+    why)}. Never raises: what it got to, its failure in why"""
+    t0 = time.perf_counter()
+    out = {"plays": [], "chain": None, "n": 0, "ms": 0, "why": [], "learned": ""}
+    try:
+        foes = list(foes or [])
+        opts = opts or Opts(boss=any(f.boss for f in foes))
+        if not foes:
+            out["why"].append("no enemies")
+            return out
+        if horizon is None:
+            horizon = PLAN_HORIZON_BOSS if any(f.boss for f in foes) else PLAN_HORIZON
+        horizon = max(1, min(int(horizon), MAX_ROUNDS))
+        probe = _Battle.from_state(state, me, foes, opts, random.Random(0))
+        alive = probe.alive()
+        if not alive:
+            out["why"].append("no enemy left")
+            return out
+        cands, seen, rep, left = [(None, None)], {}, {}, collections.Counter()
+        for i, c in enumerate(probe.hand):
+            no = _plannable(c, opts, probe) or ("" if probe.pay(c)[0] else "not paid for")
+            if no:
+                left[no] += 1
+                continue
+            key = (c.name, c.kind, c.school, c.pips, c.x, c.value, tuple(sorted(c.heads.items())),
+                   tuple(sorted(c.boosts.items())))
+            if key in seen:
+                rep[i] = seen[key]
+                continue
+            seen[key] = rep[i] = i
+            if (c.hit and c.kind != "aoe") or c.kind == "trap":
+                cands.extend((i, a) for a in alive)
+            else:
+                cands.append((i, None))
+        for why, k in sorted(left.items()):
+            out["why"].append("%d card%s in hand not tried (%s)" % (k, "" if k == 1 else "s", why))
+        # (the bot's own pick - the simulator's chain on your settings: its play among them)
+        ch = _Battle.from_state(state, me, foes, opts, random.Random(1))
+        pick = ch.choose()
+        chain = (None, None)
+        if pick is not None:
+            pi = next((j for j, c in enumerate(ch.hand) if c is pick), None)
+            if pi is not None:
+                aim = None
+                if (pick.hit and pick.kind != "aoe") or pick.kind == "trap":
+                    t = ch.targets(pick if pick.hit else Card("", "damage", heads={"balance": 1}))
+                    aim = t[0] if t else None
+                chain = (rep.get(pi, pi), aim)
+                if chain not in cands:
+                    cands.append(chain)
+        if state.me_first is None:
+            out["why"].append("who goes first isn't known - each way in half the rollouts")
+        if not state.pile:
+            out["why"].append("no draw pile known - the rollouts play the hand only")
+        total0 = float(sum(probe.fhp[i] for i in alive)) or 1.0
+        base = seed if seed is not None else random.randrange(1 << 30)
+        acc = {c: [] for c in cands}
+        active = list(cands)
+        deadline = t0 + max(1.0, float(budget_ms)) / 1000.0
+        n = max(1, min(int(n), 2000))
+        k = 0
+        while k < n and active:
+            rs = (int(base) * 1000003 + k) & 0xFFFFFFFFFFFF
+            for cand in active:
+                b = _Battle.from_state(state, me, foes, opts, random.Random(rs))
+                i, aim = cand
+                r = b.run_from(None if i is None else b.hand[i], aim, horizon)
+                acc[cand].append(_rollout(r, b, total0, horizon))
+            k += 1
+            if time.perf_counter() >= deadline:
+                if k < n:
+                    out["why"].append("%d rollouts a play in the time given (%d ms)" % (k, budget_ms))
+                break
+            if k in PLAN_PRUNE and len(active) >= 5:
+                ranked = sorted(active, key=lambda c: -statistics.mean(x[3] for x in acc[c]))
+                keep = set(ranked[:max(4, (len(ranked) + 1) // 2)]) | {chain, (None, None)}
+                active = [c for c in active if c in keep]
+        bonus = {}
+        if prior is not None:
+            try:
+                got = prior(situation(state, me, foes)) or ({}, "")
+                bonus, out["learned"] = dict(got[0] or {}), str(got[1] or "")
+            except Exception as e:  # noqa: BLE001 - planned without it
+                out["why"].append("the learned plays couldn't be asked (%r)" % (e,))
+        for cand in cands:
+            rs = acc[cand]
+            if not rs:
+                continue
+            i, aim = cand
+            c = probe.hand[i] if i is not None else None
+            kind = c.kind if c is not None else "pass"
+            won = [x for x in rs if x[0] == "won"]
+            try:
+                bn = PRIOR_W * max(-1.0, min(1.0, float(bonus.get(kind) or 0)))
+            except (TypeError, ValueError):
+                bn = 0.0
+            value = statistics.mean(x[3] for x in rs)
+            p = {"i": i, "name": c.name if c is not None else "pass", "tid": c.tid if c is not None else None,
+                 "kind": kind, "aim": aim, "n": len(rs), "won": len(won) / float(len(rs)),
+                 "lost": sum(1 for x in rs if x[0] == "lost") / float(len(rs)),
+                 "kill": sum(1 for x in won if x[1] == 1) / float(len(rs)),
+                 "rounds": statistics.median(x[1] for x in won) if won else None,
+                 "hp_left": statistics.mean(x[2] for x in won) if won else None, "value": value, "bonus": bn,
+                 "score": value + bn, "chain": cand == chain}
+            p["why"] = _plan_why(p)
+            out["plays"].append(p)
+        out["plays"].sort(key=lambda p: (-round(p["score"], 9), not p["chain"], p["kind"] == "pass"))
+        out["chain"] = next((p for p in out["plays"] if p["chain"]), None)
+        out["n"] = out["plays"][0]["n"] if out["plays"] else 0
+        if out["plays"] and not any(p["won"] for p in out["plays"]):
+            out["why"].append("no play wins within %d rounds - each valued by the enemies' health it takes" % horizon)
+    except Exception as e:  # noqa: BLE001 - the plan as far as it got
+        out["why"].append("the plan failed (%r)" % (e,))
+    out["ms"] = int(round((time.perf_counter() - t0) * 1000))
+    return out
+
+
+def _plan_why(p):
+    """a play's reasons in a few words"""
+    parts = []
+    if p["kill"] >= 0.05:
+        parts.append("ends it this round in %d%%" % round(100 * p["kill"]))
+    if p["lost"] >= 0.05:
+        parts.append("lost in %d%%" % round(100 * p["lost"]))
+    if p["chain"]:
+        parts.append("your settings' way")
+    if p["bonus"]:
+        parts.append("learned %+.3f" % p["bonus"])
+    return ", ".join(parts) or ("%d rollouts" % p["n"])
+
+
+def plan_lines(plan, foes, ids=None, top=3):
+    """/plan's answer of a plan_round result: plan|i|slot|tid|kind|target|won %|rounds|score|why|name|target's name|n|
+    hp left %|kill % for the best play, alt|... (the same fields) for the next top - 1, chain|... for the bot's own pick
+    when it isn't the best, learned|why, note|text (plan's why); one none|why when nothing was planned. i: the card's
+    place in the game's hand (ids[i] = (place, slot, tid) maps plan_round's i - state.hand's - to the game's; -1 the
+    pass); target: the enemy's index in foes ('' the pass, a heal, blade or aura - on me -; 'all' an AoE)"""
+    def cell(v):
+        return "" if v is None else str(v).replace("|", "/").replace("\n", " ")
+
+    def line(tag, p):
+        i = p["i"]
+        if i is None:
+            gi, slot, tid = -1, "", ""
+        elif ids and i < len(ids):
+            gi, slot, tid = ids[i]
+        else:
+            gi, slot, tid = i, "", p.get("tid")
+        if p["kind"] == "aoe":
+            tgt, tname = "all", "all"
+        elif p["aim"] is not None and 0 <= p["aim"] < len(foes):
+            tgt, tname = str(p["aim"]), foes[p["aim"]].name
+        else:
+            tgt, tname = "", ("me" if p["kind"] in ("heal", "blade", "aura") else "")
+        return "|".join([tag, str(gi), cell(slot), cell(tid), cell(p["kind"]), tgt, str(int(round(100 * p["won"]))),
+                         "" if p["rounds"] is None else _n(p["rounds"]), "%.3f" % p["score"], cell(p["why"]),
+                         cell(p["name"]), cell(tname), str(p["n"]),
+                         "" if p["hp_left"] is None else str(int(round(p["hp_left"]))), str(int(round(100 * p["kill"])))])
+    plays = (plan or {}).get("plays") or []
+    if not plays:
+        return ["none|" + cell("; ".join((plan or {}).get("why") or []) or "nothing to plan")]
+    out = [line("plan", plays[0])] + [line("alt", p) for p in plays[1:max(1, int(top))]]
+    ch = (plan or {}).get("chain")
+    if ch is not None and ch is not plays[0]:
+        out.append(line("chain", ch))
+    if plan.get("learned"):
+        out.append("learned|" + cell(plan["learned"]))
+    for w in plan.get("why") or []:
+        out.append("note|" + cell(w))
     return out
 
 

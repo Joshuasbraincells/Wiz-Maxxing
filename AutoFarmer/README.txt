@@ -493,6 +493,34 @@ traps and heals, damage over time after its first part, stuns, the party's
 other wizards - so against a boss that shields or heals it's optimistic.
 Try it on the command line:
     python vision\battlesim.py --deck deck.json --foe "Governor Nereus:9000:ice"
+The round planner (planner - Settings, HOW IT PLAYS ITS CARDS; off unless you
+switch it on, new and not tried in the game yet): in each round the bot plays
+itself - after the kill check, defending and the heals - every card in your
+hand that can go now (a hit or trap at each enemy, and a pass) is tried in
+the simulator from that very round on: your hand, pips and health and the
+enemies' health from the game's memory (read only), the blades, traps and
+aura the bot counts (another copy of a deck blade it has on isn't tried -
+the bot never casts one), the rest of your deck shuffled (the worn deck as
+last read out of battle - else more of the hand's cards), the rest of the
+battle played your settings' way; each play up to 100 times, in 0.3 s. It
+is advice only: debug.log says "Plan: would play Tempest on all (won 92% in
+3 rounds, 100 tries; ...) - your settings' way: Stormblade on you (won 85%)
+[tid ...] - advice only" and the bot then plays its own way - it never
+changes a card.
+The battle recorder keeps the advice with what was played; see how often they
+agreed, and how those battles went:
+    python vision\battlelearn.py --advice
+Learned plays: what was played in each kind of round of the battles recorded
+(your pips, enemies left, a boss, a hit you can pay for, your health) and how
+those battles went - per school, all schools' together while yours has few
+(yours weighs half after 20 such rounds) - only tip near-equal plays. The
+helper remakes them every 10 minutes while the planner is on (learned\
+battles\plays.json); look:
+    python vision\battlelearn.py [--school storm]
+Not asked in dual mode, as a party's blader or healer, after you played a
+round of the battle, while learning every card, or with navmem off. Playing
+the advised card itself (planner 2) isn't built: it needs every card cast by
+the game's memory and each enemy's plate matched first.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines

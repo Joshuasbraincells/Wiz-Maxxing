@@ -411,6 +411,24 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              game's memory when given; resists, block and hits from the battles
                                              recorded; spells from the wiki) - n battles: battlesim.sim_lines (sim|...,
                                              verdict|word|text, foe|..., cast|..., note|...), or none|<why>
+  /plan?school=&deck=<gid hex>&round=&blades=key~schools~%|...&traps=key~schools~%|...&trapmax=&aura=schools~%~rounds
+       &boostrun=&first=1|0&vals=k:v,...&damage=&pierce=&crit=&block=&acc=&resist=&pp=&boss=1&budget=300&n=100
+       [&foes=name~max~school~boss~health|...]
+                                          -> the round planner (vision\battlesim.py plan_round, Planner.ahk - advice
+                                             only): every card in hand that can go now (and a pass) tried in the
+                                             simulator from this very round - the hand, pips and health from the game's
+                                             memory (/cards' read), the enemies' health (/battle's; else foes=), the
+                                             blades (the bot's keys named as the hand's or deck's card: another copy of
+                                             one on isn't tried), traps (on the enemy whose most health is trapmax, else
+                                             the one with the most) and aura the bot counts, the worn deck less the hand
+                                             as the draw pile (the decks' last reading - never read in a battle), the
+                                             rest of the battle played the bot's way (vals), learned plays a nudge
+                                             (vision\battlelearn.py) - within budget ms, the reads included:
+                                             battlesim.plan_lines (plan|i|slot|tid|kind|target|won %|rounds|score|why|
+                                             name|target's name|n|hp left %|kill %, alt|... the next ones, chain|... the
+                                             bot's own way, learned|, note|) + foe|index|name|health|max|boss|plate x
+                                             (target: that index; i the card's place in the hand, -1 a pass) +
+                                             planned|rollouts|ms|ms in all, or none|<why> (never an ERR)
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -2397,7 +2415,7 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy), and so does the battle recorder (GATE)
 GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck', '/decks',
-         '/sim', '/guitree', '/duels'}
+         '/sim', '/guitree', '/duels', '/plan'}
 
 
 class Gate:
@@ -2561,6 +2579,236 @@ def sim_lines_for(q):
             'deck|%x|%s' % (deck['gid'], str(deck.get('display') or deck.get('object_name') or '').replace('|', '/'))]
     except Exception as e:  # noqa: BLE001 - never into the server
         return ['none|the simulation failed (%r)' % (e,)]
+
+
+# ---------------------------------------------------------------- the round planner (battlesim.plan_round, battlelearn)
+PLAN = {'plays': None, 'at': 0.0, 'thread': None}
+PLAN_LOCK = threading.Lock()
+
+
+def _plan_load():
+    """(the planner's thread) the battles recorded read once - pausing while a gated request is in flight (the bot's and
+    the walker's reads go first) - into the simulator's FoeBook (SIM: as sim_book keeps it) and the learned plays
+    (battlelearn; saved to learned\\battles\\plays.json); cards.jsonl's facts with them. One pass feeds both: an odd
+    record the FoeBook can't take is skipped there (counted in its why), the pass and the learned plays go on"""
+    import battlelearn
+    import battlesim
+    base = os.path.join(ROOT, 'learned', 'battles')
+    plays = battlelearn.Plays()
+    try:
+        def feed():
+            for b in battlelearn.read(base, days=120):
+                waited = 0
+                while GATE.busy() and waited < 200:
+                    time.sleep(0.05)
+                    waited += 1
+                plays.add(b)
+                yield b
+        book = battlesim.FoeBook(battles=feed())
+        facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+        with SIM_LOCK:
+            SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+        plays.made = time.strftime('%Y-%m-%d %H:%M:%S')
+        plays.save(os.path.join(base, battlelearn.PLAYS_FILE))
+        log('/plan: %d battles recorded read (%d rounds learned)%s' % (plays.battles, plays.rounds,
+                                                                      ('; ' + book.why) if book.why else ''))
+    except Exception as e:  # noqa: BLE001 - planned with what there is
+        log('/plan: the battles recorded could not be read (%r)' % (e,))
+    PLAN['plays'], PLAN['at'] = plays, time.monotonic()
+
+
+def plan_book():
+    """{book, facts, plays, why} for /plan without waiting: the simulator's FoeBook and card facts (as sim_book keeps
+    them) and the learned plays as last read - none read yet or SIM_BOOK_S old: read again in a thread (_plan_load), this
+    round planned with what there is (nothing learned yet: why says so)"""
+    import battlesim
+    now = time.monotonic()
+    with PLAN_LOCK:
+        stale = (SIM['book'] is None or now - SIM['at'] > SIM_BOOK_S or PLAN['plays'] is None
+                 or now - PLAN['at'] > SIM_BOOK_S)
+        if stale and (PLAN['thread'] is None or not PLAN['thread'].is_alive()):
+            PLAN['thread'] = threading.Thread(target=_plan_load, name='planbook', daemon=True)
+            PLAN['thread'].start()
+    book, facts = SIM['book'], SIM['facts']
+    if book is None:
+        return {'book': battlesim.FoeBook(battles=[]), 'facts': {}, 'plays': PLAN['plays'],
+                'why': 'the battles recorded are still being read - nothing learned from them this round'}
+    return {'book': book, 'facts': facts or {}, 'plays': PLAN['plays'], 'why': ''}
+
+
+def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
+    """/plan's answer (see the docstring) - never raises (a 'none|why' line), and within budget (ms, default 300) as far
+    as it can: the game's memory read first (the hand and pips: cards_reader; the enemies: battle_reader - navmem's
+    reads, a test's stand-ins), the rollouts in the time left. ctx: {book, facts, plays, wiki, casts, decks} (a test's -
+    else plan_book, enemy_state and the decks' last reading: decks_reading, never a fresh read in a battle)"""
+    import battlesim as B
+    t0 = time.monotonic()
+
+    def fl(k, d=0.0):
+        try:
+            v = float(q.get(k) or d)
+            return v if math.isfinite(v) else d
+        except (TypeError, ValueError):
+            return d
+    try:
+        budget = int(min(5000, max(50, fl('budget', 300))))
+        cards_reader = cards_reader or (lambda: nav_reader().cards())
+        battle_reader = battle_reader or (lambda: nav_reader().battle(wait=0.3))
+        r, why = cards_reader()
+        # (the game dealing or laying the cards out - the bot's discards just made: asked again for 40 % of the budget)
+        while r is not None and r.get('state') == 'changing' and (time.monotonic() - t0) * 1000 < 0.4 * budget:
+            time.sleep(0.04)
+            r, why = cards_reader()
+        if r is None:
+            return ['none|' + mob_cell(why or "the game can't be read")]
+        if not (r.get('in_battle') and r.get('planning') and r.get('settled')):
+            return ['none|' + mob_cell(r.get('why') or 'not a settled hand in a planning phase')]
+        _rec_hook('saw_hand', r)
+        # (each card with its place in the game's hand - 0 the leftmost, counted over every card read: plan|'s i)
+        raw = [(gi, c) for gi, c in enumerate(r.get('cards') or []) if isinstance(c, dict) and c.get('name')]
+        if not raw:
+            return ['none|no card in hand']
+        mer = r.get('me') or {}
+        ctx = dict(ctx) if ctx is not None else None
+        if ctx is None:
+            ctx = plan_book()
+            ctx['wiki'], ctx['casts'] = enemy_state()
+            try:
+                ctx['decks'] = decks_reading(False)[0]
+            except Exception:  # noqa: BLE001 - no deck then
+                ctx['decks'] = None
+        book, facts, notes = ctx.get('book') or B.FoeBook(battles=[]), ctx.get('facts') or {}, []
+        if ctx.get('why'):
+            notes.append(ctx['why'])
+        wiki, casts = ctx.get('wiki'), ctx.get('casts')
+        # (the enemies: the game's memory - /battle's reading - else foes= name~health~school~boss~health now)
+        parts, pwhy = battle_reader()
+        foes, fhp, plates, team = [], [], [], 1
+        if parts:
+            _rec_hook('saw_battle', parts)
+            mine = next((p for p in parts if p.get('me')), None)
+            myteam = mine.get('team') if mine else None
+            team = max(1, len([p for p in parts if p.get('team') == myteam and p.get('player')])) if mine else 1
+            for k, p in enumerate(p for p in parts if not p.get('me') and (mine is None or p.get('team') != myteam)):
+                mob = p.get('mob') or {}
+                name = p.get('name') or mob.get('title') or 'Enemy %d' % (k + 1)
+                foes.append(book.foe(name, wiki, casts, hp=p.get('max_health') or None,
+                                     school=(mob.get('school') or p.get('school') or '').lower() or None,
+                                     boss=bool(p.get('boss'))))
+                fhp.append(p.get('health'))
+                plates.append(p)
+        else:
+            for spec in (q.get('foes') or '').split('|'):
+                bits = (spec.split('~') + [''] * 5)[:5]
+                if not bits[0].strip():
+                    continue
+                num = [int(float(x)) if re.fullmatch(r'\d+(\.\d+)?', x.strip()) else None for x in (bits[1], bits[4])]
+                foes.append(book.foe(bits[0].strip(), wiki, casts, hp=num[0], school=bits[2].strip() or None,
+                                     boss=True if bits[3].strip() == '1' else None))
+                fhp.append(num[1])
+                plates.append(None)
+            if foes:
+                notes.append("the enemies as the bot named them (the game's memory: %s)" % (pwhy or 'no battle read'))
+        if not foes:
+            return ['none|' + mob_cell('no enemies (%s)' % (pwhy or 'no battle read'))]
+        # (my side: the hand - each card's kind from the memory, else cards.jsonl's facts -, pips, health, the stats)
+        hand, ids = [], []
+        for gi, c in raw:
+            card = B.card_of(dict(c, side='treasure' if c.get('treasure') else 'main', item=bool(c.get('item_card'))),
+                             facts)
+            if card is not None:
+                hand.append(card)
+                ids.append((gi, c.get('slot') or '', c.get('template_id') if c.get('template_id') is not None else ''))
+        if len(hand) < len(raw):
+            notes.append('%d card%s in hand with no kind known left out' % (len(raw) - len(hand),
+                                                                            '' if len(raw) - len(hand) == 1 else 's'))
+        school = (q.get('school') or mer.get('school') or '').lower()
+        me = B.Me(school, mer.get('max_health') or fl('hp', 3000), hp=mer.get('health'), damage=fl('damage'),
+                  pierce=fl('pierce'), crit=fl('crit'), block=fl('block'), level=fl('level', 100), accuracy=fl('acc'),
+                  resist=fl('resist'), power_pip=fl('pp', 0.4), team=fl('team', team))
+        pp = mer.get('pips') or {}
+
+        def pip(k):
+            v = pp.get(k)
+            return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
+        pips = pip('generic') + pip('power') + sum(pip(s) for s in B.SCHOOLS)
+        power = pip('power') + (pip(me.school) if me.school else 0)
+        # (the bot's own bookkeeping: blades on me, traps on one enemy, the aura - key~schools~% |...)
+        def boosts(text):
+            out = []
+            for spec in (text or '').split('|'):
+                bits = (spec.split('~') + ['', '', ''])[:3]
+                try:
+                    pct = float(bits[2])
+                except ValueError:
+                    continue
+                sch = [s.strip().lower() for s in bits[1].split(',') if s.strip().lower() in B.SCHOOLS + ('all',)]
+                if bits[0].strip() and sch and pct > 0:
+                    out.append((bits[0].strip(), {s: pct for s in sch}))
+            return out
+        blades = boosts(q.get('blades'))
+        traps = [[]] * len(foes)
+        tl = [b for _n, b in boosts(q.get('traps'))]
+        if tl:
+            # (the enemy they're on: the one whose most health the bot noted - one only -, else the most health now)
+            want = fl('trapmax', 0)
+            at = [k for k, f in enumerate(foes) if want and f.maxhp == int(want)]
+            k = at[0] if len(at) == 1 else max(range(len(foes)), key=lambda j: fhp[j] if fhp[j] is not None
+                                               else foes[j].maxhp)
+            traps = [tl if j == k else [] for j in range(len(foes))]
+        # (aura=schools~%~rounds left, this one counted)
+        aura = None
+        ab = (q.get('aura') or '').split('~')
+        if len(ab) >= 3 and re.fullmatch(r'\d+', ab[2].strip()) and int(ab[2]) > 0:
+            ar = boosts('aura~%s~%s' % (ab[0], ab[1]))
+            if ar:
+                aura = (ar[0][1], int(ab[2]))
+        first = q.get('first')
+        # (the draw pile: the worn deck - deck= its gid hex - less the hand; not read: more of the hand's cards)
+        reading = ctx.get('decks') or {}
+        want = (q.get('deck') or '').strip().lower()
+        decks = reading.get('decks') or []
+        deck = next((d for d in decks if want and isinstance(d.get('gid'), int) and '%x' % d['gid'] == want), None) \
+            or next((d for d in decks if d.get('equipped')), None)
+        pile = B.deck_cards(deck, facts) if deck else []
+        if not pile:
+            pile = [c for c in hand for _ in range(3)]
+            notes.append("the deck isn't read (the Cards tab's From game, out of battle): the draw pile taken as more "
+                         "of the hand's cards")
+        # (the bot's keys for the blades on - storm/blade, blade3 - named as the hand's or deck's card: a copy in hand
+        # of one on is then 'on already', never cast again or stacked in the rollouts - the bot's used flags hold it)
+        blades = B.bot_blades(blades, hand + pile)
+        state = B.State.of_deck(hand, pile, pips=pips, power=power, hp=mer.get('health'), fhp=fhp, blades=blades,
+                                traps=traps, aura=aura, rnd=int(fl('round', 1)), boosts_run=int(fl('boostrun', 0)),
+                                me_first=None if first not in ('0', '1') else first == '1')
+        vals = {}
+        for kv in (q.get('vals') or '').split(','):
+            k, _, v = kv.partition(':')
+            if k.strip():
+                vals[k.strip().lower()] = v.strip()
+        opts = B.Opts.of(vals, boss=q.get('boss') == '1' or any(f.boss for f in foes))
+        if all(vals.get('usehit%d' % i) == '0' for i in range(1, 5)):
+            opts.usehit = False
+        plays = ctx.get('plays')
+        prior = plays.prior_fn(me.school) if plays is not None and getattr(plays, 'rounds', 0) else None
+        left = budget - int((time.monotonic() - t0) * 1000) - 15
+        if left < 20:
+            return ['none|' + mob_cell('no time left to plan (the game read %d ms of the %d ms)' % (
+                budget - left - 15, budget))]
+        plan = B.plan_round(state, me, foes, opts, n=int(fl('n', B.PLAN_N)),
+                            horizon=int(fl('horizon')) if fl('horizon') > 0 else None, budget_ms=left,
+                            seed=int(fl('seed')) if q.get('seed') else None, prior=prior)
+        plan['why'] = notes + plan['why']
+        out = B.plan_lines(plan, foes, ids)
+        if out and out[0].startswith('none|'):
+            return out
+        for k, f in enumerate(foes):
+            out.append('|'.join(['foe', str(k), mob_cell(f.name), mob_cell(fhp[k]), str(f.maxhp), '1' if f.boss else '0',
+                                 plate_x(plates[k]) if plates[k] else '']))
+        out.append('planned|%d|%d|%d' % (plan.get('n') or 0, plan.get('ms') or 0, int((time.monotonic() - t0) * 1000)))
+        return out
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the plan failed (%r)' % (e,)]
 
 
 def places_busy(on):
@@ -3942,6 +4190,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(decks_lines(q.get('fresh') == '1', q.get('ob') == '1')))
             if u.path == '/sim':
                 return self.reply('\n'.join(sim_lines_for(q)))
+            if u.path == '/plan':
+                return self.reply('\n'.join(plan_lines_for(q)))
             if u.path == '/uiroot':
                 size, why = nav_reader().ui_root(wait=0.3)
                 return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))
