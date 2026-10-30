@@ -1422,6 +1422,8 @@ read-only, never a picture):
 	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
 	  is left out, and set items are checked after: one gone turns it off.
 	  Lock what you want to keep - the game never quick sells locked items.
+	  The Pet group is left out too while pets.txt keeps a pet in the
+	  backpack (Perfect pets, below).
 	- Every click is a window the game's memory names, shown, its size as in
 	  the game's files, on a short list; no key or mouse of yours since it
 	  began, no battle, no "Crown" read round it. A Crown box other than that
@@ -1439,6 +1441,35 @@ read-only, never a picture):
 	  backpack's alert names those groups and items).
 	  quicksellfree:N sells with N slots or fewer left. debug.log:
 	  "Backpack: ..."; the dashboard: Quick sells.
+
+Perfect pets (TODO.md goal 6 - being built: the pet game, snacks and the
+hatchery come once their windows have been seen in the game):
+	- Write the talents you want in pets.txt, next to PlayerStats.txt (the
+	  AutoFarmer folder), in one line:
+	      want: Spell-Proof, Spell-Defying, Mighty, Pain-Giver, Pain-Bringer
+	  (case, spaces and dashes don't count; ; starts a comment).
+	- Quick sell then never sells a pet with every one of them (you're told
+	  - lock it in the game), nor a pet whose talents the bot can't read -
+	  and it can't read them yet (not confirmed in the game), so for now,
+	  with pets.txt there, quick sell sells no pets while any pet is in the
+	  backpack: the bot can't read locks either, so it leaves the whole Pet
+	  group out (debug.log: "Backpack: left out ... Pet (kept: ...)"). The
+	  same when the pets can't be read. No pets.txt: pets are sold as before
+	  ("...pets too").
+	- Every pet you own, from the game's memory (read-only - nothing in the
+	  game is written, clicked or typed):
+	      python vision\petmem.py --out petread.txt
+	  one line a pet (worn or in the backpack, its level - Baby ... Ultra -,
+	  its name, its level's power cards). Its XP, talents, derby talents and
+	  stats and your pet energy aren't read yet: their names first -
+	      python vision\reflect.py --class BasePetItemBehavior,ClientPetItemBehavior,PetItemBehaviorTemplate,PetLevelInfo,WizGameStats --grep "XP|Exp|Talent|Stat|Energy|Snack" --out petclass.txt
+	  then try a name with the pet's window open in the game (the number it
+	  shows to compare with), e.g.
+	      python vision\petmem.py --pin xp=BasePetItemBehavior.m_XP:u32 --out petread.txt
+	  (field=Class.property:kind - python vision\petmem.py --help lists the
+	  fields and kinds). Send the .txt files. Don't name one pets.txt.
+	- AutoPetTrainer (Win+1 by the Pet Pavilion's sigil) is still the old
+	  blind trainer, on its own: see its README for what it can't do.
 
 Discovery tools (vision\bagmem.py --tree and vision\reflect.py - read-only):
 to teach the bot pets, gear, card quests and puzzles it first has to know the

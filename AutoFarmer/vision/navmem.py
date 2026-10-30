@@ -1129,6 +1129,9 @@ class NavMem:
         # the decks (deckmem.py - the battle recorder's and /deck): its reader of the attached game, the thread making it,
         # why it couldn't be made, the last reading {st, r, sig, read_at, only_equipped}
         self._deckm, self._deckm_thread, self._deckm_fail, self._deck_cache = None, None, (None, 0.0, ""), None
+        # the pets (petmem.py - /pets: Quick Sell's pets to keep): its reader of the attached game, the thread making it,
+        # why it couldn't be made (the game it was for, when to try again)
+        self._petm, self._petm_thread, self._petm_fail = None, None, (None, 0.0, "")
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1148,6 +1151,7 @@ class NavMem:
             self._bagm = None
             self._deckm = None
             self._deck_cache = None
+            self._petm = None
 
     def _attach(self, pid):
         try:
@@ -1926,6 +1930,91 @@ class NavMem:
             return None, str(e)
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the decks failed (%r)" % (e,)
+
+    # ------------------------------------------------------------ the pets (petmem.py - /pets)
+    PET_HOLD, PET_GAP = 0.012, 0.004        # s: the lock held at most during a read, then let go this long
+
+    def _pet_reader(self, st, wait=0.0):
+        """(the pets' reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later) - the backpack's way"""
+        with self.lock:
+            pm = self._petm
+            if pm is not None and pm.st is st:
+                return pm, ""
+            fst, again, fwhy = self._petm_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._petm_thread
+            if th is None or not th.is_alive():
+                self._petm = None
+                th = self._petm_thread = threading.Thread(target=self._pet_make, args=(st,), name="pets", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            pm = self._petm
+            if pm is not None and pm.st is st:
+                return pm, ""
+            fst, again, fwhy = self._petm_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's pet classes (once, about half a second)"
+
+    def _pet_make(self, st):
+        """the pets' reader for game st (its code looked through once - outside the lock, then kept under it); the
+        hand's reader gives it the template map and the names (deckmem's way)"""
+        try:
+            import petmem
+            hm, why = self._hand_reader(st, 2.0)
+            if hm is None:
+                raise RuntimeError("the hand's reader isn't made yet (%s)" % why)
+            pm = petmem.PetMem(st, hm, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the pets can't be read in this build: %s" % e) if sig else "the pet classes couldn't be read (%r)" % (e,)
+            self.log("petmem: " + why)
+            with self.lock:
+                self._petm_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else
+                                                           5.0 if isinstance(e, RuntimeError) else 30.0), why)
+            return
+        with self.lock:
+            self._petm = pm
+
+    def pets(self, wait=0.3):
+        """(r, why): the wizard's pets, read now - petmem.PetMem.read (pets [{gid, where, level, level_name, template_id,
+        object_name, display, cards, and the values not confirmed yet: xp, talents...}], energy, whole) - through the same
+        read-only handle on the game as everything here, under the same lock, PACED: let go for PET_GAP s whenever it
+        has been held PET_HOLD s (the walker's /nav waits on it - a backpack of 150 items is a few hundred reads); its
+        reader made in a thread once per game (waited for up to wait s). None and why when the game can't be read.
+        Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            pm, why = self._pet_reader(st, wait)
+            if pm is None:
+                return None, why
+            lock, held = self.lock, [0.0]
+
+            def pace():
+                if time.perf_counter() - held[0] < self.PET_HOLD:
+                    return
+                lock.release()
+                try:
+                    time.sleep(self.PET_GAP)
+                finally:
+                    lock.acquire()
+                    held[0] = time.perf_counter()
+                if self.st is not st or pm.st is not st:
+                    raise RuntimeError("the game changed while the pets were read")
+
+            with lock:
+                held[0] = time.perf_counter()
+                if self.st is not st or pm.st is not st or pm.hm is not self._hand:
+                    return None, "the game changed"
+                return pm.read(pace=pace), ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the pets failed (%r)" % (e,)
 
     def mob_infos(self, gids):
         """{gid: mob info} of the zone's mobs read before by the objects thread (bossmem's - _boss_seen: title, rank,
