@@ -452,7 +452,8 @@ DgNext()
 			TrayTip("Dungeon runs done: " r.runs, "Wizard101 bot", 1)
 			return
 			}
-		r.i := 1
+		;(the next run: a sigil that won't start may be left and come back to once in it too - DungeonStep's r.sigilLeft)
+		r.i := 1, r.sigilLeft := 0
 		}
 	nxt := r.steps[r.i]
 	if (nxt.zone != cur.zone && cur.kind != "x")
@@ -605,8 +606,11 @@ DungeonStep()
 			{
 			r.loadTries += 1
 			;(its X twice for nothing at a sigil - 2026-10-26 21:44: one never started after a relog: left and come back to before the
-			;last try, once a run - a Mark here, Home, the Recall back: the walker's WalkSigilReset, which says why not - Settings:
-			;sigilhome; no Commons way, a run can't walk back from there. Back: the X step again as below)
+			;last try, once a run (DgNext clears r.sigilLeft at each new one) - a Mark here, Home, the Recall back: the walker's
+			;WalkSigilReset, which says why not - Settings: sigilhome, off unless you switch it on; only with the mana globe read, the
+			;Mark seen taken. No Commons way, a run can't walk back from there. Back: the X step again as below.
+			;TODO (needs the game): an inner X step - a door inside the dungeon: Home leaves the instance; whether a Mark takes in one,
+			;and the Recall comes back into the same instance, isn't known yet - a Mark that doesn't take stops it before Home)
 			if (r.loadTries = 2 && !r.sigilLeft && V1At(V1At(r.steps, r.loadStep), "kind") = "x")
 				{
 				r.sigilLeft := 1

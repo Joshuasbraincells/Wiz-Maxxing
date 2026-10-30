@@ -46,7 +46,8 @@ did, fights every battle (the bot on, F6), Spaces through dialogues and starts
 over. F8 pauses it. Somewhere the run doesn't go (a potion run, a defeat), or
 stuck for good: it stops and says why (the tab, debug.log "Dungeons: ...",
 Discord) - counted badly stuck on the dashboard. An X at a sigil that didn't
-load twice: home and back first (sigilhome - see "A sigil that won't start").
+load twice: home and back first, once a run, if you switch sigilhome on (see
+"A sigil that won't start").
 Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
 vision helper and the game's memory, like walking by the map.
 
@@ -296,30 +297,37 @@ dashboard's STATISTICS: "Badly stuck N (time lost 12 min; all time: M, 3.4 h)"
 "Walk: badly stuck #N (kind): why", "Walk: stuck over - N s lost (kind, T
 tries, how)". No closer for 3 minutes with the Commons used in the last 10
 (it goes on trying, the Commons once it may) was silent: now said once - the
-log ("badly stuck, nothing takes over"), a tray tip and Discord.
+log ("badly stuck, nothing takes over"), a tray tip and Discord (its own kind
+of alert: the "Stuck" one when walking goes off still comes).
 Past runs (and older logs - their figures estimated, said so):
 	python vision\stuckreport.py              (debug.previous.log, debug.log)
 	python vision\stuckreport.py "<OneDrive>\Wiz-Maxxing logs\<PC>\debug.log" --episodes
 per run: badly stuck, time lost, unstick tries, give-ups, the Commons, notices,
 dungeon back-ups, sigils X'd / started / didn't start (and which within 30
 minutes of a relog), relogs; --json for all of it. Read only.
-A sigil that won't start (sigilhome - Settings > WALKING, on; 2026-10-26 21:44:
-one never started after a relog and was X'd again and again): after each X at
-a sigil the bot looks whether it started - 30 s on, still in the same zone
-with no loading screen by the game's log is "didn't start" (debug.log "Walk:
-sigil: didn't start - ... (N in a row here; a relog M min ago)"); a sigil
+A sigil that won't start (2026-10-26 21:44: one never started after a relog
+and was X'd again and again): after each X at a sigil the bot looks whether
+it started - 30 s on, still in the same zone with no loading screen by the
+game's log is "didn't start" (debug.log "Walk: sigil: didn't start - ... (N
+in a row here; a relog M min ago)"; its 30 s counted as time lost); a sigil
 that loads goes on as soon as its loading screen is over, not after the whole
 30 s ("Walk: sigil: in <zone> N s after X"). 3 in a row at the same spot (2
-within 30 minutes of a relog - yours or the bot's reconnect): it leaves and
-comes back - a Mark there (Page Down), Home, the Recall (Page Up) back, X
-again. Your Mark is never moved when it's the potion seller's (potionmark on,
-buying recorded at your Mark): then the Commons (End) and the walk back, as
-when badly stuck (not within 10 minutes of the last). The Mark way needs 20
-mana (a Mark and a Recall take up to 10 each). Once in 30 minutes at a sigil;
-still not starting (or sigilhome off): walking off and the notice "The sigil
-won't start" - F8 tries it again. No X at a sigil 3 times in 10 minutes at
-its spot, whatever path pressed it (the one at the goal used to go round that).
-Written without the game - to be tried in it.
+within 30 minutes of a relog - yours or the bot's reconnect) at the quest's
+own sigil (the arrow led to it): walking off and the notice "The sigil won't
+start" - F8 tries it again. A sigil only walked past (the bot X's every sigil
+it walks over) is never given up on: said, and walked on from as before.
+Leave it and come back (sigilhome - Settings > WALKING, off unless you switch
+it on: new, not tried in the game yet): before that notice, once in 30
+minutes at a sigil, it leaves and comes back - a Mark there (Page Down),
+Home, the Recall (Page Up) back, X again. Your Mark is never moved when it's
+the potion seller's (potionmark on, buying recorded at your Mark): then the
+Commons (End) and the walk back, as when badly stuck (not within 10 minutes
+of the last). The Mark way needs the mana globe read at 20 or more (a Mark
+and a Recall take up to 10 each; a globe that can't be read: not the Mark
+way - a Mark that didn't take couldn't be told). Still not starting after it:
+the notice. No X at a sigil 3 times in 10 minutes at its spot, whatever path
+pressed it (the one at the goal used to go round that). Written without the
+game - to be tried in it.
 A collect goal keeps them off too (all but the mobs its goal line names).
 The quest's goal line from the game's memory (navmem:1, read-only - the
 helper's /goal, vision\questmem.py): the line under the quest arrow ("Defeat

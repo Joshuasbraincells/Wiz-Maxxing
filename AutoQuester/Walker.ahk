@@ -78,8 +78,10 @@ global WkSigilZones, WkSigilAt, WkSigilKey, WkSigilFromZone, WkSigilTries
 ;letters, which differ read to read ([{zone, x, y, fails, failAt, resetAt, gaveUp, xs}]: the X presses in a row its dungeon didn't
 ;load from, when the last was, when it was last left and come back to - WalkSigilReset -, when it was given up on - its notice -, the
 ;X presses at it [ticks]); when X was pressed for the wait under way (its loading screen looked for from then - WkSigilAt is
-;cleared by WalkZone once the zone changes, this isn't)
-global WkSigilSpots, WkSigilXAt
+;cleared by WalkZone once the zone changes, this isn't); that X the quest's way (1 - StartTalk's at the goal, WalkSigilGo's with the
+;arrow leading there or back into the goal's dungeon) or a sigil only walked past (0: one that won't start is never left or given up
+;on - X at it 3 times in 10 minutes at most, walking on as before)
+global WkSigilSpots, WkSigilXAt, WkSigilGoal
 ;(settings - WalkerInit: the X presses in a row that didn't start it before it's left, the fewer within SigilRelogMs of a relog, the
 ;leaving at most once in SigilResetEvery at a spot)
 global SigilFails, SigilFailsRelog, SigilRelogMs, SigilResetEvery
@@ -212,7 +214,7 @@ WalkerInit(prefix := "AutoQuester")
 	global WkMoveLog, WkMoveZone, WkMovedAt, WkMoveNow, WkMoveSeen, WkFroStuck, StatusText, StatusKind, StatusPrefix ; (v1 globals it sets)
 	global WkSigilSpots, WkSigilXAt, SigilFails, SigilFailsRelog, SigilRelogMs, SigilResetEvery, WkLostOn, WkLostMs, WkLostAt ; (v2-only: the port tools don't know them)
 	global WkLostKind, WkLostWhy, WkLostTries, WkLostBad, WkLostDist, WkLostLeft, WkLostZone, WkLostGoal, WkLostTryMs, WkBadN, LostGap ; (v2-only: the port tools don't know them)
-	global WkLostEndAt ; (v2-only: the port tools don't know it)
+	global WkLostEndAt, WkSigilGoal ; (v2-only: the port tools don't know them)
 	;---- Settings ----
 	ArriveDist := 15     ;stop when the distance on the arrow is this or less (walks again when a new goal appears)
 	ArriveUnits := 150   ;...by the game's memory (when it can be used): this many game units from the goal - the
@@ -288,8 +290,8 @@ WalkerInit(prefix := "AutoQuester")
 	                      ;about 5 s: its back-up, turn and walk); longer - a battle, a loading screen, the bot off - left out
 	;A sigil that doesn't start (X pressed, SigilWait stood, still in the zone it was pressed in with no loading screen since by the
 	;game's log - WalkSigilCheck). Guesses till it's seen in the game (2026-10-26 21:44's lines weren't kept) - tune them there:
-	SigilFails := 3       ;this many in a row at the same sigil: left and come back to (Settings: sigilhome - WalkSigilReset), or a
-	                      ;notice and walking off
+	SigilFails := 3       ;this many in a row at the same sigil, the quest's way: left and come back to (Settings: sigilhome, off
+	                      ;unless switched on - WalkSigilReset), or a notice and walking off; one only walked past: said, walked on
 	SigilFailsRelog := 2  ;...this many within SigilRelogMs of a relog (the bot's reconnect or yours - Reconnect.ahk): the 21:44 case
 	SigilRelogMs := 1800000
 	SigilResetEvery := 1800000 ;...left at most once in this long at a sigil; not starting after that either: the notice, walking off
@@ -312,7 +314,7 @@ WalkerInit(prefix := "AutoQuester")
 	WkGoalZones := [], WkTransUsed := V1Obj(), WkTransSeen := "", WkTransStep := 0, WkTransStepAt := 0, WkWaitWhat := "sigil"
 	WkPromptUsed := V1Obj(), WkZoneFrom := "", WkZoneAt := 0, WkPressAt := 0, WkQuietUntil := 0, WkQuietLogged := 0
 	WkSigilZones := V1Obj(), WkSigilAt := 0, WkSigilKey := "", WkSigilFromZone := "", WkSigilTries := V1Obj()
-	WkSigilSpots := [], WkSigilXAt := 0
+	WkSigilSpots := [], WkSigilXAt := 0, WkSigilGoal := 0
 	WkLostOn := 0, WkLostMs := 0, WkLostAt := 0, WkLostKind := "", WkLostWhy := "", WkLostTries := 0, WkLostBad := 0
 	WkLostDist := "", WkLostLeft := "", WkLostZone := "", WkLostGoal := "", WkLostTryMs := 0, WkLostEndAt := 0, WkBadN := 0
 	WkWalkSpeed := "", WkWalkSamples := [], WkWUpAt := 0, WkFrontLook := 0, WkMetAt := A_TickCount
@@ -757,10 +759,12 @@ WalkStep()
 		if (prompt = "sigil")
 			{
 			WalkZone()
-			sgWhy := WalkSigilGo(near)
+			;(the quest's way - the arrow led here, or back into the goal's dungeon - or one only walked past: StartSigil notes which)
+			sgGoal := 0
+			sgWhy := WalkSigilGo(near, &sgGoal)
 			if (sgWhy != "")
 				{
-				StartSigil(sgWhy)
+				StartSigil(sgWhy, sgGoal)
 				return true
 				}
 			}
@@ -1758,7 +1762,7 @@ StartTalk(d, door := true)
 			Sleep(400)
 			return
 			}
-		StartSigil("at the goal (distance " d ") and it's a sigil")
+		StartSigil("at the goal (distance " d ") and it's a sigil", 1)
 		return
 		}
 	;The game's memory says the goal is in another zone: this is the way out of this one (a door, a loading
@@ -2119,9 +2123,12 @@ WalkSigilJustLeft(near)
 ;within 300, the sigil the wizard's on: a door further off isn't it). Then X even within its 10 minutes: 2 minutes apart, 3 times in
 ;10 for the same dungeon - by its zone's name, not the prompt's OCR'd letters (they differ read to read); more: as any (said, no X).
 ;Any other: once in 10 minutes for the same one. 2026-10-26 16:08:11-16:09:14 "Defeat Karolak Nightspinner and Collect Celestian
-;Portal in Stormriven": out of Celestia/Interiors/CL_Z06i1_StormHaven where he is - "just came out", 3 minutes outside, NEEDS YOU
-WalkSigilGo(near)
+;Portal in Stormriven": out of Celestia/Interiors/CL_Z06i1_StormHaven where he is - "just came out", 3 minutes outside, NEEDS YOU.
+;goal: 1 when the X is the quest's way (back into the goal's dungeon, or the arrow led here - near), 0 a sigil only walked past
+;(pressing X at every prompt): one that won't start is left or given up on only when it's the quest's way - WalkSigilCheck
+WalkSigilGo(near, &goal := 0)
 	{
+	goal := near ? 1 : 0
 	;(the one gate for every X at a sigil first - WalkSigilMayX: a sigil that didn't start, given up on; 3 X at its spot in 10 minutes)
 	sgNo := WalkSigilMayX()
 	if (sgNo != "")
@@ -2148,6 +2155,7 @@ WalkSigilGo(near)
 		if (!WkSigilTries.Has(sgKey))
 			WkSigilTries[sgKey] := []
 		WkSigilTries[sgKey].Push(A_TickCount)
+		goal := 1
 		return "just came out of " WkZoneFrom " (its dungeon), and the quest's goal is in it (" sgIn ") - back in"
 		}
 	if (WalkSigilJustLeft(near))
@@ -2244,11 +2252,13 @@ WalkPassedGoal()
 	}
 
 ;The arrow led to a sigil (a dungeon entrance: its prompt says "Press X to Enter"): stop, press X, and
-;stand still for SigilWait while it counts down and the dungeon loads (WalkStep's WkArrived = 5)
-StartSigil(why)
+;stand still for SigilWait while it counts down and the dungeon loads (WalkStep's WkArrived = 5). goal: 1 the quest's way (StartTalk at
+;the goal, WalkSigilGo's near or back into the goal's dungeon), 0 a sigil only walked past - one that won't start is left or given up
+;on only when it's the quest's way (WalkSigilCheck)
+StartSigil(why, goal := 0)
 	{
 	global WkArrived, WkSigilUntil, WkWaitWhat, WkSigilKey, WkSigilAt, WkSigilFromZone, WkSigilTries ; (v1 globals it sets)
-	global WkSigilXAt ; (v2-only: the port tools don't know it)
+	global WkSigilXAt, WkSigilGoal ; (v2-only: the port tools don't know them)
 	if (KeysDown || HeldW || SpeedNow > 1)
 		ReleaseKeys()
 	WkArrived := 5, WkSigilUntil := A_TickCount + SigilWait, WkWaitWhat := "sigil"
@@ -2261,7 +2271,7 @@ StartSigil(why)
 		WkSigilTries[WkSigilKey] := []
 	WkSigilTries[WkSigilKey].Push(A_TickCount)
 	;(...and by its spot, for the one gate and the "didn't start" count - WalkSigilMayX, WalkSigilCheck; its load looked for from now)
-	WkSigilXAt := A_TickCount
+	WkSigilXAt := A_TickCount, WkSigilGoal := goal ? 1 : 0
 	ssAt := WalkSigilSpot(true)
 	if (IsObject(ssAt))
 		ssAt.xs.Push(A_TickCount)
@@ -4573,23 +4583,29 @@ WalkCommonsReset(why, at := "")
 	}
 
 ;Badly stuck with nothing taking over at StuckForever (WalkStep): the puzzle code declined and the Commons was used in the last
-;ResetEvery - it goes on trying round, the Commons once it may. Was silent (every step, nothing said); now said once an episode: the
-;log, a tray tip and Discord (AutoFarmer's Alerts.ahk, if set up) - not the notice window: what you did then would be recorded as a
-;blocked way's (Puzzle.ahk) while the bot still walks
+;ResetEvery (or its End just now brought no loading screen - WalkCommonsReset sets WkResetAt before pressing it) - it goes on trying
+;round, the Commons once it may. Was silent (every step, nothing said); now said once an episode (one counted badly stuck stays open
+;while StuckForever's watch has it no closer - WalkLostProgress): the log, a tray tip and Discord (AutoFarmer's Alerts.ahk, if set up)
+;- not the notice window: what you did then would be recorded as a blocked way's (Puzzle.ahk) while the bot still walks. Discord's kind
+;is its own ("walk-trying"): AlertSend lets each kind through once in 10 minutes, and "walk-stuck" - WalkNotify's - must still tell you
+;when it gives up and walking goes off, which can only come within those 10 minutes
 WalkStuckNoCommons(why)
 	{
 	static sncSaid := 0
 	if (!WkLostOn || sncSaid = WkLostOn)
 		return
 	sncSaid := WkLostOn
+	sncAgo := WkResetAt ? A_TickCount - WkResetAt : ""
 	sncText := "The wizard is badly stuck (" why ")" (!ResetTeleport ? " and the teleport to the Commons is off"
-		: WkResetAt ? " and the teleport to the Commons was used " Round((A_TickCount - WkResetAt) / 60000) " minutes ago - it goes there again in "
-		. Max(0, Ceil((ResetEvery - (A_TickCount - WkResetAt)) / 60000)) " minutes" : " and the teleport to the Commons isn't possible here")
+		: (V1IsNum(sncAgo) && sncAgo < 60000) ? " and the teleport to the Commons (End) didn't happen - no loading screen - "
+		. "it's tried again in " Round(ResetEvery / 60000) " minutes"
+		: (V1IsNum(sncAgo) && sncAgo < ResetEvery) ? " and the teleport to the Commons was used " Round(sncAgo / 60000) " minutes ago - "
+		. "it goes there again in " Max(1, Ceil((ResetEvery - sncAgo) / 60000)) " minutes" : " and the teleport to the Commons isn't possible here")
 		. ". It goes on trying round meanwhile - walk it past if you're there."
 	WalkLog("badly stuck, nothing takes over: " sncText)
 	TrayTip(sncText, "Wizard101 bot", 2)
 	if (V1IsFunc("AlertSend"))
-		%"AlertSend"%.Call("walk-stuck", "Badly stuck", sncText)
+		%"AlertSend"%.Call("walk-trying", "Badly stuck", sncText)
 	}
 
 ;---- Stuck: counted and timed (TODO goal 2 "Measure it" - the dashboard's STATISTICS, vision\stuckreport.py) ----
@@ -4677,11 +4693,15 @@ WalkLostTick(all := false)
 
 ;Each step with a distance (WalkStep's progress look): the stuck episode under way (not a sigil's) is over once clearly closer than
 ;where it began - 10 nearer the goal (arrow units: as "got round the obstacle"; StuckForever's: 30, as its own watch) or 30 on along
-;the route round walls. An episode begun with no distance takes this one
+;the route round walls. An episode begun with no distance takes this one. One counted badly stuck isn't over while StuckForever's
+;watch still has it no closer (WkProgAt: 30 nearer or 30 on along the route since): ended by these smaller steps, that watch's next
+;step would count the same stall again - another "badly stuck" line, its tray tip and Discord once more
 WalkLostProgress(dist, left := "")
 	{
 	global WkLostDist, WkLostLeft ; (v2-only: the port tools don't know them)
 	if (!WkLostOn || WkLostKind = "sigil")
+		return
+	if (WkLostBad && A_TickCount - WkProgAt > StuckForever)
 		return
 	if (WkLostDist = "" && V1IsNum(dist))
 		WkLostDist := dist
@@ -4769,8 +4789,10 @@ WalkSigilIn()
 ;The wait at a sigil over (WkArrived 5, SigilWait stood): did it start? Provably not - the zone known and still the one X was pressed
 ;in, no loading screen since the X by the game's log (WkSigilAt not cleared by WalkZone, its last load from before the X, none under
 ;way), no battle; X opening a dialogue is WkArrived 6, not here - counted at its spot, said (with a relog's minutes ago - AutoFarmer's
-;Reconnect.ahk), its time lost from the X. The SigilFails-th in a row there (SigilFailsRelog within SigilRelogMs of a relog): left and
-;come back to, or given up on - WalkSigilStuck. True when that took over
+;Reconnect.ahk), its time lost from the X. The SigilFails-th in a row there (SigilFailsRelog within SigilRelogMs of a relog) when this X
+;was the quest's way (WkSigilGoal - StartTalk's at the goal, WalkSigilGo's near or back in): left and come back to, or given up on -
+;WalkSigilStuck. A sigil only walked past (pressing X at every prompt) never is: said, and walked on from as before (X at it again 3
+;times in 10 minutes at most - WalkSigilTriesLeft, the one gate). True when WalkSigilStuck took over
 WalkSigilCheck()
 	{
 	if (!WkSigilXAt || WkSigilFromZone = "" || !WkSigilAt)
@@ -4786,11 +4808,27 @@ WalkSigilCheck()
 	scRelog := V1IsNum(scAgo) && scAgo < SigilRelogMs
 	WalkLog("sigil: didn't start - still in " scZone " " Round((A_TickCount - WkSigilXAt) / 1000) " s after X, no loading screen by the game's log ("
 		. scSpot.fails " in a row here" (V1IsNum(scAgo) ? "; a relog " Round(scAgo / 60000) " min ago" : "") ")")
-	WalkLostOpen("sigil", "a sigil that doesn't start", A_TickCount - WkSigilXAt)
-	if (scSpot.fails < (scRelog ? SigilFailsRelog : SigilFails))
-		return false
-	WalkSigilStuck(scSpot, "it didn't start " scSpot.fails " times in a row" (scRelog ? ", a relog " Round(scAgo / 60000) " min before" : ""))
-	return true
+	scWait := A_TickCount - WkSigilXAt
+	scMany := scSpot.fails >= (scRelog ? SigilFailsRelog : SigilFails)
+	if (scMany && WkSigilGoal)
+		{
+		;(the episode the give-up counts - its time lost from this X; one under way - an obstacle's, or this sigil's after leaving it and
+		;coming back - goes on, the wait counted in it already)
+		WalkLostOpen("sigil", "a sigil that doesn't start", scWait)
+		WalkSigilStuck(scSpot, "it didn't start " scSpot.fails " times in a row" (scRelog ? ", a relog " Round(scAgo / 60000) " min before" : ""))
+		return true
+		}
+	;(below the count, or a sigil only walked past: its wait lost - an episode of its own, over at once: the walker X's it again or walks
+	;on, and that walking isn't time lost. One under way - an obstacle's, or this sigil's badly stuck after leaving it and coming back -
+	;goes on: the wait counted in it already, as each step's)
+	if (!WkLostOn)
+		{
+		WalkLostOpen("sigil", "a sigil that doesn't start", scWait)
+		WalkLostClose("didn't start - its wait")
+		}
+	if (scMany)
+		WalkLog("sigil: not the quest's way (only walked past - the arrow didn't lead to it): not left or given up on, walking on as before")
+	return false
 	}
 
 ;A sigil just started (WalkZone: the zone changed within SigilWait + 15 s of its X): its spot's X presses that didn't, forgotten - the
@@ -4814,9 +4852,10 @@ WalkSigilForgive()
 			s.gaveUp := 0, s.fails := 0, s.xs := []
 	}
 
-;A sigil that won't start (WalkSigilCheck - the SigilFails-th X in a row that didn't): badly stuck. Left and come back to (AutoFarmer's
-;sigilhome - WalkSigilReset) once in SigilResetEvery at its spot - its count started over, the normal flow X's it again; left already,
-;the setting off, AutoQuester (none) or the leaving not done: given up on - walking off, the notice (F8 tries it again)
+;A sigil that won't start (WalkSigilCheck - the SigilFails-th X in a row that didn't, the quest's way - never one only walked past):
+;badly stuck. Left and come back to (AutoFarmer's sigilhome, off unless switched on - WalkSigilReset) once in SigilResetEvery at its
+;spot - its count started over, the normal flow X's it again; left already, the setting off, AutoQuester (none) or the leaving not
+;done: given up on - walking off, the notice (F8 tries it again)
 WalkSigilStuck(spot, why)
 	{
 	global Walking ; (v1 globals it sets)
@@ -4849,13 +4888,15 @@ WalkSigilStuck(spot, why)
 ;home and come back"). Written without the game: to be tried in it. AutoFarmer's setting sigilhome (Settings), walking on, out of
 ;battle, the game in front, not battles only. WkSigilAt cleared first: WalkZone mustn't take the house as the sigil's dungeon
 ;(WkSigilZones, the quick sell's hold), nor the Recall back as coming out of it (WalkSigilJustLeft - WkZoneFrom cleared after). The Mark
-;way when a Mark may be made here (AutoFarmer's SigilMarkOk: never moving your Mark kept at the potion seller) and 20 mana or more (a
-;Mark and a Recall take up to 10 each; a globe that can't be read: tried): Page Down - the mana gone down (PotionArrivedMana; a Mark that
-;didn't take isn't gone back to) -, Home (a loading screen; not a house: said, on all the same), then the Recall (Page Up, once more
-;after 3 s) into the zone it was in: X again when its prompt shows. Not back (still in the house - End goes nowhere there -, or
-;elsewhere): false. Otherwise (commons) the Commons (End) and the walk back, as when badly stuck (WalkCommonsReset - not within
-;ResetEvery of the last). fromZone: the sigil's zone ("" the walker's last sigil's - WkSigilFromZone; a dungeon run gives its own, and
-;commons false: it can't walk back). True when back at the sigil, or at the Commons walking back
+;way when a Mark may be made here (AutoFarmer's SigilMarkOk: never moving your Mark kept at the potion seller) and the mana globe reads
+;20 or more (a Mark and a Recall take up to 10 each; a globe that can't be read: not the Mark way - a Mark that didn't take couldn't be
+;told, and Home would then lose the way back: inside a dungeon, its instance and the run's progress): Page Down - the mana gone down
+;(PotionArrivedMana; a Mark that didn't take isn't gone back to) -, Home (a loading screen; not a house: said, on all the same), then the
+;Recall (Page Up, once more after 3 s) into the zone it was in: X again when its prompt shows. Not back (still in the house - End goes
+;nowhere there -, or elsewhere): false. Otherwise (commons) the Commons (End) and the walk back, as when badly stuck (WalkCommonsReset -
+;not within ResetEvery of the last). fromZone: the sigil's zone ("" the walker's last sigil's - WkSigilFromZone; a dungeon run gives its
+;own, and commons false: it can't walk back - nor is the walker's stuck episode its: WalkStep doesn't run during a run). True when back
+;at the sigil, or at the Commons walking back
 WalkSigilReset(why, fromZone := "", commons := true)
 	{
 	global WkSigilAt, WkZoneFrom, WkLoadAt ; (v1 globals it sets)
@@ -4873,18 +4914,19 @@ WalkSigilReset(why, fromZone := "", commons := true)
 	ReleaseKeys()
 	srMana := V1IsFunc("PotionGlobes") ? %"PotionGlobes"%.Call().mana : ""
 	srWhyNot := !(V1IsFunc("SigilMarkOk") && %"SigilMarkOk"%.Call()) ? "no Mark made here - your Mark is kept (the potion seller's: Settings potionmark, buying recorded at it)"
-		: (V1IsNum(srMana) && srMana < 20) ? "mana " srMana " - a Mark and a Recall take up to 10 each" : ""
+		: !V1IsNum(srMana) ? "the mana globe can't be read - a Mark that didn't take couldn't be told, and Home would lose the way back"
+		: srMana < 20 ? "mana " srMana " - a Mark and a Recall take up to 10 each" : ""
 	if (srWhyNot = "")
 		{
 		WalkLog("sigil: leaving it (" why ") - a Mark here (Page Down), Home, then the Recall (Page Up) back to it")
 		SetStatus("a sigil that won't start - Home and back")
 		PressKey("PgDn")
 		Sleep(1500)
-		;(the globe's number given a moment more to go down - read twice the same and lower; a globe that can't be read: taken)
-		srTook := !V1IsNum(srMana)
+		;(the globe's number given a moment more to go down - read twice the same and lower; not read so: not taken, no Home)
+		srTook := false
 		Loop 4
 			{
-			if (srTook || (srTook := (V1IsFunc("PotionArrivedMana") && %"PotionArrivedMana"%.Call(srMana))))
+			if (srTook := (V1IsFunc("PotionArrivedMana") && %"PotionArrivedMana"%.Call(srMana)))
 				break
 			Sleep(500)
 			}
@@ -4914,7 +4956,10 @@ WalkSigilReset(why, fromZone := "", commons := true)
 				if (srBack && WalkSameZone(srAt, fromZone))
 					{
 					WkZoneFrom := ""
-					WalkLostTick(true)
+					;(the walker's stuck episode: the teleports' wait lost too - the walker's own call only, which ticked just before; a dungeon
+					;run's isn't - WalkStep doesn't run then, and an episode left open from before the run would get the whole run added)
+					if (commons)
+						WalkLostTick(true)
 					WalkReset()
 					WkLoadAt := A_TickCount
 					WalkSigilPromptsFree()
@@ -6631,7 +6676,7 @@ WalkerBlank()
 	global WkNavNoPlace := "", WkNpN := "", WkNpGoal := "", WkNpAt := "", WkNavLast := "", WkNpTarget := "", WkArr1Key := "", WkArr1Look := ""
 	global WkPromptText := ""
 	;(v2-only - the stuck episodes counted and timed, a sigil that doesn't start)
-	global WkSigilSpots := "", WkSigilXAt := "", SigilFails := "", SigilFailsRelog := "", SigilRelogMs := "", SigilResetEvery := ""
+	global WkSigilSpots := "", WkSigilXAt := "", WkSigilGoal := "", SigilFails := "", SigilFailsRelog := "", SigilRelogMs := "", SigilResetEvery := ""
 	global WkLostOn := "", WkLostMs := "", WkLostAt := "", WkLostKind := "", WkLostWhy := "", WkLostTries := "", WkLostBad := ""
 	global WkLostDist := "", WkLostLeft := "", WkLostZone := "", WkLostGoal := "", WkLostTryMs := "", WkLostEndAt := "", WkBadN := "", LostGap := ""
 	}

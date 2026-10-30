@@ -240,6 +240,23 @@ class Sigils(unittest.TestCase):
         self.assertEqual(o["badly_stuck"], 1)
         self.assertEqual(o["lost_seconds"], 92)
 
+    def test_walked_past_waits_only(self):
+        # (a sigil only walked past - "pressing X at every prompt": each wait its own episode over at once, never given up on)
+        x = "Walk: sigil: sigil prompt showing (pressing X at every prompt) - pressed X, waiting 30 s"
+        lines = [START]
+        for i, at in enumerate(["21:00", "21:01", "21:02"]):
+            lines += [at + ":00 " + x,
+                      at + ":30 Walk: sigil: didn't start - still in WC/Z 30 s after X, no loading screen by the game's log "
+                      "(%d in a row here)" % (i + 1),
+                      at + ":30 Walk: stuck over - 30 s lost (sigil, 0 tries, didn't start - its wait)"]
+        lines.append("21:02:30 Walk: sigil: not the quest's way (only walked past - the arrow didn't lead to it): not left or "
+                     "given up on, walking on as before")
+        o = one("\n".join(lines))
+        self.assertEqual(o["sigil_failed"], 3)
+        self.assertEqual((o["badly_stuck"], o["sigil_gave_up"], o["sigil_leaves"]), (0, 0, 0))
+        self.assertEqual(o["lost_seconds"], 90)
+        self.assertEqual(o["lost_exact_kinds"], {"sigil": 90})
+
     def test_dialogue_isnt_a_failure(self):
         o = one("\n".join([START,
                            "21:00:00 " + self.X,
