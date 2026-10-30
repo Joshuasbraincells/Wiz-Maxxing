@@ -37,6 +37,10 @@ global RcLoginBad, RcNote, RcScanning, RcTyped, RcCredTarget, RcHead, RcPeekAt, 
 global RcLoadAt, RcLastLineAt, RcHungAsked
 ;Restarts for a hang: how many, since when (two in an hour: left to you)
 global RcHungCount, RcHungFirstAt
+;(v2-only globals - the port tools don't know them: blank in ReconnectBlank, set in ReconnectInit)
+;A relog: when the game was last back in the world after one (the bot's reconnect, or a character picked - yours too; 0 none since the
+;start: the walker's sigil that won't start counts fewer X presses after one - RcBackAgo), and when a character was picked (0 none)
+global RcBackAt, RcCharSelAt
 
 ;Call once at start. Picks up a disconnect box that's already showing
 ReconnectInit()
@@ -44,12 +48,13 @@ ReconnectInit()
 	global RcCredTarget, RcOn, RcState, RcStateAt, RcTries, RcNext, RcLookAt, RcCheckAt, RcProcAt, RcClickBg, RcLastBg ; (v1 globals it sets)
 	global RcClickAt, RcCharAt, RcPlayTries, RcNoRelaunch, RcLoginBad, RcNote, RcTyped, RcMsg, RcHead, RcPeekAt, RcPeeks ; (v1 globals it sets)
 	global RcLoadAt, RcLastLineAt, RcHungAsked, RcHungCount, RcHungFirstAt, ErrorLevel, RcPid, RcPos, RcScanning ; (v1 globals it sets)
+	global RcBackAt, RcCharSelAt ; (v2-only: the port tools don't know them)
 	RcCredTarget := "Wizard101Bot"
 	RcOn := 1, RcState := "", RcStateAt := A_TickCount, RcTries := 0, RcNext := 0, RcLookAt := 0
 	RcCheckAt := 0, RcProcAt := 0, RcClickBg := -1, RcLastBg := 0, RcClickAt := 0, RcCharAt := 0
 	RcPlayTries := 0, RcNoRelaunch := 0, RcLoginBad := 0, RcNote := 0, RcTyped := 0, RcMsg := ""
 	RcHead := "", RcPeekAt := 0, RcPeeks := 0, RcLoadAt := 0, RcLastLineAt := A_TickCount, RcHungAsked := 0
-	RcHungCount := 0, RcHungFirstAt := 0
+	RcHungCount := 0, RcHungFirstAt := 0, RcBackAt := 0, RcCharSelAt := 0
 	ErrorLevel := ProcessExist(GameExe)
 	RcPid := ErrorLevel
 	RcSetClient(RcFindClient())
@@ -277,6 +282,7 @@ RcReadLog()
 RcLogLine(logLine)
 	{
 	global RcLastLineAt, RcLoadAt, RcMsg, RcLoginBad, RcTries, RcNext, RcClickBg, RcCharAt, RcTyped ; (v1 globals it sets)
+	global RcBackAt, RcCharSelAt ; (v2-only: the port tools don't know them)
 	;(a zone change under way, and the log's last sign of life - RcHungCheck. Its memory notes come every 5 minutes
 	;whatever the game's doing: they don't count)
 	;(not the empty field after the chunk's last line break - RcReadLog's Loop Parse)
@@ -364,12 +370,27 @@ RcLogLine(logLine)
 	if (InStr(logLine, "MSG_CharacterSelected: Error=0"))
 		{
 		RcCharAt := 0
+		;(a character picked - yours too: the world it goes into next is a relog's - not the start's replay of the log)
+		if (!RcScanning)
+			RcCharSelAt := A_TickCount
 		if (RcState = "select")
 			RcSet("enter", "character chosen - going into the world")
 		return
 		}
 	if (InStr(logLine, "ConnectComplete destination Zone="))
 		{
+		;(back in the world after a relog - the bot's reconnect, or a character picked in the last 2 minutes: when, for the walker's sigil
+		;that won't start - RcBackAgo. 2026-10-26 21:44: one never started after a relog)
+		if (!RcScanning && (RcState != "" || (RcCharSelAt && A_TickCount - RcCharSelAt < 120000)))
+			{
+			RcBackAt := A_TickCount
+			if (RcState = "")
+				{
+				RegExMatch(logLine, "Zone=(\S+)", &rcZone)
+				RcLogMsg("in the world after a character select (" V1At(rcZone, 1) ") - a relog")
+				}
+			}
+		RcCharSelAt := 0
 		if (RcState != "")
 			{
 			RegExMatch(logLine, "Zone=(\S+)", &zone)
@@ -380,6 +401,13 @@ RcLogLine(logLine)
 			}
 		return
 		}
+	}
+
+;How long ago the game was last back in the world after a relog (ms - the bot's reconnect, or a character picked: yours too); "" none
+;since the bot started. The walker's sigil that won't start (Walker.ahk WalkSigilCheck) counts fewer X presses within 30 minutes of one
+RcBackAgo()
+	{
+	return RcBackAt ? A_TickCount - RcBackAt : ""
 	}
 
 ;A loading screen that never finishes (2026-10-23 18:30: a defeat's trip back to Celestia's hub connected, then the game
@@ -1278,5 +1306,5 @@ ReconnectBlank()
 	global RcLookAt := "", RcCheckAt := "", RcProcAt := "", RcClickBg := "", RcLastBg := "", RcClickAt := "", RcCharAt := "", RcPlayTries := ""
 	global RcNoRelaunch := "", RcLoginBad := "", RcNote := "", RcScanning := "", RcTyped := "", RcCredTarget := "", RcHead := "", RcPeekAt := ""
 	global RcPeeks := "", RcFrontOk := "", RcFindInfo := "", RcLoadAt := "", RcLastLineAt := "", RcHungAsked := "", RcHungCount := ""
-	global RcHungFirstAt := ""
+	global RcHungFirstAt := "", RcBackAt := "", RcCharSelAt := ""
 	}

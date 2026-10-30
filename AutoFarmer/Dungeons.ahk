@@ -452,7 +452,8 @@ DgNext()
 			TrayTip("Dungeon runs done: " r.runs, "Wizard101 bot", 1)
 			return
 			}
-		r.i := 1
+		;(the next run: a sigil that won't start may be left and come back to once in it too - DungeonStep's r.sigilLeft)
+		r.i := 1, r.sigilLeft := 0
 		}
 	nxt := r.steps[r.i]
 	if (nxt.zone != cur.zone && cur.kind != "x")
@@ -604,8 +605,22 @@ DungeonStep()
 		if (r.loadUntil && nav.zone = r.fromZone && r.loadStep)
 			{
 			r.loadTries += 1
+			;(its X twice for nothing at a sigil - 2026-10-26 21:44: one never started after a relog: left and come back to before the
+			;last try, once a run (DgNext clears r.sigilLeft at each new one) - a Mark here, Home, the Recall back: the walker's
+			;WalkSigilReset, which says why not - Settings: sigilhome, off unless you switch it on; only with the mana globe read, the
+			;Mark seen taken. No Commons way, a run can't walk back from there. Back: the X step again as below.
+			;TODO (needs the game): an inner X step - a door inside the dungeon: Home leaves the instance; whether a Mark takes in one,
+			;and the Recall comes back into the same instance, isn't known yet - a Mark that doesn't take stops it before Home)
+			if (r.loadTries = 2 && !r.sigilLeft && V1At(V1At(r.steps, r.loadStep), "kind") = "x")
+				{
+				r.sigilLeft := 1
+				if (WalkSigilReset("step " r.loadStep "'s X didn't load twice ('" r.name "')", r.fromZone, false))
+					DebugLog("Dungeons: back at step " r.loadStep " after Home and the Recall")
+				}
 			if (r.loadTries > 2)
 				{
+				;(counted badly stuck - the dashboard's STATISTICS, vision\stuckreport.py)
+				WalkBadlyStuckCount("dungeon", "the way from " r.fromZone " into " st.zone " didn't load (3 tries) - '" r.name "'")
 				DgStop("the way from " r.fromZone " into " st.zone " didn't load (3 tries)")
 				return
 				}
@@ -653,6 +668,8 @@ DungeonStep()
 		r.unstuck += 1
 		if (r.unstuck > 4)
 			{
+			;(counted badly stuck - the dashboard's STATISTICS, vision\stuckreport.py)
+			WalkBadlyStuckCount("dungeon", "stuck " Round(d) " from step " r.i " (" st.zone ") - '" r.name "'")
 			DgStop("stuck " Round(d) " from step " r.i " (" st.zone ") - no closer after backing up 4 times")
 			return
 			}
