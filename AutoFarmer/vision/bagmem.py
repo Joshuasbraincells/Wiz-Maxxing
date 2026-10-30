@@ -4,15 +4,21 @@ right-side TIP icons (Prospector Zeke's portrait: "your backpack is full" - or "
 GAME'S WINDOWS by name (shown, where in GUI units, checked / greyed, their text or label, the message box that's up) - for
 quick selling the backpack when it's full (AutoFarmer's QuickSell.ahk: every click target from here, nothing guessed off
 the screen). navmem.py makes one per game (in a thread, like the hand's, the quest's and the mobs' readers) for the vision
-helper's /bag and /gui.
+helper's /bag and /gui - and its /guitree: EVERY window under one, one a line (tree: the discovery tool for the windows
+nobody has looked at yet - a battle's Pass / Flee buttons, a trainer's spell list, a pet's window - and the rows of a list).
 
     bm = BagMem(st, log=print)            # st: navmem's attached game (navmem._Attached); about half a second, once a game
     r, why = bm.bag(hm)                   # hm: handmem.HandMem (the GUI's root, the template map)
     g, why = bm.gui(hm, ["buyWindow/AllAction", "QuickSellConfirmationWindow/SellButton"])
     lines = bag_lines(*navmem.NavMem().bag())          # the helper's /bag answer
     lines = gui_lines(*navmem.NavMem().gui(paths), paths)
+    t, why = bm.tree(hm, "CombatPlanningPhaseWindow", shown_only=True)   # every window under one (discovery)
+    lines = tree_lines(*nav_tree(navmem.NavMem(), "Anc/Name"))         # the helper's /guitree answer
 
     python bagmem.py [--gui Anc/Name,...]              readings from the command line
+    python bagmem.py --tree [--under Anc/Name] [--all] [--depth N] [--indent] [--out tree.txt]
+                                                       every shown window (--all: hidden too), one a line - the names
+                                                       of a window's buttons, lists and a box's keys, to send back
 
 SAFETY. The game is opened by navmem.py's Proc - PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else - and only read: ReadProcessMemory, plus
@@ -92,6 +98,8 @@ SET_IDS_CAP = 64         # global ids in one set at most
 WIN_CAP = 30000          # windows walked at most
 DEPTH = 14               # how deep under the root
 PATHS_CAP = 40           # /gui window paths at most
+TREE_DEPTH = 24          # tree(): how deep under the root it walks (deeper than gui()'s: a list's rows sit low)
+TREE_ROWS = 6000         # tree(): windows listed at most (each one described: its type, text, texture - more reads)
 # an item's kind from its template's adjectives, the first of these it has (the Quick Sell window's categories first)
 KINDS = (("Deck", "deck"), ("Hat", "hat"), ("Robe", "robe"), ("Shoes", "shoes"), ("Weapon", "weapon"),
          ("Athame", "athame"), ("Amulet", "amulet"), ("Ring", "ring"), ("Pet", "pet"), ("Mount", "mount"),
@@ -182,6 +190,15 @@ def gui_paths(s):
     return paths
 
 
+def tree_under(s):
+    """the window path of a /guitree ask (under=Anc/Name - one path, gui_paths' letters, digits and _ split by /): "" for
+    none (the GUI root), None when it isn't one"""
+    s = (s or "").strip()
+    if not s:
+        return ""
+    return s if PATH_RE.match(s) else None
+
+
 def anc_match(anc, chain):
     """the names anc are all among chain's (its ancestors' names, the root first), in that order"""
     i = 0
@@ -195,6 +212,28 @@ def zeke_up(tips):
     """a shown tip whose portrait (or button) is Prospector Zeke's"""
     return any(t.get("shown") and ZEKE.lower() in ((t.get("image") or "") + " " + (t.get("button") or "")).lower()
                for t in tips or [])
+
+
+def subtree(found, top, shown_only=True, depth=None, cap=TREE_ROWS):
+    """([(f, its depth below top, its parent's row number - 1 the first row, 0 for top)], capped) of walk()'s list found:
+    top (one of its windows) and every window under it (top's address among its ancestors'), in found's order - depth
+    first, an ancestor before its windows; shown_only: only the shown ones (a hidden window's windows are hidden too: no
+    row loses its parent); depth: that many levels below top at most; cap rows at most (capped True when one more was
+    left out)"""
+    tw, base = top["w"], len(top["chain"])
+    rows, at, capped = [], {}, False
+    for f in found:
+        if f is not top and tw not in f["chain_w"]:
+            continue
+        d = len(f["chain"]) - base
+        if (depth is not None and d > depth) or (shown_only and not f["shown"]):
+            continue
+        if len(rows) >= cap:
+            capped = True
+            break
+        rows.append((f, d, 0 if f is top else at.get(f["chain_w"][-1], 0)))
+        at[f["w"]] = len(rows)
+    return rows, capped
 
 
 # ============================================================================ the reader
@@ -371,8 +410,9 @@ class BagMem:
 
     def walk(self, root, want, depth=DEPTH, cap=WIN_CAP):
         """([{w, name, chain (ancestors' names, the root first), chain_w (their addresses), shown (VISIBLE on it and every
-        ancestor), rect (in the root: its ancestors' lefts / tops added), prect (its parent's, None for the root), kids}]
-        of the windows under root - root too - whose name is in want, depth first in the game's order; windows walked)"""
+        ancestor), rect (in the root: its ancestors' lefts / tops added), prect (its parent's, None for the root), kids,
+        flags (its m_Flags as read)}] of the windows under root - root too - whose name is in want (want None: every
+        window - tree()'s), depth first in the game's order (an ancestor always before its windows); windows walked)"""
         found, n, seen = [], 0, set()
         stack = [(root, 0, (), (), True, 0, 0, None)]
         while stack and n < cap:
@@ -387,9 +427,9 @@ class BagMem:
             name, kids, flags, (l, t, r, b) = info
             shown = up and bool(flags & 1)
             rect = (ox + l, oy + t, ox + r, oy + b)
-            if name in want:
+            if want is None or name in want:
                 found.append({"w": w, "name": name, "chain": chain, "chain_w": chain_w, "shown": shown, "rect": rect,
-                              "prect": prect, "kids": kids})
+                              "prect": prect, "kids": kids, "flags": flags})
             if d < depth:
                 for k in reversed(kids):
                     stack.append((k, d + 1, chain + (name,), chain_w + (w,), shown, rect[0], rect[1], rect))
@@ -656,6 +696,57 @@ class BagMem:
                     box["btns"].append({"name": f["name"], "rect": d["rect"], "greyed": d["greyed"], "raw": d["raw"]})
         return {"root": rr, "wins": wins, "box": box, "walked": n}, ""
 
+    # ------------------------------------------------------------------ every window under one (discovery)
+    def tree(self, hm, under=None, shown_only=True, depth=None, cap=TREE_ROWS):
+        """({root (w, h), under, matches, dups, rows [{depth, parent, name, type, shown, rect, prect, checked, greyed, raw,
+        tex, kids, flags}], walked, capped, all}, "") - or (None, why). Every window under the one under names
+        ("Anc/Name" as gui()'s paths - the first shown match, else the first; None / "": the GUI root) - that one too,
+        depth 0 - in the game's order, an ancestor before its windows: shown_only only those shown (VISIBLE on it and
+        every ancestor: a hidden one's windows are hidden too), else every one (all: not shown_only); depth that many
+        levels below it at most; cap rows at most (capped then - also when WIN_CAP windows were walked). rows: depth
+        below the top one, parent its parent's row number (1 the first row, 0 the top one), describe()'s type, shown,
+        rect (in the root), prect, checked, greyed and raw text, tex (texture()'s file), kids (how many children - hidden
+        ones too), flags (m_Flags as read). under not found: matches 0 and no rows. Read-only discovery - the names of a
+        window's buttons, lists and a box's keys (bagmem.py --tree, the helper's /guitree) - and the rows of a list.
+        Never raises"""
+        try:
+            return self._tree(hm, under, shown_only, depth, cap)
+        except Exception as e:  # noqa: BLE001 - never into navmem
+            return None, "reading the game's window tree failed (%r)" % (e,)
+
+    def _tree(self, hm, under, shown_only, depth, cap):
+        root = hm.root()
+        if not root:
+            return None, "no GUI root (not in the game world)"
+        rr = self.root_rect(root)
+        if rr is None:
+            return None, "the GUI root's size can't be read"
+        # (one walk of every window - gui()'s walk reads each one anyway; only the rows listed are described: their
+        # type, text and texture are the reads that cost)
+        found, n = self.walk(root, None, TREE_DEPTH)
+        out = {"root": rr, "under": under or "", "matches": 0, "dups": 0, "rows": [], "walked": n,
+               "capped": n >= WIN_CAP, "all": not shown_only}
+        if under:
+            parts = under.split("/")
+            cands = [f for f in found if f["name"] == parts[-1] and anc_match(parts[:-1], f["chain"])]
+            shown = [f for f in cands if f["shown"]]
+            top = shown[0] if shown else (cands[0] if cands else None)
+            out["matches"], out["dups"] = len(cands), len(shown)
+        else:
+            top = found[0] if found and found[0]["w"] == root else None
+            out["matches"] = 1 if top else 0
+            out["dups"] = 1 if top and top["shown"] else 0
+        if top is None:
+            return out, ""
+        rows, capped = subtree(found, top, shown_only, depth, cap)
+        out["capped"] = out["capped"] or capped
+        for f, d, parent in rows:
+            desc = self.describe(f)
+            desc.update(depth=d, parent=parent, name=f["name"], tex=self.texture(f["w"]), kids=len(f["kids"]),
+                        flags=f["flags"])
+            out["rows"].append(desc)
+        return out, ""
+
 
 # ============================================================================ answers
 def finish_gui(g, lang):
@@ -749,20 +840,108 @@ def gui_lines(g, why="", paths=()):
     return out
 
 
+def finish_tree(t, lang):
+    """each row's raw text of a tree() reading given its words and key (clean_text) - outside navmem's lock, as
+    finish_gui"""
+    for d in (t or {}).get("rows") or []:
+        d["text"], d["key"] = clean_text(d.get("raw"), lang)
+    return t
+
+
+def tree_lines(t, why="", indent=False):
+    """/guitree's answer (and bagmem.py --tree's) for tree()'s reading, finished (finish_tree) - t None: none|<why>:
+    root|w|h
+    tree|under|matches|dups|rows|walked|capped|all     (under: the path asked, "" the GUI root; matches: the windows it
+        names - 0 none, no rows then; dups: its shown matches; rows: the window lines below; walked: windows read;
+        capped 1: cut short - TREE_ROWS rows or WIN_CAP windows walked: ask under one; all 1: hidden windows too)
+    depth|name|type|shown|l|t|r|b|text|key|greyed|checked|texture|kids|parent|flags     (one a window, in the game's
+        order - an ancestor before its windows; depth 0 the window asked for; l..b in the root; text its words - the
+        markup out, a "<string;KEY>" given its words ("{KEY}" when the name tables haven't it); key that KEY when it's
+        all the text; greyed / checked 1/0 ("" not a button / check box); texture a sprite's or a button's file; kids
+        its children, hidden ones too; parent the row number of its parent window - 1 the first window line, 0 the top
+        one; flags its m_Flags in hex - bit 0 VISIBLE)
+    indent: each name led by two spaces a level - to read it, not to parse it (bagmem.py --tree --indent)"""
+    if not t:
+        return ['none|' + cell(why or "the game's windows can't be read")]
+    rows = t.get('rows') or []
+    out = ['root|%d|%d' % t['root'],
+           '|'.join(['tree', cell(t.get('under')), cell(t.get('matches')), cell(t.get('dups')), str(len(rows)),
+                     cell(t.get('walked')), cell(bool(t.get('capped'))), cell(bool(t.get('all')))])]
+    for d in rows:
+        name = cell(d.get('name'))
+        out.append('|'.join([str(d.get('depth', 0)), ('  ' * d.get('depth', 0) + name) if indent else name,
+                             cell(d.get('type')), cell(bool(d.get('shown')))] + _r(d.get('rect'))
+                            + [cell(d.get('text')), cell(d.get('key')), cell(d.get('greyed')), cell(d.get('checked')),
+                               cell(d.get('tex')), cell(d.get('kids')), cell(d.get('parent')),
+                               '%x' % d['flags'] if d.get('flags') is not None else '']))
+    return out
+
+
+def nav_tree(nm, under=None, shown_only=True, depth=None, wait=0.3):
+    """(t, why): tree() through navmem's NavMem nm - its attached game, its backpack and hand readers (the GUI's root, the
+    name tables) and its lock, the same way as NavMem.gui (kept here so navmem.py needn't change for a discovery tool),
+    the texts finished outside the lock (finish_tree). None and why when the game can't be read. Never raises"""
+    try:
+        st, bm, hm, why = nm._bag_readers(wait)
+        if st is None:
+            return None, why
+        with nm.lock:
+            if nm.st is not st or hm.st is not st or bm.st is not st:
+                return None, "the game changed"
+            t, why = bm.tree(hm, under, shown_only, depth)
+        return finish_tree(t, hm.lang_text), why
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return None, "reading the game's window tree failed (%r)" % (e,)
+
+
 # ============================================================================ the command line
 def _main():
     import argparse
     ap = argparse.ArgumentParser(description="the backpack, the tips and the game's windows - read-only")
     ap.add_argument("--gui", default="", help="window paths, Anc/Name,...")
+    ap.add_argument("--tree", action="store_true",
+                    help="every shown window, one a line (discovery: the names of buttons, lists, a box's keys) - "
+                         "instead of the backpack")
+    ap.add_argument("--under", default="", help="with --tree: only the window Anc/Name and those under it")
+    ap.add_argument("--all", action="store_true", help="with --tree: the hidden windows too")
+    ap.add_argument("--depth", type=int, default=None, help="with --tree: this many levels below it at most")
+    ap.add_argument("--indent", action="store_true", help="with --tree: names indented by depth (to read, not to parse)")
+    ap.add_argument("--out", default="", help="also write the answer to this file (to send)")
     a = ap.parse_args()
-    nm = N.NavMem(log=print)
-    r, why = nm.bag(wait=5.0)
-    print("\n".join(bag_lines(r, why)))
+    under = tree_under(a.under)
     paths = gui_paths(a.gui)
-    if paths:
-        g, why = nm.gui(paths, wait=5.0)
-        print("\n".join(gui_lines(g, why, paths)))
-    nm.close()
+    if under is None or paths is None:
+        sys.exit("--under / --gui: window paths are Anc/Name - letters, digits and _ split by / (%d paths at most)"
+                 % PATHS_CAP)
+    lines = []
+    nm = N.NavMem(log=print)
+    try:
+        if a.tree:
+            # (the readers are made in threads the first time - the game attached, the classes looked up: asked again
+            # while they're on their way)
+            t, why = None, ""
+            for _ in range(6):
+                t, why = nav_tree(nm, under, not a.all, a.depth, wait=5.0)
+                if t is not None or "not running" in why:
+                    break
+            lines += ["# python bagmem.py --tree%s%s%s (%s)" % (" --under " + under if under else "",
+                                                               " --all" if a.all else "",
+                                                               " --depth %d" % a.depth if a.depth is not None else "",
+                                                               time.strftime("%Y-%m-%d %H:%M:%S"))]
+            lines += tree_lines(t, why, a.indent)
+        else:
+            r, why = nm.bag(wait=5.0)
+            lines += bag_lines(r, why)
+        if paths:
+            g, why = nm.gui(paths, wait=5.0)
+            lines += gui_lines(g, why, paths)
+    finally:
+        nm.close()
+    print("\n".join(lines))
+    if a.out:
+        with open(a.out, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+        print("(written to %s - %d lines)" % (os.path.abspath(a.out), len(lines)))
 
 
 if __name__ == "__main__":
