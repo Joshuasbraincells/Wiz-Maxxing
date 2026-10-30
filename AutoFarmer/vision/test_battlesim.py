@@ -1,7 +1,10 @@
 """test_battlesim.py - the battle simulator's checks (standard library only):  python -m unittest vision\\test_battlesim.py"""
+import datetime
+import json
 import os
 import random
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -180,6 +183,96 @@ class Book(unittest.TestCase):
         unknown = book.foe("Nobody")
         self.assertIn("generic hitter", unknown.src)
         self.assertEqual(unknown.maxhp, 1000)
+
+
+class Fixes(unittest.TestCase):
+    """v0.9.0: what v0.8.0 got wrong"""
+
+    def test_value_text_from_facts(self):
+        # (cards.jsonl keeps handmem's value_text: an item card's kind and value only from there)
+        facts = {123: {"kind": "damage", "value": "295-335", "school": "storm", "pips": 4, "heads": "storm:295"},
+                 124: {"kind": "aoe", "value": "100/pip", "school": "fire", "pips": 0},
+                 125: {"kind": "blade", "value": "35%", "school": "storm", "boosts": "storm:35"}}
+        cards = S.deck_cards({"item_cards": [{"template_id": 123, "count": 1}, {"template_id": 124, "count": 1},
+                                             {"template_id": 125, "count": 2}]}, facts)
+        self.assertEqual(len(cards), 4)
+        hit, meteor, blade = cards[0], cards[1], cards[2]
+        self.assertEqual(hit.value, 295)
+        self.assertAlmostEqual(hit.top, 335 / 295.0)
+        self.assertTrue(meteor.x)
+        self.assertEqual(meteor.value, 100)
+        self.assertEqual(blade.boosts, {"storm": 35})
+        self.assertEqual(S.value_of("+10%"), (10.0, None, False))
+        self.assertEqual(S.value_of(""), (None, None, False))
+        # (and deck learning with such an item card doesn't fall over)
+        L = S.learn_decks({"decks": [{"gid": 5, "sets": [1], "display": "D", "cards": [hit_dict()],
+                                      "item_cards": [{"template_id": 123, "count": 1, "name": "Wand"}]}]}, facts)
+        self.assertEqual(L[0]["kinds"]["damage"], 2)
+
+    def test_range_top_from_value_text(self):
+        c = S.card_of({"display": "Kraken", "kind": "damage", "school": "storm", "pips": 4, "value": 485,
+                       "value_text": "485-525", "heads_text": "storm:485"})
+        self.assertAlmostEqual(c.top, 525 / 485.0)
+        plain = S.card_of({"display": "X", "kind": "damage", "school": "storm", "pips": 4, "value": 100})
+        self.assertEqual(plain.top, S.RANGE_TOP)
+
+    def test_torn_line_keeps_the_rest(self):
+        today = datetime.date.today()
+        with tempfile.TemporaryDirectory() as base:
+            folder = os.path.join(base, today.strftime("%Y-%m"))
+            os.makedirs(folder)
+            def battle(i):
+                return json.dumps({"rec": "battle", "v": 1, "id": today.strftime("%Y%m%d") + "-0000%02d-%d" % (i, i),
+                                   "me": {"sc": 4}, "parts": [{"sc": 0, "side": "enemy", "name": "Foe%d" % i,
+                                                               "max": 100 * (i + 1)}], "rounds": []},
+                                  separators=(",", ":"))      # (compact, as the recorder writes them)
+            with open(os.path.join(folder, today.isoformat() + ".jsonl"), "w") as f:
+                f.write('{"rec":"header","v":1}\n' + battle(1) + "\n" + battle(2)[:40] + "\n" + battle(3) + "\n")
+            book = S.FoeBook(base, days=2)
+        self.assertEqual(book.why, "")
+        self.assertEqual(sorted(book.by), ["Foe1", "Foe3"])
+
+    def test_crit_chance_learned(self):
+        battle = {"me": {"sc": 4, "school": "storm"},
+                  "parts": [{"sc": 0, "side": "enemy", "name": "Tank", "max": 3000}],
+                  "rounds": [{"hand": [], "played": {"targets": [0]},
+                              "casts": [{"sc": 4, "spell": "Kraken", "crit_p": [600, 150, 150, 0.2]}]},
+                             {"hand": [], "played": {"targets": [0]},
+                              "casts": [{"sc": 4, "spell": "Kraken", "crit_p": [600, 150, 150, 30]}]}]}
+        f = S.FoeBook(battles=[battle]).foe("Tank")
+        self.assertAlmostEqual(f.crit_p, 0.25)     # 0.2 and 30% -> their median
+        # (no criticals at all when the game says 0, whatever the rating)
+        f.crit_p = 0.0
+        cards = S.deck_cards({"cards": [hit(count=30)]})
+        none = S.simulate(cards, S.Me("storm", 5000, crit=900), [f], n=60, seed=5)
+        f.crit_p = 1.0
+        every = S.simulate(cards, S.Me("storm", 5000, crit=900), [f], n=60, seed=5)
+        self.assertLess(every["rounds"], none["rounds"])
+
+    def test_unknown_block_is_not_zero(self):
+        f = S.Foe("x", 100)
+        me = S.Me("storm", crit=400)
+        self.assertEqual(f.block_for(me), 400)
+        self.assertAlmostEqual(S.crit_chance(400, f.block_for(me)), 0.75)
+        v = S.verdict(S.simulate(S.deck_cards({"cards": [hit(count=5)]}), me, [f], n=10, seed=1),
+                      S.deck_cards({"cards": [hit(count=5)]}), me, [f])
+        self.assertTrue(any("critical chance isn't known" in n for n in v["notes"]))
+
+    def test_identical_blades_dont_stack(self):
+        cards = S.deck_cards({"cards": [boost("blade", "Stormblade", 35, count=4)]})
+        b = S._Battle(cards, S.Me("storm"), [S.Foe("x", 1000)], S.Opts(), random.Random(1))
+        b.draw()
+        blades = [c for c in b.hand if c.kind == "blade"]
+        b.me.accuracy = 100
+        b.cast(blades[0])
+        b.cast(blades[1])
+        self.assertEqual(len(b.blades), 1)
+        plan = S.Card("Storm Lord", "damage", "storm", 7, heads={"storm": 1000})
+        self.assertIsNone(b.pick_boost(plan))      # another Stormblade adds nothing
+
+
+def hit_dict():
+    return hit()
 
 
 if __name__ == "__main__":

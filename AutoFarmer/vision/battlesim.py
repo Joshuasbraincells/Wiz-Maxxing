@@ -49,6 +49,7 @@ RESULTS  simulate() -> {n, won, lost, timeout (fractions), rounds (median rounds
 FAILS SOFT: nothing here raises out of the public functions on bad input - a card it can't read is left out (counted in
 why), a foe with nothing known gets the generic hitter."""
 import argparse
+import collections
 import json
 import math
 import random
@@ -68,6 +69,9 @@ GENERIC_PER_PIP = 100       # an enemy nobody knows: 100 a pip
 GENERIC_CAST = 0.5          # ... cast every other round
 SCHOOL_ACC = {"balance": 85, "death": 85, "fire": 75, "ice": 80, "life": 90, "myth": 80, "storm": 70}
 ENEMY_RESIST = 15           # the bot's own default (PlayerStats enemyresist): an enemy's resist to the wizard's hits
+# (an enemy's block rating when nothing was learned of its crits: the wizard's own critical rating - a 75% critical
+# chance at x1.25, not block 0's certain x2 every hit)
+BLOCK_LIKE_ME = None
 # (the kinds the simulator plays; every other card is discarded when discardunused is on, else just held)
 PLAYED = ("damage", "aoe", "heal", "blade", "trap", "aura")
 VERDICTS = ((0.9, "yes"), (0.65, "likely"), (0.35, "risky"), (0.0, "no"))
@@ -120,6 +124,21 @@ def parse_pairs(text):
     return out
 
 
+def value_of(v):
+    """(number, top, per_pip) of a card's value - a number as it is, or handmem's value_text: '295-335' (295, 335),
+    '100/pip' (100, None, True), '35%', '+75', '+10%' - (None, None, False) none"""
+    if isinstance(v, bool) or v is None:
+        return None, None, False
+    if isinstance(v, (int, float)):
+        return float(v), None, False
+    m = re.match(r"\s*\+?(-?\d+(?:\.\d+)?)\s*(?:-\s*(\d+(?:\.\d+)?))?", str(v))
+    if not m:
+        return None, None, False
+    lo = float(m.group(1))
+    hi = float(m.group(2)) if m.group(2) else None
+    return lo, (hi if hi is not None and hi > lo else None), "/pip" in str(v)
+
+
 def fits(boosts, school):
     """the % a boost ({school: %}, 'all') adds to a head of school - 0 none"""
     return boosts.get(school, boosts.get("all", 0)) if boosts else 0
@@ -130,12 +149,16 @@ class Card:
     """one card the wizard can draw: name, kind (PLAYED or another of handmem's KINDS), school, pips, x (X-pip), value
     (a hit's least damage, a heal's amount, a boost's %), heads {school: least damage} (a hit's), boosts {school: %} (a
     blade's, trap's, aura's), acc (its accuracy %), tc / item"""
-    __slots__ = ("name", "tid", "kind", "school", "pips", "x", "value", "heads", "boosts", "acc", "tc", "item")
+    __slots__ = ("name", "tid", "kind", "school", "pips", "x", "value", "heads", "boosts", "acc", "tc", "item", "top")
 
     def __init__(self, name, kind, school="", pips=0, x=False, value=0, heads=None, boosts=None, acc=None, tid=None,
-                 tc=False, item=False):
+                 tc=False, item=False, top=None):
         self.name, self.kind, self.school, self.tid = name or "?", kind or "", school_of(school), tid
-        self.pips, self.x, self.value = int(pips or 0), bool(x), float(value or 0)
+        num, rtop, per = value_of(value)
+        self.pips, self.x, self.value = int(pips or 0), bool(x) or per, num or 0.0
+        # (a hit's range top as a multiple of its least: the card's own '295-335', else RANGE_TOP)
+        rtop = top if top is not None else rtop
+        self.top = (rtop / self.value) if rtop and self.value > 0 and rtop > self.value else RANGE_TOP
         self.heads = dict(heads or {})
         if self.kind in ("damage", "aoe") and not self.heads and self.value > 0:
             self.heads = {self.school or "balance": self.value}
@@ -155,19 +178,22 @@ class Card:
 
 def card_of(c, facts=None):
     """a Card from a deckmem / handmem card dict (kind, school, pips, x_pips, value, heads_text, boosts_text...) - its
-    template's facts (cards.jsonl's: kind, value, heads, boosts, acc) fill what it lacks. None: no kind known"""
+    template's facts (cards.jsonl's: kind, value - handmem's value_text there, heads, boosts, acc) fill what it lacks.
+    None: no kind known"""
     f = (facts or {}).get(c.get("template_id") or c.get("tid")) or {}
     kind = c.get("kind") or f.get("kind")
     if not kind:
         return None
     heads = parse_pairs(c.get("heads_text") or f.get("heads") or "")
     boosts = parse_pairs(c.get("boosts_text") or f.get("boosts") or "")
+    value = c.get("value") if c.get("value") is not None else f.get("value")
+    # (the range's top: the card's value_text, else the fact's)
+    _lo, top, _per = value_of(c.get("value_text") if c.get("value_text") else f.get("value"))
     return Card(c.get("display") or c.get("name") or f.get("display") or f.get("name"), kind,
                 c.get("school") or f.get("school"), c.get("pips") if c.get("pips") is not None else f.get("pips"),
-                c.get("x_pips") if c.get("x_pips") is not None else f.get("x"),
-                c.get("value") if c.get("value") is not None else f.get("value"), heads, boosts,
+                c.get("x_pips") if c.get("x_pips") is not None else f.get("x"), value, heads, boosts,
                 c.get("accuracy") or f.get("acc"), c.get("template_id") or c.get("tid"),
-                tc=c.get("side") == "treasure", item=bool(c.get("item")))
+                tc=c.get("side") == "treasure", item=bool(c.get("item")), top=top)
 
 
 def deck_cards(deck, facts=None, why=None):
@@ -286,7 +312,12 @@ class Foe:
         self.hits = [h for h in (hits or []) if h and h > 0]
         self.hit_p = hit_p
         self.block_p = None
+        self.crit_p = None      # the game's own critical chance against it (learned: the log's finalCrit), None unknown
         self.boss, self.src = bool(boss), src
+
+    def block_for(self, me):
+        """its block rating: its own when known (above 0), else the wizard's critical rating (BLOCK_LIKE_ME)"""
+        return self.block if self.block > 0 else (me.crit if BLOCK_LIKE_ME is None else BLOCK_LIKE_ME)
 
     def resist_mult(self, school, pierce=0):
         """the damage multiplier for a head of school, less pierce (a resist only: pierce never turns it into a boost)"""
@@ -355,7 +386,8 @@ class FoeBook:
         base = base or battlereport.DEFAULT_DIR
         d1 = datetime.date.today()
         d0 = d1 - datetime.timedelta(days=days)
-        stats = {}
+        # (battlereport counts torn lines, other kinds... into it: a Counter, so a torn line costs nothing)
+        stats = collections.Counter()
         return battlereport.battles(base, d0.isoformat(), d1.isoformat(), stats)
 
     def _add(self, b):
@@ -366,7 +398,7 @@ class FoeBook:
         for p in foes.values():
             e = self.by.setdefault(p["name"], {"n": 0, "max": None, "school": "", "rank": None, "boss": False, "res": {},
                                                 "crits": 0, "blocked": 0, "hits": [], "hits_n": 0, "casts": 0,
-                                                "rounds": 0})
+                                                "rounds": 0, "crit_p": []})
             e["n"] += 1
             if p.get("max"):
                 e["max"] = max(e["max"] or 0, int(p["max"]))
@@ -399,8 +431,14 @@ class FoeBook:
                             lst = self.by[foes[r[0]]["name"]]["res"].setdefault(pschool, [])
                             if len(lst) < 200:
                                 lst.append(float(r[2]))
+                    tgt = (played.get("targets") or [None])[0]
+                    # (the game's own critical chance against it: GetCritParams' finalCrit - 0-1, or a % over 1)
+                    cp = c.get("crit_p")
+                    if isinstance(cp, list) and len(cp) >= 4 and isinstance(cp[3], (int, float)) and tgt in foes:
+                        lst = self.by[foes[tgt]["name"]]["crit_p"]
+                        if len(lst) < 200:
+                            lst.append(cp[3] / 100.0 if cp[3] > 1 else float(cp[3]))
                     for cr in c.get("crit") or []:
-                        tgt = (played.get("targets") or [None])[0]
                         name = foes[tgt]["name"] if tgt in foes else (foes[next(iter(foes))]["name"] if len(foes) == 1
                                                                        else None)
                         if name and len(cr) >= 3:
@@ -443,6 +481,8 @@ class FoeBook:
         f = Foe(name, maxhp or 1000, school or e.get("school") or (c or {}).get("school"), res, 0, spells, hits,
                 hit_p, boss if boss is not None else e.get("boss", False), "; ".join(src))
         f.block_p = block_p
+        if e.get("crit_p"):
+            f.crit_p = min(1.0, max(0.0, statistics.median(e["crit_p"])))
         if not maxhp:
             f.src = "health: not known (1000 assumed); " + f.src
         return f
@@ -461,7 +501,8 @@ class _Battle:
         self.pips = 0           # pips (power pips counted as 1)
         self.power = 0          # of which power pips
         self.fpips = [rng.choice(ENEMY_START_PIPS) for _ in foes]
-        self.blades = []        # [{school: %}] on the wizard
+        self.blades = []        # [(name, {school: %})] on the wizard - one of each name (the game doesn't stack
+                                # identical blades; traps it does)
         self.traps = [[] for _ in foes]
         self.aura = None        # ({school: %}, rounds left)
         self.boosts_run = 0     # boosts since the last hit
@@ -515,7 +556,7 @@ class _Battle:
         for sch, v in card.heads.items():
             m = damage_multiplier(self.me.damage)
             if boosts:
-                for b in self.blades:
+                for _n, b in self.blades:
                     m *= 1 + fits(b, sch) / 100.0
                 for t in self.traps[i]:
                     m *= 1 + fits(t, sch) / 100.0
@@ -572,7 +613,8 @@ class _Battle:
         if card.kind == "heal":
             self.hp = min(self.me.maxhp, self.hp + card.value)
         elif card.kind == "blade":
-            self.blades.append(card.boosts)
+            if all(n != card.name for n, _b in self.blades):
+                self.blades.append((card.name, card.boosts))
             self.boosts_run += 1
         elif card.kind == "trap":
             t = self.targets(Card("", "damage", heads={"balance": 1}))
@@ -593,8 +635,8 @@ class _Battle:
             total = 0.0
             used_traps = set()
             for sch, v in card.heads.items():
-                d = v * per * self.rng.uniform(1.0, RANGE_TOP) * damage_multiplier(self.me.damage)
-                for k, b in enumerate(self.blades):
+                d = v * per * self.rng.uniform(1.0, card.top) * damage_multiplier(self.me.damage)
+                for k, (_n, b) in enumerate(self.blades):
                     if fits(b, sch):
                         d *= 1 + fits(b, sch) / 100.0
                         used_blades.add(k)
@@ -606,12 +648,16 @@ class _Battle:
                     d *= 1 + fits(self.aura[0], sch) / 100.0
                 d *= f.resist_mult(sch, self.me.pierce)
                 total += d
-            bp = f.block_p
-            cc = crit_chance(self.me.crit, f.block, self.me.level)
-            if self.rng.random() < cc:
-                blocked = bp is not None and self.rng.random() < bp
-                if not blocked:
-                    total *= crit_mult(self.me.crit, f.block)
+            # (a critical: the game's own chance against it when learned - the log's finalCrit, blocks already in it -
+            # else the model's with its block; its multiplier the model's)
+            blk = f.block_for(self.me)
+            if f.crit_p is not None:
+                crit = self.rng.random() < f.crit_p
+            else:
+                crit = self.rng.random() < crit_chance(self.me.crit, blk, self.me.level) and not (
+                    f.block_p is not None and self.rng.random() < f.block_p)
+            if crit:
+                total *= crit_mult(self.me.crit, blk)
             self.traps[i] = [t for k, t in enumerate(self.traps[i]) if k not in used_traps]
             before = self.fhp[i]
             self.fhp[i] = max(0, self.fhp[i] - int(total))
@@ -673,6 +719,9 @@ class _Battle:
         for c in self.hand:
             if c.kind == "blade" and not o.useblades or c.kind == "trap" and not o.usetraps \
                     or c.kind == "aura" and (not o.useaura or self.aura) or c.kind not in ("blade", "trap", "aura"):
+                continue
+            # (that blade's on already: another copy adds nothing)
+            if c.kind == "blade" and any(n == c.name for n, _b in self.blades):
                 continue
             pct = max((fits(c.boosts, s) for s in plan.heads), default=0)
             if pct > best_pct and self.pay(c)[0]:
@@ -841,6 +890,10 @@ def verdict(res, cards, me, foes, opts=None):
                     out["hits"][f.name], "" if out["hits"][f.name] == 1 else "s"))
             else:
                 parts.append("%s %d health: no hit in the deck" % (f.name, f.maxhp))
+        if any(f.crit_p is None for f in foes):
+            out["notes"].append("an enemy's critical chance isn't known from the battles recorded - its block taken "
+                                "as your critical rating (75%% critical chance at x%.2f)" % crit_mult(me.crit, me.crit)
+                                if me.crit > 0 else "no critical rating given - no criticals")
         if any(f.spells == [] and not f.hits for f in foes):
             out["notes"].append("an enemy's spells aren't known (a generic hitter assumed)")
         out["notes"].append("shields, enemy heals and boosts aren't modelled - against a boss that shields or heals "

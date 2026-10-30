@@ -1,4 +1,4 @@
-"""Vision helper for AutoFarmer: finds cards in the hand and school badges on name plates.
+r"""Vision helper for AutoFarmer: finds cards in the hand and school badges on name plates.
 
 AutoFarmer (AutoHotkey) starts this with pythonw and asks it over HTTP on 127.0.0.1. Instead of
 ImageSearch's "found or not at this tolerance", every picture is matched at every position with a
@@ -2373,8 +2373,13 @@ def decks_lines(fresh, out=False):
     r, why = decks_reading(fresh, out)
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
-    _book, facts = sim_book()
-    return (deckmem.deck_lines(r) + battlesim.learn_lines(battlesim.learn_decks(r, facts))
+    # (the profiles never cost the decks' own lines: a deck they can't be made of is said, the rest still answered)
+    try:
+        _book, facts = sim_book()
+        learn = battlesim.learn_lines(battlesim.learn_decks(r, facts))
+    except Exception as e:  # noqa: BLE001
+        learn = ['nolearn|%s' % mob_cell('the deck profiles failed (%r)' % (e,))]
+    return (deckmem.deck_lines(r) + learn
             + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))])
 
 
