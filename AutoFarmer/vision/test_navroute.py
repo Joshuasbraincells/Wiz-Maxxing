@@ -644,10 +644,17 @@ def import_navmem():
             return fn
     if not had:
         ctypes.WinDLL = Dll
+    stand_in = sys.modules.get('navmem')                 # (another test file's stand-in: put back afterwards)
+    if stand_in is not None and getattr(stand_in, '__file__', None):
+        stand_in = None
     try:
+        if stand_in is not None:
+            del sys.modules['navmem']
         import navmem
         return navmem
     finally:
+        if stand_in is not None:
+            sys.modules['navmem'] = stand_in
         if not had:
             del ctypes.WinDLL
 
