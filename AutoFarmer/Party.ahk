@@ -432,10 +432,13 @@ PartyLowest()
 ;name start, ReadSidePlates'): of the wizards on your side (player, your team, not you) the one whose plate's box holds x
 ;across (its l..r - one only), else - no boxes: an older helper - the one whose plate's middle is nearest, within Px(160).
 ;{cur, max, votes: 3 (read, not guessed: sure enough to heal on), school (its own, lower case - "" not read), src}; "" none
-;there, or (health 1) its health not read, hidden, or 0 (out of the battle)
+;there, or (health 1) its health not read, hidden, or 0 (out of the battle) - or two or more game windows running (Vision.ahk
+;VisionMemOneClient, v0.9.0 review: navmem can be on another client, its battle's plates laid on yours)
 PartyMemAlly(b, x, health := 1)
 	{
 	if (!IsObject(b) || !IsObject(b.me) || !IsObject(b.parts) || x = "" || b.me.team = "")
+		return ""
+	if (!V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
 		return ""
 	pmaIn := [], pmaNear := "", pmaD := ""
 	for pmaI, pmaP in b.parts

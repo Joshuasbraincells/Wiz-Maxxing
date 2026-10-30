@@ -958,10 +958,14 @@ MemBoxCheck(ans)
 	if (!MemBox.Has(mbcKey))
 		MemBox[mbcKey] := V1Obj({agree: 0, trusted: 0, lastOk: ""})
 	mbcS := MemBox[mbcKey]
+	;(not as many: a look that doesn't line up - the run of 3 starts again, as with a card that has no box (v0.9.0 review:
+	;before, trust could build across a look the counts told apart))
 	if (mbcBoxes.Length != mbcHand.cards.Length)
 		{
-		if (!said.Has(mbcSay "|count"))
-			said[mbcSay "|count"] := 1, DebugLog("  Memory card boxes (log only): the screen shows " mbcBoxes.Length " card box(es), the game's memory " mbcHand.cards.Length " card(s) - not compared this look (said once a window size)")
+		mbcWas := mbcS.trusted, mbcS.agree := 0, mbcS.trusted := 0
+		if (!said.Has(mbcSay "|count") || mbcWas)
+			said[mbcSay "|count"] := 1, DebugLog("  Memory card boxes (log only): the screen shows " mbcBoxes.Length " card box(es), the game's memory " mbcHand.cards.Length " card(s) - not compared this look"
+				. (mbcWas ? ", and not clicked where the memory has them at this size again till 3 looks in a row line up" : "") " (said once a window size)")
 		return
 		}
 	mbcGap := -1, mbcAt := 0, mbcDx := 0, mbcDy := 0, mbcNo := 0, mbcSays := ""
@@ -997,14 +1001,15 @@ MemBoxCheck(ans)
 	}
 
 ;Whether cards may be clicked where the game's memory has them now: memclicks:1 and its boxes seen lining up with the
-;screen's 3 looks in a row at this window size (MemBoxCheck)
+;screen's 3 looks in a row at this window size (MemBoxCheck) - and one game window running (Vision.ahk VisionMemOneClient,
+;v0.9.0 review: with two or more navmem can be on another client, whose hand of as many cards lines up just as well)
 MemBoxTrusted()
 	{
 	global MemBox
 	if (Stat("memclicks") != 1 || !IsObject(MemBox))
 		return false
 	mbtS := V1At(MemBox, GameW "x" GameH)
-	return IsObject(mbtS) && mbtS.trusted = 1
+	return IsObject(mbtS) && mbtS.trusted = 1 && V1IsFunc("VisionMemOneClient") && VisionMemOneClient.Call()
 	}
 
 ;The hand's card boxes from the game's memory alone, in BoostBoxes' shape ({boxes: [{l, t, w, h (pixels), known: "", grey:
@@ -1071,8 +1076,10 @@ BoostMemDiscard(key)
 ;other slot whose card the game named - a hit's (SlotGame: CardLearn.ahk's look at the hand), else the learned card in the
 ;slot's (flag game=) - the card of that name (of a hit's kind for hit1-4 and the wand). Not one the game says can't be cast
 ;(castable 0 - its picture wouldn't match a greyed card either). ench 1: one with an enchantment on it first (after a
-;Sharpen, Potent or enchant - MemSettle). An aura or heal no card's named for, an enchant (MemEnchantFind), Pass: 0 - by
-;its picture, as before
+;Sharpen, Potent or enchant - MemSettle); ench 0: a plain one first - one that carries an enchantment already only when
+;there's none (BoostMemBox's rule, v0.9.0 review: it can't take a Sharpen, Potent or enchant - the game takes no second
+;one; its picture wouldn't match it either). An aura or heal no card's named for, an enchant (MemEnchantFind), Pass: 0 -
+;by its picture, as before
 MemCardFor(dir, title, hand, ench := 0)
 	{
 	global SlotGame
@@ -1114,7 +1121,7 @@ MemCardFor(dir, title, hand, ench := 0)
 		{
 		if (hand.cards[mcfN].castable = "0")
 			continue
-		if (!ench || hand.cards[mcfN].ench != "")
+		if (ench ? hand.cards[mcfN].ench != "" : hand.cards[mcfN].ench = "")
 			return mcfN
 		if (!mcfAny)
 			mcfAny := mcfN
@@ -1125,9 +1132,11 @@ MemCardFor(dir, title, hand, ench := 0)
 ;Find's first look (Autofarmer.ahk) with memclicks:1: picture slot dir\title's card where the game's memory has it
 ;(MemCardFor), its box in pixels (VisionCardPx) - only while the memory's boxes may be clicked (MemBoxTrusted). True: X, Y
 ;its box's middle less Px(5) each way (Find's callers click X + Px(5), or X itself - a bit up and left of the middle: both on
-;the card); false, X and Y as they were: Find looks by its picture as ever
-MemCardFind(dir, title, &X, &Y)
+;the card), ench 1 that copy carries an enchantment already (none plain in hand - UseBlade / UseTrap / UseHit put none on it);
+;false, X and Y as they were: Find looks by its picture as ever
+MemCardFind(dir, title, &X, &Y, &ench := 0)
 	{
+	ench := 0
 	if (!MemBoxTrusted() || !V1IsFunc("VisionCards") || !V1IsFunc("VisionCardPx"))
 		return false
 	;(a read 0.4 s old at most - VisionFind's look at the screen serves 0.4 s too: one read for FindCards' every card)
@@ -1135,7 +1144,7 @@ MemCardFind(dir, title, &X, &Y)
 	mcdN := MemCardFor(dir, title, mcdHand)
 	if (!mcdN || !VisionCardPx.Call(mcdHand, mcdHand.cards[mcdN], &mcdX, &mcdY))
 		return false
-	X := mcdX - Px(5), Y := mcdY - Px(5)
+	X := mcdX - Px(5), Y := mcdY - Px(5), ench := (mcdHand.cards[mcdN].ench != "") ? 1 : 0
 	return true
 	}
 
@@ -2993,10 +3002,12 @@ ReadEnemyHealth(memOnly := false)
 ;plates from the game's memory too - memclicks:1 only (where a single-target hit and a trap are clicked: NOT TRIED in the
 ;game yet) - each one's box (Vision.ahk NavPlatePx), EnemyPlates [{x, y, name, box}]. Sets EnemyHP ({cur, max}, left to
 ;right) - and EnemyPlates with no onScreen - and HealthStatus: true. False: nothing set - read off the screen, as before
+;Only while one game window runs (Vision.ahk VisionMemOneClient, v0.9.0 review: with two or more navmem can be on another
+;client - another battle's enemies laid on these plates)
 EnemyMemHealth(onScreen := "")
 	{
 	global EnemyHP, EnemyPlates, HealthStatus ; (v1 globals it sets)
-	if (BossChoosen == 1 || !V1IsFunc("NavBattle") || !V1IsFunc("NavPlatePx"))
+	if (BossChoosen == 1 || !V1IsFunc("NavBattle") || !V1IsFunc("NavPlatePx") || !V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
 		return false
 	emhB := NavBattle.Call()
 	if (!IsObject(emhB) || !IsObject(emhB.foes))

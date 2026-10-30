@@ -371,10 +371,32 @@ VisionGameClients()
 		return 0
 	}
 
+;Whether the game's memory can be this client's for sure - one game window (v0.9.0 review): navmem attaches to the
+;foreground client, else the first it finds, and stays on it (vision\navmem.py _ensure), so with two or more running it can
+;be reading another client's battle (dual mode is NavBattle's own refusal). The values the bot acts on that came in with
+;TODO.md goal 3 ask this first: Autofarmer.ahk RoundBattleMem (your school and plate - written over the badge's, they'd also
+;blind VisionCards' "another client's wizard" check, which compares the two) and OwnMemHealth, KillCalc.ahk EnemyMemHealth
+;and MemBoxTrusted (memclicks), Party.ahk PartyMemAlly - not one window: read off the screen, as before. Said in debug.log
+;when the count changes (one again: said again the next time it isn't)
+VisionMemOneClient()
+	{
+	static vmoSaid := ""
+	vmoN := VisionGameClients()
+	if (vmoN = 1)
+		{
+		vmoSaid := 1
+		return true
+		}
+	if (vmoN != vmoSaid)
+		vmoSaid := vmoN, DebugLog("Vision: " vmoN " game window(s) found - the game's memory may be another client's: your school and plate, the battle's health and the memory's card boxes are taken off the screen (said once till that changes)")
+	return false
+	}
+
 ;A card of the hand from the game's memory (VisionCards' hand, card one of its cards) in screen pixels: x, y the middle
 ;of its box (QuickSell.ahk QsPx's rule: GameLeft + its GUI units over the root's width x GameW). False, x and y "": its
 ;box or the root not read (an older helper), the box not inside the root, or the pixel off the game window. It clicks
-;nothing: a click there is KillCalc.ahk's (MemCardAt - memclicks, off, and only once MemBoxCheck has seen the boxes line up)
+;nothing: a click there is KillCalc.ahk's (MemCardFind / MemEnchantFind / HandBoxes - memclicks, off, and only once
+;MemBoxCheck has seen the boxes line up)
 VisionCardPx(hand, card, &x, &y)
 	{
 	x := "", y := ""

@@ -1099,7 +1099,10 @@ and each name plate's box (/battle), read from the memory the same way.
 	  game's memory"), the enemies' health on the plates the screen shows
 	  ("enemies' health from the game's memory: ..." - not a boss whose
 	  health the game hides, nor with an Alt+1 boss) and your party's
-	  wizards' health.
+	  wizards' health. Only while one game window is open: with two or
+	  more the memory read can be the other window's wizard (debug.log
+	  "Vision: N game window(s) found ..."), so all of it - and
+	  memclicks below - is taken off the screen as before.
 	- Clicks where the memory has them: only with memclicks:1 (Settings,
 	  HOW IT PLAYS ITS CARDS - "Click cards and plates where the game's
 	  memory has them", off). Every round the memory's card boxes are
@@ -1114,11 +1117,17 @@ and each name plate's box (/battle), read from the memory the same way.
 	  off - healthocr:0).
 	- Fixed whatever the setting: your plate not found no longer sends a
 	  heal or Tower Shield's click onto the card just clicked (not cast -
-	  said in debug.log); the memory's hand is no longer thrown away when
-	  the badge by your plate is another school's (one game running); a
-	  spare blade only the memory found is discarded, at its card box; a
-	  hit the game says is for one enemy gets its target clicked without
-	  a hitNtarget:1 key.
+	  said in debug.log); nor a blade's or Reshuffle's onto nowhere when
+	  the hitter's school is known (the memory's, or the one this
+	  character fought as before) but no plate was found - the round's
+	  hits are still cast, the blades aren't ("the hitter's name plate
+	  wasn't found this round"); with memclicks:1 a card that already
+	  carries an enchantment is never sharpened, made potent or enchanted
+	  again (a plain copy is taken first); the memory's hand is no longer
+	  thrown away when the badge by your plate is another school's (one
+	  game running); a spare blade only the memory found is discarded, at
+	  its card box; a hit the game says is for one enemy gets its target
+	  clicked without a hitNtarget:1 key.
 	- Each cast check logs the round's phase from the memory beside the
 	  Pass picture's verdict ("cast check (memory, log only)") - nothing
 	  acts on it yet. To watch it yourself in a battle:
