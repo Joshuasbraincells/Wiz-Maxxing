@@ -312,6 +312,30 @@ clicks on things aren't seen - press X. A restart keeps a recording under way
 (learned\puzzle_recording.txt), a fight under way, and the wait at a blocked
 way with the hour's tries (generated\puzzle_journal.txt, puzzle_hold.txt).
 debug.log: "Puzzle: ...".
+Puzzles, new in v0.9.0 (not tried in the game yet): a gate's model can stay
+in the game's memory once it's open - its collision wall is what goes - so a
+gate still there with no collision wall by it no longer counts as shut: the
+bot walks through to see; any of the doors by the block going from memory
+counts too. A lever or pedestal the game names nowhere is found through the
+zone's own triggers: an object with no name whose template's name has the
+words of one of their use events ("PedestalUsed": CL-Pedestal-01 - a guess
+by the name; only the placements the zone's file ranks best, at most 2 of
+the things tried), named in debug.log's plan line ("levers (zone's
+triggers): ..."). With puzzlelevers (Settings > WALKING, off - not tried
+yet) it's X'd with the things with a prompt (any press prompt within 150 -
+never with Crowns, never a teleporter, lock or shop), one whose trigger
+opens the gate at the block first. Off: named only, the tries as before.
+A thing or NPC named Block, Clock or Warlock is no longer taken for a lock.
+A gate's state (open / shut) is read from the game's memory and written in
+debug.log ("now Closed" by each door); puzzlestate (Settings > WALKING, off)
+goes by it: a state changed since a try began counts as the way maybe open,
+one still the same as shut, and a gate already in an open state (Open,
+Unlocked...) that isn't the zone file's starting one isn't the block (a gate
+shut as the zone begins still is). Turn it on once vision\statemem.py
+--watch (the discovery tools below) shows the gate's state change as it
+opens. Leaving a dungeon and coming back (a new instance: every object's id
+new) no longer counts as the doors by the block gone - they're found by
+their name and place too.
 The quest's page: every "needs you" notice about the quest (stuck, collect,
 waiting, no arrow, a blocked way) has a link to the quest on Wizard101 Central
 (and its search) - in the notice, in debug.log and in the Discord alert. A
@@ -1367,6 +1391,21 @@ your wizard is in the world (the same Python as the vision helper):
 	  --pid <n> picks the client when more than one is running.
 	Send the .txt file. The vision helper gives the bot the same window list
 	(/guitree); nothing the bot does uses it yet.
+	For puzzles (two more, also read-only):
+	- A zone's own files (Wizard101 installed - it needn't be running):
+	      python vision\puzzlefile.py --uses --out uses.txt
+	  every zone's use events (a lever pulled, a pedestal used) and what each
+	  one's triggers do; then, for one of them, where the game's files name it
+	  (what ties a lever to its event):
+	      python vision\puzzlefile.py --find <zone> <event> --out find.txt
+	  (<zone> as uses.txt names it, e.g. WizardCity-WC_Ravenwood). --game
+	  <folder> when the game isn't in the usual place.
+	- A gate's state, live: stand by a gate (Storm Lord's Temple's, one a
+	  lever opens) and open it - beat its guards, pull its lever - while
+	      python vision\statemem.py --watch 180 --out state.txt
+	  runs (--all: every object with a state - levers too - not only doors).
+	  Before it, the classes it reads:
+	      python vision\reflect.py --class ObjectStateBehavior --class ClientObjectStateBehavior --grep state --out stateclass.txt
 
 Along side simply playing the game this program has certain modes
 all of which include, command mode, response mode, dual mode and lore mode.

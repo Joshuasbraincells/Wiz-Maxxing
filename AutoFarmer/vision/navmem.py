@@ -9,7 +9,9 @@
                                     # while not known)
 
     doors, why = nm.blockers()      # the zone's doors, gates and collision walls (no name key, a blocker's template
-                                    # name - puzzlefile.is_blocker): [{name, pos, yaw, gid, template}], or None and why
+                                    # name - puzzlefile.is_blocker): [{name, pos, yaw, gid, template, state}], or None and
+                                    # why (state: its ObjectStateBehavior's - statemem.py, NOT CONFIRMED in the game yet -
+                                    # None while not known)
 
     hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
 
@@ -91,7 +93,12 @@ by a signature in its code, or checked by a type name / window name it carries):
              its worker, kept). An object with no name key whose template's name is a door, a gate, a collision wall
              (puzzlefile.is_blocker: DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate) is a blocker (blockers()):
              the walker held in front of one may have a puzzle to open it - and it going from memory is the way
-             opening (the same template name and position reads as the mobs': no other offset). An object is re-checked
+             opening (the same template name and position reads as the mobs': no other offset) - each one's state read
+             at every blockers() (statemem.py: its ObjectStateBehavior's current state, by reflected names - not
+             confirmed in the game yet; None while not known; its reader made once per game in a thread like the
+             titles'). An object with no name key whose template is one the zone's triggers' use events may be fired by
+             (puzzlefile.use_templates - a lever the game names nowhere, matched by the event's words: "PedestalUsed",
+             CL-Pedestal-01) is a thing of kind "use" (items(): name and key ""). An object is re-checked
              at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
@@ -1112,6 +1119,10 @@ class NavMem:
         # {(object, gid): (info or None, why, when to try again)} - kept while the object lives
         self._boss, self._boss_thread, self._boss_fail, self._boss_seen = None, None, (None, 0.0, ""), {}
         self._boss_said = 0.0            # (when a failure to read them may be logged again)
+        # the doors' states (statemem.py - their ObjectStateBehavior): its reader of the attached game, the thread making it,
+        # why it couldn't be made (the game it was for, when to try again); read again at every blockers() (a state
+        # changes: nothing kept), when a failure to read them may be logged again
+        self._state, self._state_thread, self._state_fail, self._state_said = None, None, (None, 0.0, ""), 0.0
         # the backpack, the HUD's tips and the game's windows by name (bagmem.py): its reader of the attached game, the
         # thread making it (about half a second), why it couldn't be made (the game it was for, when to try again)
         self._bagm, self._bagm_thread, self._bagm_fail = None, None, (None, 0.0, "")
@@ -1133,6 +1144,7 @@ class NavMem:
             self._quest = None
             self._boss = None
             self._boss_seen = {}
+            self._state = None
             self._bagm = None
             self._deckm = None
             self._deck_cache = None
@@ -1469,6 +1481,64 @@ class NavMem:
                 info = hit[0] if hit else None
                 for k in bossmem.FIELDS:
                     m[k] = info.get(k) if info else None
+
+    # ------------------------------------------------------------ the doors' states (statemem.py)
+    def _state_reader(self, st, wait=0.0):
+        """(the states' reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later: _state_fail)"""
+        with self.lock:
+            sm = self._state
+            if sm is not None and sm.st is st:
+                return sm, ""
+            fst, again, fwhy = self._state_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._state_thread
+            if th is None or not th.is_alive():
+                self._state = None
+                th = self._state_thread = threading.Thread(target=self._state_make, args=(st,), name="state", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            sm = self._state
+            if sm is not None and sm.st is st:
+                return sm, ""
+            fst, again, fwhy = self._state_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's state classes (once, about half a second)"
+
+    def _state_make(self, st):
+        """the states' reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import statemem
+            sm = statemem.StateMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            self._state_failed(st, e)
+            return
+        with self.lock:
+            self._state = sm
+
+    def _state_failed(self, st, e):
+        """_state_make's failure: kept (tried again after RETRY_SIG s - a class or property not in this build -, else 30 s)"""
+        sig = isinstance(e, LookupError)
+        why = ("the doors' states can't be read in this build: %s" % e) if sig else \
+            "the state classes couldn't be read (%r)" % (e,)
+        self.log("statemem: " + why)
+        with self.lock:
+            self._state_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+
+    def _state_fill(self, st, live):
+        """each live door's state (statemem.StateMem.state - its ObjectStateBehavior's: read every time, a state changes),
+        None while it isn't known (the reader being made, this build unreadable, no state behaviour on it). live:
+        [(object, gid, its dict)] - checked live just now"""
+        sm, _ = self._state_reader(st)
+        with self.lock:
+            if sm is not None and (self.st is not st or sm.st is not st):
+                sm = None
+            for obj, _gid, d in live:
+                d["state"] = sm.state(obj)[0] if sm is not None else None
 
     def _hand_reader(self, st, wait):
         """(the hand's reader for game st, "") - made in a thread the first time, as cards() makes it; (None, why)
@@ -1885,15 +1955,18 @@ class NavMem:
         aren't mobs and have a name key (template_kind), read now: kind "item" (the items table: Piece Of Coral - one
         picked up is gone), "object" (Inactive Protector, Celestian Monolith, a chest), "npc", "ambient"; key its display
         key (WizQst371C7_00000008 - the one a quest's goal names it by), src "mem"; name "" while its name table isn't
-        read (placements.py reads it, kept). None and why as mobs(). Never raises."""
+        read (placements.py reads it, kept). Also kind "use" (name and key ""): an object with no name key whose template
+        a use event of the zone's triggers may be fired by (puzzlefile.use_templates - a lever). None and why as mobs().
+        Never raises."""
         return self._live("items")
 
     def blockers(self):
-        """(doors, why): doors = [{name, pos (x, y, z), yaw, gid, template}] - the zone's objects with no name key whose
-        template's name is a door, a gate, a portcullis, a collision wall... (puzzlefile.is_blocker:
+        """(doors, why): doors = [{name, pos (x, y, z), yaw, gid, template, state}] - the zone's objects with no name key
+        whose template's name is a door, a gate, a portcullis, a collision wall... (puzzlefile.is_blocker:
         DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate), read now (name: the template's name). One gone from
-        memory has been taken away (a door collision a trigger removes when the way opens). None and why as mobs() -
-        never "none" then: not read isn't gone. Never raises."""
+        memory has been taken away (a door collision a trigger removes when the way opens). state: its ObjectStateBehavior's
+        current state read now (_state_fill - statemem.py, not confirmed in the game yet), None while not known. None and
+        why as mobs() - never "none" then: not read isn't gone. Never raises."""
         return self._live("blockers")
 
     def duels(self):
@@ -1981,6 +2054,17 @@ class NavMem:
                     if time.monotonic() >= self._boss_said:
                         self._boss_said = time.monotonic() + 60.0
                         self.log("bossmem: the mobs' titles couldn't be read (%r)" % (e,))
+            # (each door's state - its ObjectStateBehavior: statemem.py, read now; None while not known - the reader not
+            # made yet, a build it can't read: the doors as before)
+            if which == "blockers" and live:
+                try:
+                    self._state_fill(st, live)
+                except Exception as e:  # noqa: BLE001 - the doors without it (said once a minute)
+                    for _obj, _gid, d in live:
+                        d["state"] = None
+                    if time.monotonic() >= self._state_said:
+                        self._state_said = time.monotonic() + 60.0
+                        self.log("statemem: the doors' states couldn't be read (%r)" % (e,))
             return out, ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the %s failed (%r)" % (which, e)
@@ -2116,6 +2200,13 @@ class NavMem:
                     if full:
                         regions, last_full = where, t0
                     objs, items, doors, want, cands = {}, {}, {}, [], []
+                    # (the templates the zone's triggers' use events may be fired by - puzzlefile's, as kept: none till
+                    # built; no file read but a stat)
+                    try:
+                        import puzzlefile
+                        uses = puzzlefile.use_templates(zone[1], self.game_dir)
+                    except Exception:  # noqa: BLE001 - none: as before
+                        uses = frozenset()
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -2136,6 +2227,11 @@ class NavMem:
                         elif k and not k[3] and k[1] and k[4] != "mob" and _is_blocker(k[1]):
                             # (no name key, a door's or a gate's template name: a blocker - its name its template's)
                             doors[obj] = (gid, k[1], k[1], vt)
+                        elif k and not k[3] and k[1] and k[4] != "mob" and k[1] in uses:
+                            # (no name key, a template a use event of the zone's triggers may be fired by - a lever the
+                            # game names nowhere: a thing of kind "use", no name, no key - /items' - its live place stands
+                            # for its placement's)
+                            items[obj] = (gid, "", k[1], vt, "", "use")
                         elif k and not k[3] and k[4] != "mob":
                             # (no name key, nothing else: maybe a duel circle - looked at below, only while asked for)
                             cands.append((obj, gid, k[1], vt))
@@ -2154,7 +2250,7 @@ class NavMem:
                         duels = {}
                     self._set_objs(cz, objs, "", items, doors, duels)
                     self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "doors": len(doors),
-                                      "duels": len(duels),
+                                      "duels": len(duels), "uses": sum(1 for v in items.values() if v[5] == "use"),
                                       "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
             except Exception as e:  # noqa: BLE001 - tried again next time
