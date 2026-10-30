@@ -35,9 +35,12 @@ The answer, one line each (| between fields; a field never holds a | or a line b
 SAFETY. The game is opened as deckmem.py's command line opens it - navmem.py's _Attached (its read-only Proc:
 PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, falling back to PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION), else
 handmem.py's LightAttach (the same Proc, without the walker's signatures) - and only read: ReadProcessMemory of the
-game's .text / .rdata / .data (handmem.Image) plus the module / toolhelp enumeration navmem.py uses to find it. Nothing
-is ever written, allocated, injected, hooked, suspended or debugged; no window is touched and no input is sent. No object
-of the game is read at all - only its code and constant data.
+game's PE header and .text / .rdata / .data (handmem.Image - .data is the game's writable statics, copied as they are),
+what _Attached reads checking its signatures as it opens the game (each GameClient static it finds - 8 bytes - and 8
+bytes of the GameClient that points at, 0x20000 in), plus the module / toolhelp enumeration navmem.py uses to find it.
+Nothing is ever written, allocated, injected, hooked, suspended or debugged; no window is touched and no input is sent.
+Apart from that GameClient check no object of the game is read - the classes come from its code and its sections' data,
+no object is walked.
 
 FAILS SOFT. A class that isn't in this build is said (class|X|0 and a none| line), never guessed; a name whose owner
 can't be found has an empty what. The pure parts - grep_names, name_kind, name_at, owner_candidates, guess_types,

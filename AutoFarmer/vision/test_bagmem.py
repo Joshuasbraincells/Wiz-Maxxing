@@ -251,8 +251,9 @@ class Tree(unittest.TestCase):
         self.assertEqual(why, "")
         self.assertEqual(t["root"], (1827, 1027))
         self.assertEqual((t["under"], t["matches"], t["dups"], t["capped"], t["all"]), ("", 1, 1, False, False))
-        self.assertEqual(t["walked"], 14)
-        # (the hidden CombatPlanningPhaseWindow, the hidden drawButton and its label: left out)
+        # (the hidden CombatPlanningPhaseWindow, the hidden drawButton and its label: left out - and the windows in the
+        # two hidden ones not even read: 12 of the 14)
+        self.assertEqual(t["walked"], 12)
         self.assertEqual(self.rows(t), [(0, "", 0), (1, "windowHUD", 1), (2, "TipWindow", 2),
                                         (1, "CombatPlanningPhaseWindow", 1), (2, "SpellSelectionWindow", 4),
                                         (3, "passButton", 5), (3, "fleeButton", 5), (3, "autoCheck", 5),
@@ -277,7 +278,8 @@ class Tree(unittest.TestCase):
         self.assertEqual(self.rows(t)[:3], [(0, "CombatPlanningPhaseWindow", 0), (1, "SpellSelectionWindow", 1),
                                             (2, "passButton", 2)])
         ln = B.tree_lines(t)
-        self.assertEqual(ln[1], "tree|CombatPlanningPhaseWindow|2|1|7|14|0|0")
+        # (walked: 12 finding it - the hidden windows' windows not read -, then the 8 under it)
+        self.assertEqual(ln[1], "tree|CombatPlanningPhaseWindow|2|1|7|20|0|0")
         self.assertEqual(ln[4], "2|passButton|ControlButton|1|115|726|215|766|Pass|CombatPass|0|||0|2|1")
         self.assertEqual(ln[5].split("|")[8], "Flee the battle now")
         self.assertEqual(ln[-1].split("|")[8], "a b c")          # (no | or line break in a field)
@@ -294,7 +296,7 @@ class Tree(unittest.TestCase):
     def test_not_found_and_hidden_only(self):
         t, why = self.bm.tree(self.hm, "NoSuchWindow")
         self.assertEqual((why, t["matches"], t["rows"]), ("", 0, []))
-        self.assertEqual(B.tree_lines(t)[1:], ["tree|NoSuchWindow|0|0|0|14|0|0"])
+        self.assertEqual(B.tree_lines(t)[1:], ["tree|NoSuchWindow|0|0|0|12|0|0"])
         # (only a hidden match: picked, but it and its windows aren't shown - no rows unless all)
         t, _ = self.bm.tree(self.hm, "drawButton")
         self.assertEqual((t["matches"], t["dups"], t["rows"]), (1, 0, []))
@@ -328,6 +330,106 @@ class Tree(unittest.TestCase):
         self.assertTrue(w["fleeButton"]["greyed"])
         self.assertIsNone(w["Nope"])
         self.assertIsNone(g["box"])
+
+
+class Reach(unittest.TestCase):
+    """how far the walks go: WIN_CAP windows (a small one here), TREE_DEPTH levels - asked under a window, its windows
+    walked on their own; a cut always said (capped)"""
+
+    def setUp(self):
+        self.keep = B.WIN_CAP
+
+    def tearDown(self):
+        B.WIN_CAP = self.keep
+
+    def world(self, tops):
+        """the root (shown) -> tops: [(name, number of plain shown windows in it, shown)] - (world, hm, {name: address})"""
+        wd, a = World(), {}
+        kids = []
+        for name, n, shown in tops:
+            inner = [wd.window("%s_%d" % (name, i), rect=(i, 0, i + 1, 1)) for i in range(n)]
+            a[name] = wd.window(name, shown=shown, rect=(10, 20, 30, 40), kids=inner)
+            kids.append(a[name])
+        a["root"] = wd.window("", rect=(0, 0, 1827, 1027), kids=kids, flags=0x11)
+        return wd, types.SimpleNamespace(root=lambda: a["root"], lang_text=lambda k: None, st=wd), a
+
+    def test_under_gets_past_the_cap(self):
+        B.WIN_CAP = 30
+        wd, hm, _a = self.world([("Pre", 10, True), ("Target", 25, True), ("Post", 10, True)])
+        bm = reader(wd)
+        t, _ = bm.tree(hm)                          # the whole tree: cut 17 windows into Target's
+        self.assertEqual((t["walked"], t["capped"], len(t["rows"])), (30, True, 30))
+        self.assertNotIn("Target_24", [r["name"] for r in t["rows"]])
+        t, _ = bm.tree(hm, "Target")                # asked under it: its 25 windows walked on their own - all of them
+        self.assertEqual((t["matches"], t["dups"], t["capped"]), (1, 1, False))
+        self.assertEqual([r["name"] for r in t["rows"]], ["Target"] + ["Target_%d" % i for i in range(25)])
+        self.assertEqual(t["rows"][-1]["rect"], (10 + 24, 20, 10 + 25, 21))       # (in the root, as before)
+        self.assertEqual(t["walked"], 30 + 26)
+        # (past where finding it stops: not found - and said to be cut, not "no such window")
+        t, _ = bm.tree(hm, "Post")
+        self.assertEqual((t["matches"], t["rows"], t["capped"]), (0, [], True))
+        self.assertEqual(B.tree_lines(t)[1], "tree|Post|0|0|0|30|1|0")
+        # (the walk under it cut too: said)
+        B.WIN_CAP = 20
+        t, _ = bm.tree(hm, "Target")
+        self.assertEqual((t["matches"], t["capped"], len(t["rows"])), (1, True, 20))
+
+    def test_hidden_windows_not_walked(self):
+        B.WIN_CAP = 30
+        # (a closed window's 40 windows before the one asked for: shown only, they aren't read - nothing cut)
+        wd, hm, _a = self.world([("Closed", 40, False), ("Target", 5, True)])
+        bm = reader(wd)
+        t, _ = bm.tree(hm, "Target")
+        self.assertEqual((t["matches"], t["capped"], len(t["rows"])), (1, False, 6))
+        t, _ = bm.tree(hm)
+        self.assertEqual((t["walked"], t["capped"], len(t["rows"])), (1 + 1 + 1 + 5, False, 7))
+        t, _ = bm.tree(hm, "Target", shown_only=False)     # (all: they're read - finding it stops in them)
+        self.assertEqual((t["matches"], t["capped"]), (0, True))
+
+    def chain(self, n):
+        """the root -> level1 -> level2 ... -> level<n>, each one shown"""
+        wd, a = World(), {}
+        kid = []
+        for i in range(n, 0, -1):
+            a[i] = wd.window("level%d" % i, rect=(1, 1, 50, 50), kids=kid)
+            kid = [a[i]]
+        a[0] = wd.window("", rect=(0, 0, 1827, 1027), kids=kid, flags=0x11)
+        return wd, types.SimpleNamespace(root=lambda: a[0], lang_text=lambda k: None, st=wd), a
+
+    def test_depth_below_the_window_and_said(self):
+        wd, hm, _a = self.chain(30)
+        bm = reader(wd)
+        # (under a window the depth counts from it: level20's 10 levels all there)
+        t, _ = bm.tree(hm, "level20")
+        self.assertEqual(([r["name"] for r in t["rows"]][-1], len(t["rows"]), t["capped"]), ("level30", 11, False))
+        self.assertEqual(t["rows"][-1]["depth"], 10)
+        self.assertEqual(t["rows"][-1]["rect"], (30, 30, 79, 79))
+        # (the whole tree: TREE_DEPTH levels - the deeper ones left out, said)
+        t, _ = bm.tree(hm)
+        self.assertEqual((len(t["rows"]), t["rows"][-1]["name"], t["capped"]), (B.TREE_DEPTH + 1, "level24", True))
+        # (a depth asked for isn't a cut)
+        t, _ = bm.tree(hm, depth=5)
+        self.assertEqual((len(t["rows"]), t["rows"][-1]["name"], t["capped"]), (6, "level5", False))
+        t, _ = bm.tree(hm, "level3", depth=0)
+        self.assertEqual(([r["name"] for r in t["rows"]], t["capped"]), (["level3"], False))
+        # (deeper than finding it goes: not found - said to be cut)
+        t, _ = bm.tree(hm, "level28")
+        self.assertEqual((t["matches"], t["rows"], t["capped"]), (0, [], True))
+
+    def test_shown_kept_from_above(self):
+        # (a window VISIBLE itself in a hidden one: hidden - its walk starts from it, its ancestors' state kept)
+        wd, a = World(), {}
+        a["leaf"] = wd.window("leaf")
+        a["inner"] = wd.window("inner", kids=[a["leaf"]])
+        a["outer"] = wd.window("outer", shown=False, kids=[a["inner"]])
+        a["root"] = wd.window("", rect=(0, 0, 1827, 1027), kids=[a["outer"]], flags=0x11)
+        hm = types.SimpleNamespace(root=lambda: a["root"], lang_text=lambda k: None, st=wd)
+        bm = reader(wd)
+        t, _ = bm.tree(hm, "inner", shown_only=False)
+        self.assertEqual([(r["name"], r["shown"], r["depth"], r["parent"]) for r in t["rows"]],
+                         [("inner", False, 0, 0), ("leaf", False, 1, 1)])
+        t, _ = bm.tree(hm, "inner")
+        self.assertEqual((t["matches"], t["dups"], t["rows"], t["capped"]), (0, 0, [], False))   # (in a hidden one)
 
 
 class FakeNav:
@@ -420,10 +522,10 @@ class Route(unittest.TestCase):
                         return e.code, e.read().decode().split("\n")
                 code, ln = get("/guitree?under=CombatPlanningPhaseWindow%2FSpellSelectionWindow&all=1&depth=1")
                 self.assertEqual(code, 200)
-                self.assertEqual(ln[:2], ["root|1827|1027", "tree|CombatPlanningPhaseWindow/SpellSelectionWindow|1|1|7|14|0|1"])
+                self.assertEqual(ln[:2], ["root|1827|1027", "tree|CombatPlanningPhaseWindow/SpellSelectionWindow|1|1|7|21|0|1"])
                 self.assertIn("1|drawButton|ControlButton|0|335|726|435|766|Draw||0|||1|1|0", ln)
                 code, ln = get("/guitree")
-                self.assertEqual((code, ln[1]), (200, "tree||1|1|10|14|0|0"))
+                self.assertEqual((code, ln[1]), (200, "tree||1|1|10|12|0|0"))
                 code, ln = get("/guitree?under=a,b")
                 self.assertEqual(code, 400)
                 self.assertTrue(ln[0].startswith("ERR under:"))

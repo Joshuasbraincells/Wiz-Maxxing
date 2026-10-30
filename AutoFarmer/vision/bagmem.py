@@ -98,7 +98,9 @@ SET_IDS_CAP = 64         # global ids in one set at most
 WIN_CAP = 30000          # windows walked at most
 DEPTH = 14               # how deep under the root
 PATHS_CAP = 40           # /gui window paths at most
-TREE_DEPTH = 24          # tree(): how deep under the root it walks (deeper than gui()'s: a list's rows sit low)
+# tree(): how deep it walks - under the root finding the window asked for, then under that one (deeper than gui()'s: a
+# list's rows sit low) unless a depth is asked; windows left deeper: capped
+TREE_DEPTH = 24
 TREE_ROWS = 6000         # tree(): windows listed at most (each one described: its type, text, texture - more reads)
 # an item's kind from its template's adjectives, the first of these it has (the Quick Sell window's categories first)
 KINDS = (("Deck", "deck"), ("Hat", "hat"), ("Robe", "robe"), ("Shoes", "shoes"), ("Weapon", "weapon"),
@@ -411,10 +413,20 @@ class BagMem:
     def walk(self, root, want, depth=DEPTH, cap=WIN_CAP):
         """([{w, name, chain (ancestors' names, the root first), chain_w (their addresses), shown (VISIBLE on it and every
         ancestor), rect (in the root: its ancestors' lefts / tops added), prect (its parent's, None for the root), kids,
-        flags (its m_Flags as read)}] of the windows under root - root too - whose name is in want (want None: every
-        window - tree()'s), depth first in the game's order (an ancestor always before its windows); windows walked)"""
-        found, n, seen = [], 0, set()
-        stack = [(root, 0, (), (), True, 0, 0, None)]
+        flags (its m_Flags as read), up (every ancestor shown)}] of the windows under root - root too - whose name is in
+        want (want None: every window - tree()'s), depth first in the game's order (an ancestor always before its
+        windows); windows walked)"""
+        found, n, _deep = self._walk(root, want, depth, cap)
+        return found, n
+
+    def _walk(self, root, want, depth=DEPTH, cap=WIN_CAP, start=None, prune=False):
+        """(walk()'s list, windows walked, deep - how many of them had windows the depth limit left out: tree()'s capped).
+        start: root's (chain, chain_w, up, its parent's left and top in the GUI root, prect) - tree()'s walk under a
+        window a first walk found, its rows' chains, shown and rects as from the GUI root (None: root is the GUI root);
+        prune: a hidden window's windows not walked (tree()'s shown rows: they're hidden too - often most of the GUI,
+        every closed window's)"""
+        found, n, deep, seen = [], 0, 0, set()
+        stack = [(root, 0) + (tuple(start) if start else ((), (), True, 0, 0, None))]
         while stack and n < cap:
             w, d, chain, chain_w, up, ox, oy, prect = stack.pop()
             if w in seen:
@@ -429,11 +441,15 @@ class BagMem:
             rect = (ox + l, oy + t, ox + r, oy + b)
             if want is None or name in want:
                 found.append({"w": w, "name": name, "chain": chain, "chain_w": chain_w, "shown": shown, "rect": rect,
-                              "prect": prect, "kids": kids, "flags": flags})
+                              "prect": prect, "kids": kids, "flags": flags, "up": up})
+            if prune and not shown:
+                continue
             if d < depth:
                 for k in reversed(kids):
                     stack.append((k, d + 1, chain + (name,), chain_w + (w,), shown, rect[0], rect[1], rect))
-        return found, n
+            elif kids:
+                deep += 1
+        return found, n, deep
 
     def is_text(self, tn):
         return bool(tn) and tn.endswith("Text")
@@ -702,13 +718,20 @@ class BagMem:
         tex, kids, flags}], walked, capped, all}, "") - or (None, why). Every window under the one under names
         ("Anc/Name" as gui()'s paths - the first shown match, else the first; None / "": the GUI root) - that one too,
         depth 0 - in the game's order, an ancestor before its windows: shown_only only those shown (VISIBLE on it and
-        every ancestor: a hidden one's windows are hidden too), else every one (all: not shown_only); depth that many
-        levels below it at most; cap rows at most (capped then - also when WIN_CAP windows were walked). rows: depth
+        every ancestor: a hidden one's windows are hidden too - not walked), else every one (all: not shown_only); depth
+        that many levels below it at most (None: TREE_DEPTH). Two walks when under is given: the GUI root's windows
+        for its name (as gui()'s: one read a window - TREE_DEPTH levels, WIN_CAP windows), then the windows under the
+        one found alone, with their own depth and WIN_CAP - asking under a window gets past a cap the whole tree hits.
+        cap rows at most. capped: something was cut short - cap rows listed, WIN_CAP windows walked, or windows deeper
+        than TREE_DEPTH left out (a depth asked for isn't a cut) - under it, or finding it when no shown match was found
+        (with matches 0: the window asked for may sit where that walk didn't reach - not "no such window"). rows: depth
         below the top one, parent its parent's row number (1 the first row, 0 the top one), describe()'s type, shown,
-        rect (in the root), prect, checked, greyed and raw text, tex (texture()'s file), kids (how many children - hidden
-        ones too), flags (m_Flags as read). under not found: matches 0 and no rows. Read-only discovery - the names of a
-        window's buttons, lists and a box's keys (bagmem.py --tree, the helper's /guitree) - and the rows of a list.
-        Never raises"""
+        rect (in the root), prect, checked, greyed and raw text, tex (texture()'s file), kids (how many children -
+        hidden ones too), flags (m_Flags as read). walked: windows read by both walks. matches: the windows under names
+        among those walked (shown_only: a hidden window's windows aren't, so a hidden match inside one isn't counted),
+        dups the shown ones; under not found: matches 0 and no rows. Read-only discovery - the names of a window's
+        buttons, lists and a box's keys (bagmem.py --tree, the helper's /guitree) - and the rows of a list. Never
+        raises"""
         try:
             return self._tree(hm, under, shown_only, depth, cap)
         except Exception as e:  # noqa: BLE001 - never into navmem
@@ -721,19 +744,33 @@ class BagMem:
         rr = self.root_rect(root)
         if rr is None:
             return None, "the GUI root's size can't be read"
-        # (one walk of every window - gui()'s walk reads each one anyway; only the rows listed are described: their
-        # type, text and texture are the reads that cost)
-        found, n = self.walk(root, None, TREE_DEPTH)
-        out = {"root": rr, "under": under or "", "matches": 0, "dups": 0, "rows": [], "walked": n,
-               "capped": n >= WIN_CAP, "all": not shown_only}
+        out = {"root": rr, "under": under or "", "matches": 0, "dups": 0, "rows": [], "walked": 0, "capped": False,
+               "all": not shown_only}
+        top_w, start = root, None
         if under:
+            # (first the window asked for: the root's windows read for its name only, as gui() does - one read a window,
+            # none described; with shown_only a hidden window's windows aren't walked: none of them could be a row)
             parts = under.split("/")
+            found, n, deep = self._walk(root, {parts[-1]}, TREE_DEPTH, WIN_CAP, None, shown_only)
             cands = [f for f in found if f["name"] == parts[-1] and anc_match(parts[:-1], f["chain"])]
             shown = [f for f in cands if f["shown"]]
             top = shown[0] if shown else (cands[0] if cands else None)
-            out["matches"], out["dups"] = len(cands), len(shown)
-        else:
-            top = found[0] if found and found[0]["w"] == root else None
+            # (this walk cut short - WIN_CAP windows, TREE_DEPTH levels - is a cut only when no shown match was found:
+            # one may sit past where it stopped; the first shown one found is the first in the game's order anyway)
+            out["matches"], out["dups"], out["walked"] = len(cands), len(shown), n
+            out["capped"] = not shown and (n >= WIN_CAP or deep > 0)
+            if top is None or (shown_only and not top["shown"]):
+                return out, ""
+            # (then its windows alone - their own depth and WIN_CAP -, their chains, shown and rects as from the root)
+            p = top["prect"]
+            top_w, start = top["w"], (top["chain"], top["chain_w"], top["up"], p[0] if p else 0, p[1] if p else 0, p)
+        # (only the rows listed are described - their type, text and texture are the reads that cost)
+        depth = None if depth is None else max(0, depth)
+        found, n, deep = self._walk(top_w, None, TREE_DEPTH if depth is None else depth, WIN_CAP, start, shown_only)
+        out["walked"] += n
+        out["capped"] = out["capped"] or n >= WIN_CAP or (depth is None and deep > 0)
+        top = found[0] if found and found[0]["w"] == top_w else None
+        if not under:
             out["matches"] = 1 if top else 0
             out["dups"] = 1 if top and top["shown"] else 0
         if top is None:
@@ -852,8 +889,12 @@ def tree_lines(t, why="", indent=False):
     """/guitree's answer (and bagmem.py --tree's) for tree()'s reading, finished (finish_tree) - t None: none|<why>:
     root|w|h
     tree|under|matches|dups|rows|walked|capped|all     (under: the path asked, "" the GUI root; matches: the windows it
-        names - 0 none, no rows then; dups: its shown matches; rows: the window lines below; walked: windows read;
-        capped 1: cut short - TREE_ROWS rows or WIN_CAP windows walked: ask under one; all 1: hidden windows too)
+        names that were walked - 0 none, no rows then; dups: its shown matches; rows: the window lines below; walked:
+        windows read - finding the one asked for, then under it; capped 1: cut short - under it TREE_ROWS rows listed,
+        WIN_CAP windows walked or windows more than TREE_DEPTH levels down left out (a depth asked for isn't a cut):
+        ask under a window lower down; or finding it, when no shown match was found (WIN_CAP windows, TREE_DEPTH levels
+        below the root): with matches 0 the window asked for may be past where that walk stopped - not "no such
+        window"; all 1: hidden windows too)
     depth|name|type|shown|l|t|r|b|text|key|greyed|checked|texture|kids|parent|flags     (one a window, in the game's
         order - an ancestor before its windows; depth 0 the window asked for; l..b in the root; text its words - the
         markup out, a "<string;KEY>" given its words ("{KEY}" when the name tables haven't it); key that KEY when it's
@@ -904,7 +945,9 @@ def _main():
                          "instead of the backpack")
     ap.add_argument("--under", default="", help="with --tree: only the window Anc/Name and those under it")
     ap.add_argument("--all", action="store_true", help="with --tree: the hidden windows too")
-    ap.add_argument("--depth", type=int, default=None, help="with --tree: this many levels below it at most")
+    ap.add_argument("--depth", type=int, default=None,
+                    help="with --tree: this many levels below it at most (else %d - deeper ones left out: capped 1)"
+                         % TREE_DEPTH)
     ap.add_argument("--indent", action="store_true", help="with --tree: names indented by depth (to read, not to parse)")
     ap.add_argument("--out", default="", help="also write the answer to this file (to send)")
     a = ap.parse_args()

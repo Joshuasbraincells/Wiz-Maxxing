@@ -1240,9 +1240,11 @@ your wizard is in the world (the same Python as the vision helper):
 	  phase, a trainer, the pet window, the quest book...) - only what's open
 	  is shown - then
 	      python vision\bagmem.py --tree --out tree.txt
-	  --under <Window> for only that window and those in it, --all for the
-	  hidden ones too, --indent to read it yourself. For a battle's Pass, Flee
-	  and Draw buttons, in a battle's planning phase:
+	  --under <Window> for only that window and those in it (quicker - and
+	  when a list was cut short, a 1 in the 7th field of its tree| line, ask
+	  under the window you want), --all for the hidden ones too, --indent to
+	  read it yourself. For a battle's Pass, Flee and Draw buttons, in a
+	  battle's planning phase:
 	      python vision\bagmem.py --tree --under CombatPlanningPhaseWindow --all --out combat.txt
 	- Every property of one of the game's classes and where it is (--class,
 	  repeated or A,B), and the names that match a word (--grep):

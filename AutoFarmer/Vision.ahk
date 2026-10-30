@@ -1064,10 +1064,13 @@ NavGui(paths, timeoutMs := 600)
 ;quest book's entries). Nothing calls it yet - it's there for the readers still to be written (pets, gear, quests,
 ;puzzles: TODO.md); "python vision\bagmem.py --tree --under Anc/Name" is the same reading for a person. under: "Anc/Name"
 ;(a window named Name with an ancestor named Anc - more ancestors allowed, in order; the first shown match), "" the GUI
-;root (the whole tree can take a while: ask under a window); withHidden: hidden windows too (else only those shown -
-;VISIBLE on it and every ancestor); depth: that many levels below it at most ("" every level). An object: rootW, rootH
-;(the GUI in its own units), under, matches (windows under names - 0 none: no rows), dups (its shown matches), walked
-;(windows read), capped (1: cut short - ask under a window), all (1: hidden ones listed), rows ([{depth (0 the window
+;root (the whole tree can take a while: ask under a window - only its windows are walked and described, though every
+;window is still read once to find it, as NavGui does); withHidden: hidden windows too (else only those shown - VISIBLE
+;on it and every ancestor - and a hidden window's windows not even read); depth: that many levels below it at most
+;("" 24 - deeper ones left out: capped). An object: rootW, rootH (the GUI in its own units), under, matches (windows
+;under names among those read - 0 none: no rows), dups (its shown matches), walked (windows read), capped (1: cut
+;short - under it: ask under a window lower down; with matches 0 the window may be past where finding it stopped -
+;not "no such window"), all (1: hidden ones listed), rows ([{depth (0 the window
 ;asked for), name, type, shown, l, t, r, b (in the root's units), text (its words, the markup out), key (the .gui file's
 ;"<string;KEY>" when that's all its text), greyed, checked (1/0, "" not a button / check box), tex (a sprite's or a
 ;button's texture file), kids (its children, hidden ones too), parent (its parent's index in rows, 0 the top one), flags
