@@ -12,7 +12,11 @@
 ; (partybattle), wizard's name, school and hits. State only: nothing one bot sends can make another press anything -
 ; a blader's or healer's boosts go to the party's hitter's plate, found on its own screen by the name the game's log
 ; gives for its own side. Phase 2 (teleport to friend across zones) isn't in yet: a follower whose leader went where it
-; can't follow waits, and says so.
+; can't follow waits, and says so - "can't follow" (v0.9.0: the helper tells a door the leader walked through from a
+; teleport - End, Home, a sigil, a potion run: it stood still before its zone changed -, keeps its last 3 doors - a
+; follower two zones behind walks door after door - and says when a teleport to the leader would be the way: its
+; port_advice. A door that doesn't take the follower is given up after 3 tries; one that can't follow tells the leader -
+; tp -, which stops waiting for it. Where the Friends list's Teleport plugs in, once its windows are known: PartyCantFollow).
 ;
 ; Battle roles (phase 3 - Settings: partybattle): with more than one wizard on your side, a Blader puts its blades on the
 ; hitter (the wizard set to Hitter - the leader's first -, else the leader), its traps on the enemy the hitter goes for,
@@ -21,15 +25,26 @@
 ; party state, the hitter not on your side, its plate not read): this wizard hits, as ever.
 
 ;The party as last heard: the role, the helper's state (off/serving/following/unreachable/error) and why; this wizard
-;({zone, x, y, z, yaw}); the leader (a follower's view: {name, zone, x, y, z, yaw, battle, hp, ready, walk, age, dist,
-;dzone, dx, dy, dz, ddx, ddy, dto, bx, by, bz, hold}); the followers ([{name, zone, x, y, z, battle, hp, ready, age, dist,
-;walk, loading, hold}]); when it was last asked
+;({zone, x, y, z, yaw} - the zone blank while it isn't read: a loading screen); the leader (a follower's view: {name, zone,
+;x, y, z, yaw, battle, hp, ready, walk, age, dist, dzone, dx, dy, dz, ddx, ddy, dto, bx, by, bz, hold, ..., loading, dwalk,
+;zage, dage, port, portwhy} - the door: its latest out of this wizard's zone; dwalk 1 walked through, 0 a teleport, blank
+;not known (an older helper); zage its time in its zone, dage the door's age (ms); port 1: the helper says teleport to it,
+;portwhy why or why not); the followers ([{name, zone, x, y, z, battle, hp, ready, age, dist, walk, loading, hold, ..., tp,
+;tpwhy}]); when it was last asked
 global PartyRole, PartyState, PartyWhy, PartyMe, PartyLeader, PartyMembers, PartyAskAt
 ;The leader's hold: why it's holding now, since when each follower's been held for ({name: tick}), the ones not waited
 ;for any more until they've been near ({name: 1})
 global PartyHolding, PartyHeldFrom, PartySkip
 ;The follower: what it walks to now ({x, y, z, kind}), when its own place last moved, and the stuck tries
 global PartyTgt, PartyStillAt, PartyStillX, PartyStillY, PartyTries, PartyPushUntil, PartyNear
+;The follower that can't follow (TODO goal 1): what it tells the leader (PartyTp: "" following, "wait" it can't follow,
+;"stuck" five stuck tries on the way - "porting" / "refused": the Friends list's teleport, not in yet) and why; since when
+;it's waited, what was last logged (once a wait), the zone the helper's teleport advice was logged for, the Discord alert
+;sent; the door tried (its key), the tries at it and the one given up; the zones last seen (this wizard's - the stuck and
+;door tries start again when it changes -, the leader's - the stuck tries); when the stuck tries ran out (30 s, then
+;they start again)
+global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted, PartyDoorKey, PartyDoorTries
+global PartyDoorGave, PartyMyZone, PartyLdZone, PartyStuckAt
 
 ;The role set in Settings: "off", "leader" or "follower"
 PartyRoleSet()
@@ -82,6 +97,9 @@ PartyTick()
 		. "&bot=" (BotOn ? 1 : 0) "&loading=" (WkLoading ? 1 : 0) "&hold=" NavUri(SubStr(PartyHolding, 1, 80))
 		. "&brole=" PartyBattleSet() "&wiz=" NavUri(OwnName()) "&school=" PartyMySchool "&hits=" (PartyHits ? PartyHits : 0) "&hitr=" (PartyHitR ? PartyHitR : 0)
 		. "&plan=" NavUri(PartySupport() ? "" : PlanList) "&lasthit=" NavUri(PartyLastSch)
+	;(a follower that can't follow says so, and why - the leader stops waiting for it: PartyHoldWhy. Only the characters the
+	;helper takes - vision\party.py HOLD_RE -, 80 at most)
+	q .= "&tp=" (role = "follower" ? PartyTp : "") "&tpwhy=" (role = "follower" ? NavUri(SubStr(RegExReplace(PartyTpWhy, "[^\w .,'()/-]", " "), 1, 80)) : "")
 	ans := VisionGet(q, 600, true)
 	PartyAskAt := A_TickCount
 	if (ans = "")
@@ -95,8 +113,10 @@ PartyTick()
 	Loop Parse, ans, "`n", "`r"
 		{
 		f := StrSplit(A_LoopField, "|")
-		;(v1: a field the line doesn't have - blank)
-		while (f.Length < 31)
+		;(v1: a field the line doesn't have - blank. 32-37: the leader's loading flag, its door's walked, its time in its zone,
+		;the door's age, the teleport advice and why; a member's 22-23: its tp and why - an older helper's lines haven't
+		;them: blank. 38-39 / 24-25: the battle planner's hit round, later)
+		while (f.Length < 37)
 			f.Push("")
 		if (f[1] = "party")
 			{
@@ -110,11 +130,11 @@ PartyTick()
 			leader := V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
 				, walk: f[11], age: f[12], dist: f[13], dzone: f[14], dx: f[15], dy: f[16], dz: f[17], ddx: f[18], ddy: f[19]
 				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]
-				, plan: f[30], lasthit: f[31]})
+				, plan: f[30], lasthit: f[31], loading: f[32], dwalk: f[33], zage: f[34], dage: f[35], port: f[36], portwhy: f[37]})
 		else if (f[1] = "member")
 			members.Push(V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
 				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]
-				, plan: f[20], lasthit: f[21]}))
+				, plan: f[20], lasthit: f[21], tp: f[22], tpwhy: f[23]}))
 		}
 	PartyLeader := leader, PartyMembers := members
 	if (V1IsFunc("DashSee"))
@@ -490,19 +510,22 @@ PartyText()
 		{
 		t := ""
 		for each, m in PartyMembers
-			t .= (t = "" ? "" : ", ") (m.name != "" ? m.name : "?") " " (m.zone != V1At(PartyMe, "zone") ? "in another zone" : m.battle = 1 ? "in battle" : m.dist != "" ? m.dist " away" : "?")
+			t .= (t = "" ? "" : ", ") (m.name != "" ? m.name : "?") " " (m.tp = "wait" ? "can't follow" : m.tp = "porting" ? "teleporting to you" : m.zone != V1At(PartyMe, "zone") ? "in another zone" : m.battle = 1 ? "in battle" : m.dist != "" ? m.dist " away" : "?")
 		return "leader - " (t = "" ? "no followers yet" : t) (PartyHolding != "" ? " (waiting: " PartyHolding ")" : "")
 		}
 	L := PartyLeader
 	if (!IsObject(L))
 		return "follower - waiting to hear from the leader"
-	;(PartyMe blank till the helper says where you are - v1: its zone blank)
-	return "following " (L.name != "" ? L.name : "the leader") " - " (L.zone != V1At(PartyMe, "zone") ? "in " L.zone : L.battle = 1 ? "in battle" : L.dist " away")
+	;(PartyMe blank till the helper says where you are - v1: its zone blank. Can't follow, or stuck: said - PartyCantFollow)
+	return "following " (L.name != "" ? L.name : "the leader") " - " (PartyTp = "wait" ? "can't follow (" PartyTpWhy ")" : PartyTp = "stuck" ? "stuck on the way" : L.zone != V1At(PartyMe, "zone") ? "in " L.zone : L.battle = 1 ? "in battle" : L.dist " away")
 	}
 
 ;The leader's hold (the walker asks: Walker.ahk WalkStep): why it should wait now - a follower (heard from in the last 5 s)
 ;in another zone, farther than partywaitdist, or not ready; "" walk on. One held partywaitmax s isn't waited for again
-;till it's been near once
+;till it's been near once. (v0.9.0: partywaitmax 0 - no waiting at all, as Settings says: it waited for good before. One
+;that says it can't follow - tp wait: the leader went where no door it walked through leads from its zone, or its door
+;didn't take it - or that the game refused its teleport isn't waited for, till it's been near once: holding doesn't bring
+;it. One teleporting to you is waited for; one stuck on its way as ever, said)
 PartyHoldWhy()
 	{
 	global PartyHolding, PartyHeldFrom, PartySkip ; (v1 globals it sets)
@@ -512,6 +535,9 @@ PartyHoldWhy()
 	if (!IsObject(PartyHeldFrom))
 		PartyHeldFrom := V1Obj(), PartySkip := V1Obj()
 	maxS := Stat("partywaitmax"), far := Stat("partywaitdist")
+	;(0: no waiting, as Settings says - it waited for good before: a follower that couldn't follow stalled the party)
+	if (maxS <= 0)
+		return ""
 	why := ""
 	for each, m in PartyMembers
 		{
@@ -519,12 +545,23 @@ PartyHoldWhy()
 			continue
 		key := m.name != "" ? m.name : "a follower"
 		;(near again: waited for again)
-		if (m.zone = V1At(PartyMe, "zone") && m.dist != "" && m.dist <= far / 2)
+		phwNear := m.zone = V1At(PartyMe, "zone") && m.dist != "" && m.dist <= far / 2
+		if (phwNear)
 			PartySkip.Delete(key), PartyHeldFrom.Delete(key)
 		if (PartySkip.Has(key))
 			continue
-		w := m.loading = 1 ? key " is loading" : m.zone != V1At(PartyMe, "zone") ? key " is in another zone" : (m.dist != "" && m.dist > far) ? key " is " m.dist " away"
+		;(it can't follow - or the game refused its teleport: not waited for till it's near again, said once)
+		if ((m.tp = "wait" || m.tp = "refused") && !phwNear)
+			{
+			PartySkip[key] := 1, PartyHeldFrom.Delete(key)
+			DebugLog("Party: " key (m.tp = "refused" ? " can't teleport to you" : " can't follow") (m.tpwhy != "" ? " (" m.tpwhy ")" : "") " - walking on without them till they're near again")
+			continue
+			}
+		w := m.loading = 1 ? key " is loading" : m.tp = "porting" ? key " is teleporting to you" : m.zone != V1At(PartyMe, "zone") ? key " is in another zone" : (m.dist != "" && m.dist > far) ? key " is " m.dist " away"
 			: m.ready != 1 ? key " isn't ready (bot off, not walking, or played by hand)" : ""
+		;(five stuck tries on its way: said - waited for as ever)
+		if (w != "" && m.tp = "stuck")
+			w .= " (stuck on its way)"
 		if (w = "")
 			{
 			PartyHeldFrom.Delete(key)
@@ -548,9 +585,14 @@ PartyHoldWhy()
 ;again past twice that; into its battle (its battle spot, mobs not avoided - the battle's own are there); through the
 ;door it took (its last spot in this zone, then 400 on the way it was going). Stuck (its own place hardly moving with W
 ;down for 3 s): back up, turn 90, walk - 4 times at most, then it waits for the leader to come back near
+;(v0.9.0 - TODO goal 1: the door is the leader's latest out of this wizard's zone - two zones behind, door after door; one
+;the leader didn't walk through - a teleport: End, Home, a sigil, a potion run - isn't walked to; one that hasn't taken
+;this wizard in 3 tries is given up till its zone changes; wherever no door leads it waits and says so - PartyCantFollow,
+;the leader told. Five stuck tries: it waits 30 s, then they start again - before, they never did till it had stood by
+;the leader: W 3 s, stop 1 s, for good. A new zone - its own or the leader's - starts them again at once: PartyZoneCheck)
 PartyFollowStep()
 	{
-	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY ; (v1 globals it sets)
+	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY, PartyDoorKey, PartyDoorTries, PartyDoorGave, PartyStuckAt ; (v1 globals it sets)
 	;(battles only - Autofarmer.ahk, Settings: battlesonly: no following - the main loop doesn't ask then; never a step all the same)
 	if (BattlesOnlyNo("following the party's leader"))
 		{
@@ -558,6 +600,8 @@ PartyFollowStep()
 			ReleaseKeys()
 		return
 		}
+	;(a new zone - this wizard's or the leader's: the stuck and door tries start again)
+	PartyZoneCheck()
 	if (!Walking || !GameActive() || inbattle = 1 || !BotNoBattle())
 		{
 		if (KeysDown || HeldW)
@@ -578,7 +622,16 @@ PartyFollowStep()
 		Sleep(300)
 		return
 		}
-	near := Stat("partynear")
+	near := Stat("partynear"), pfKey := "", pfWho := L.name != "" ? L.name : "the leader"
+	;(this wizard's zone not read - its own loading screen: nothing decided till it is)
+	if (V1At(PartyMe, "zone") = "")
+		{
+		if (KeysDown || HeldW)
+			ReleaseKeys()
+		SetStatus("party: waiting - this wizard's zone isn't read (a loading screen?)")
+		Sleep(300)
+		return
+		}
 	;Where to: the leader's battle, the leader, or the door it took
 	;(PartyMe blank till the helper says where you are - v1: its zone blank)
 	if (L.zone = V1At(PartyMe, "zone") && L.battle = 1 && L.bx != "")
@@ -595,22 +648,44 @@ PartyFollowStep()
 			{
 			if (KeysDown || HeldW)
 				ReleaseKeys()
-			PartyTries := 0, PartyStillAt := 0
+			PartyTries := 0, PartyStillAt := 0, PartyStuckAt := 0
+			PartyFollowOk(L)
 			SetStatus("party: by " (L.name != "" ? L.name : "the leader") " (" L.dist " away)")
 			Sleep(200)
 			return
 			}
 		}
+	;(the leader was here and its zone isn't read now - it's loading: the door it took isn't known yet, and an older one out
+	;of here - from an earlier time it was here - mustn't be walked to meanwhile)
+	else if ((L.zone = "" || L.loading = 1) && PartyLdZone = V1At(PartyMe, "zone"))
+		return PartyWaitLoading(L)
 	else if (L.dzone = V1At(PartyMe, "zone") && L.dx != "")
-		tgt := V1Obj({x: L.dx, y: L.dy, z: L.dz, kind: "door", stop: 100})
-	else
 		{
-		if (KeysDown || HeldW)
-			ReleaseKeys()
-		SetStatus("party: the leader is in " L.zone " - not a door from here (teleport to friend comes in phase 2)")
-		Sleep(500)
-		return
+		pfKey := L.dzone "|" Round(V1N(L.dx)) "|" Round(V1N(L.dy)) "|" L.dto
+		;(not walked through - a teleport: End, Home, a sigil, a potion run (the leader stood still before its zone changed) -
+		;nowhere to walk. Blank - an older helper: walked to as ever)
+		if (L.dwalk = "0")
+			return PartyCantFollow(L, "the leader teleported from here to " L.dto " - no door to walk through")
+		;(given up - 3 tries didn't take this wizard: not again till its zone changes, or the leader takes a door again)
+		if (PartyDoorGave = pfKey)
+			return PartyCantFollow(L, "the leader's door here to " L.dto " didn't take this wizard (3 tries)")
+		tgt := V1Obj({x: L.dx, y: L.dy, z: L.dz, kind: "door", stop: 100})
 		}
+	else if (L.zone = "" || L.loading = 1)
+		return PartyWaitLoading(L)
+	else
+		return PartyCantFollow(L, "no door the leader walked through leads to " L.zone " from here")
+	;(stuck five times: it waits 30 s - the leader told -, then the tries start again; a zone change, or the leader near,
+	;starts them again at once)
+	pfWhat := tgt.kind = "leader" ? "the leader" : tgt.kind = "battle" ? "the leader's battle" : "the leader's door"
+	if (PartyStuckAt && A_TickCount - PartyStuckAt < 30000)
+		return PartyCantFollow(L, "stuck on the way to " pfWhat, "stuck")
+	if (PartyStuckAt)
+		{
+		PartyStuckAt := 0, PartyTries := 0
+		DebugLog("Party: trying the way to " pfWhat " again (30 s after five stuck tries)")
+		}
+	PartyFollowOk(L)
 	;(through the door: walked on the way the leader went, for 4 s)
 	;(v1: PartyPushUntil never set - blank - compared as text: the tick isn't < it; a blank way to go made a blank place)
 	if (tgt.kind = "door" && V1Lt(A_TickCount, PartyPushUntil))
@@ -629,8 +704,19 @@ PartyFollowStep()
 	d := Sqrt((pfDx = "" || pfDy = "") ? 0 : pfDx ** 2 + pfDy ** 2)
 	if (tgt.kind = "door" && d <= tgt.stop)
 		{
+		;(a try at it: one more each time it's reached - the push on through after. The 4th time with no zone change between,
+		;it's given up: it doesn't take this wizard - a door that needs more than walking, or one only the leader's quest
+		;opens. It looped door, push, door for good before)
+		if (PartyDoorKey != pfKey)
+			PartyDoorKey := pfKey, PartyDoorTries := 0
+		PartyDoorTries := V1N(PartyDoorTries) + 1
+		if (PartyDoorTries > 3)
+			{
+			PartyDoorGave := pfKey
+			return PartyCantFollow(L, "the leader's door here to " L.dto " didn't take this wizard (3 tries)")
+			}
 		PartyPushUntil := A_TickCount + 4000
-		DebugLog("Party: at the door " (L.name != "" ? L.name : "the leader") " took - walking on through it")
+		DebugLog("Party: at the door " pfWho " took" (V1IsNum(L.dage) ? " " Round(L.dage / 1000) " s ago" : "") " - walking on through it (try " PartyDoorTries " of 3)")
 		}
 	if (d <= tgt.stop && tgt.kind != "door")
 		{
@@ -645,14 +731,14 @@ PartyFollowStep()
 		if (A_TickCount - PartyStillAt > 3000)
 			{
 			;(v1: += chained with a comma kept a blank PartyTries blank - set to 0 only once it's stood by the leader;
-			;blank isn't > 4, and blank & 1 is blank: -90)
+			;blank isn't > 4, and blank & 1 is blank: -90. v0.9.0: a new zone sets it to 0 too - PartyZoneCheck, the first
+			;zone read among them - so it counts from the start)
 			PartyTries := V1Add(PartyTries, 1), PartyStillAt := 0
 			if (V1Gt(PartyTries, 4))
 				{
-				ReleaseKeys()
-				SetStatus("party: stuck on the way to the leader - waiting for it to come back near")
-				Sleep(1000)
-				return
+				;(five: it waits 30 s - the leader told -, then they start again; it walked 3 s, stopped 1 s, for good before)
+				PartyStuckAt := A_TickCount
+				return PartyCantFollow(L, "stuck on the way to " pfWhat, "stuck")
 				}
 			DebugLog("Party: stuck on the way to the " tgt.kind " (" Round(d) " away) - backing up and turning, try " PartyTries)
 			BackUp(700)
@@ -666,6 +752,88 @@ PartyFollowStep()
 		PartyStillAt := A_TickCount, PartyStillX := nav.x, PartyStillY := nav.y
 	SetStatus("party: following " (L.name != "" ? L.name : "the leader") " - to its " tgt.kind ", " Round(d) " away")
 	DgSteer(nav, tgt, d)
+	}
+
+;A new zone - this wizard's or the leader's, each its last read (a blank - a loading screen - isn't a change): the stuck
+;tries start again (v0.9.0 - before, they only started again by the leader: after five in one zone the back-ups and turns
+;were never tried again). This wizard's own: the door tries too, and a door given up may be tried again (the leader's
+;doesn't make a door out of here that didn't take it work - one it walked through again is a new door: tried)
+PartyZoneCheck()
+	{
+	global PartyMyZone, PartyLdZone, PartyTries, PartyDoorKey, PartyDoorTries, PartyDoorGave, PartyStuckAt, PartyPushUntil, PartyStillAt ; (v1 globals it sets)
+	pzcMe := V1At(PartyMe, "zone"), pzcLd := V1At(PartyLeader, "zone")
+	pzcMine := pzcMe != "" && pzcMe != PartyMyZone
+	if (!pzcMine && (pzcLd = "" || pzcLd = PartyLdZone))
+		return
+	if (pzcLd != "")
+		PartyLdZone := pzcLd
+	PartyTries := 0, PartyStuckAt := 0, PartyStillAt := 0
+	if (pzcMine)
+		PartyMyZone := pzcMe, PartyDoorKey := "", PartyDoorTries := 0, PartyDoorGave := "", PartyPushUntil := 0
+	}
+
+;The leader loading (its zone not read, or its loading flag - WizardClient.log's, as it sent it): the follower waits, keys
+;up - the door it's taking isn't known till it's there (not "can't follow": that's decided once it is)
+PartyWaitLoading(L)
+	{
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	SetStatus("party: waiting - " (L.name != "" ? L.name : "the leader") " is loading")
+	Sleep(300)
+	}
+
+;Following again (a way to walk, or standing by the leader): the leader told (tp blank), and said once when it couldn't
+;follow before
+PartyFollowOk(L)
+	{
+	global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted ; (v1 globals it sets)
+	if (PartyTp = "wait")
+		DebugLog("Party: following " (L.name != "" ? L.name : "the leader") " again")
+	PartyTp := "", PartyTpWhy := "", PartyCantAt := 0, PartyCantSaid := "", PartyPortSaid := "", PartyCantAlerted := 0
+	}
+
+;The follower can't follow (TODO goal 1): the leader went where no door it walked through leads from here - it teleported
+;(End, Home, a sigil, a potion run), or its door didn't take this wizard -, or (tp "stuck") five stuck tries on the way. It
+;stands where it is and says so: the status, debug.log once a wait, the leader told (PartyTp - it stops waiting for one
+;that can't follow: PartyHoldWhy), a Discord alert after 5 minutes of it. The helper's advice (vision\party.py
+;port_advice: the leader's zone known, it not loading, there 3 s or more, no door it walked through leads on from here -
+;L.port 1) logged once a wait and zone. tp: "wait" or "stuck"
+PartyCantFollow(L, why, tp := "wait")
+	{
+	global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted ; (v1 globals it sets)
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	pcfWho := L.name != "" ? L.name : "the leader"
+	if (PartyTp != tp || !PartyCantAt)
+		PartyCantAt := A_TickCount, PartyCantAlerted := 0
+	PartyTp := tp, PartyTpWhy := why
+	if (PartyCantSaid != why)
+		{
+		PartyCantSaid := why
+		DebugLog("Party: " (tp = "stuck" ? why " five times - waiting 30 s, then trying again" : "can't follow " pcfWho " - " why " - waiting here") " (" pcfWho " is told)")
+		}
+	;TODO (TODO goal 1 - teleport to a friend, once the Friends list's window names are known from the game: the window
+	;tree dumps): FriendPort.ahk's PartyTeleport(L.wiz) plugs in here - only with a setting for it on (partytp, off by
+	;default), tp "wait", L.port = 1 or the door given up (PartyDoorGave != ""), L.loading != 1, L.zage 3000 or more, the
+	;game in front, you not playing, not quick selling, a try at most once a minute and none refused for L.zone in the last
+	;5 minutes; PartyTp "porting" while it runs, "refused" when the game says no (the leader stops waiting). Never a click
+	;on anything that could spend Crowns
+	if (tp = "wait" && L.port = 1 && PartyPortSaid != L.zone)
+		{
+		PartyPortSaid := L.zone
+		DebugLog("Party: teleporting to " (L.wiz != "" ? L.wiz : pcfWho) " would be the way now (" L.portwhy ") - not in the bot yet: the Friends list's clicks need its window names from the game")
+		}
+	if (tp = "wait" && !PartyCantAlerted && A_TickCount - PartyCantAt > 300000)
+		{
+		PartyCantAlerted := 1
+		if (V1IsFunc("AlertSend"))
+			AlertSend.Call("party", "a party follower can't follow", "Waiting 5 minutes: " why ". Bring it to " pcfWho " yourself - teleport to a friend isn't in the bot yet.")
+		}
+	if (tp = "stuck")
+		SetStatus("party: stuck on the way - waiting " Max(0, 30 - (A_TickCount - PartyStuckAt) // 1000) " s, then trying again")
+	else
+		SetStatus("party: can't follow - " why " - waiting here (" (A_TickCount - PartyCantAt) // 1000 " s)")
+	Sleep(500)
 	}
 
 ;The way to p ({x, y, z}) by the helper's route (/navto: round walls - and mobs, avoid); {x, y, z, yaw, ax, ay, left, why,
@@ -994,4 +1162,6 @@ PartyBlank()
 	global PartySrcRound := "", roundnumber := "", PartyLowKey := "", PartyLowName := "", PartyLowPct := "", OwnHpRound := "", playerX := ""
 	global OwnHpPct := "", OwnHpVotes := "", Stats := "", hitschool := "", PartyLowX := "", PartyLowY := "", tower := "", used19 := ""
 	global BattleRole := "", hammerX := "", hammerY := "", HammerName := ""
+	global PartyTp := "", PartyTpWhy := "", PartyCantAt := "", PartyCantSaid := "", PartyPortSaid := "", PartyCantAlerted := ""
+	global PartyDoorKey := "", PartyDoorTries := "", PartyDoorGave := "", PartyMyZone := "", PartyLdZone := "", PartyStuckAt := ""
 	}
