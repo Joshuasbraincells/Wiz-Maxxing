@@ -89,8 +89,14 @@ ReconnectInit()
 ReconnectCheck()
 	{
 	global RcProcAt, ErrorLevel, RcPid, RcNoRelaunch, RcLoadAt, RcLastLineAt, RcHungAsked, RcTries, RcNext, RcCheckAt ; (v1 globals it sets)
+	;(off: the log still read, for a relog only - the walker's sigil that won't start, RcBackAgo; RcLogLine does nothing else
+	;while off. It also keeps RcPos current: switched back on, the lines from while it was off aren't replayed as new)
 	if (!RcOn)
+		{
+		if (A_TickCount - RcCheckAt >= 1000)
+			RcCheckAt := A_TickCount, RcReadLog()
 		return false
+		}
 	nowMs := A_TickCount
 	;Is the game still running? A new game process starts a new log, from the top
 	if (nowMs - RcProcAt >= 2000)
@@ -295,6 +301,9 @@ RcLogLine(logLine)
 	else if (InStr(logLine, "Finished loading zone") || InStr(logLine, "OnZoneLoaded")
 		|| InStr(logLine, "WizardCharacterSelect") || InStr(logLine, "LOGIN RESPONSE"))
 		RcLoadAt := 0
+	;(auto-reconnect off: only a relog's two lines - ReconnectCheck)
+	if (!RcOn && !InStr(logLine, "MSG_CharacterSelected: Error=0") && !InStr(logLine, "ConnectComplete destination Zone="))
+		return
 	if (InStr(logLine, "DisplayMessageBox("))
 		{
 		;(the msg string key can be empty - e.g. a Crown Shop error, keyed by its title: GUI_CrownShopError)
@@ -373,7 +382,7 @@ RcLogLine(logLine)
 		;(a character picked - yours too: the world it goes into next is a relog's - not the start's replay of the log)
 		if (!RcScanning)
 			RcCharSelAt := A_TickCount
-		if (RcState = "select")
+		if (RcOn && RcState = "select")
 			RcSet("enter", "character chosen - going into the world")
 		return
 		}
@@ -381,17 +390,17 @@ RcLogLine(logLine)
 		{
 		;(back in the world after a relog - the bot's reconnect, or a character picked in the last 2 minutes: when, for the walker's sigil
 		;that won't start - RcBackAgo. 2026-10-26 21:44: one never started after a relog)
-		if (!RcScanning && (RcState != "" || (RcCharSelAt && A_TickCount - RcCharSelAt < 120000)))
+		if (!RcScanning && ((RcOn && RcState != "") || (RcCharSelAt && A_TickCount - RcCharSelAt < 120000)))
 			{
 			RcBackAt := A_TickCount
-			if (RcState = "")
+			if (!RcOn || RcState = "")
 				{
 				RegExMatch(logLine, "Zone=(\S+)", &rcZone)
 				RcLogMsg("in the world after a character select (" V1At(rcZone, 1) ") - a relog")
 				}
 			}
 		RcCharSelAt := 0
-		if (RcState != "")
+		if (RcOn && RcState != "")
 			{
 			RegExMatch(logLine, "Zone=(\S+)", &zone)
 			RcSet("", "back in the game (" V1At(zone, 1) ")")

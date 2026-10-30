@@ -327,8 +327,9 @@ closer to when it's clearly closer again (10 nearer the goal, or 30 on along
 the route), in another zone, at the goal or at the Commons; the gaps between
 the walker's steps only (a battle, a loading screen, the bot off: left out),
 and the wait for you after a "Stuck" notice too - is logged when it ends. The
-dashboard's STATISTICS: "Badly stuck N (time lost 12 min; all time: M, 3.4 h)"
-- all time kept in dashboard.ini [stats] badstuck / stucklost. debug.log:
+dashboard's STATISTICS: "Badly stuck N (12 min; all: M, 3.4 h)" - the time
+lost this run, then all time (kept in dashboard.ini [stats] badstuck /
+stucklost). debug.log:
 "Walk: badly stuck #N (kind): why", "Walk: stuck over - N s lost (kind, T
 tries, how)". No closer for 3 minutes with the Commons used in the last 10
 (it goes on trying, the Commons once it may) was silent: now said once - the

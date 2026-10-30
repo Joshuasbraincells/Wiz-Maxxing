@@ -1261,7 +1261,7 @@ DashRefresh()
 	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
 		. "Battles          " DashNum(battles) (V1IsFunc("BrecToday") ? BrecToday.Call() : "") "`n"
 		. "Deaths           " DashNum(n.deaths) "   (all time: " DashDeathsAll() ")`n"
-		. "Badly stuck      " DashNum(n.badstuck) "   (time lost " DashLostSay(n.stuckLost) "; all time: " DashStuckAll().n ", " DashLostSay(DashStuckAll().s) ")`n"
+		. "Badly stuck      " DashNum(n.badstuck) "   (" DashLostSay(n.stuckLost) "; all: " DashStuckAll().n ", " DashLostSay(DashStuckAll().s) ")`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
