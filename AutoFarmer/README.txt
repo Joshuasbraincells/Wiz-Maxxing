@@ -474,12 +474,14 @@ itself - after the kill check, defending and the heals - every card in your
 hand that can go now (a hit or trap at each enemy, and a pass) is tried in
 the simulator from that very round on: your hand, pips and health and the
 enemies' health from the game's memory (read only), the blades, traps and
-aura the bot counts, the rest of your deck shuffled (the worn deck as last
-read out of battle - else more of the hand's cards), the rest of the battle
-played your settings' way; each play up to 100 times, in 0.3 s. It is advice
-only: debug.log says "Plan: would play Tempest on all (won 92% in 3 rounds,
-100 tries; ...) - your settings' way: Stormblade on you (won 85%) [tid ...] -
-advice only" and the bot then plays its own way - it never changes a card.
+aura the bot counts (another copy of a deck blade it has on isn't tried -
+the bot never casts one), the rest of your deck shuffled (the worn deck as
+last read out of battle - else more of the hand's cards), the rest of the
+battle played your settings' way; each play up to 100 times, in 0.3 s. It
+is advice only: debug.log says "Plan: would play Tempest on all (won 92% in
+3 rounds, 100 tries; ...) - your settings' way: Stormblade on you (won 85%)
+[tid ...] - advice only" and the bot then plays its own way - it never
+changes a card.
 The battle recorder keeps the advice with what was played; see how often they
 agreed, and how those battles went:
     python vision\battlelearn.py --advice

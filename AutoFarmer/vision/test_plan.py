@@ -3,6 +3,7 @@ stand-in readers shaped as handmem's and bossmem's readings), the 'planner' rule
 /decks on deckmem-shaped decks whose item cards' facts are value_text strings (standard library only):
     python -m unittest test_plan          (from AutoFarmer\\vision)"""
 import os
+import random
 import sys
 import time
 import types
@@ -157,6 +158,70 @@ class FromStateLines(unittest.TestCase):
                     self.assertEqual((g[5], g[11]), ("all", "all"))
                 elif g[4] == "damage":
                     self.assertIn(g[11], ("A", "B"))
+
+
+class BotBlades(unittest.TestCase):
+    """review fix: the bot's keys for the blades on (KillCalc.ahk AppliedBlades - storm/blade, blade3...) named as the
+    cards', so a copy in hand of a blade on is 'on already' - never tried, picked by the chain or stacked"""
+
+    def test_plain_keys_named_as_the_card(self):
+        bal = C("Balanceblade", "blade", 0, 25, school="balance", boosts={"all": 25}, tid=201)
+        every = C("Bladestorm", "blade", 0, 20, school="balance", boosts={s: 20 for s in S.SCHOOLS}, tid=202)
+        elem = C("Elemental Blade", "blade", 0, 25, school="balance", boosts={"fire": 25, "ice": 25, "storm": 25})
+        edge = C("Storm Edge", "blade", 0, 45, boosts={"storm": 45})
+        cards = [LORD, BLADE, BLADE, edge, bal, every, elem]
+        got = S.bot_blades([("storm/blade", {"storm": 35.0}), ("blade3", {"all": 25.0}), ("blade4", {"all": 20.0}),
+                            ("elementalblade", {"fire": 25.0, "ice": 25.0, "storm": 25.0}),
+                            ("spiritblade", {"death": 25.0, "life": 25.0, "myth": 25.0})], cards)
+        self.assertEqual([n for n, _b in got], ["Stormblade", "Balanceblade", "Bladestorm", "Elemental Blade",
+                                                "spiritblade"])        # (no card fits the spirit schools: kept)
+        self.assertEqual(got[0][1], {"storm": 35.0})                  # (the bot's own %)
+        # (two blades of one school: the nearest %)
+        self.assertEqual(S.bot_blades([("storm/blade", {"storm": 44.0})], cards), [("Storm Edge", {"storm": 44.0})])
+        # (already a card's name: as it is)
+        self.assertEqual(S.bot_blades([("Stormblade", {"storm": 35})], cards), [("Stormblade", {"storm": 35})])
+
+    def test_copies_keep_the_bots_key(self):
+        # (a sharpened cast or a treasure / item card's copy: the bot counts it on top of the deck's plain one)
+        keys = [("storm/blade+", {"storm": 40.0}), ("storm/blade@item", {"storm": 35.0}),
+                ("storm/blade@tc", {"storm": 35.0}), ("storm/blade@item+", {"storm": 40.0})]
+        self.assertEqual(S.bot_blades(keys, [BLADE, LORD]), keys)
+        # (only a treasure / pet copy among the cards: the deck's plain cast isn't named after it)
+        tc = C("Stormblade", "blade", 0, 35, boosts={"storm": 35}, tid=104, tc=True)
+        pet = C("Stormblade", "blade", 0, 35, boosts={"storm": 35}, tid=304, item=True)
+        plain = [("storm/blade", {"storm": 35.0})]
+        self.assertEqual(S.bot_blades(plain, [tc, pet]), plain)
+
+    def test_junk_never_raises(self):
+        self.assertEqual(S.bot_blades(None, None), [])
+        self.assertEqual(S.bot_blades([("x", {"storm": 35})], [5, None, "a"]), [("x", {"storm": 35})])
+        self.assertEqual(S.bot_blades([("x", None), ("y", "z"), 7, ("a", "b", "c")], [BLADE]),
+                         [("x", None), ("y", "z"), 7, ("a", "b", "c")])
+        self.assertEqual(S.bot_blades([("storm/blade", {"storm": "35"})], 12), [("storm/blade", {"storm": "35"})])
+
+    def test_a_blade_on_isnt_cast_again(self):
+        """the reviewers' case: a Stormblade on (the bot's storm/blade), another in hand, Storm Lord not paid for yet"""
+        foes = [S.Foe("Boss", 9000, boss=True)]
+        opts = S.Opts(boss=True)
+        hand, pile = [BLADE, LORD], [LORD] * 3 + [BLADE] * 3 + [SNAKE] * 6
+        st = S.State(hand, pile, pips=3, fhp=[9000], me_first=True,
+                     blades=S.bot_blades([("storm/blade", {"storm": 35.0})], hand + pile))
+        b = S._Battle.from_state(st, sure_me(), foes, opts, random.Random(1))
+        self.assertEqual(S._plannable(BLADE, opts, b), "on already")
+        self.assertIsNone(b.choose())                                 # (the chain casts no second copy: a pass)
+        self.assertIsNone(b.pick_boost(LORD))
+        p = S.plan_round(st, sure_me(), foes, opts, n=20, seed=1, budget_ms=2000)
+        self.assertEqual([x["name"] for x in p["plays"]], ["pass"])
+        self.assertIn("1 card in hand not tried (on already)", p["why"])
+        # (cast all the same - as the simulator's chain never does -, it doesn't stack: one blade on)
+        b.me.accuracy = 100
+        b.cast(BLADE)
+        self.assertEqual(b.blades, [("Stormblade", {"storm": 35.0})])
+        # (a pet's copy on - storm/blade@item -: the deck's Stormblade in hand still goes, as the bot casts it)
+        st = S.State(hand, pile, pips=3, fhp=[9000], me_first=True,
+                     blades=S.bot_blades([("storm/blade@item", {"storm": 40.0})], hand + pile))
+        p = S.plan_round(st, sure_me(), foes, opts, n=20, seed=1, budget_ms=2000)
+        self.assertIn("Stormblade", [x["name"] for x in p["plays"]])
 
 
 def planner_text(ans, ms=300):
@@ -347,7 +412,9 @@ class PlanLinesFor(unittest.TestCase):
             out = self.ask(q, battle=battle)
         self.assertTrue(out[0].startswith("plan|"), out)
         st, me, opts = got["state"], got["me"], got["opts"]
-        self.assertEqual(st.blades, [("storm/blade", {"storm": 35.0}), ("blade3", {"all": 25.0})])
+        # (the bot's storm/blade named as the hand's Stormblade - a copy of it in hand is then on already -; no card
+        # boosts every school: blade3 kept)
+        self.assertEqual(st.blades, [("Stormblade", {"storm": 35.0}), ("blade3", {"all": 25.0})])
         self.assertEqual(st.traps, [[], [{"storm": 30.0}, {"all": 30.0}], []])   # (on the one whose most is 2400)
         self.assertEqual(st.aura, ({"storm": 25.0}, 3))
         self.assertEqual((st.boosts_run, st.round, st.me_first), (2, 6, False))
@@ -364,6 +431,30 @@ class PlanLinesFor(unittest.TestCase):
         with mock.patch.object(S, "plan_round", spy):
             self.ask(dict(q, trapmax="9999"), battle=battle)
         self.assertEqual([len(t) for t in got["state"].traps], [2, 0, 0])
+
+    def test_a_blade_on_isnt_tried_again(self):
+        """review fix: the bot's storm/blade on, another Stormblade in hand, Storm Lord not paid for yet - the
+        Stormblade is on already: not tried, not the chain's ('your settings' way') pick, a pass the only play"""
+        rd = reading([HAND[1], HAND[0]], pips={"power": 0})                 # (3 pips: Storm Lord can't go yet)
+        boss = parts(("Bonestriker", 9000, 9000, True))
+        lines = lambda out: [ln.split("|") for ln in out if ln.split("|")[0] in ("plan", "alt", "chain")]  # noqa: E731
+        out = self.ask({"blades": "storm/blade~storm~35", "seed": "1", "budget": "2000", "n": "20"}, rd=rd,
+                       battle=boss)
+        self.assertIn("note|1 card in hand not tried (on already)", out)
+        self.assertEqual([g[10] for g in lines(out)], ["pass"], out)
+        # (a pet's copy on - storm/blade@item -: the deck's Stormblade still goes, as the bot casts it, and stacks)
+        out = self.ask({"blades": "storm/blade@item~storm~40", "seed": "1", "budget": "2000", "n": "20"}, rd=rd,
+                       battle=boss)
+        self.assertNotIn("note|1 card in hand not tried (on already)", out)
+        self.assertIn("Stormblade", [g[10] for g in lines(out)], out)
+
+    def test_place_in_hand_counts_every_card(self):
+        """review fix: i (plan|'s field 1) is the card's place among every card read - one with no name read before it
+        still counts"""
+        hand = [hand_card("Card1", 5, "", "damage", pips=1, value=10, heads="storm:10"), dict(HAND[0], slot="Card2")]
+        out = self.ask({"seed": "1", "budget": "2000", "acc": "30", "first": "1"}, hand=hand)
+        f = out[0].split("|")
+        self.assertEqual((f[0], f[1], f[2], f[10]), ("plan", "1", "Card2", "Storm Lord"), out)
 
     def test_no_deck_read_and_cards_with_no_kind(self):
         hand = HAND + [hand_card("Card5", 210, "Mystery", None, tid=999),
@@ -459,6 +550,47 @@ class Book(unittest.TestCase):
                 self.assertIn("Foe1", c["book"].by)
                 self.assertEqual((c["plays"].battles, c["plays"].rounds), (1, 1))
                 self.assertTrue(os.path.exists(os.path.join(root, "learned", "battles", "plays.json")))
+            finally:
+                V.log = keep_log
+                V.SIM.clear()
+                V.SIM.update(keep_sim)
+                V.PLAN.clear()
+                V.PLAN.update(keep_plan)
+
+    def test_an_odd_record_skips_only_itself(self):
+        """review fix: one pass feeds the FoeBook and the learned plays - a record the FoeBook can't take (an enemy's
+        max '?') skipped there, every later battle still read by both"""
+        try:
+            import vision as V
+        except ImportError as e:
+            self.skipTest("vision.py can't be imported here (%s)" % e)
+        import datetime
+        import json
+        import tempfile
+        today = datetime.date.today()
+
+        def rec(k, most):
+            return {"rec": "battle", "v": 1, "id": today.strftime("%Y%m%d") + "-12000%d-1" % k, "result": "won",
+                    "rounds_n": 1, "me": {"sc": 4, "school": "storm"},
+                    "parts": [{"sc": 0, "side": "enemy", "name": "Foe%d" % k, "max": most}],
+                    "rounds": [{"n": 1, "hand": [{"i": 0, "kind": "damage", "ok": True, "name": "Bolt", "tid": 1}],
+                                "pips": {"generic": 3}, "hp": 3000, "max": 3000,
+                                "played": {"spell": "Bolt", "tid": 1, "hand_i": 0}}]}
+        keep_sim, keep_plan, keep_log = dict(V.SIM), dict(V.PLAN), V.log
+        with tempfile.TemporaryDirectory() as root:
+            folder = os.path.join(root, "learned", "battles", today.strftime("%Y-%m"))
+            os.makedirs(folder)
+            with open(os.path.join(folder, today.isoformat() + ".jsonl"), "w") as f:
+                for k, most in ((1, 900), (2, "?"), (3, 900), (4, 900)):
+                    f.write(json.dumps(rec(k, most), separators=(",", ":")) + "\n")
+            try:
+                V.log = lambda *a, **kw: None
+                with mock.patch.object(V, "ROOT", root):
+                    V._plan_load()
+                book, plays = V.SIM["book"], V.PLAN["plays"]
+                self.assertEqual((plays.battles, plays.rounds), (4, 4))
+                self.assertTrue({"Foe1", "Foe3", "Foe4"} <= set(book.by), book.by)
+                self.assertIn("1 battle couldn't be read (ValueError", book.why)
             finally:
                 V.log = keep_log
                 V.SIM.clear()

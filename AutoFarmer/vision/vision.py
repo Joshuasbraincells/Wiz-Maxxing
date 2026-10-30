@@ -378,16 +378,17 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              only): every card in hand that can go now (and a pass) tried in the
                                              simulator from this very round - the hand, pips and health from the game's
                                              memory (/cards' read), the enemies' health (/battle's; else foes=), the
-                                             blades, traps (on the enemy whose most health is trapmax, else the one with
-                                             the most) and aura the bot counts, the worn deck less the hand as the draw
-                                             pile (the decks' last reading - never read in a battle), the rest of the
-                                             battle played the bot's way (vals), learned plays a nudge (vision\
-                                             battlelearn.py) - within budget ms, the reads included: battlesim.plan_lines
-                                             (plan|i|slot|tid|kind|target|won %|rounds|score|why|name|target's name|n|hp
-                                             left %|kill %, alt|... the next ones, chain|... the bot's own way, learned|,
-                                             note|) + foe|index|name|health|max|boss|plate x (target: that index; i the
-                                             card's place in the hand, -1 a pass) + planned|rollouts|ms|ms in all, or
-                                             none|<why> (never an ERR)
+                                             blades (the bot's keys named as the hand's or deck's card: another copy of
+                                             one on isn't tried), traps (on the enemy whose most health is trapmax, else
+                                             the one with the most) and aura the bot counts, the worn deck less the hand
+                                             as the draw pile (the decks' last reading - never read in a battle), the
+                                             rest of the battle played the bot's way (vals), learned plays a nudge
+                                             (vision\battlelearn.py) - within budget ms, the reads included:
+                                             battlesim.plan_lines (plan|i|slot|tid|kind|target|won %|rounds|score|why|
+                                             name|target's name|n|hp left %|kill %, alt|... the next ones, chain|... the
+                                             bot's own way, learned|, note|) + foe|index|name|health|max|boss|plate x
+                                             (target: that index; i the card's place in the hand, -1 a pass) +
+                                             planned|rollouts|ms|ms in all, or none|<why> (never an ERR)
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -2521,7 +2522,8 @@ PLAN_LOCK = threading.Lock()
 def _plan_load():
     """(the planner's thread) the battles recorded read once - pausing while a gated request is in flight (the bot's and
     the walker's reads go first) - into the simulator's FoeBook (SIM: as sim_book keeps it) and the learned plays
-    (battlelearn; saved to learned\\battles\\plays.json); cards.jsonl's facts with them"""
+    (battlelearn; saved to learned\\battles\\plays.json); cards.jsonl's facts with them. One pass feeds both: an odd
+    record the FoeBook can't take is skipped there (counted in its why), the pass and the learned plays go on"""
     import battlelearn
     import battlesim
     base = os.path.join(ROOT, 'learned', 'battles')
@@ -2595,7 +2597,8 @@ def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
         if not (r.get('in_battle') and r.get('planning') and r.get('settled')):
             return ['none|' + mob_cell(r.get('why') or 'not a settled hand in a planning phase')]
         _rec_hook('saw_hand', r)
-        raw = [c for c in r.get('cards') or [] if isinstance(c, dict) and c.get('name')]
+        # (each card with its place in the game's hand - 0 the leftmost, counted over every card read: plan|'s i)
+        raw = [(gi, c) for gi, c in enumerate(r.get('cards') or []) if isinstance(c, dict) and c.get('name')]
         if not raw:
             return ['none|no card in hand']
         mer = r.get('me') or {}
@@ -2643,7 +2646,7 @@ def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
             return ['none|' + mob_cell('no enemies (%s)' % (pwhy or 'no battle read'))]
         # (my side: the hand - each card's kind from the memory, else cards.jsonl's facts -, pips, health, the stats)
         hand, ids = [], []
-        for gi, c in enumerate(raw):
+        for gi, c in raw:
             card = B.card_of(dict(c, side='treasure' if c.get('treasure') else 'main', item=bool(c.get('item_card'))),
                              facts)
             if card is not None:
@@ -2705,6 +2708,9 @@ def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
             pile = [c for c in hand for _ in range(3)]
             notes.append("the deck isn't read (the Cards tab's From game, out of battle): the draw pile taken as more "
                          "of the hand's cards")
+        # (the bot's keys for the blades on - storm/blade, blade3 - named as the hand's or deck's card: a copy in hand
+        # of one on is then 'on already', never cast again or stacked in the rollouts - the bot's used flags hold it)
+        blades = B.bot_blades(blades, hand + pile)
         state = B.State.of_deck(hand, pile, pips=pips, power=power, hp=mer.get('health'), fhp=fhp, blades=blades,
                                 traps=traps, aura=aura, rnd=int(fl('round', 1)), boosts_run=int(fl('boostrun', 0)),
                                 me_first=None if first not in ('0', '1') else first == '1')

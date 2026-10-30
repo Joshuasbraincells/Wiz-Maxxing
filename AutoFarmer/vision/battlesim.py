@@ -46,12 +46,13 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
 
 THE PLANNER (TODO goal 3, step 3 - vision.py /plan, Planner.ahk: advice only)
   State: a battle in the middle - the hand as dealt, the draw pile (the deck less the hand), pips, my health and each
-  enemy's, the blades, traps and aura on, the round, boosts since the last hit, who goes first; _Battle.from_state starts
-  there and run_from plays it on: the round now with a play forced (force: a card at an enemy, or a pass - no pip, no
-  draw: they're this round's), then the bot's chain (choose - my_round's picks) each round. plan_round tries every card
-  that can go now (and a pass) in rollouts on common random numbers within a time budget and ranks them (win %, then the
-  sooner, then health left; a rollout still going at the horizon valued by the enemies' health it took); a learned prior
-  (battlelearn.Plays.prior_fn) only nudges near-equal plays. plan_lines is /plan's answer.
+  enemy's, the blades (by their cards' names - bot_blades turns the bot's keys into them), traps and aura on, the round,
+  boosts since the last hit, who goes first; _Battle.from_state starts there and run_from plays it on: the round now
+  with a play forced (force: a card at an enemy, or a pass - no pip, no draw: they're this round's), then the bot's
+  chain (choose - my_round's picks) each round. plan_round tries every card that can go now (and a pass) in rollouts on
+  common random numbers within a time budget and ranks them (win %, then the sooner, then health left; a rollout still
+  going at the horizon valued by the enemies' health it took); a learned prior (battlelearn.Plays.prior_fn) only nudges
+  near-equal plays. plan_lines is /plan's answer.
 
 RESULTS  simulate() -> {n, won, lost, timeout (fractions), rounds (median rounds of the battles won), rounds_p90, hp_left
   (the wizard's mean health % left in won battles), dmg_in (mean damage taken a round), first_kill (median round of the
@@ -383,13 +384,22 @@ class FoeBook:
     def __init__(self, base=None, days=120, battles=None):
         self.by = {}
         self.why = ""
+        bad, err = 0, None
         try:
             if battles is None:
                 battles = self._read(base, days)
             for b in battles:
-                self._add(b)
+                # (an odd record - a part's max "?" - skips that battle, not the rest: the iteration goes on, and so
+                # does whatever else reads the same pass - vision.py _plan_load's learned plays)
+                try:
+                    self._add(b)
+                except Exception as e:  # noqa: BLE001 - that battle only
+                    bad, err = bad + 1, err or e
         except Exception as e:  # noqa: BLE001 - what was read so far
             self.why = "the battles couldn't all be read (%r)" % (e,)
+        if bad:
+            self.why = "; ".join(w for w in (self.why, "%d battle%s couldn't be read (%r)" % (
+                bad, "" if bad == 1 else "s", err)) if w)
 
     @staticmethod
     def _read(base, days):
@@ -511,7 +521,8 @@ class State:
       pips, power my pips now, power pips counted 1 (as _Battle's), and how many of them are power pips
       hp          my health now (None: Me's)
       fhp         each enemy's health now, in foes' order (None for one: its max)
-      blades      [(name, {school: %})] on me - one of each name (identical blades don't stack)
+      blades      [(name, {school: %})] on me - one of each name (identical blades don't stack): the cards' names (the
+                  bot's own keys through bot_blades, so a copy in hand of one on matches it)
       traps       [[{school: %}] for each enemy] on it
       aura        ({school: %}, rounds left - this one counted) or None
       round       the battle's round (1 the first); boosts_run the boosts cast since my last hit (boostmax counts them)
@@ -547,6 +558,46 @@ class State:
             if k is not None:
                 pile.pop(k)
         return cls(hand, pile, **kw)
+
+
+def bot_blades(blades, cards):
+    """the blades on as the bot counts them (vision.py /plan's blades=: KillCalc.ahk AppliedBlades' keys - BoostKey's
+    "storm/blade", "blade3", "elementalblade"..., "@tc" / "@item" after it a treasure or item card's copy, "+" a
+    sharpened cast) in the simulator's names, which are its cards' (a blade on is one of each name - _Battle.cast,
+    pick_boost, _plannable): the deck's own plain cast named as the blade card of cards (the hand, then the draw pile -
+    not a treasure or item card) that boosts the same schools, the nearest % of them; so another copy of it in hand is
+    'on already' and never stacks in the rollouts - the bot's used flags never cast it plain again while it's on
+    (Autofarmer.ahk UseBlade's Use2; sharpened only with a Sharpen, which the simulator doesn't play). A sharpened cast
+    or a treasure / item card's copy keeps the bot's key - no card has it: the bot counts it on top of the deck's plain
+    one and still casts that (KillCalc.ahk AddBoost, BoostCopyCanGo - the user, 2026-10-24); (the simulator's names
+    don't tell a hand card's copies apart: a treasure / item card's in hand goes as the deck's does). A key no card fits
+    keeps it too. [(name, {school: %})] in blades' order; never raises (junk as it came)"""
+    def schools(b):
+        s = {k for k, v in b.items() if isinstance(v, (int, float)) and v > 0}
+        return frozenset(SCHOOLS) if "all" in s else frozenset(s)
+
+    def pct(b):
+        return max([v for v in b.values() if isinstance(v, (int, float))] or [0])
+    out = []
+    try:
+        own = [c for c in cards or [] if isinstance(c, Card) and c.kind == "blade" and not c.tc and not c.item]
+    except TypeError:
+        own = []
+    for nb in blades or []:
+        try:
+            n, b = nb
+        except (TypeError, ValueError):
+            out.append(nb)
+            continue
+        try:
+            m = re.match(r"(.*?)(@[a-z]+)?(\+)?$", str(n))
+            fit = [c for c in own if schools(c.boosts) == schools(b)] if b and not (m.group(2) or m.group(3)) else []
+            if fit:
+                n = min(fit, key=lambda c: abs(pct(c.boosts) - pct(b))).name
+        except Exception:  # noqa: BLE001 - that one as it came
+            pass
+        out.append((n, b))
+    return out
 
 
 def _int(v, d=0):

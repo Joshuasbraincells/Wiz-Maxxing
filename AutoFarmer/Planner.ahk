@@ -161,7 +161,10 @@ PlannerQuery()
 
 ;A boost list (AppliedBlades / BossTraps: {key: %}) as /plan takes it: key~schools~%|... - each key's schools as the kill
 ;check counts them (KillCalc.ahk BoostSchools: "all", "fire,ice,storm"); a key whose schools aren't known left out. The
-;key is the simulator's name for it: two of one key don't stack there (the game's identical blades)
+;helper names a blade's plain key ("storm/blade", "blade3") as the card in hand or in the deck that boosts the same
+;schools (vision\battlesim.py bot_blades), so another copy of it in hand counts as on already - never tried or stacked,
+;as UseBlade's used flags never cast it; a sharpened ("+") or treasure / item card's copy ("@tc", "@item") keeps its
+;key and stacks with the deck's, as AddBoost counts it
 PlannerBoosts(list)
 	{
 	plbOut := ""

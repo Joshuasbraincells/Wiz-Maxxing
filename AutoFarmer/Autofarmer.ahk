@@ -4591,8 +4591,10 @@ if (BattleRole = "healer") && PartyShield()
 
 ;The round planner (Planner.ahk - Settings: planner, off unless you switch it on): every card in hand tried in the
 ;battle simulator from this round on, its advice logged and recorded - planner 1 never casts, the round goes on below
-;exactly as without it (PlannerRound returns false; planner 2, a cast of its own, isn't built). planner 0: nothing asked
-if (PlannerMode() && PlannerRound())
+;exactly as without it (PlannerRound returns false; planner 2, a cast of its own, isn't built). planner 0: nothing asked.
+;Turned off (F6) already: not asked - no wait for the helper while the mouse is still held (the check below gives it
+;back; one pressed during the ask is caught there too)
+if (BotOn && PlannerMode() && PlannerRound())
 {
 	Goto("EndRound")
 }
