@@ -4,10 +4,13 @@ running Wizard101 client (WizardGraphicalClient.exe), for the vision helper's /c
     hm = HandMem(st, log=print)     # st: navmem's attached game (navmem._Attached) or a LightAttach; ~0.5 s once
     r = hm.read()                   # a dict (see HandMem.read) - never raises
     print(answer(r, ""))            # the lines /cards answers
+    p = hm.phase()                  # the round's phase alone, cheaply (no spell read - see HandMem.phase): /phase
 
     r, why = navmem.NavMem().cards()   # the same through navmem's own attached game, under its lock (vision.py's way)
 
     python handmem.py [-n 3] [-i 2] [--json]        readings from the command line (and how long each took)
+    python handmem.py --phase -n 100 -i 0.1          the round's phase alone, 10 a second (what the hand does as a
+                                                     card's clicked, its target clicked, the round played)
 
 SAFETY. The game is opened by navmem.py's Proc - PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else - and only read: ReadProcessMemory, plus
@@ -37,6 +40,12 @@ or window name - in another build a place that fails is looked for, and kept onc
              shown: Window.m_Flags bit 0 - on the planning window: the planning phase; on a card: it's on screen (a
                 discarded / not yet dealt card's window is hidden, its old spell still in it; out of a battle the
                 windows read shown with no spell at all - so nothing is read from them out of a battle)
+             box (v0.9.0, NOT CHECKED against the screen yet): a card's place in the root - its m_Window (in the Hand
+                window's units) plus the left / top of every window on the way down from the root (the root's own left
+                / top not added: bossmem.combatant_windows' rule for the plates) - in GUI units, the root's rect beside
+                it (the client: 1827 x 1027 at 2560x1440). Whether a zoomed card (the mouse on it) or the hand sliding
+                back to the middle after a card leaves changes m_Window isn't known: AutoFarmer's KillCalc.ahk
+                MemBoxCheck compares these boxes with the ones /hand sees on the screen, log only, before any is clicked
              the card's spell: the pointer in the SpellCheckBox whose type is GraphicalSpell (+0x450 now)
   me       the pointer in the SpellSelection window whose type is ClientCombatParticipant (+0x358 now) - alive only in a
              battle (a destroyed one's vtable is its base class's): CombatParticipant.m_ownerID.m_full,
@@ -601,17 +610,25 @@ class HandMem:
         return 0
 
     def _find(self, w, pred, depth):
+        p = self._path(w, pred, depth)
+        return p[-1] if p else 0
+
+    def _path(self, w, pred, depth):
+        """[w, ..., the first window under w (w itself too) that pred takes, depth first within depth levels] - the way
+        down to it, for its place in the root (hand_offset); [] none"""
         if pred(w):
-            return w
+            return [w]
         if depth > 0:
             for k in self.kids(w):
-                r = self._find(k, pred, depth - 1)
-                if r:
-                    return r
-        return 0
+                p = self._path(k, pred, depth - 1)
+                if p:
+                    return [w] + p
+        return []
 
     def windows(self):
-        """(planning window, spell selection window, hand window) - kept, and checked by type and name at every read"""
+        """(planning window, spell selection window, hand window) - kept, and checked by type and name at every read;
+        with them the root and the way down from it to the hand (self.win's root, chain: [root, ..., planning window,
+        ..., spell selection window, ..., hand] - hand_offset)"""
         pp, ss, hand = self.win.get("pp", 0), self.win.get("ss", 0), self.win.get("hand", 0)
         if (pp and self._vt(pp) in self.vt["CombatPlanningPhaseWindow"] and ss
                 and self._vt(ss) in self.vt["SpellSelectionWindow"] and hand and self.wname(hand) == "Hand"):
@@ -620,12 +637,28 @@ class HandMem:
         root = self.root()
         if not root:
             return 0, 0, 0
-        pp = self._find(root, lambda w: self._vt(w) in self.vt["CombatPlanningPhaseWindow"], 4)
-        ss = self._find(pp, lambda w: self._vt(w) in self.vt["SpellSelectionWindow"], 6) if pp else 0
-        hand = self._find(ss, lambda w: self.wname(w) == "Hand", 2) if ss else 0
+        to_pp = self._path(root, lambda w: self._vt(w) in self.vt["CombatPlanningPhaseWindow"], 4)
+        pp = to_pp[-1] if to_pp else 0
+        to_ss = self._path(pp, lambda w: self._vt(w) in self.vt["SpellSelectionWindow"], 6) if pp else []
+        ss = to_ss[-1] if to_ss else 0
+        to_hand = self._path(ss, lambda w: self.wname(w) == "Hand", 2) if ss else []
+        hand = to_hand[-1] if to_hand else 0
         if pp and ss and hand:
-            self.win = {"pp": pp, "ss": ss, "hand": hand}
+            self.win = {"pp": pp, "ss": ss, "hand": hand, "root": root, "chain": to_pp + to_ss[1:] + to_hand[1:]}
         return pp, ss, hand
+
+    def hand_offset(self):
+        """(dx, dy): where a rect in the Hand window's units (a card's m_Window) starts in the GUI's root - the left / top
+        of every window from the root's child down to the hand added (offset_of); None when one can't be read or the
+        windows aren't found (windows() first)"""
+        chain = self.win.get("chain") or []
+        return offset_of([self.rect(w) for w in chain[1:]]) if len(chain) > 1 else None
+
+    def root_size(self):
+        """(w, h) of the GUI's root in its own units (the client: 1827 x 1027 at 2560x1440), None not read or not
+        plausible (windows() first)"""
+        root = self.win.get("root")
+        return size_of(self.rect(root)) if root else None
 
     def _typed_in(self, key, obj, vts, size=0x800):
         """(the pointer in obj of a type in vts, None) at the place kept for key (KNOWN's first); in another build, when
@@ -835,11 +868,16 @@ class HandMem:
                 r["pips"] = {k[2:-4].lower(): raw[o - lo] for k, o in PC.items()}
             except N.ReadError:
                 pass
-        hand = self.u64(c + CP["m_pHand"])
-        items, size = (None, None)
-        if N.ptr_ok(hand) and self.tname(hand) == "Hand":
-            items, size = self.lst(hand + self.off("Hand", "m_spellList"), 20)
+        items, size = self.hand_list(c)
         return r, items, size
+
+    def hand_list(self, c):
+        """(my hand list's spells - participant c's m_pHand -> Hand.m_spellList - and the size the list says), (None,
+        None) / (None, size) when it doesn't read as one"""
+        hand = self.u64(c + self.off("CombatParticipant", "m_pHand"))
+        if N.ptr_ok(hand) and self.tname(hand) == "Hand":
+            return self.lst(hand + self.off("Hand", "m_spellList"), 20)
+        return None, None
 
     # ------------------------------------------------------------------ the read
     def read(self, want_effects=True):
@@ -851,12 +889,14 @@ class HandMem:
           state      'none' (not in a battle / no planning window), 'waiting' (planning, no card shown but the hand list
                      isn't empty: a card's been chosen, the others are waited for), 'changing', 'hand' (settled)
           me         {owner, school_id, school, health, max_health, pips {generic, power, balance... storm, shadow}}
-          cards      left to right: {slot, x, shown, name, display, school, type, pips, x_pips, shadow_pips,
+          cards      left to right: {slot, x, box, shown, name, display, school, type, pips, x_pips, shadow_pips,
                      school_pips, accuracy, treasure, item_card, enchantment, effects, kind, value, ..., castable
-                     (a normal-mode estimate - see castable), why (a card that couldn't be read)}"""
+                     (a normal-mode estimate - see castable), why (a card that couldn't be read)} - box: its place in the
+                     root, (l, t, r, b) in GUI units (box_in_root - None not read; not checked against the screen yet)
+          root       (w, h) the GUI root's size in the same units (root_size - None not read)"""
         t0 = time.perf_counter()
         out = {"in_battle": False, "planning": False, "settled": False, "state": "none", "why": "", "ms": 0.0,
-               "me": None, "cards": []}
+               "me": None, "cards": [], "root": None}
         try:
             self._read(out, want_effects)
         except Exception as e:  # noqa: BLE001 - never into the caller
@@ -884,12 +924,16 @@ class HandMem:
         if not out["planning"]:
             out["why"] = "in a battle, not in the planning phase"
             return
+        # (where the hand's cards are in the root, and the root's size - each read once a read: a card's box is its
+        # m_Window moved by the hand's offset, box_in_root)
+        off, out["root"] = self.hand_offset(), self.root_size()
         cards = []
         for w in self.kids(hand):
             if self._vt(w) not in self.vt["SpellCheckBox"]:
                 continue
             fl, rc = self.flags(w), self.rect(w)
-            card = {"slot": self.wname(w) or "", "x": rc[0] if rc else None, "shown": bool(fl & 1), "flags": fl}
+            card = {"slot": self.wname(w) or "", "x": rc[0] if rc else None, "box": box_in_root(rc, off),
+                    "shown": bool(fl & 1), "flags": fl}
             if card["shown"]:
                 try:
                     g = self.card_spell(w)
@@ -931,6 +975,88 @@ class HandMem:
             self._confirm("ss_participant", c_at, "its hand list is the cards shown")
             self._confirm("ss_participant", c_at, ss)
         out.update(state="hand", settled=True, why="", cards=shown)
+
+    # ------------------------------------------------------------------ the round's phase alone (cheap)
+    def phase(self):
+        """{in_battle, planning, state, shown, own, size, why, ms} - the round's phase without reading a spell (the
+        windows, the planning flag, my participant, the card windows' shown flags and my hand list's length: about a
+        millisecond, read() is 5-50) - for a check after a click (did the card go out?) and the round's start. Never
+        raises. state (phase_state): 'none' not in a battle / no planning window, 'round' in a battle out of the
+        planning phase (the round being played out), 'waiting' planning, no card shown but cards in my hand list (a
+        card's been chosen, the others are waited for), 'changing' planning, the cards shown not as many as the list
+        says (dealing, discarding, laying out - or a target being picked? NOT SEEN yet), 'hand' as many shown as the list
+        says (the hand to play: not checked card by card as read() does). shown: card windows shown (the pet's too), own:
+        those without the pet's card, size: the list's own size (None: not read)"""
+        t0 = time.perf_counter()
+        out = {"in_battle": False, "planning": False, "state": "none", "shown": None, "own": None, "size": None,
+               "why": "", "ms": 0.0}
+        try:
+            pp, ss, hand = self.windows()
+            items = None
+            if pp:
+                out["planning"] = bool(self.flags(pp) & 1)
+                c = self.participant(ss)[0] if ss else 0
+                out["in_battle"] = bool(c)
+                if c and out["planning"] and hand:
+                    items, out["size"] = self.hand_list(c)
+                    cards = [w for w in self.kids(hand) if self._vt(w) in self.vt["SpellCheckBox"] and self.flags(w) & 1]
+                    out["shown"] = len(cards)
+                    out["own"] = sum(1 for w in cards if self.wname(w) != "PetCard")
+            out["state"], out["why"] = phase_state(bool(pp), out["in_battle"], out["planning"], out["shown"], out["own"],
+                                                   None if items is None else len(items), out["size"])
+        except Exception as e:  # noqa: BLE001 - never into the caller
+            out.update(state="none", why="the phase couldn't be read (%r)" % (e,))
+        out["ms"] = round((time.perf_counter() - t0) * 1000, 1)
+        return out
+
+
+# ============================================================================ boxes and the phase (pure: tested offline)
+def offset_of(rects):
+    """(dx, dy): the rects' left / top added - a window's m_Window is in its parent's units, so a rect in a window's
+    units starts in the root at every window's left / top from the root's child down to that window (pure); None when
+    there's none or one isn't read"""
+    if not rects or any(r is None or len(r) < 2 for r in rects):
+        return None
+    return sum(r[0] for r in rects), sum(r[1] for r in rects)
+
+
+def box_in_root(rect, off):
+    """a card window's rect (l, t, r, b - in its parent's units) moved by off (offset_of) - its place in the root in GUI
+    units (pure); None when either isn't read or the rect is empty or inside out"""
+    if rect is None or off is None or len(rect) < 4:
+        return None
+    l, t, r, b = rect[:4]
+    if r <= l or b <= t:
+        return None
+    return l + off[0], t + off[1], r + off[0], b + off[1]
+
+
+def size_of(rect):
+    """(w, h) of a root rect, None when it isn't read or isn't plausible (as navmem.ui_root: 1..20000 each way)"""
+    if rect is None or len(rect) < 4:
+        return None
+    w, h = rect[2] - rect[0], rect[3] - rect[1]
+    return (w, h) if 0 < w <= 20000 and 0 < h <= 20000 else None
+
+
+def phase_state(found, in_battle, planning, shown, own, n_items, size):
+    """(state, why) of HandMem.phase from what it read (pure) - the same rule as read()'s state, without the spells:
+    found the planning window, n_items my hand list's length (None: it didn't read as a list), size the length it says"""
+    if not found:
+        return "none", "no planning window (not in the game world)"
+    if not in_battle:
+        return "none", "not in a battle"
+    if not planning:
+        return "round", "in a battle, not in the planning phase"
+    if not shown:
+        if n_items is None:
+            return "changing", "hand changing"
+        if n_items:
+            return "waiting", "planning, no card shown - a card's chosen, waiting for the round"
+        return "hand", ""                       # (an empty hand: the deck used up)
+    if n_items is None or size is None or own != n_items or n_items != size:
+        return "changing", "hand changing"
+    return "hand", ""
 
 
 # ============================================================================ what a card does (pure: tested offline)
@@ -1479,29 +1605,68 @@ def me_line(me):
 
 def card_line(c):
     """card|slot|x|name|display|school|type|pips|xpip|shadow|castable|tc|item|enchantment|accuracy|value|kind|dot|
-    school pips|enchantment's effect|value with it|template id|text|heads|boosts - heads (field 24): a damage card's
-    damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap, aura or
-    bubble boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be trusted, "" none"""
+    school pips|enchantment's effect|value with it|template id|text|heads|boosts|l|t|r|b - heads (field 24): a damage
+    card's damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap,
+    aura or bubble boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be
+    trusted, "" none. l|t|r|b (26-29, v0.9.0 - after the old ones: an older bot reads its 25): the card's box in the
+    GUI's root (GUI units, the root's size on answer's root| line - box_in_root; NOT CHECKED against the screen yet), ""
+    not read"""
     sp = ",".join("%s:%d" % kv for kv in sorted((c.get("school_pips") or {}).items()))
+    box = c.get("box") or (None, None, None, None)
     return "|".join(["card", _f(c.get("slot")), _f(c.get("x")), _f(c.get("name")), _f(c.get("display")),
                      _f(c.get("school")), _f(c.get("type")), _f(c.get("pips")), _b(bool(c.get("x_pips"))),
                      _f(c.get("shadow_pips")), _b(c.get("castable")), _b(bool(c.get("treasure"))),
                      _b(bool(c.get("item_card"))), _f(c.get("enchantment") or ""), _f(c.get("accuracy")),
                      _f(c.get("value_text")), _f(c.get("kind")), _f(c.get("dot")), sp, _f(c.get("ench_effect")),
                      _f(c.get("value_ench")), _f(c.get("template_id")), _f(c.get("text")),
-                     _f(c.get("heads_text")), _f(c.get("boosts_text"))])
+                     _f(c.get("heads_text")), _f(c.get("boosts_text"))] + [_f(v) for v in box[:4]])
 
 
 def answer(r, why=""):
     """/cards' answer: "none|<why>" unless in a battle, in the planning phase and settled; else one me| line, a card|
-    line for each card shown (left to right: 25 fields - card_line) and hand|<cards>|<ms>"""
+    line for each card shown (left to right: 29 fields - card_line), root|<w>|<h> (the GUI root's size in GUI units -
+    the cards' boxes are in it; only when it's read - v0.9.0, an older bot skips the line) and hand|<cards>|<ms>"""
     if r is None:
         return "none|" + _f(why or "the game can't be read")
     if not (r.get("in_battle") and r.get("planning") and r.get("settled")):
         return "none|" + _f(r.get("why") or ("not in a battle" if not r.get("in_battle") else "not the planning phase"))
     lines = [me_line(r.get("me") or {})] + [card_line(c) for c in r.get("cards") or []]
+    root = r.get("root")
+    if root:
+        lines.append("root|%d|%d" % (root[0], root[1]))
     lines.append("hand|%d|%s" % (len(r.get("cards") or []), r.get("ms")))
     return "\n".join(lines)
+
+
+def phase_line(p, why=""):
+    """/phase's answer: phase|state|in battle|planning|shown|own|size|ms|why (HandMem.phase: state none / round /
+    waiting / changing / hand, 1/0 flags, "" not read), or none|<why> when the game can't be read"""
+    if p is None:
+        return "none|" + _f(why or "the game can't be read")
+    return "|".join(["phase", _f(p.get("state")), _b(p.get("in_battle")), _b(p.get("planning")), _f(p.get("shown")),
+                     _f(p.get("own")), _f(p.get("size")), _f(p.get("ms")), _f(p.get("why"))])
+
+
+def nav_phase(nm, wait=0.3):
+    """(p, why): HandMem.phase through navmem's NavMem nm - its attached game (or the one opened for the cards alone),
+    its hand reader and its lock, as NavMem.cards (kept here so navmem.py needn't change: bagmem.nav_tree's way). None and
+    why when the game can't be read (not running, the reader being made). Never raises"""
+    try:
+        st, why = nm._ensure(wait)
+        if st is None:
+            light = getattr(nm, "_cards_light", None)
+            st, why = light(why) if light is not None else (None, why)
+            if st is None:
+                return None, why
+        hm, why = nm._hand_reader(st, wait)
+        if hm is None:
+            return None, why
+        with nm.lock:
+            if hm.st is not st:
+                return None, "the game changed"
+            return hm.phase(), ""
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return None, "reading the round's phase failed (%r)" % (e,)
 
 
 # ============================================================================ command line
@@ -1511,6 +1676,9 @@ def _main():
     ap.add_argument("-n", type=int, default=1)
     ap.add_argument("-i", type=float, default=2.0)
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--phase", action="store_true",
+                    help="the round's phase alone (HandMem.phase - /phase), one line a reading: to watch what the hand "
+                         "does when a card is clicked, its target clicked, the round played (e.g. -n 100 -i 0.1)")
     a = ap.parse_args()
     pids = N.find_pids()
     if not pids:
@@ -1523,6 +1691,11 @@ def _main():
         st = LightAttach(fg if fg in pids else pids[0], print)
     hm = HandMem(st, log=print)
     for k in range(a.n):
+        if a.phase:
+            print("%s  %s" % (time.strftime("%H:%M:%S"), phase_line(hm.phase())))
+            if k + 1 < a.n:
+                time.sleep(a.i)
+            continue
         r = hm.read()
         print("%s  %s" % (time.strftime("%H:%M:%S"), answer(r).replace("\n", "\n          ")))
         print("          state %s, %.1f ms" % (r["state"], r["ms"]))

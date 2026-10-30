@@ -7,6 +7,11 @@
 ; BossMax, HealthStatus, AppliedBlades, BossTraps (the traps on one enemy: TrapSlot, TrapFoe*), AuraRounds, EnchantedHits,
 ; PipsNow.
 
+;The game's memory's card boxes against the ones the screen shows (MemBoxCheck - v0.9.0): {"<GameW>x<GameH>": {agree (looks
+;in a row they lined up), trusted (3 such: with memclicks:1 the cards are clicked where the memory has them), lastOk}} -
+;declared only (a top-level := never runs in an #Included file): blank at start, KillCalcBlank
+global MemBox
+
 ;Reads PlayerStats.txt (key:value lines, ; starts a comment) on top of built-in defaults. quiet: lines
 ;that can't be read go to debug.log instead of a message box (reloading while the bot runs)
 LoadStats(quiet := false)
@@ -784,16 +789,14 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 	;(no card zoomed up under the mouse when the hand's boxes are read - CardLearn.ahk; the round's CenterMouse is off it)
 	if (V1IsFunc("LearnMouseClear"))
 		LearnMouseClear.Call()
-	bmbAll := BoostBoxes(wait)
+	;(v0.9.0: the game's memory's own boxes with memclicks:1, once they've been seen lining up with the screen's at this window
+	;size - HandBoxes; else a fresh look at the hand's boxes laid on the game's cards, as ever)
+	bmbAll := HandBoxes(wait)
 	if (!IsObject(bmbAll))
 		return V1Obj({x: "", why: "the hand's card boxes and the game's cards don't line up (" (VisionCardsWhy != "" ? VisionCardsWhy : "not as many, or the hand not read") ")"})
-	;(the boxes known by a picture: each one's card the kind its picture says)
-	for bmbI, bmbB in bmbAll.boxes
-		{
-		bmbSays := BoostBoxSays(bmbB.known), bmbKind := BoostKindSays(bmbB.m.kind)
-		if (bmbSays != "" && bmbKind != "" && bmbSays != bmbKind)
-			return V1Obj({x: "", why: "box " bmbI " is known as " bmbB.known ", the game has " BoostMemName(bmbB.m) " (" bmbB.m.kind ") there - the boxes and the game's cards may not line up"})
-		}
+	;(the boxes known by a picture: each one's card the kind its picture says - BoxesLineUp)
+	if (!BoxesLineUp(bmbAll, &bmbOff))
+		return V1Obj({x: "", why: bmbOff})
 	bmbIdx := V1Obj()
 	for bmbI, bmbN in BoostMatches(key, bmbAll.hand.cards)
 		bmbIdx[bmbN] := 1
@@ -813,8 +816,10 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 			bmbWhy := "its box (" bmbI ") is known as " bmbB.known " - another card's picture"
 			continue
 			}
-		;(its box's picture another card's that the game's hand doesn't hold at all: a false match - said with the cast)
+		;(its box's picture another card's that the game's hand doesn't hold at all: a false match - said with the cast; a box
+		;from the game's memory - memclicks - said so)
 		bmbNote := BoostMemBoxOk(key, bmbB.known, bmbNm) ? "" : " - its box was known as " bmbB.known ", a card the game's hand doesn't hold (a false picture match)"
+		bmbNote .= bmbAll.mem ? " - its box where the game's memory has it (memclicks)" : ""
 		if (bmbB.grey || bmbM.castable = "0")
 			{
 			bmbWhy := "it's greyed out (not enough pips)"
@@ -896,6 +901,310 @@ BoostMemName(m)
 	return V1IsFunc("LearnMemGame") ? LearnMemGame.Call(m) : m.name
 	}
 
+;Whether a look's hand boxes (BoostBoxes' or MemBoxes' {boxes, hand}) and the game's cards line up for sure - BoostMemBox,
+;BoostMemDiscard: no box the bot knows by a picture holds a card of another kind than its picture says (BoostBoxSays: a
+;hit's picture on a blade - the boxes don't line up). why: the box that doesn't
+BoxesLineUp(all, &why)
+	{
+	why := ""
+	for bluI, bluB in all.boxes
+		{
+		bluSays := BoostBoxSays(bluB.known), bluKind := BoostKindSays(bluB.m.kind)
+		if (bluSays != "" && bluKind != "" && bluSays != bluKind)
+			{
+			why := "box " bluI " is known as " bluB.known ", the game has " BoostMemName(bluB.m) " (" bluB.m.kind ") there - the boxes and the game's cards may not line up"
+			return false
+			}
+		}
+	return true
+	}
+
+;---- Cards where the game's memory has them (v0.9.0, TODO.md goal 3: every card cast by the game's memory) ----
+;The helper's /cards gives each card's box in the game's GUI (vision\handmem.py: its window's rect plus every window's
+;place on the way down from the root - Vision.ahk VisionCardPx turns it into pixels). Never compared with the screen
+;before, so: MemBoxCheck lays those boxes on the ones the helper's /hand saw this round (CardLearn.ahk LearnCards' look,
+;LastHandAnswer) and logs the largest gap between their middles - ALWAYS, log only ("Memory card boxes" in debug.log: once
+;a window size and picture set, and again when it changes). Three looks in a row within Px(10) at one window size: trusted
+;there (MemBoxTrusted) - and only with memclicks:1 in PlayerStats.txt (the Settings window; off: not tried in the game yet)
+;are the cards then clicked where the memory has them: Find (MemCardFind), FindEnchant (MemEnchantFind), every cast at a
+;card's box (HandBoxes: UseBlade / UseTrap / UseMemAt / ClickBubble / UseNegAura / BoostSettleMem through BoostMemBox,
+;BoostCopyPick), the slide after an enchant (MemSettle). One look out of line: not trusted at that size till three in a
+;row line up again. memclicks:0 (the default): the screen's boxes and the pictures as before
+
+;One look's check (after CardLearn.ahk LearnCards read the hand off the screen - ans its /hand answer): the game's memory's
+;boxes (VisionCards' cards, this look's read) against the screen's, paired as BoostBoxes pairs them (as many, left to right):
+;the largest gap between two middles - logged, MemBox kept. Clicks nothing
+MemBoxCheck(ans)
+	{
+	global MemBox ; (v1 globals it sets)
+	static said := V1Obj()
+	if (ans = "" || !V1IsFunc("VisionCards") || !V1IsFunc("VisionCardPx"))
+		return
+	;(the look's own read - LearnCards' LearnMemHand read it, 3 s at most)
+	mbcHand := VisionCards.Call(300, 3000)
+	if (!IsObject(mbcHand) || !mbcHand.cards.Length)
+		return
+	mbcBoxes := []
+	Loop Parse, ans, "`n", "`r"
+		{
+		mbcF := StrSplit(A_LoopField, "|")
+		if (mbcF.Length < 12 || mbcF[1] != "card" || (mbcF.Length >= 15 && mbcF[15] = "0"))
+			continue
+		mbcBoxes.Push(V1Obj({x: mbcF[2] + mbcF[4] / 2, y: mbcF[3] + mbcF[5] / 2}))
+		}
+	mbcKey := GameW "x" GameH, mbcSay := mbcKey "|" PicSet
+	if (!IsObject(MemBox))
+		MemBox := V1Obj()
+	if (!MemBox.Has(mbcKey))
+		MemBox[mbcKey] := V1Obj({agree: 0, trusted: 0, lastOk: ""})
+	mbcS := MemBox[mbcKey]
+	;(not as many: a look that doesn't line up - the run of 3 starts again, as with a card that has no box (v0.9.0 review:
+	;before, trust could build across a look the counts told apart))
+	if (mbcBoxes.Length != mbcHand.cards.Length)
+		{
+		mbcWas := mbcS.trusted, mbcS.agree := 0, mbcS.trusted := 0
+		if (!said.Has(mbcSay "|count") || mbcWas)
+			said[mbcSay "|count"] := 1, DebugLog("  Memory card boxes (log only): the screen shows " mbcBoxes.Length " card box(es), the game's memory " mbcHand.cards.Length " card(s) - not compared this look"
+				. (mbcWas ? ", and not clicked where the memory has them at this size again till 3 looks in a row line up" : "") " (said once a window size)")
+		return
+		}
+	mbcGap := -1, mbcAt := 0, mbcDx := 0, mbcDy := 0, mbcNo := 0, mbcSays := ""
+	for mbcI, mbcB in mbcBoxes
+		{
+		if (!VisionCardPx.Call(mbcHand, mbcHand.cards[mbcI], &mbcX, &mbcY))
+			{
+			mbcNo += 1
+			continue
+			}
+		mbcD := Max(Abs(mbcX - mbcB.x), Abs(mbcY - mbcB.y))
+		mbcDx += mbcX - mbcB.x, mbcDy += mbcY - mbcB.y
+		if (mbcD > mbcGap)
+			mbcGap := mbcD, mbcAt := mbcI, mbcSays := "memory " mbcX - GameLeft "," mbcY - GameTop " - screen " Round(mbcB.x - GameLeft) "," Round(mbcB.y - GameTop)
+		}
+	if (mbcNo)
+		{
+		mbcS.agree := 0, mbcS.trusted := 0
+		if (!said.Has(mbcSay "|nobox"))
+			said[mbcSay "|nobox"] := 1, DebugLog("  Memory card boxes (log only): " mbcNo " of " mbcBoxes.Length " cards have no box from the game's memory" (mbcHand.rootW = "" ? " (no root line: an older helper, or the GUI root not read)" : " (not read, or off the window)") " - not compared (said once a window size)")
+		return
+		}
+	mbcN := mbcBoxes.Length, mbcOk := mbcGap <= Px(10), mbcWas := mbcS.trusted, mbcFirst := !said.Has(mbcSay)
+	mbcS.agree := mbcOk ? Min(mbcS.agree + 1, 99) : 0
+	mbcS.trusted := (mbcS.agree >= 3) ? 1 : 0
+	if (mbcFirst || mbcS.trusted != mbcWas || (!mbcOk && mbcS.lastOk != 0))
+		DebugLog("  Memory card boxes (log only" (Stat("memclicks") = 1 ? "" : " - memclicks off") "): " mbcN " card(s), the largest gap between the game's memory's box and the screen's "
+			. Round(mbcGap) " px (card " mbcAt ": " mbcSays "), on average " Round(mbcDx / mbcN) "," Round(mbcDy / mbcN) " px off - a " GameW "x" GameH " window, the GUI " mbcHand.rootW "x" mbcHand.rootH ", UI " Round(UiScale, 3) ": "
+			. (!mbcOk ? "they DON'T line up (more than " Px(10) " px)" (mbcWas ? " - not clicked where the memory has them at this size again till 3 looks in a row line up" : "")
+			: mbcS.trusted ? "they line up, 3 looks in a row" (Stat("memclicks") = 1 ? " - cards are clicked where the game's memory has them at this window size from now on" : " - memclicks:1 would click the cards where the game's memory has them")
+			: "they line up (" mbcS.agree " of 3 looks in a row)"))
+	said[mbcSay] := 1, mbcS.lastOk := mbcOk ? 1 : 0
+	}
+
+;Whether cards may be clicked where the game's memory has them now: memclicks:1 and its boxes seen lining up with the
+;screen's 3 looks in a row at this window size (MemBoxCheck) - and one game window running (Vision.ahk VisionMemOneClient,
+;v0.9.0 review: with two or more navmem can be on another client, whose hand of as many cards lines up just as well)
+MemBoxTrusted()
+	{
+	global MemBox
+	if (Stat("memclicks") != 1 || !IsObject(MemBox))
+		return false
+	mbtS := V1At(MemBox, GameW "x" GameH)
+	return IsObject(mbtS) && mbtS.trusted = 1 && V1IsFunc("VisionMemOneClient") && VisionMemOneClient.Call()
+	}
+
+;The hand's card boxes from the game's memory alone, in BoostBoxes' shape ({boxes: [{l, t, w, h (pixels), known: "", grey:
+;0, m (the game's card), n, mem: 1}], hand, mem: 1}) - every card's box read (VisionCardPx), else "". wait: how long the
+;game's hand may still be changing (VisionCards); a read 0.4 s old at most, as VisionFind's look at the screen (places,
+;not names: the hand moves after a Sharpen, a discard)
+MemBoxes(wait := 300)
+	{
+	mbHand := (V1IsFunc("VisionCards") && V1IsFunc("VisionCardPx")) ? VisionCards.Call(wait, 400) : ""
+	if (!IsObject(mbHand) || !mbHand.cards.Length || mbHand.rootW = "" || mbHand.rootH = "")
+		return ""
+	mbOut := []
+	for mbI, mbM in mbHand.cards
+		{
+		if (!VisionCardPx.Call(mbHand, mbM, &mbX, &mbY))
+			return ""
+		mbW := (mbM.r - mbM.l) * GameW / mbHand.rootW, mbH := (mbM.b - mbM.t) * GameH / mbHand.rootH
+		mbOut.Push(V1Obj({l: Round(mbX - mbW / 2), t: Round(mbY - mbH / 2), w: Round(mbW), h: Round(mbH), known: "", grey: 0, m: mbM, n: mbI, mem: 1}))
+		}
+	return V1Obj({boxes: mbOut, hand: mbHand, mem: 1})
+	}
+
+;The hand's card boxes for a cast at a card's box (BoostMemBox, BoostCopyPick, BoostMemDiscard): the game's memory's own
+;(MemBoxes) while they may be clicked (MemBoxTrusted - memclicks:1), else a fresh look at the screen's laid on the game's
+;cards (BoostBoxes), as ever
+HandBoxes(wait := 300)
+	{
+	if (MemBoxTrusted())
+		{
+		hbMem := MemBoxes(wait)
+		if (IsObject(hbMem))
+			return hbMem
+		}
+	return BoostBoxes(wait)
+	}
+
+;Where the deck's copy of boost key is in hand to discard it - DiscardCard, for a spare blade no picture finds that the
+;game's hand has (BoostMemOnly; before v0.9.0 one was never discarded and stayed in hand): a fresh look at the hand's boxes
+;laid on the game's cards (HandBoxes), only while they line up for sure (BoxesLineUp), the first copy (BoostMatches) of the
+;deck's - never a treasure card (discarding one uses it up) nor an item card - whose box's picture, if any, can be it
+;(BoostMemBoxOk). {x, y (its box's middle), n, of, name}; {x: "", why} none
+BoostMemDiscard(key)
+	{
+	global VisionCardsWhy
+	if (V1IsFunc("LearnMouseClear"))
+		LearnMouseClear.Call()
+	bmdAll := HandBoxes(300)
+	if (!IsObject(bmdAll))
+		return V1Obj({x: "", why: "the hand's card boxes and the game's cards don't line up (" (VisionCardsWhy != "" ? VisionCardsWhy : "not as many, or the hand not read") ")"})
+	if (!BoxesLineUp(bmdAll, &bmdOff))
+		return V1Obj({x: "", why: bmdOff})
+	bmdIdx := V1Obj()
+	for bmdI, bmdN in BoostMatches(key, bmdAll.hand.cards)
+		bmdIdx[bmdN] := 1
+	for bmdI, bmdB in bmdAll.boxes
+		if (bmdIdx.Has(bmdB.n) && !bmdB.m.tc && !bmdB.m.item && BoostMemBoxOk(key, bmdB.known, BoostMemName(bmdB.m), bmdAll.hand.cards))
+			return V1Obj({x: Round(bmdB.l + bmdB.w / 2), y: Round(bmdB.t + bmdB.h / 2), n: bmdI, of: bmdAll.boxes.Length, name: BoostMemName(bmdB.m)})
+	return V1Obj({x: "", why: "no copy of it from the deck among the game's cards now"})
+	}
+
+;Which card of the game's hand (VisionCards' hand) picture slot dir\title is - Find's look with memclicks (MemCardFind): its
+;number in hand.cards, 0 none for sure. A boost slot - a blade, trap, Feint, Tower Shield, absorb, your school's bubble or
+;prism (BoostKey): a copy of it (BoostMatches); Sharpen / Potent: a card of that kind; Reshuffle: one the game names so; any
+;other slot whose card the game named - a hit's (SlotGame: CardLearn.ahk's look at the hand), else the learned card in the
+;slot's (flag game=) - the card of that name (of a hit's kind for hit1-4 and the wand). Not one the game says can't be cast
+;(castable 0 - its picture wouldn't match a greyed card either). ench 1: one with an enchantment on it first (after a
+;Sharpen, Potent or enchant - MemSettle); ench 0: a plain one first - one that carries an enchantment already only when
+;there's none (BoostMemBox's rule, v0.9.0 review: it can't take a Sharpen, Potent or enchant - the game takes no second
+;one; its picture wouldn't match it either). An aura or heal no card's named for, an enchant (MemEnchantFind), Pass: 0 -
+;by its picture, as before
+MemCardFor(dir, title, hand, ench := 0)
+	{
+	global SlotGame
+	if (!IsObject(hand) || !IsObject(hand.cards) || !hand.cards.Length)
+		return 0
+	mcfKey := BoostKey(title, dir), mcfIs := []
+	if (mcfKey = "tower" || mcfKey = "absorb" || BoostKind(mcfKey) != "" || RegExMatch(mcfKey, "^[a-z]+/(bubble|convert)$"))
+		mcfIs := BoostMatches(mcfKey, hand.cards)
+	else if (title = "sharpen" || title = "potent")
+		{
+		for mcfI, mcfC in hand.cards
+			if (mcfC.kind = title)
+				mcfIs.Push(mcfI)
+		}
+	else if (title = "reshuffle")
+		{
+		for mcfI, mcfC in hand.cards
+			if (RegExMatch(BoostMemName(mcfC) "|" mcfC.name, "i)\breshuffle\b"))
+				mcfIs.Push(mcfI)
+		}
+	else
+		{
+		mcfName := (IsObject(SlotGame) && dir != "resources") ? V1At(SlotGame, dir "/" title) : ""
+		if (mcfName = "" && V1IsFunc("LearnCardInSlot"))
+			{
+			mcfLc := LearnCardInSlot.Call(dir "\" title)
+			if (IsObject(mcfLc))
+				mcfName := LearnFlag.Call(mcfLc, "game")
+			}
+		if (mcfName = "")
+			return 0
+		mcfHit := RegExMatch(title, "^(hit[1-4]|wand)$")
+		for mcfI, mcfC in hand.cards
+			if (BoostMemName(mcfC) = mcfName && (!mcfHit || mcfC.kind = "damage" || mcfC.kind = "aoe"))
+				mcfIs.Push(mcfI)
+		}
+	mcfAny := 0
+	for mcfI, mcfN in mcfIs
+		{
+		if (hand.cards[mcfN].castable = "0")
+			continue
+		if (ench ? hand.cards[mcfN].ench != "" : hand.cards[mcfN].ench = "")
+			return mcfN
+		if (!mcfAny)
+			mcfAny := mcfN
+		}
+	return mcfAny
+	}
+
+;Find's first look (Autofarmer.ahk) with memclicks:1: picture slot dir\title's card where the game's memory has it
+;(MemCardFor), its box in pixels (VisionCardPx) - only while the memory's boxes may be clicked (MemBoxTrusted). True: X, Y
+;its box's middle less Px(5) each way (Find's callers click X + Px(5), or X itself - a bit up and left of the middle: both on
+;the card), ench 1 that copy carries an enchantment already (none plain in hand - UseBlade / UseTrap / UseHit put none on it);
+;false, X and Y as they were: Find looks by its picture as ever
+MemCardFind(dir, title, &X, &Y, &ench := 0)
+	{
+	ench := 0
+	if (!MemBoxTrusted() || !V1IsFunc("VisionCards") || !V1IsFunc("VisionCardPx"))
+		return false
+	;(a read 0.4 s old at most - VisionFind's look at the screen serves 0.4 s too: one read for FindCards' every card)
+	mcdHand := VisionCards.Call(300, 400)
+	mcdN := MemCardFor(dir, title, mcdHand)
+	if (!mcdN || !VisionCardPx.Call(mcdHand, mcdHand.cards[mcdN], &mcdX, &mcdY))
+		return false
+	X := mcdX - Px(5), Y := mcdY - Px(5), ench := (mcdHand.cards[mcdN].ench != "") ? 1 : 0
+	return true
+	}
+
+;FindEnchant's first look with memclicks:1: the best enchant in the game's hand (EnchantList's order: the enchant card -
+;kind enchant - whose name says that level's word: Epic, Colossal...; Epic only once a hitter's known, as FindEnchant has
+;it; not one the game says can't be cast) where the memory has it - only while its boxes may be clicked (MemBoxTrusted).
+;True: level its enchantN, x, y its box's middle less Px(5) (as MemCardFind's); false, nothing set: by the pictures
+MemEnchantFind(&level, &x, &y)
+	{
+	global hitter
+	if (!MemBoxTrusted() || !V1IsFunc("VisionCards") || !V1IsFunc("VisionCardPx") || !V1IsFunc("EnchantList"))
+		return false
+	mefHand := VisionCards.Call(300, 400)
+	if (!IsObject(mefHand) || !mefHand.cards.Length)
+		return false
+	for mefI, mefE in EnchantList.Call()
+		{
+		if ((mefE[1] = 4 && hitter = 0) || mefE[3] = "enchant")
+			continue
+		for mefJ, mefC in mefHand.cards
+			if (mefC.kind = "enchant" && mefC.castable != "0" && RegExMatch(BoostMemName(mefC) "|" mefC.name, "i)\b" mefE[3] "\b")
+				&& VisionCardPx.Call(mefHand, mefC, &mefX, &mefY))
+				{
+				level := mefE[1], x := mefX - Px(5), y := mefY - Px(5)
+				return true
+				}
+		}
+	return false
+	}
+
+;A Sharpen, Potent or enchant was just put on the card dir\title found where the game's memory has it (Find - MemCardFind)
+;and the hand re-centres: where the memory has that card once two reads 100 ms apart agree (the slide over - MemCardFor,
+;one with the enchantment on it first) - as BoostSettle waits for its picture; not by 1.5 s: where it should be
+;(RefindAfterBoost's guess). fx, fy as Find's (the box's middle less Px(5))
+MemSettle(dir, title, &fx, &fy, boostX)
+	{
+	msExp := fx + (fx < boostX ? HalfPitch : -HalfPitch), msLast := "", msT0 := A_TickCount
+	Sleep(250)
+	while (A_TickCount - msT0 < 1500 && V1IsFunc("VisionCardPx"))
+		{
+		VisionForget.Call()
+		msHand := VisionCards.Call(300, 0)
+		msN := MemCardFor(dir, title, msHand, 1)
+		if (msN && VisionCardPx.Call(msHand, msHand.cards[msN], &msX, &msY))
+			{
+			if (msLast = msX "," msY)
+				{
+				DebugLog("    card moved from " fx - GameLeft "," fy - GameTop " to " msX - Px(5) - GameLeft "," msY - Px(5) - GameTop " (the game's memory: card " msN " of " msHand.cards.Length ", settled in " A_TickCount - msT0 " ms)")
+				fx := msX - Px(5), fy := msY - Px(5)
+				return true
+				}
+			msLast := msX "," msY
+			}
+		Sleep(100)
+		}
+	DebugLog("    card not settled in the game's memory after it moved, using where it should be: " msExp - GameLeft "," fy - GameTop)
+	fx := msExp
+	return false
+	}
+
 ;Which copy of boost card key in hand the card at x, y is - UseBlade, UseTrap, with the game's hand read (BoostHand):
 ;{src ("" the deck's, "tc", "item"), item (1: an item card - never sharpened or made potent), moved (1: that copy can't go
 ;- its casts used this battle - so x, y are now another copy's that can, plain: one moved to is never sharpened)}; "" none
@@ -915,7 +1224,7 @@ BoostCopyPick(key, &x, &y, sharp, use1, use2)
 		for bcpI, bcpC in bcpHand.cards
 			bcpN += (bcpC.kind = "blade" || bcpC.kind = "trap") ? 1 : 0
 	bcpOne := bcpOne && IsObject(bcpHand) && bcpN = BoostHand[key].Length
-	bcpAll := bcpOne ? "" : BoostBoxes()
+	bcpAll := bcpOne ? "" : HandBoxes()
 	if (IsObject(bcpAll))
 		{
 		bcpIs := V1Obj()
@@ -2430,11 +2739,26 @@ SameHealth(a, b)
 ;Reads every enemy's health off the nameplate strip. Windows OCR sometimes drops a line from a wide
 ;image, so: find the plates from every name and health line seen at two sizes, then read each plate's
 ;health on its own at both sizes. Anything that doesn't add up -> false (health unknown)
-ReadEnemyHealth()
+;v0.9.0: the game's memory's health first (EnemyMemHealth) - with memclicks:1 the plates from it too, no OCR at all; else
+;the plates found on the screen as before and each one's health from the memory when every enemy sits on its own plate,
+;the per-plate reads below skipped. memOnly (the kill check with healthocr:0 and memclicks:1): the memory's alone, no OCR
+ReadEnemyHealth(memOnly := false)
 	{
 	global EnemyHP, EnemyPlates, EnemyPlatesAt, BossSlot, TrapSlot, HealthStatus, BossMax, BossTraps ; (v1 globals it sets)
 	EnemyHP := "", EnemyPlates := [], EnemyPlatesAt := A_TickCount
 	BossSlot := 0, TrapSlot := 0
+	;(memclicks:1 - the plates and their health from the game's memory, where a hit or trap is clicked too: EnemyMemHealth)
+	if ((Stat("memclicks") = 1 || memOnly) && EnemyMemHealth())
+		{
+		TrapSlot := TrapFoeSlot(EnemyHP, EnemyPlates)
+		return true
+		}
+	if (memOnly)
+		{
+		EnemyHP := "", EnemyPlates := []
+		HealthStatus := "Not read from the game's memory (healthocr:0 - no OCR)" (NavBattleWhy != "" ? ": " NavBattleWhy : "")
+		return false
+		}
 	;platestrip is in pixels at UI scale 1: the plates grow with the UI
 	stripH := Round(Stat("platestrip") * UiScale)
 	if (stripH > GameH)
@@ -2545,6 +2869,23 @@ ReadEnemyHealth()
 		b := IsObject(p.name) ? p.name : p.health
 		EnemyPlates.Push(V1Obj({x: b.x + b.w // 2, y: b.y + b.h // 2, name: IsObject(p.name) ? p.name.text : ""}))
 		}
+	;(v0.9.0: the game's memory's health on these plates - every enemy on its own, left to right, where its plate is -
+	;instead of reading each plate's off the screen: EnemyMemHealth. Each plate's box - TrapFoeSlot finds the traps' enemy by
+	;it - worked out as the reads below work it out)
+	if (EnemyMemHealth(EnemyPlates))
+		{
+		for i, p in plates
+			{
+			if (IsObject(p.health))
+				b := p.health, cx := b.x - b.h, cy := b.y - b.h // 2, cw := b.w + b.h * 2, ch := b.h * 2
+			else
+				b := p.name, cx := b.x - b.h * 2, cy := b.y + b.h, cw := (b.w > b.h * 10 ? b.w : b.h * 10) + b.h * 4, ch := b.h * 3
+			top := IsObject(p.name) ? p.name : b
+			p.box := V1Obj({x1: (top.x < cx ? top.x : cx) - top.h * 5, y1: top.y - top.h * 2, x2: cx + cw + top.h, y2: cy + ch + top.h})
+			}
+		TrapSlot := TrapFoeSlot(EnemyHP, plates)
+		return true
+		}
 
 	;2) Each plate's health also read on its own at both sizes. Every read is a vote: at least two must
 	;agree and none may disagree (a misread digit that still looks like health won't repeat exactly)
@@ -2649,6 +2990,73 @@ ReadEnemyHealth()
 	;The enemy our traps are on (the kill check counts them on it only): the boss's plate; else the plate of the one with the
 	;most health they went on - TrapFoeSlot
 	TrapSlot := (BossChoosen == 1) ? BossSlot : TrapFoeSlot(list, plates)
+	return true
+	}
+
+;The enemies' health from the game's memory (v0.9.0, TODO.md goal 3) - ReadEnemyHealth's first try: NavBattle's enemies
+;(the helper's /battle, READ-ONLY, read now), used only when every one alive has its health and most health read, none is
+;hidden by the game (hide: a boss whose health it hides - its plate's number may not be the memory's), there are 1-4 of
+;them, and no boss was picked with Alt+1 (its plate is the one under your click, by the boxes the screen's reads give - as
+;ever). onScreen: the plates the OCR found (ReadEnemyHealth's, left to right) - each enemy put on one in the same order
+;across, its plate's middle (the memory's x) within Px(160) of the plate's: every one, or none used. onScreen "": the
+;plates from the game's memory too - memclicks:1 only (where a single-target hit and a trap are clicked: NOT TRIED in the
+;game yet) - each one's box (Vision.ahk NavPlatePx), EnemyPlates [{x, y, name, box}]. Sets EnemyHP ({cur, max}, left to
+;right) - and EnemyPlates with no onScreen - and HealthStatus: true. False: nothing set - read off the screen, as before
+;Only while one game window runs (Vision.ahk VisionMemOneClient, v0.9.0 review: with two or more navmem can be on another
+;client - another battle's enemies laid on these plates)
+EnemyMemHealth(onScreen := "")
+	{
+	global EnemyHP, EnemyPlates, HealthStatus ; (v1 globals it sets)
+	if (BossChoosen == 1 || !V1IsFunc("NavBattle") || !V1IsFunc("NavPlatePx") || !V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
+		return false
+	emhB := NavBattle.Call()
+	if (!IsObject(emhB) || !IsObject(emhB.foes))
+		return false
+	emhFoes := []
+	for emhI, emhF in emhB.foes
+		{
+		;(one at 0: gone - its plate with it)
+		if (emhF.health != "" && emhF.health <= 0)
+			continue
+		if (emhF.health = "" || emhF.max = "" || emhF.max <= 0 || emhF.health > emhF.max || emhF.hide = 1 || emhF.x = "")
+			return false
+		emhFoes.Push(emhF)
+		}
+	if (emhFoes.Length < 1 || emhFoes.Length > 4)
+		return false
+	;(left to right, as the plates are)
+	Loop emhFoes.Length - 1
+		Loop emhFoes.Length - A_Index
+			if (emhFoes[A_Index].x > emhFoes[A_Index + 1].x)
+				emhT := emhFoes[A_Index], emhFoes[A_Index] := emhFoes[A_Index + 1], emhFoes[A_Index + 1] := emhT
+	emhAt := []
+	if (IsObject(onScreen))
+		{
+		if (onScreen.Length != emhFoes.Length)
+			return false
+		for emhI, emhF in emhFoes
+			if (onScreen[emhI].x = "" || Abs(GameLeft + emhF.x * GameW - onScreen[emhI].x) > Px(160))
+				return false
+		}
+	else
+		{
+		if (Stat("memclicks") != 1)
+			return false
+		for emhI, emhF in emhFoes
+			{
+			if (!NavPlatePx.Call(emhF, &emhX, &emhY))
+				return false
+			emhAt.Push(V1Obj({x: emhX, y: emhY, name: emhF.name, box: V1Obj({x1: Round(GameLeft + emhF.l * GameW), y1: Round(GameTop + emhF.t * GameH)
+				, x2: Round(GameLeft + emhF.r * GameW), y2: Round(GameTop + emhF.b * GameH)})}))
+			}
+		}
+	EnemyHP := [], emhText := ""
+	for emhI, emhF in emhFoes
+		EnemyHP.Push(V1Obj({cur: emhF.health, max: emhF.max})), emhText .= (emhText = "" ? "" : ", ") (emhF.name != "" ? emhF.name " " : "") emhF.health "/" emhF.max
+	if (!IsObject(onScreen))
+		EnemyPlates := emhAt
+	HealthStatus := ""
+	DebugLog("  enemies' health from the game's memory: " emhText (IsObject(onScreen) ? " (on the plates the screen shows)" : " (their plates where the memory has them - memclicks)"))
 	return true
 	}
 
@@ -3596,4 +4004,5 @@ KillCalcBlank()
 	global BoostOneOfOff := "", PlanHeads := "", PlanHit := "", BoostMisfitDone := "", LearnAll := "", Stats := "", GameLeft := "", GameTop := ""
 	global HalfPitch := "", bossX := "", bossY := "", feint := "", trap3 := "", trap4 := "", EnemyPlatesAt := "", HealthStatus := "", TrapFoeX := ""
 	global TrapAtX := "", TrapAtY := "", TrapFoeY := "", TrapAtMax := "", TrapWhy := "", TrapFoeMax := ""
+	global MemBox := ""
 	}

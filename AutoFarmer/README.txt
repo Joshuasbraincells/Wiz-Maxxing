@@ -1114,6 +1114,51 @@ count then (generic 1, power and your school's pips 2, another school's 1),
 the pip row under your name still read each round, for the log and in case the game can't be read (debug.log:
 "pips=N (from the game; the pip row read M)" when they differ). navmem:0 in
 PlayerStats.txt switches it off with the walker's memory reading.
+Cards and plates by the game's memory (v0.9.0 work, not tried in the game
+yet): the helper also gives each card's box in the game's window (/cards)
+and each name plate's box (/battle), read from the memory the same way.
+	- Read and used now, the screen's reading kept for when the memory
+	  can't be read: your school (the badge by your plate can be a
+	  teammate's in a party battle - debug.log "your school: the game's
+	  memory says ..."), your own health ("own health: N/M (P%) - the
+	  game's memory"), the enemies' health on the plates the screen shows
+	  ("enemies' health from the game's memory: ..." - not a boss whose
+	  health the game hides, nor with an Alt+1 boss) and your party's
+	  wizards' health. Only while one game window is open: with two or
+	  more the memory read can be the other window's wizard (debug.log
+	  "Vision: N game window(s) found ..."), so all of it - and
+	  memclicks below - is taken off the screen as before.
+	- Clicks where the memory has them: only with memclicks:1 (Settings,
+	  HOW IT PLAYS ITS CARDS - "Click cards and plates where the game's
+	  memory has them", off). Every round the memory's card boxes are
+	  compared with the ones the helper sees on the screen - log only,
+	  whatever the setting: debug.log "Memory card boxes (log only): N
+	  card(s), the largest gap ... they line up / they DON'T line up".
+	  Once they line up 3 looks in a row at a window size, memclicks:1
+	  casts the cards and enchants where the memory has them there (the
+	  pictures the fallback); your plate when no picture finds it and the
+	  enemies' plates are clicked where the memory has them too, and the
+	  kill check then reads no health off the screen (also with its OCR
+	  off - healthocr:0).
+	- Fixed whatever the setting: your plate not found no longer sends a
+	  heal or Tower Shield's click onto the card just clicked (not cast -
+	  said in debug.log); nor a blade's or Reshuffle's onto nowhere when
+	  the hitter's school is known (the memory's, or the one this
+	  character fought as before) but no plate was found - the round's
+	  hits are still cast, the blades aren't ("the hitter's name plate
+	  wasn't found this round"); with memclicks:1 a card that already
+	  carries an enchantment is never sharpened, made potent or enchanted
+	  again (a plain copy is taken first); the memory's hand is no longer
+	  thrown away when the badge by your plate is another school's (one
+	  game running); a spare blade only the memory found is discarded, at
+	  its card box; a hit the game says is for one enemy gets its target
+	  clicked without a hitNtarget:1 key.
+	- Each cast check logs the round's phase from the memory beside the
+	  Pass picture's verdict ("cast check (memory, log only)") - nothing
+	  acts on it yet. To watch it yourself in a battle:
+	      python vision\handmem.py --phase -n 100 -i 0.1
+	  (a line every tenth of a second while you click a card, its target,
+	  and the round plays).
 Every battle spell type of the game's own list (its spells' type: Damage,
 AOE, Steal, Heal, Charm, Curse, Ward, Jinx, Aura, AuraNegative, Global,
 Manipulation, Enchantment, Mutate, Polymorph, Shadow) has a kind on the
