@@ -10,13 +10,17 @@
 ; V1IsFunc first.
 ;
 ; Reads only: the game's memory through the vision helper (/nav, /mobs, /items, /blockers - READ-ONLY: nothing in the game
-; is ever written, injected or hooked), the zone's own files (/zonepuzzle, /navpass - files only) and the game's log
+; is ever written, injected or hooked; a door's state from its ObjectStateBehavior - vision\statemem.py, not confirmed in the
+; game yet: acted on only with puzzlestate on, else said in the log), the zone's own files (/zonepuzzle - its kills, hints and
+; the use events of its triggers with the things that may fire them, a lever the game names nowhere -, /navpass - files
+; only) and the game's log
 ; (WizardClient.log, as EnemySpells.ahk reads it). Your X key is watched by a pass-through hotkey (the key still goes to
 ; the game; nothing else you type is looked at). No web page is ever fetched. Nothing with Crowns on it is ever X'd or
 ; clicked: a prompt is read right before each X, and one naming Crowns is never X'd.
 ;
 ; Settings (PlayerStats.txt, the Settings window's WALKING): puzzles (the tries - on unless 0), puzzlelearn (the recording
-; and the replay - on unless 0). Files, all A_ScriptDir's: learned\puzzles.txt (the ways learned - kept by updates, yours
+; and the replay - on unless 0), puzzlestate (a door's state in the game's memory acted on - off unless 1). Files, all
+; A_ScriptDir's: learned\puzzles.txt (the ways learned - kept by updates, yours
 ; to edit), resources\puzzles_known.txt (the seed that ships with the bot - replaced by updates; a learned entry for the
 ; same spot or goal wins), learned\puzzle_recording.txt (a recording under way - a restart carries on with it),
 ; generated\puzzle_journal.txt (the journal and a duel under way - a restart keeps them), generated\puzzle_hold.txt (the wait at
@@ -483,7 +487,9 @@ PzBeforeNoticeDo(kind, why, r)
 ;---- blockers and the zone's own hints ----
 
 ;The doors, gates and collision objects (the helper's /blockers - the game's memory's with no display key, mem, and the zone file's,
-;file, with their starting state): [{name, x, y, z, dist, gid, src, state}], [] none, "" not read (an older helper). Kept 5 s
+;file, with their starting state): [{name, x, y, z, dist, gid, src, state, start}], [] none, "" not read (an older helper). Kept 5 s.
+;state: a memory door's state now (its ObjectStateBehavior - "" not read: an older helper, a build it can't read), a file door's
+;starting one; start (10th): the zone file's starting state of the door ("" none, or an older helper)
 PzBlockers(fresh := false)
 	{
 	global PzDoors, PzDoorsAt, PzDoorsZone
@@ -504,22 +510,15 @@ PzBlockers(fresh := false)
 		if (V1At(f, 1) != "door" || f.Length < 8)
 			continue
 		out.Push(V1Obj({name: Trim(f[2]), x: NavNum(f[3]), y: NavNum(f[4]), z: NavNum(f[5]), dist: NavNum(f[6]), gid: Trim(f[7])
-			, src: Trim(f[8]), state: f.Length >= 9 ? Trim(f[9]) : ""}))
+			, src: Trim(f[8]), state: f.Length >= 9 ? Trim(f[9]) : "", start: f.Length >= 10 ? Trim(f[10]) : ""}))
 		}
 	PzDoors := out
 	return out
 	}
 
-PzHasGid(bl, gid)
-	{
-	for i, b in bl
-		if (b.gid = gid)
-			return true
-	return false
-	}
-
 ;The door by spot p, the way on dir: the nearest blocker within PzDoorR, on its floor, not behind it - the game's memory's before
-;the file's. {name, x, y, z, gid, src, state, d, ahead, others: [the other near ones]}, "" none
+;the file's. {name, x, y, z, gid, src, state, start, d, ahead, others: [the other near ones]}, "" none. puzzlestate on: a memory
+;door whose state isn't its zone file's starting one any more (open already) isn't one
 PzDoorNear(p, dir)
 	{
 	bl := PzBlockers()
@@ -536,7 +535,17 @@ PzDoorNear(p, dir)
 		ahead := (b.x - p.x) * dir.dx + (b.y - p.y) * dir.dy
 		if (ahead <= -150)
 			continue
-		near.Push(V1Obj({name: b.name, x: b.x, y: b.y, z: b.z, gid: b.gid, src: b.src, state: b.state, d: dd, ahead: (dir.dx = 0 && dir.dy = 0) ? dd : ahead}))
+		if (b.src = "mem" && b.state != "" && b.start != "" && b.state != b.start)
+			{
+			if (PzStateOn())
+				{
+				PzSay("doorskip|" b.gid "|" b.state, b.name " is " b.state " (it starts " b.start ") - open already: not the block", 60000)
+				continue
+				}
+			PzSay("doorskipoff|" b.name "|" b.state "|" b.start, b.name " is " b.state " (it starts " b.start ") - open already? (not acted on: puzzlestate is off)")
+			}
+		near.Push(V1Obj({name: b.name, x: b.x, y: b.y, z: b.z, gid: b.gid, src: b.src, state: b.state, start: b.start, d: dd
+			, ahead: (dir.dx = 0 && dir.dy = 0) ? dd : ahead}))
 		}
 	best := ""
 	for i, b in near
@@ -553,8 +562,11 @@ PzDoorNear(p, dir)
 	}
 
 ;The zone's own puzzle hints (the helper's /zonepuzzle - its triggers.xml, files only): {kills: [templates whose kill opens
-;something], spawns: [objects its triggers make], hints: [{vol, x, y, z, r, text} - a dialogue on entering a volume], uses: [events]}.
-;Kept per zone (not read: asked again after a minute). Only ranks the tries and words the notice - never a filter
+;something], spawns: [objects its triggers make], hints: [{vol, x, y, z, r, text} - a dialogue on entering a volume], uses: [events],
+;usedo: [{event, targets, states, acts} - what a use event's triggers do: the objects whose state they set, the states, the
+;activations - an older helper's: empty], useobjs: [{event, template, x, y, z, how} - a placement that may fire it: a lever the game
+;names nowhere, how "name" a guess by the event's words]}. Kept per zone (not read: asked again after a minute). Only ranks the tries
+;and words the notice - never a filter
 PzZoneHints(zone)
 	{
 	global PzHints
@@ -564,7 +576,7 @@ PzZoneHints(zone)
 		if (h.ok || A_TickCount - h.at < 60000)
 			return h
 		}
-	h := V1Obj({ok: 0, at: A_TickCount, kills: [], spawns: [], hints: [], uses: []})
+	h := V1Obj({ok: 0, at: A_TickCount, kills: [], spawns: [], hints: [], uses: [], usedo: [], useobjs: []})
 	if (zone != "")
 		{
 		ans := VisionGet("/zonepuzzle?zone=" NavUri(zone), 2500, true)
@@ -580,7 +592,14 @@ PzZoneHints(zone)
 				else if (k = "spawn" && f.Length >= 2)
 					h.spawns.Push(Trim(f[2]))
 				else if (k = "use" && f.Length >= 2)
+					{
 					h.uses.Push(Trim(f[2]))
+					;(3-5, a newer helper's: what its triggers do - each a list ; apart)
+					if (f.Length >= 5)
+						h.usedo.Push(V1Obj({event: Trim(f[2]), targets: PzSemiList(f[3]), states: PzSemiList(f[4]), acts: PzSemiList(f[5])}))
+					}
+				else if (k = "useobj" && f.Length >= 7 && Trim(f[3]) != "")
+					h.useobjs.Push(V1Obj({event: Trim(f[2]), template: Trim(f[3]), x: NavNum(f[4]), y: NavNum(f[5]), z: NavNum(f[6]), how: Trim(f[7])}))
 				else if (k = "hint" && f.Length >= 7)
 					{
 					txt := f[7]
@@ -593,6 +612,16 @@ PzZoneHints(zone)
 		}
 	PzHints[zone] := h
 	return h
+	}
+
+;A /zonepuzzle list field (values ; apart) as an array - [] empty
+PzSemiList(s)
+	{
+	out := []
+	for i, v in StrSplit(s, ";")
+		if (Trim(v) != "")
+			out.Push(Trim(v))
+	return out
 	}
 
 ;Is a template one the zone's triggers name (its kill opens something)?
@@ -644,7 +673,8 @@ PzDoorsSay(door)
 		return "no door or gate known"
 	out := ""
 	for i, d in PzDoorList(door)
-		out .= (out = "" ? "" : ", ") d.name " (" (d.src = "mem" ? "memory" : "zone file") (d.state != "" ? ", starts " d.state : "") ", " Round(d.ahead) ")"
+		out .= (out = "" ? "" : ", ") d.name " (" (d.src = "mem" ? "memory" (d.state != "" ? ", now " d.state : "") (d.start != "" && d.start != d.state ? ", starts " d.start : "")
+			: "zone file" (d.state != "" ? ", starts " d.state : "")) ", " Round(d.ahead) ")"
 	return out
 	}
 PzDoorList(door)
@@ -654,6 +684,105 @@ PzDoorList(door)
 		for i, d in door.others
 			l.Push(d)
 	return l
+	}
+
+;---- the way's doors in the game's memory: gone, still there, their state ----
+
+;The puzzlestate setting (off unless 1 - a door's state in the game's memory isn't confirmed in the game yet: vision\statemem.py
+;--watch at a gate first): on, a door's state changed is the way maybe open (the check walks through, the hold looks, the recording
+;ends), one known and unchanged is shut, and a memory door no longer in its starting state isn't taken as the block; off, a state is
+;only said in the log - the doors gone or there decide, as before
+PzStateOn() => Stats.Has("puzzlestate") && Stats["puzzlestate"] = 1
+
+;The game's memory's doors of door (the door itself first, then its near others - PzDoorList - with a gid): what can go, or change
+;state. [] none (no door, or only the zone file's)
+PzMemDoors(door)
+	{
+	out := []
+	if (IsObject(door))
+		for i, d in PzDoorList(door)
+			if (d.src = "mem" && d.gid != "")
+				out.Push(d)
+	return out
+	}
+
+;The blocker in bl (/blockers just read) with d's gid, "" none (gone from the game's memory)
+PzBlockerOf(bl, d)
+	{
+	for i, b in bl
+		if (b.gid = d.gid)
+			return b
+	return ""
+	}
+
+;The first of mems (PzMemDoors - the door itself first) not in bl, "" all still there
+PzGoneOf(mems, bl)
+	{
+	for i, d in mems
+		if (!IsObject(PzBlockerOf(bl, d)))
+			return d
+	return ""
+	}
+
+;The first of mems still in bl named a collision wall (DynaTrigger_KT_DoorCollision - what holds the wizard: a gate's model can stay
+;in the game's memory once open, its collision goes), "" none
+PzCollisionOf(mems, bl)
+	{
+	for i, d in mems
+		if (InStr(d.name, "collision") && IsObject(PzBlockerOf(bl, d)))
+			return d
+	return ""
+	}
+
+;Has the state of one of mems changed (bl: /blockers just read)? "" none, or not known; else what - "CL-Gate Closed -> Open". Changed:
+;not the state it had when the run began (state0 - PzStateKeep), or - none read then - not the zone file's starting one (start)
+PzStateMoved(mems, bl)
+	{
+	for i, d in mems
+		{
+		b := PzBlockerOf(bl, d)
+		if (!IsObject(b) || b.state = "")
+			continue
+		was := d.state0 != "" ? d.state0 : b.start
+		if (was != "" && b.state != was)
+			return d.name " " was " -> " b.state
+		}
+	return ""
+	}
+
+;...one of mems whose state is known now and still the one it began with (or the file's starting one): "<name> still <state> (the
+;game's memory)", "" none
+PzStateSame(mems, bl)
+	{
+	for i, d in mems
+		{
+		b := PzBlockerOf(bl, d)
+		if (!IsObject(b) || b.state = "")
+			continue
+		was := d.state0 != "" ? d.state0 : b.start
+		if (was != "" && b.state = was)
+			return d.name " still " b.state " (the game's memory)"
+		}
+	return ""
+	}
+
+;Each of door's memory doors' state as read now kept as the one it began with (once: a hold's look again keeps the first)
+PzStateKeep(door)
+	{
+	for i, d in PzMemDoors(door)
+		if (d.state0 = "")
+			d.state0 := d.state
+	}
+
+;True the first time key is seen for door (a near door gone, a state changed: looked at once each - the door outlives the holds)
+PzSeenOnce(door, key)
+	{
+	if (!IsObject(door.seen))
+		door.seen := V1Obj()
+	if (door.seen.Has(key))
+		return false
+	door.seen[key] := 1
+	return true
 	}
 
 ;A run starts at the block (ev: the newest event, or the hold's spot; door: the door there; cl: the counted events; probeOnly: only
@@ -676,6 +805,8 @@ PuzzleStart(how, kind, ev, door := "", cl := "", probeOnly := false, keepP := fa
 		, fights: 0, battles: 0, probeOnly: probeOnly, learned: "", learnedOut: 0, tiers: "", gkey: "", goalAt: 0, zoneOffAt: 0, pos: ""
 		, hint: "", last: "", resume: 0, pb: "", missAt: 0, done: V1Obj(), capped: "", passCache: V1Obj(), held: "", battleAt: 0})
 	r.hint := PzHintNear(PzZoneHints(r.zone).hints, bpx, bpy)
+	;(the doors' states now: what "changed" is measured from - "" not read: nothing changes)
+	PzStateKeep(door)
 	goalSay := r.line != "" ? r.line : "the quest's goal"
 	capWhy := probeOnly ? "" : PzCapped(r)
 	if (capWhy != "")
@@ -858,12 +989,22 @@ PzPlan(r, tiers := "")
 			ls.Push(c.label " at " Round(c.x) ", " Round(c.y) " (" c.why ")")
 		planSay .= "; left out: " PzJoin(ls, ", ")
 		}
-	;Tier 2: things with a prompt within PzObjR, the same floor, not the goal's own, not beyond, never a teleporter, a sigil, a lock or a shop
+	;Tier 2: things with a prompt within PzObjR, the same floor, not the goal's own, not beyond, never a teleporter, a sigil, a lock or a
+	;shop - and the things with no name the zone's triggers' use events may be fired by (a lever: /items' kind use), one whose trigger
+	;opens the door at the block first
 	things := PzThings(r, "object")
-	ts := []
+	ts := [], us := []
 	for i, t in things
-		r.cands.Push(t), ts.Push(t.name " (" Round(t.x) ", " Round(t.y) ")")
+		{
+		r.cands.Push(t)
+		if (t.use)
+			us.Push(PzCandName(t) " (" Round(t.x) ", " Round(t.y) (t.opens != "" ? "; its trigger: " t.opens : "") ")")
+		else
+			ts.Push(t.name " (" Round(t.x) ", " Round(t.y) ")")
+		}
 	planSay .= "; things with a prompt: " (ts.Length ? PzJoin(ts, ", ") : "none")
+	if (us.Length || hints.useobjs.Length)
+		planSay .= "; levers (zone's triggers): " (us.Length ? PzJoin(us, ", ") : "none near")
 	;Tier 3: the zone's NPCs
 	npcs := PzThings(r, "npc")
 	ns := []
@@ -976,32 +1117,73 @@ PzStepLabel(s)
 	return nm.Length ? PzJoin(nm, " + ") : PzJoin(s.tpls, " + ")
 	}
 
-;Things with a prompt (kind object) or the zone's NPCs (npc) for tiers 2 and 3, nearest the block first
+;Things with a prompt (kind object - and use: a thing with no name the zone's triggers' use events may be fired by, a lever) or the
+;zone's NPCs (npc) for tiers 2 and 3, nearest the block first - a lever whose trigger opens the door at the block before them all.
+;Never a teleporter, a portal, a sigil, a lock (a whole word "lock", or "...Lock" - not a Block, a Clock, a Warlock), a chest, a shop
+;or with Crowns
 PzThings(r, kind)
 	{
 	its := NavItems(r.line, true)
 	if (!IsObject(its))
 		return []
+	hints := kind = "object" ? PzZoneHints(r.zone) : ""
 	got := []
 	for i, t in its
 		{
-		if (t.kind != kind || !PzXY(t) || t.quest = 1)
+		use := kind = "object" && t.kind = "use"
+		if ((t.kind != kind && !use) || !PzXY(t) || t.quest = 1)
 			continue
-		if (RegExMatch(t.name " " t.template, "(?i)teleport|portal|sigil|skeleton\s*key|key\s*lock|lock|chest|shop|vendor|mail|crown"))
+		if (RegExMatch(t.name " " t.template, "(?i)teleport|portal|sigil|skeleton\s*key|key\s*lock|padlock|lockbox|(?-i:(?<![A-Za-z])(?:[Ll]ock|LOCK)(?![a-z])|(?<=[a-z0-9])Lock(?![a-z]))|chest|shop|vendor|mail|crown"))
 			continue
 		d := PzD(t.x, t.y, r.x, r.y)
 		if (kind = "object" && (d > PzObjR || (V1IsNum(t.z) && V1IsNum(r.z) && Abs(t.z - r.z) > 260)))
 			continue
 		if (PzBeyond(r, t))
 			continue
-		got.Push(V1Obj({kind: kind = "npc" ? "npc" : "thing", tier: kind = "npc" ? 3 : 2, name: t.name, template: t.template, x: t.x, y: t.y, z: t.z
-			, key: t.key, src: t.src, d: d, plet: ""}))
+		c := V1Obj({kind: kind = "npc" ? "npc" : "thing", tier: kind = "npc" ? 3 : 2, name: t.name, template: t.template, x: t.x, y: t.y, z: t.z
+			, key: t.key, src: t.src, d: d, plet: "", use: use ? 1 : 0, label: "", event: "", opens: "", pri: 1})
+		if (use)
+			PzUseNote(r, c, hints)
+		got.Push(c)
 		}
-	got := PzSort(got, (a, b) => a.d - b.d)
+	;(no use things: every pri 1 - nearest first, as before)
+	got := PzSort(got, (a, b) => (a.pri != b.pri) ? a.pri - b.pri : a.d - b.d)
 	cap := kind = "npc" ? PzNpcMax : PzObjMax
 	while (got.Length > cap)
 		got.Pop()
 	return got
+	}
+
+;A use thing c (no name - its name stays "": PzPromptOk's blank-name rule, any press prompt within 150, decides its X): its label for
+;the log and the notice (its template, the event its trigger fires - /zonepuzzle's useobj lines, hints), and first (pri 0) when that
+;event's triggers set the state of the door at the block (its name among their targets) or set an open-like state (Open, Unlock, Off)
+PzUseNote(r, c, hints)
+	{
+	ev := ""
+	if (IsObject(hints))
+		for i, u in hints.useobjs
+			if (u.template = c.template)
+				{
+				ev := u.event
+				break
+				}
+	c.event := ev
+	c.label := "the " c.template (ev != "" ? " (" ev ")" : "")
+	if (ev = "" || !IsObject(hints))
+		return
+	for i, u in hints.usedo
+		{
+		if (u.event != ev)
+			continue
+		if (IsObject(r.door))
+			for j, tg in u.targets
+				for k, d in PzDoorList(r.door)
+					if (tg != "" && d.name != "" && (tg = d.name || InStr(d.name, tg) || InStr(tg, d.name)))
+						c.pri := 0, c.opens := c.opens != "" ? c.opens : tg
+		for j, s in u.states
+			if (RegExMatch(s, "i)open|unlock|lower|disable|remove|deactivat|destroy|\boff\b"))
+				c.pri := 0, c.opens := c.opens != "" ? c.opens : s
+		}
 	}
 
 ;Is c beyond the block? The navmesh ignores the gate, so whatever is reached through it has a nav path through it: the zone's
@@ -1316,12 +1498,20 @@ PzStuck(c, nav, d)
 	return ""
 	}
 
-PzCandName(c) => c.kind = "camp" ? c.label : c.kind = "walk" ? "the way you walked" : c.name
+;(a thing with no name - a lever the zone's triggers point at: its label, else its template)
+PzCandName(c)
+	{
+	if (c.kind = "camp")
+		return c.label
+	if (c.kind = "walk")
+		return "the way you walked"
+	return c.name != "" ? c.name : c.label != "" ? c.label : c.template != "" ? c.template : "a thing"
+	}
 
 ;A try given up (why) - on to the next
 PzSkip(r, c, why)
 	{
-	r.tried.Push((c.kind = "camp" ? "fought " c.label " (" Round(c.x) ", " Round(c.y) ")" : c.kind = "walk" ? "walked your way" : (c.kind = "npc" ? "talk to " : "X at ") c.name) " - " why)
+	r.tried.Push((c.kind = "camp" ? "fought " c.label " (" Round(c.x) ", " Round(c.y) ")" : c.kind = "walk" ? "walked your way" : (c.kind = "npc" ? "talk to " : "X at ") PzCandName(c)) " - " why)
 	PzLog((c.kind = "camp" ? c.label : PzCandName(c)) ": " why " - next")
 	ReleaseKeys()
 	r.phase := "next"
@@ -1547,7 +1737,7 @@ PzThingStep(r, c)
 			return
 			}
 		ReleaseKeys()
-		SetStatus("puzzle: by " c.name " - looking for its prompt")
+		SetStatus("puzzle: by " PzCandName(c) " - looking for its prompt")
 		Sleep(150)
 		return
 		}
@@ -1559,7 +1749,7 @@ PzThingStep(r, c)
 		}
 	if (st = "moved")
 		return
-	SetStatus("puzzle: walking to " c.name " (" Round(d) " away)")
+	SetStatus("puzzle: walking to " PzCandName(c) " (" Round(d) " away)")
 	DgSteer(nav, V1Obj({x: c.x, y: c.y}), d)
 	}
 
@@ -1590,12 +1780,12 @@ PzPressX(r, c)
 	WkPreXText := WalkAfterXText(&pzPre), WkAfterXLooked := 0
 	PressKey("x"), WkLastX := A_TickCount
 	r.done[PzThingKey(c)] := 1
-	r.last := "X at " c.name
-	r.tried.Push((c.kind = "npc" ? "talked to " : "X at ") c.name)
-	PzLog("X at " c.name " (its prompt '" SubStr(dest, 1, 30) "', " verb ")")
-	SetStatus("puzzle: X at " (dest != "" ? dest : StrUpper(c.name)))
+	r.last := "X at " PzCandName(c)
+	r.tried.Push((c.kind = "npc" ? "talked to " : "X at ") PzCandName(c))
+	PzLog("X at " PzCandName(c) " (its prompt '" SubStr(dest, 1, 30) "', " verb ")")
+	SetStatus("puzzle: X at " (dest != "" ? dest : StrUpper(PzCandName(c))))
 	PzJournal(V1Obj({kind: c.kind = "npc" ? "talk" : "x", at: A_TickCount, time: PzNow(), zone: r.zone, x: r.pos.x, y: r.pos.y, z: r.pos.z
-		, dest: dest, verb: verb, crown: 0, tname: c.name, ttpl: c.template, tkind: c.kind = "npc" ? "npc" : "object", tx: c.x, ty: c.y, tz: c.z
+		, dest: dest, verb: verb, crown: 0, tname: c.name, ttpl: c.template, tkind: c.kind = "npc" ? "npc" : c.use ? "use" : "object", tx: c.x, ty: c.y, tz: c.z
 		, tquest: 0, who: "bot"}))
 	r.phase := "afterx", r.xAt := A_TickCount, r.closed := 0, r.dlgAt := 0
 	}
@@ -1625,7 +1815,10 @@ PzAfterX(r)
 	}
 
 ;check: is the way open? The memory's door gone (two reads 1.5 s apart, in the zone within 6000 of it), past the stop, a way out
-;loaded. A memory door still there: shut (no walk back to look); none known: the probe
+;loaded. A near memory door gone instead (a gate's collision goes while its model stays - 2026-10-26 Storm Lord's Temple): the probe
+;walks through to see. All still there: a collision wall among them - shut (no walk back to look); only a gate's model (it can stay
+;in the game's memory once open) - the probe. puzzlestate on: a door's state changed - the probe; known and unchanged - shut (off:
+;said in the log only). None known: the probe
 PzCheckStep(r)
 	{
 	pos := PzPosRead(300)
@@ -1637,15 +1830,41 @@ PzCheckStep(r)
 		return
 		}
 	door := r.door
-	if (IsObject(door) && door.src = "mem" && door.gid != "")
+	mems := PzMemDoors(door)
+	if (mems.Length)
 		{
 		bl := PzBlockers(true)
 		if (IsObject(bl))
 			{
-			if (PzHasGid(bl, door.gid))
+			gone := PzGoneOf(mems, bl)
+			if (!IsObject(gone))
 				{
-				SetStatus("puzzle: checking the way (" door.name " still there)")
-				PzShut(r, door.name " still there (the game's memory)")
+				r.missAt := 0
+				moved := PzStateMoved(mems, bl)
+				if (moved != "" && PzStateOn())
+					{
+					PzLog("the way may be open - " moved " (the game's memory) - walking through to see")
+					r.phase := "probe", r.pb := ""
+					return
+					}
+				if (moved != "")
+					PzSay("stateoff|" moved, "a door's state changed - " moved " (the game's memory; not acted on: puzzlestate is off)", 60000)
+				col := PzCollisionOf(mems, bl)
+				if (IsObject(col))
+					{
+					SetStatus("puzzle: checking the way (" col.name " still there)")
+					PzShut(r, col.name " still there (the game's memory)")
+					return
+					}
+				same := PzStateOn() ? PzStateSame(mems, bl) : ""
+				if (same != "")
+					{
+					SetStatus("puzzle: checking the way (" door.name " still shut)")
+					PzShut(r, same)
+					return
+					}
+				PzLog(door.name " still there (the game's memory) - a gate's model can stay once it's open: walking through to see")
+				r.phase := "probe", r.pb := ""
 				return
 				}
 			if (!r.missAt)
@@ -1659,10 +1878,14 @@ PzCheckStep(r)
 				Sleep(200)
 				return
 				}
-			if (IsObject(pos) && pos.zone = r.zone && PzD(pos.x, pos.y, door.x, door.y) <= 6000)
+			if (IsObject(pos) && pos.zone = r.zone && PzD(pos.x, pos.y, gone.x, gone.y) <= 6000)
 				{
-				PuzzleEnd("solved", door.name " gone (the game's memory)")
-				return
+				if (gone.gid = door.gid)
+					{
+					PuzzleEnd("solved", door.name " gone (the game's memory)")
+					return
+					}
+				PzLog(gone.name " gone (the game's memory), by " door.name " - walking through to see")
 				}
 			}
 		}
@@ -2115,7 +2338,10 @@ PzHoldTick()
 			return
 			}
 		}
-	if (IsObject(h.door) && h.door.src = "mem" && h.door.gid != "" && now - h.doorAt >= 3000)
+	;(the door gone: over. A near memory door gone - a gate's collision while its model stays -, or - puzzlestate on - a door's state
+	;changed: a look whether it's open as soon as you're away a minute, once for each)
+	mems := PzMemDoors(h.door)
+	if (mems.Length && now - h.doorAt >= 3000)
 		{
 		h.doorAt := now
 		sq := PzSaveQuiet()
@@ -2123,20 +2349,40 @@ PzHoldTick()
 		PzRestoreQuiet(sq)
 		if (IsObject(bl) && IsObject(pos) && pos.zone = h.zone)
 			{
-			if (PzHasGid(bl, h.door.gid))
+			gone := PzGoneOf(mems, bl)
+			if (!IsObject(gone))
 				h.missAt := 0
 			else if (!h.missAt)
 				h.missAt := now
-			else if (now - h.missAt >= 1500 && PzD(pos.x, pos.y, h.door.x, h.door.y) <= 6000)
+			else if (now - h.missAt >= 1500 && PzD(pos.x, pos.y, gone.x, gone.y) <= 6000)
 				{
-				PzMain.holdEnd := h.door.name " gone (the game's memory)"
-				return
+				if (gone.gid = h.door.gid)
+					{
+					PzMain.holdEnd := h.door.name " gone (the game's memory)"
+					return
+					}
+				if (PzSeenOnce(h.door, "gone|" gone.gid))
+					{
+					PzLog(gone.name " gone (the game's memory), by " h.door.name " - a look whether the way's open once you're away a minute")
+					h.lookSoon := 1
+					}
+				}
+			moved := PzStateMoved(mems, bl)
+			if (moved != "" && PzSeenOnce(h.door, "state|" moved))
+				{
+				if (PzStateOn())
+					{
+					PzLog("the way may be open - " moved " (the game's memory) - a look once you're away a minute")
+					h.lookSoon := 1
+					}
+				else
+					PzLog("a door's state changed - " moved " (the game's memory; not acted on: puzzlestate is off)")
 				}
 			}
 		}
-	if (now - h.probeAt >= PzReprobe && !PzMain.reprobe && UserIdle() >= 60000 && inbattle != 1
+	if ((now - h.probeAt >= PzReprobe || h.lookSoon) && !PzMain.reprobe && UserIdle() >= 60000 && inbattle != 1
 		&& !(V1IsFunc("BattleLogInBattle") && %"BattleLogInBattle"%.Call()) && BotOn && Walking && !PlayerActive)
-		h.probeAt := now, PzMain.reprobe := 1
+		h.probeAt := now, h.lookSoon := 0, PzMain.reprobe := 1
 	}
 
 ;---- 3. The journal: what happened in the game lately ----
@@ -2527,7 +2773,12 @@ PzRecStart(kind, why, s := "")
 		, doorSrc: IsObject(door) ? door.src : "", doorX: IsObject(door) ? door.x : "", doorY: IsObject(door) ? door.y : ""
 		, goalid: IsObject(WkNavObj) ? WkNavObj.goalid : "", goal: PzGoalLetters(WkGoalLine), line: WkGoalLine, quest: PzQuest()
 		, start: PzNow(), startAt: A_TickCount, steps: [], walks: [], tickAt: 0, goalAt: 0, gkey: "", awayAt: 0, openAt: 0, missAt: 0
-		, doorAt: 0, check: 0, run: IsObject(PzRun) ? 1 : 0, pulled: 0})
+		, doorAt: 0, check: 0, run: IsObject(PzRun) ? 1 : 0, pulled: 0, mems: PzMemDoors(door)})
+	;(the door's near memory doors too - not kept by a restart: the door alone then, as before)
+	rec.others := []
+	for i, d in rec.mems
+		if (i > 1 || d.gid != rec.doorGid)
+			rec.others.Push(d)
 	since := A_TickCount - 1800000
 	for i, e in PzJ
 		if (e.kind = "zone" && e.zone = rec.zone && e.at > since)
@@ -2748,15 +2999,33 @@ PzRecTick()
 			for i, b in bl
 				if (b.src = "mem" && (b.gid = rec.doorGid || (b.name = rec.door && PzXY(b) && V1IsNum(rec.doorX) && PzD(b.x, b.y, rec.doorX, rec.doorY) <= 300)))
 					there := true
-			if (there)
+			;(a near memory door gone counts too - a gate's collision goes while its model stays)
+			goneO := there && IsObject(rec.others) ? PzGoneOf(rec.others, bl) : ""
+			if (there && !IsObject(goneO))
 				rec.missAt := 0
 			else if (!rec.missAt)
 				rec.missAt := now
-			else if (now - rec.missAt >= 1500 && (!V1IsNum(rec.doorX) || PzD(pos.x, pos.y, rec.doorX, rec.doorY) <= 6000))
+			else if (now - rec.missAt >= 1500)
 				{
-				rec.openAt := rec.missAt
-				PzRecEnd(true, rec.door " gone (the game's memory)")
-				return
+				gName := IsObject(goneO) ? goneO.name : rec.door, gx := IsObject(goneO) ? goneO.x : rec.doorX, gy := IsObject(goneO) ? goneO.y : rec.doorY
+				if (!V1IsNum(gx) || !V1IsNum(gy) || PzD(pos.x, pos.y, gx, gy) <= 6000)
+					{
+					rec.openAt := rec.missAt
+					PzRecEnd(true, gName " gone (the game's memory)")
+					return
+					}
+				}
+			;(puzzlestate on: a door's state changed is the way opening; off: said only)
+			moved := there && !IsObject(goneO) && IsObject(rec.mems) ? PzStateMoved(rec.mems, bl) : ""
+			if (moved != "")
+				{
+				if (PzStateOn())
+					{
+					rec.openAt := now
+					PzRecEnd(true, moved " (the game's memory)")
+					return
+					}
+				PzSay("recstate|" moved, "a door's state changed - " moved " (the game's memory; not acted on: puzzlestate is off)", 60000)
 				}
 			}
 		}

@@ -154,17 +154,23 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /blockers                               -> the doors, gates and collision walls of the wizard's zone, nearest first -
                                              what holds the walker at a blocked way (a dungeon's gate the zone's
                                              triggers open after two kills):
-                                               door|template|x|y|z|distance|gid|src|state
+                                               door|template|x|y|z|distance|gid|src|state|start
                                              src mem: an object in the game's memory now (read-only - navmem.blockers:
                                              no name key, a template named like a door, a gate, a portcullis, a barrier,
                                              a collision - vision\puzzlefile.py's is_blocker:
                                              DynaTrigger_KT_DoorCollision; one gone from memory has been taken away: the
                                              way's open);
-                                             state "" (not read). src file: where the zone's file places one
-                                             (vision\placements.py, as /items?far=1 - built in its thread at each zone
-                                             change: until then the memory's alone), state its starting state (On, Off,
-                                             Open),
+                                             state its state in the game's memory now (its ObjectStateBehavior's -
+                                             vision\statemem.py, NOT CONFIRMED in the game yet: "" not read - a build it
+                                             can't read, its reader being made). src file: where the zone's file places
+                                             one (vision\placements.py, as /items?far=1 - built in its thread at each
+                                             zone change: until then the memory's alone), state its starting state (On,
+                                             Off, Open),
                                              gid "f:<template>:<n>" / "f:<template>@<where>" (the same every time).
+                                             start (10): the zone file's starting state of the door - a memory one's:
+                                             its template's placement nearest it within 400 (puzzlefile.match_start;
+                                             "" none) - so a state that changed since the zone began reads without
+                                             knowing its names. An older helper's lines stop at 9
                                              "none" when there are none; "ERR <why>" when the zone's objects can't be
                                              read now (a new zone being looked at) - never "none" then: not read isn't
                                              gone
@@ -179,8 +185,17 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      walks into the volume, its centre and radius: the
                                                                      game's own hint - NearGateVolume "The gate has
                                                                      defenders. ...")
-                                               use|<event>          (another object event: PedestalUsed, UsedBook - a
-                                                                     hint only)
+                                               use|<event>|<targets>|<states>|<acts>   (another object event:
+                                                                     PedestalUsed, UsedBook - and what its triggers do:
+                                                                     the objects whose state they set, the states, the
+                                                                     activations, each ; apart - empty none. An older
+                                                                     bot reads the event alone)
+                                               useobj|<event>|<template>|x|y|z|<how>   (a placement of the zone's file
+                                                                     that may be what fires the event - no name key, not
+                                                                     a door: a lever the game names nowhere; how "name":
+                                                                     by the event's own words, a guess - puzzlefile.
+                                                                     event_objects; none till placements' things are
+                                                                     built for the zone)
                                              "none" when there's none of these; "ERR <why>" when the file can't be read.
                                              Kept per zone (read in placements' thread at each zone change)
   /navpass?fx=&fy=&fz=&tx=&ty=&tz=&vx=&vy=[&vr=200][&zone=<zone path>]
@@ -238,7 +253,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              src|kind, or "none (<why>)" (none at all: plain "none")
                                              (9-12: key its display key - WizQst371C7_00000008 -, template its
                                              template's name, src mem (in the game's memory now) / file (where the
-                                             zone's file places it - far=1 only), kind item / object / npc / ambient.
+                                             zone's file places it - far=1 only), kind item / object / npc / ambient /
+                                             use (name and key empty: an object with no name key a use event of the
+                                             zone's triggers may be fired by - /zonepuzzle's useobj templates, a
+                                             lever).
                                              An older helper's lines stop at 8. quest: the goal's own key (TALLYTEXT -
                                              /goal's itemkey) when any thing listed has it - then only those -, else (an
                                              exact goal) the goal's item - or a talk goal's NPC - as the thing's whole
@@ -2299,16 +2317,19 @@ def quest_item(thing, goal_line, goal=None, key_hit=None):
 ITEM_NEAR = 400.0           # a live thing this near a placement of its template stands for it (the file's left out)
 
 
-def merge_things(live, placed):
+def merge_things(live, placed, uses=None):
     """/items?far=1's things: every live one (src mem) and every placement of the zone's file with a name key (src file -
     placements.built_things) that no live thing of the same template stands within ITEM_NEAR of (the game moves few: a
     live one is where it is now; a used or picked-up one is gone from memory but still in the file). A placement's gid:
     "f:<template>:<n>" by its "instance (n)", else - or taken - "f:<template>@<where its record is in the file>": the
-    same every time the file is"""
+    same every time the file is. uses: the templates the zone's triggers' use events may be fired by
+    (puzzlefile.use_templates): a placement of one with no name key is a thing too - kind "use", name and key ""
+    (a lever the game names nowhere); none: as before"""
     out = [dict(t, src=t.get('src') or 'mem') for t in live]
     gids = set()
     for p in placed or ():
-        if not p.get('key'):
+        use = not p.get('key') and bool(uses) and bool(p.get('template')) and p['template'] in uses and not p.get('kind')
+        if not p.get('key') and not use:
             continue
         if any(t.get('template') == p['template'] and math.hypot(t['pos'][0] - p['pos'][0], t['pos'][1] - p['pos'][1])
                <= ITEM_NEAR for t in live):
@@ -2317,6 +2338,10 @@ def merge_things(live, placed):
         if not gid or gid in gids:
             gid = f"f:{p['template']}@{p.get('at')}"
         gids.add(gid)
+        if use:
+            out.append({'name': '', 'pos': tuple(p['pos']), 'yaw': p.get('yaw'), 'gid': gid, 'template': p['template'],
+                        'key': '', 'keys': [], 'kind': 'use', 'src': 'file'})
+            continue
         out.append({'name': p.get('text') or '', 'pos': tuple(p['pos']), 'yaw': p.get('yaw'), 'gid': gid,
                     'template': p['template'], 'key': p['key'], 'keys': list(p.get('keys') or [p['key']]),
                     'kind': p.get('kind') or '', 'src': 'file'})
@@ -2540,8 +2565,14 @@ def items_now(goal_line='', goal=None, r=None, far=False):
                 PLACES_SAID['at'] = time.monotonic() + 60.0
                 log(f"/items: the zone's file couldn't be read ({e!r})")
         if placed is not None:
-            # (the memory's not read - a new zone being looked at -: the file's things all the same)
-            things = merge_things(things, placed)
+            # (the memory's not read - a new zone being looked at -: the file's things all the same; and the things the
+            # zone's triggers' use events may be fired by - puzzlefile's as kept, never built here)
+            try:
+                import puzzlefile
+                uses = puzzlefile.use_templates(r['zone'], nav_reader().game_dir)
+            except Exception:  # noqa: BLE001 - none: as before
+                uses = None
+            things = merge_things(things, placed, uses)
         elif items is None:
             return [], why
         elif not things:
@@ -2900,16 +2931,18 @@ def blocker_cell(v):
 
 
 def blockers_now(r, nm):
-    """(the doors of reading r's zone [{template, pos, gid, src, state}], why) - the game's memory's (navmem.blockers, src
-    mem) and the zone's file's (placements.built_things, src file: a placement whose template is a blocker's -
-    puzzlefile.is_blocker - not an NPC; as built so far, never built here). None and why when the memory's can't be
-    read (not read isn't gone: the walker takes a door missing from memory for the way opening)"""
+    """(the doors of reading r's zone [{template, pos, gid, src, state, start}], why) - the game's memory's
+    (navmem.blockers, src mem: state its ObjectStateBehavior's now - statemem.py, "" not known) and the zone's file's
+    (placements.built_things, src file: a placement whose template is a blocker's - puzzlefile.is_blocker - not an NPC;
+    as built so far, never built here; state its starting one). start: the file's starting state (a memory door's: its
+    template's placement nearest it - puzzlefile.match_start; "" none). None and why when the memory's can't be read
+    (not read isn't gone: the walker takes a door missing from memory for the way opening)"""
     import puzzlefile
     live, why = nm.blockers()
     if live is None:
         return None, why or "the zone's objects can't be read"
     out = [{'template': b.get('template') or b.get('name') or '', 'pos': tuple(b['pos']), 'gid': b.get('gid'),
-            'src': 'mem', 'state': ''} for b in live]
+            'src': 'mem', 'state': b.get('state') or '', 'start': ''} for b in live]
     placed = None
     try:
         import placements
@@ -2919,6 +2952,7 @@ def blockers_now(r, nm):
             BLOCKERS_SAID['at'] = time.monotonic() + 60.0
             log(f"/blockers: the zone's file couldn't be read ({e!r})")
     gids = set()
+    files = []
     for p in placed or ():
         tpl = p.get('template') or ''
         if not puzzlefile.is_blocker(tpl) or p.get('kind') == 'npc':
@@ -2927,12 +2961,17 @@ def blockers_now(r, nm):
         if not gid or gid in gids:
             gid = f"f:{tpl}@{p.get('at')}"
         gids.add(gid)
-        out.append({'template': tpl, 'pos': tuple(p['pos']), 'gid': gid, 'src': 'file', 'state': p.get('state') or ''})
-    return out, ''
+        files.append({'template': tpl, 'pos': tuple(p['pos']), 'gid': gid, 'src': 'file', 'state': p.get('state') or '',
+                      'start': p.get('state') or ''})
+    # (each memory door's starting state by the file - its template's placement nearest it)
+    for d, start in zip(out, puzzlefile.match_start(out, files, ITEM_NEAR)):
+        d['start'] = start
+    return out + files, ''
 
 
 def blocker_lines(r, nm):
-    """/blockers' answer for reading r: door|template|x|y|z|distance|gid|src|state each, nearest first; none; ERR <why>"""
+    """/blockers' answer for reading r: door|template|x|y|z|distance|gid|src|state|start each, nearest first; none; ERR
+    <why>"""
     doors, why = blockers_now(r, nm)
     if doors is None:
         return ['ERR ' + blocker_cell(why)]
@@ -2940,12 +2979,18 @@ def blocker_lines(r, nm):
     doors.sort(key=lambda d: math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]))
     return [f"door|{blocker_cell(d['template'])}|{d['pos'][0]:.1f}|{d['pos'][1]:.1f}|{d['pos'][2]:.1f}|"
             f"{math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]):.0f}|{blocker_cell(d['gid'])}|{d['src']}|"
-            f"{blocker_cell(d['state'])}" for d in doors] or ['none']
+            f"{blocker_cell(d['state'])}|{blocker_cell(d.get('start'))}" for d in doors] or ['none']
+
+
+def use_cells(vals):
+    """a /zonepuzzle use line's list field: its values ; apart (no |, ; or line breaks in one)"""
+    return ';'.join(blocker_cell(v).replace(';', ',') for v in vals or ())
 
 
 def zonepuzzle_lines(zone, game_dir=''):
     """/zonepuzzle's answer: the zone's triggers (puzzlefile.zone_triggers - files only, kept per zone): kill|template,
-    spawn|object|x|y|z, hint|volume|x|y|z|r|text, use|event; none; ERR <why>"""
+    spawn|object|x|y|z, hint|volume|x|y|z|r|text, use|event|targets|states|acts, useobj|event|template|x|y|z|how; none;
+    ERR <why>"""
     import puzzlefile
     t = puzzlefile.zone_triggers(zone, game_dir, zone_volumes)
     if t['why'] and t['why'] != 'no triggers.xml':
@@ -2955,7 +3000,15 @@ def zonepuzzle_lines(zone, game_dir=''):
         out.append('spawn|' + blocker_cell(name) + '|' + ('||' if pos is None else '|'.join(f'{c:.1f}' for c in pos)))
     for vol, (x, y, z), rad, text in t['hints']:
         out.append(f'hint|{blocker_cell(vol)}|{x:.1f}|{y:.1f}|{z:.1f}|{rad:.0f}|{blocker_cell(text)}')
-    out += ['use|' + blocker_cell(e) for e in t['uses']]
+    # (the event first: an older bot reads it alone; then what its triggers do)
+    did = {u[0]: u[1:] for u in t.get('usedo') or ()}
+    for e in t['uses']:
+        tg, st, ac = did.get(e, ((), (), ()))
+        out.append(f'use|{blocker_cell(e)}|{use_cells(tg)}|{use_cells(st)}|{use_cells(ac)}')
+    for u in t.get('useobjs') or ():
+        x, y, z = u['pos'][:3]
+        out.append(f"useobj|{blocker_cell(u['event'])}|{blocker_cell(u['template'])}|{x:.1f}|{y:.1f}|{z:.1f}|"
+                   f"{blocker_cell(u.get('how'))}")
     return out or ['none']
 
 
