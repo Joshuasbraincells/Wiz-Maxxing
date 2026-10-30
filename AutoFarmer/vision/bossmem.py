@@ -11,7 +11,7 @@ and the quest's readers) for the vision helper's /mobs (each mob's title, rank, 
     mobs, why = navmem.NavMem().mobs()     # the zone's mobs with title, rank, health, school, boss, kind (navmem's way)
     parts, why = navmem.NavMem().battle()  # the battle's participants, each joined to its mob (name, title, rank)
 
-    python bossmem.py [-n 1] [-i 2] [--battle SECONDS] [--duel] [--json]     readings from the command line
+    python bossmem.py [-n 1] [-i 2] [--battle SECONDS] [--duel] [--duels [SECONDS]] [--json]    readings from the command line
 
 SAFETY. The game is opened by navmem.py's Proc - PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else - and only read: ReadProcessMemory, plus
@@ -56,6 +56,14 @@ WHAT IS READ (build 6A9721E9-370E000, 2026-10-25 - every offset found by name ea
   duel     (--duel: a cross-check) the zone object (the sigil) holding a WizardClientDuelBehavior -> DuelBehavior.m_pDuel
              +0x70 -> ClientDuel: m_flatParticipantList +0x50 (std::vector<SharedPointer<CombatParticipant>>) holds my
              participant; m_roundNum, m_duelPhase. A participant leaves the list when it's defeated
+  duels    (other players' battles - navmem's duels(), for the walker's duelavoid setting; NOT CONFIRMED in the game yet:
+             bossmem.py --duels is the check) every zone object whose m_inactiveBehaviors hold a duel behaviour
+             (is_duel_object: WizardClientDuelBehavior / ClientDuelBehavior / DuelBehavior, by vtable) -> duel_of: its
+             m_pDuel (a ClientDuel / Duel, by vtable), its round, its phase (m_duelPhase - its option names decoded as
+             m_mobTitle's are, mob_titles; not decoded: the number), the participants in m_flatParticipantList (by
+             vtable: each one's m_isPlayer, m_teamID, m_ownerID - mine when its owner is the wizard), and OPTIONAL's
+             properties when this build has them (m_bPVP...). duel_active: a participant in it and a phase that isn't an
+             ended battle's (DUEL_ENDED) - a guess till the names are seen
 """
 import json
 import os
@@ -82,7 +90,13 @@ NEED = {"CoreObject": ("m_inactiveBehaviors", "m_globalID.m_full"),
         "DuelBehavior": ("m_pDuel",),
         "Duel": ("m_flatParticipantList", "m_roundNum", "m_duelPhase")}
 VT_CLASSES = ("NPCBehavior", "NPCBehaviorTemplate", "ClientCombatParticipant", "CombatantDataControl",
-              "WizardClientDuelBehavior", "ClientDuelBehavior", "DuelBehavior", "ClientDuel", "Duel")
+              "WizardClientDuelBehavior", "ClientDuelBehavior", "DuelBehavior", "ClientDuel", "Duel", "CombatParticipant")
+# A duel's properties read when this build has them (missing: None - never a failure); NEED's Duel ones always
+OPTIONAL = {"Duel": ("m_bPVP", "m_duelID.m_full", "m_position", "m_yaw")}
+# what navmem puts on each duel circle from duel_of's info (None each when it isn't known)
+DUEL_FIELDS = ("duel", "behavior", "phase", "phase_name", "round", "parts", "players", "teams", "mine", "pvp", "active")
+# a duel phase's name that says the battle's over (its options' names not seen yet: a guess - bossmem.py --duels)
+DUEL_ENDED = re.compile(r"(?i)end|finish|done|complete|victory|defeat|over|resolv|clean|dead|exit")
 TITLES_KNOWN = {0: "Easy", 1: "Normal", 2: "Elite", 3: "Boss", 4: "Minion"}
 SCHOOLS = {"Fire", "Ice", "Storm", "Myth", "Life", "Death", "Balance", "Star", "Sun", "Moon", "Shadow", "Gardening",
            "Fishing", "Cantrips", "Castlemagic", "WhirlyBurly", ""}
@@ -214,6 +228,36 @@ def parse_template(raw, lo, NB, titles, string_at=None):
     return info
 
 
+def parse_duel(raw, lo, D, phases):
+    """{round, phase, phase_name, pvp} of a Duel's bytes raw (read from its +lo; D its reflected {property: offset};
+    phases the m_duelPhase option names) - each in its sane range, else None (never a guess): round 0..1000, phase
+    0..63 (its name from phases - "" none known for it: None), pvp 0/1"""
+    def i32(k):
+        i = D[k] - lo if k in D else -1
+        return struct.unpack_from("<i", raw, i)[0] if 0 <= i and i + 4 <= len(raw) else None
+
+    def u8(k):
+        i = D[k] - lo if k in D else -1
+        return raw[i] if 0 <= i < len(raw) else None
+    rnd, phase, pvp = i32("m_roundNum"), i32("m_duelPhase"), u8("m_bPVP")
+    ok_phase = phase is not None and 0 <= phase < 64
+    return {"round": rnd if rnd is not None and 0 <= rnd <= 1000 else None,
+            "phase": phase if ok_phase else None,
+            "phase_name": (phases.get(phase) or None) if ok_phase else None,
+            "pvp": bool(pvp) if pvp in (0, 1) else None}
+
+
+def duel_active(info):
+    """is a duel (duel_of's info) a battle going on: a participant in it, and its phase's name - when known - not an ended
+    battle's (DUEL_ENDED); None: not known (no info)"""
+    if not info:
+        return None
+    if not info.get("parts"):
+        return False
+    name = info.get("phase_name")
+    return not (name and DUEL_ENDED.search(name))
+
+
 # ============================================================================ the reader
 class BossMem:
     """the zone's mobs' title / rank / health / school, and the battle's participants - see the top. Not thread-safe:
@@ -240,6 +284,13 @@ class BossMem:
             self.titles, self.how_titles = dict(TITLES_KNOWN), "the known table (the code didn't decode: %r)" % (titles,)
         else:
             self.titles, self.how_titles = {}, "unknown (the code didn't decode: %r) - boss by m_bossMob only" % (titles,)
+        # (other players' battles: the duel phase's option names - m_mobTitle's way; {} not decoded: the numbers alone)
+        try:
+            self.duel_phases = mob_titles(img, props["Duel"][1], "m_duelPhase", 0x8000)
+        except Exception:  # noqa: BLE001 - the numbers alone
+            self.duel_phases = {}
+        self.duel_vt = self.vt["WizardClientDuelBehavior"] | self.vt["ClientDuelBehavior"] | self.vt["DuelBehavior"]
+        self.optional_missing = [c + "." + k for c, ks in OPTIONAL.items() for k in ks if k not in self.P.get(c, {})]
         del img, props
         self.o = {}                  # places found and kept (the non-reflected ones)
         self._cand = {}              # key -> {offset: {objects}} waiting for a second object
@@ -248,7 +299,9 @@ class BossMem:
         self.mismatch = set()        # templates whose title and boss flag disagree (logged once)
         self.win_box, self.root_box = {}, None      # the last battle read's plates' rects and the root's (GUI units)
         self.attach_s = time.perf_counter() - t0
-        self.log("bossmem: ready in %.2f s - titles %s (%s)" % (self.attach_s, self.titles, self.how_titles))
+        self.log("bossmem: ready in %.2f s - titles %s (%s); duel phases %s%s" % (
+            self.attach_s, self.titles, self.how_titles, self.duel_phases or "not decoded",
+            " (not in this build: %s)" % ", ".join(self.optional_missing) if self.optional_missing else ""))
 
     # ------------------------------------------------------------------ small readers
     def u64(self, a):
@@ -457,6 +510,68 @@ class BossMem:
                             return d, parts
         return 0, []
 
+    # ------------------------------------------------------------------ other players' battles (navmem's duels())
+    def is_duel_object(self, obj):
+        """the duel behaviour (its address) among the zone object obj's m_inactiveBehaviors - by vtable - or 0: a duel
+        circle (a battle's sigil). Never raises"""
+        try:
+            if not self.duel_vt:
+                return 0
+            for b in self.vec(obj + self.P["CoreObject"]["m_inactiveBehaviors"]):
+                if self.u64(b) in self.duel_vt:
+                    return b
+        except Exception:  # noqa: BLE001 - not one
+            pass
+        return 0
+
+    def part_light(self, c):
+        """{owner, player, team} of a duel's participant c - a ClientCombatParticipant or a CombatParticipant (by vtable;
+        another player's battle may hold the plain one) - or None"""
+        if not (N.ptr_ok(c) and self.u64(c) in (self.vt["ClientCombatParticipant"] | self.vt["CombatParticipant"])):
+            return None
+        CP = self.P["CombatParticipant"]
+        keys = [k for k in ("m_ownerID.m_full", "m_isPlayer", "m_teamID") if k in CP]
+        if len(keys) < 3:
+            return None
+        lo, hi = min(CP[k] for k in keys), max(CP[k] for k in keys) + 8
+        raw = self.p.try_read(c + lo, hi - lo)
+        if not raw:
+            return None
+        player = raw[CP["m_isPlayer"] - lo]
+        return {"owner": struct.unpack_from("<Q", raw, CP["m_ownerID.m_full"] - lo)[0],
+                "player": bool(player) if player in (0, 1) else None,
+                "team": struct.unpack_from("<i", raw, CP["m_teamID"] - lo)[0]}
+
+    def duel_of(self, obj, me=None):
+        """{duel, behavior, phase, phase_name, round, parts, players, teams, mine, pvp, active, members} of the duel
+        circle obj (its duel behaviour's m_pDuel - a ClientDuel / Duel by vtable): parts the participants in
+        m_flatParticipantList, players how many are wizards, teams how many sides, mine one is the wizard's own (me: his
+        global id - None not known: mine None), members [part_light...]; active duel_active's. None when obj holds no
+        duel behaviour; its battle fields None when its m_pDuel is empty (an idle sigil?) or isn't a duel. Never raises"""
+        try:
+            b = self.is_duel_object(obj)
+            if not b:
+                return None
+            info = dict.fromkeys(DUEL_FIELDS)
+            info.update(behavior=b, members=[])
+            d = self.u64(b + self.P["DuelBehavior"]["m_pDuel"])
+            if not (N.ptr_ok(d) and self.u64(d) in (self.vt["ClientDuel"] | self.vt["Duel"])):
+                return info
+            D = self.P["Duel"]
+            ks = [k for k in ("m_roundNum", "m_duelPhase", "m_bPVP") if k in D]
+            lo, hi = min(D[k] for k in ks), max(D[k] for k in ks) + 4
+            raw = self.p.try_read(d + lo, hi - lo) or b""
+            info.update(parse_duel(raw, lo, D, self.duel_phases), duel=d)
+            members = [m for m in (self.part_light(c) for c in self.vec(d + D["m_flatParticipantList"], 16)) if m]
+            info.update(members=members, parts=len(members),
+                        players=sum(1 for m in members if m["player"]),
+                        teams=len({m["team"] for m in members}),
+                        mine=(any(m["owner"] == me for m in members) if me else None))
+            info["active"] = duel_active(info)
+            return info
+        except Exception:  # noqa: BLE001 - not known
+            return None
+
 
 # ============================================================================ command line
 def _zone_objects(st):
@@ -469,6 +584,67 @@ def _zone_objects(st):
     return [o for o in found if st.is_client_object(o)]
 
 
+def _duels_cli(nm, bm, seconds, as_json=False):
+    """--duels: every duel circle in the zone every 2 s for seconds - what the walker's duelavoid needs confirmed: its
+    template name and display key (none expected), where it is, its behaviour's class, m_pDuel, phase (and its name),
+    round, and each participant (a wizard or not, team, owner gid; the owner's object's place and its distance from the
+    circle's middle - the circle's radius). Run it with no battle near, beside another player's battle, at a dungeon's
+    sigil, and in your own battle"""
+    st = nm.st
+    print("duel phases: %s; behaviours by vtable: %d; optional properties missing: %s" % (
+        bm.duel_phases or "not decoded", len(bm.duel_vt), ", ".join(bm.optional_missing) or "none"))
+    t1 = time.time()
+    while time.time() - t1 < seconds:
+        objs = _zone_objects(st)
+        rows = []
+        with nm.lock:
+            gc = st.gameclient()
+            me = st.player_gid(gc) if N.ptr_ok(gc) and hasattr(st, "player_gid") else None
+            where = {}
+            for obj in objs:
+                raw = st.p.try_read(obj, N.OBJ_SPAN)
+                if raw:
+                    where[struct.unpack_from("<Q", raw, N.DATA["co_gid"])[0]] = (obj, raw)
+            for gid, (obj, raw) in where.items():
+                info = bm.duel_of(obj, me)
+                if info is None:
+                    continue
+                pos = N.NavMem._mob_pos(st, obj, raw)
+                tpl = struct.unpack_from("<Q", raw, N.DATA["co_template"])[0]
+                tname = key = None
+                if N.ptr_ok(tpl) and (st.tn.of(tpl) or "").endswith("Template"):
+                    tname = st.p.try_string(tpl + bm.P["GameObjectTemplate"]["m_objectName"])
+                    key = st.p.try_string(tpl + bm.P["GameObjectTemplate"]["m_displayName"])
+                beh = st.tn.of_vtable(bm.u64(info["behavior"])) if info.get("behavior") else None
+                members = []
+                for mbr in info.get("members") or []:
+                    ow = where.get(mbr["owner"])
+                    opos = N.NavMem._mob_pos(st, ow[0], ow[1]) if ow else None
+                    members.append(dict(mbr, owner_pos=opos[:3] if opos else None,
+                                        dist=round(((opos[0] - pos[0]) ** 2 + (opos[1] - pos[1]) ** 2) ** 0.5)
+                                        if opos and pos else None, me=mbr["owner"] == me))
+                rows.append({"gid": gid, "template": tname, "key": key, "pos": pos[:3] if pos else None,
+                             "behavior_class": beh, "duel": info.get("duel"), "phase": info.get("phase"),
+                             "phase_name": info.get("phase_name"), "round": info.get("round"), "pvp": info.get("pvp"),
+                             "parts": info.get("parts"), "players": info.get("players"), "teams": info.get("teams"),
+                             "mine": info.get("mine"), "active": info.get("active"), "members": members})
+        print("-- %s: %d duel circle(s) among %d objects" % (time.strftime("%H:%M:%S"), len(rows), len(objs)))
+        for row in rows:
+            if as_json:
+                print(json.dumps(row, default=str))
+                continue
+            print("   %-30s key %-14s at %s  %s  duel %#x phase %s (%s) round %s pvp %s - %s part(s), %s wizard(s), "
+                  "%s side(s), mine %s, active %s" % (
+                      row["template"], row["key"] or "-", tuple(round(c) for c in row["pos"]) if row["pos"] else "?",
+                      row["behavior_class"], row["duel"] or 0, row["phase"], row["phase_name"], row["round"], row["pvp"],
+                      row["parts"], row["players"], row["teams"], row["mine"], row["active"]))
+            for mbr in row["members"]:
+                print("       %s team %s owner %#x %s at %s - %s from the middle" % (
+                    "wizard" if mbr["player"] else "mob   ", mbr["team"], mbr["owner"], "(you)" if mbr["me"] else "",
+                    tuple(round(c) for c in mbr["owner_pos"]) if mbr["owner_pos"] else "?", mbr["dist"]))
+        time.sleep(2)
+
+
 def _main():
     import argparse
     ap = argparse.ArgumentParser(description="read-only: the zone's mobs' title, rank, health and school; the battle")
@@ -476,6 +652,9 @@ def _main():
     ap.add_argument("-i", type=float, default=2.0)
     ap.add_argument("--battle", type=float, default=0, help="wait up to this many s for a battle (read only) and show it")
     ap.add_argument("--duel", action="store_true", help="in a battle: also the duel's own list (a heap look, ~1 s)")
+    ap.add_argument("--duels", type=float, nargs="?", const=20.0, default=0, metavar="SECONDS",
+                    help="every duel circle in the zone - another player's battle, a dungeon's sigil, your own - every 2 s "
+                         "for this long (20 s): its template, place, behaviour, phase, round and participants (read only)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
     nm = N.NavMem(log=lambda m: None)
@@ -487,6 +666,10 @@ def _main():
     with nm.lock:
         bm = BossMem(nm.st, log=print)
     print("zone %s - reader made in %.2f s" % (r["zone"], time.perf_counter() - t0))
+    if a.duels:
+        _duels_cli(nm, bm, a.duels, a.json)
+        nm.close()
+        return
     for k in range(a.n):
         t1 = time.time()
         mobs, why = nm.mobs()

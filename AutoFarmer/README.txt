@@ -154,6 +154,38 @@ with no route at all it won't walk the arrow's straight way into a mob's reach
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
 
+Mobs walking (v0.9.0 work, not tried in the game yet): the helper also works out
+which way and how fast each mob walks from the readings of the last second, and
+a walking one's ring and sight are kept out of along its way - where it will be
+over the next 2.5 s (700 game units at most) - not behind it, so the route
+passes behind a walking mob rather than in front. The wait for a mob on the way
+looks at where each walking one will be by the time the wizard gets there: one
+walking off the route no longer holds him, one walking onto it does. A mob read
+standing still, or not read often enough to say, counts as before. The Map
+draws an arrow from a walking mob along its way, and its ring's outline where
+it will be. "Caught by ..." in debug.log now says whether the mob was walking
+or standing when it noticed you. To tune the numbers (how fast mobs walk, how
+long they stand): vision\navmem.py --mobs --motion 60 in the game.
+
+A line of mobs (v0.9.0 work): a gap narrower than 250 game units between two
+mobs' rings or sight is closed - the line is one wall - and the route goes all
+the way round its end (the planned area is widened to take the whole line in;
+a line too long for it - "too long to go round in one window" in vision.log -
+is routed as before). Still no way but through a gap, the wizard waits as for a
+mob on the way (25 s at most), then walks on through the gap, still out of the
+mobs' rings and sight. The Map shades the closed gaps.
+
+Other players' battles (duelavoid:0, off by default - Settings: "...and other
+players' battles", with "Keep away from mobs" on): the route also goes round
+the zone's duel circles that have a battle going on - read from the game's
+memory, read-only - so the wizard doesn't walk into one and join it; with no way
+round it waits for the battle to end (4 minutes at most), then walks on past it
+round its edge ("waiting - another player's battle on the way"). The Map shows
+them as violet circles. Off till how the game keeps those circles in memory is
+checked in the game: vision\bossmem.py --duels 30 next to someone else's
+battle, at a dungeon's sigil and in your own battle (the helper's /duels lists
+them too).
+
 Mobs that catch you anyway (mobgrow:1): each battle a mob the quest doesn't
 need starts (not collecting, not one named in the goal line, not right after X
 at the goal, not a dungeon run that fights everything, not while you play)

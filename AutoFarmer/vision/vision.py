@@ -117,23 +117,37 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                     |jump|jx|jy     (5-7: right at a teleport on the game's path: the
                                                                      seconds waited there, where it is)
                                                     |mob|mx|my|name (8-11: a mob on the way the route can't go round: the
-                                                                     seconds waited for it to move off, where, its name)
+                                                                     seconds waited for it to move off, where, its name
+                                                                     - or the gap in a line of mobs it would go
+                                                                     through: the nearest of them)
+                                                    |escape|arc     (12: inside a mob's ring or sight - its name; 13:
+                                                                     turning round to the aim clear of the walls 1/0)
+                                                    |duel|dx|dy     (14-16: another player's battle on the way the route
+                                                                     can't go round - duels=1 -: the seconds waited for
+                                                                     it, where; empty none. An older helper's line
+                                                                     stops at 13)
                                              &avoid=1[&mobr=300][&shape=2][&cone=60][&goal=<the quest's goal line>] (with
                                              route=1): the route kept out of what each of the zone's mobs (navmem,
                                              read-only) sees, mobr far: shape 1 a circle all round, 2 a semi-circle in
                                              front, 3 a cone cone degrees wide in front (no shape: mobr all round and a
                                              cone= / sight= cone) - not those the quest's goal names, nor (a fight
                                              goal) one by the goal. The goal: the game's memory's (as /goal), else
-                                             goal= (the line AutoFarmer OCRs off the screen)
+                                             goal= (the line AutoFarmer OCRs off the screen). A walking mob (its last
+                                             second of readings - navroute.MobMotion) is kept out of along its way,
+                                             a line of mobs as one wall (vision\navroute.py's top)
+                                             &duels=1 (with avoid=1 - the duelavoid setting, off by default): out of
+                                             other players' battles too (the zone's duel circles - navmem.duels:
+                                             not confirmed in the game yet)
                                                goalline|text|type|status|count|total|shown   (last, always: the quest's
                                                                      goal from the game's memory as /goal's - all
                                                                      empty when it can't be read; an older bot
                                                                      doesn't look at it)
-  /navto?x=&y=&z=[&avoid=1&mobr=300][&spare=700]
+  /navto?x=&y=&z=[&avoid=1&mobr=300][&spare=700][&duels=1]
                                           -> where the wizard is and the route to a spot of the bot's own (the potion
                                              seller, a puzzle's guards): ok|1, zone|, pos|, route|x|y|left (all mobs kept
                                              away from with avoid=1 - but those within spare of the spot: the camp
-                                             walked to, to fight it)
+                                             walked to, to fight it; duels=1 with it: other players' battles too, kept
+                                             off where there's room - no wait)
   /blockers                               -> the doors, gates and collision walls of the wizard's zone, nearest first -
                                              what holds the walker at a blocked way (a dungeon's gate the zone's
                                              triggers open after two kills):
@@ -187,7 +201,15 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              wizard, looked back to where it set off towards him (noticed him):
                                              caught|name|how far he was then|degrees off its facing then|came (1: it
                                              came for him, 0: he walked into it)|seconds before|quest (1: the helper
-                                             took it as the quest's - not avoided); or "none (<why>)"
+                                             took it as the quest's - not avoided)|walking (1: it was walking the
+                                             second before it noticed him, 0 standing, "" not known - an older
+                                             helper's line stops at 7); or "none (<why>)"
+  /duels                                  -> the zone's duel circles (the game's memory, read-only - navmem.duels,
+                                             bossmem's duel_of: NOT CONFIRMED in the game yet), nearest first:
+                                             duel|template|x|y|z|distance|phase|parts|players|gid|active|mine (phase
+                                             its name when decoded, else its number; parts the participants, players
+                                             the wizards among them; active 1 a battle going on; mine 1 the wizard's
+                                             own), or "none"; "ERR <why>" when they can't be read
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
                                              faces to the wizard (0: straight ahead of it)|title|rank|health|school|
@@ -201,8 +223,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              only - quest without the same-family match ("Gobbler King" for "Defeat
                                              Gobblers" is quest 1, named 0. 16, template: its template's name as the
                                              game's memory holds it - CL-DeepOne-GreenHead-R10 for a Water Lurker: the
-                                             same in every instance, as the zone's triggers name it. An older helper's
-                                             lines stop at 8, 14 or 15)
+                                             same in every instance, as the zone's triggers name it. 17-19, how it
+                                             moves - once known (MobMotion, off the mobs read lately): vx|vy its
+                                             speed along x and y (units / s)|moving 1 walking, 0 standing, "" not
+                                             known. An older helper's lines stop at 8, 14, 15 or 16)
   /items[?goal=<the quest's goal line>][&far=1]
                                           -> the zone's things with a name that aren't mobs (the game's memory,
                                              read-only - an item lying about a quest has you collect, Piece Of Coral; an
@@ -1844,6 +1868,9 @@ MAP_ITEM_QUEST = (60, 235, 110)     # ...one the goal wants (walked to and picke
 ITEMS_SHOWN = {}                    # the walker's last /items: {'quest': {gids}, 'at': time} - for the map
 QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this zone) is what the goal is
 MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
+DUELS_SHOWN = {}                    # the last /nav's other players' battles kept out of, for the map: {'list', 'at'}
+MAP_DUEL = (186, 120, 255)          # another player's battle kept out of (duelavoid)
+MAP_WALL = (240, 82, 82)            # a line of mobs' gaps closed (a wall)
 
 
 # ---------------------------------------------------------------- the Network tab (netmon.py)
@@ -2135,9 +2162,12 @@ def mobs_now(r, goal_line='', trail=False, goal=None):
             whose = " - the quest's" if m['quest'] else ''
             log(f"mobs: {m['kind']} {m['name']!r} in the zone - {m.get('title')} rank {m.get('rank')}, {m.get('health')} "
                 f"health, {m.get('school')} (boss flag {m.get('boss')}){whose}")
+    now = time.time()
     if trail and r is not None and r.get('pos') is not None:
-        MOB_TRAIL.append((time.time(), tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
-                                                       for m in mobs}))
+        MOB_TRAIL.append((now, tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
+                                                 for m in mobs}))
+    # (which way and how fast each walks - every reading feeds it: the walker's asks, /navto's, /mobs', the map's)
+    motion_feed(now, mobs, r.get('pos') if r is not None else None)
     return mobs, ''
 
 
@@ -2154,18 +2184,26 @@ def mob_line(m, me):
     """/mobs' line for a mob m (mobs_now's) seen from me (the wizard's x, y, z): mob|name|x|y|z|distance|quest|degrees
     off its facing|title|rank|health|school|boss|gid|named|template - 9-14 what it is (navmem / bossmem: each "" while
     not known), 15 the quest's by its name or its goal only (quest_named: 1/0, "" not known), 16 its template's name
-    (navmem's - "" not read; a mob with no template field at all, an older reader's, ends at 15 as before)"""
+    (navmem's - "" not read; a mob with no template field at all, an older reader's, ends at 15 as before); 17-19 how it
+    moves (motion_feed - only once its motion is known, the template's field then always there): vx|vy (units / s, its
+    straight line over the last second) |moving (1 walking, 0 standing, "" not known)"""
     off = ''
     if m.get('yaw') is not None:
         dx, dy = me[0] - m['pos'][0], me[1] - m['pos'][1]
         d = math.hypot(dx, dy) or 1.0
         c = (dx * -math.sin(m['yaw']) + dy * -math.cos(m['yaw'])) / d
         off = f"{math.degrees(math.acos(max(-1.0, min(1.0, c)))):.0f}"
+    fit, moving = m.get('fit'), m.get('moving')
+    known = fit is not None or moving is not None
+    motion_cells = ''
+    if known:
+        motion_cells = (f"|{fit[0]:.1f}|{fit[1]:.1f}|" if fit is not None else "|||") + mob_cell(moving)
     return (f"mob|{mob_cell(m['name'])}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
             f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m.get('quest') else 0}|{off}|"
             + '|'.join(mob_cell(m.get(k)) for k in ('title', 'rank', 'health', 'school', 'boss', 'gid'))
             + '|' + mob_cell(m.get('named'))
-            + ('|' + mob_cell(m.get('template')) if 'template' in m else ''))
+            + ('|' + mob_cell(m.get('template')) if 'template' in m or known else '')
+            + motion_cells)
 
 
 def plate_x(p):
@@ -2276,7 +2314,7 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy), and so does the battle recorder (GATE)
 GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck', '/decks',
-         '/sim'}
+         '/sim', '/duels'}
 
 
 class Gate:
@@ -2589,6 +2627,40 @@ def goal_nav_line(g):
 
 # The mobs read lately: (time, the wizard's x, y, z, {gid: (name, x, y, z, yaw)}) - /caught looks back along it
 MOB_TRAIL = collections.deque(maxlen=400)
+# Which way and how fast each mob walks (navroute.MobMotion - pure, no memory of its own), fed every mobs reading
+MOTION = None
+
+
+def motion():
+    """the mobs' motion (navroute.MobMotion), made on first use"""
+    global MOTION
+    with NAV_LOCK:
+        if MOTION is None:
+            import navroute
+            MOTION = navroute.MobMotion()
+        return MOTION
+
+
+def motion_feed(t, mobs, me):
+    """a mobs reading at t (mobs_now's; me the wizard's x, y, z) into MOTION, and onto each mob: fit - (vx, vy) units /
+    s, its straight line fitted (None not known) -, moving (True walking, False standing, None not known), speed, and vel
+    - fit while it walks, else None: the route sweeps only a walking one (navroute's 'vel' and 'moving'). Never raises"""
+    try:
+        mm = motion()
+        mm.update(t, mobs, me)
+        for m in mobs:
+            i = mm.info(m.get('gid'))
+            m['fit'], m['moving'], m['speed'] = i.get('vel'), i.get('moving'), i.get('speed')
+            m['vel'] = i.get('vel') if i.get('moving') else None
+    except Exception as e:  # noqa: BLE001 - no motion: the mobs as they stand, as before
+        for m in mobs:
+            m.setdefault('fit', None), m.setdefault('moving', None), m.setdefault('vel', None)
+        if time.time() - MOTION_SAID['at'] > 60:
+            MOTION_SAID['at'] = time.time()
+            log(f'mobs: their motion couldn\'t be worked out ({e!r})')
+
+
+MOTION_SAID = {'at': 0.0}
 CAUGHT_FRESH = 20.0     # the last reading at most this old (s) when a battle's first round is up
 CAUGHT_NEAR = 450.0     # the mob that started it: the nearest, at most this far from the wizard in the last reading
 CAUGHT_GAP = 2.0        # readings further apart than this (s) aren't followed back across
@@ -2631,6 +2703,7 @@ def caught_line(now=None):
     t0, me0, mobs0 = trail[k]
     name, x, y, _, yaw = mobs0[gid]
     dist = math.hypot(me0[0] - x, me0[1] - y)
+    walked = caught_walking(trail, k, gid)
     off = ''
     if yaw is not None and dist > 1:
         c = ((me0[0] - x) * -math.sin(yaw) + (me0[1] - y) * -math.cos(yaw)) / dist
@@ -2639,7 +2712,25 @@ def caught_line(now=None):
     # kind, or one by a fight goal - left off the avoid list: the walker went into it for the quest)
     qs = MOBS_SHOWN.get('quest') or set()
     quest = 1 if gid in qs and now - (MOBS_SHOWN.get('at') or 0) <= CAUGHT_FRESH else 0
-    return f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}|{quest}"
+    return (f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}|{quest}|"
+            + ('' if walked is None else str(int(walked))))
+
+
+def caught_walking(trail, k, gid):
+    """was the mob gid walking (navroute.walking: MOVE_MIN, two squares) over the second of readings up to trail[k] -
+    where it was when it noticed the wizard: True / False, None not known (too few readings)"""
+    try:
+        import navroute
+        track, j = [], k
+        while j >= 0 and gid in trail[j][2] and trail[k][0] - trail[j][0] <= navroute.MOTION_FIT + 0.2:
+            if track and track[0][0] - trail[j][0] > CAUGHT_GAP:
+                break
+            v = trail[j][2][gid]
+            track.insert(0, (trail[j][0], v[1], v[2], v[3]))
+            j -= 1
+        return navroute.walking(track, navroute.fit_velocity(track, navroute.MOTION_FIT + 0.2))
+    except Exception:  # noqa: BLE001 - not known
+        return None
 
 
 ROUTER = None
@@ -2736,10 +2827,11 @@ def zone_volumes(zone, game_dir=''):
     return out
 
 
-def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0.0):
+def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0.0, duels=False):
     """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
     bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob - but those
-    within spare of target (a puzzle's guard camp walked to, to fight it: its mobs aren't routed round)"""
+    within spare of target (a puzzle's guard camp walked to, to fight it: its mobs aren't routed round); duels (with
+    avoid): out of other players' battles too (duels_now - kept off where there's room; /navto doesn't wait)"""
     nm = nav_reader()
     r, why = nm.read(path=False, wait=3.0)
     if r is None:
@@ -2769,7 +2861,8 @@ def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0
         if avoid:
             MOBS_SHOWN.update(quest=spared, near=mob_near or navroute.MOB_NEAR, avoid=True, at=time.time(), cone=cone or navroute.MOB_CONE)
         res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False, mobs=mobs or None,
-                      mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
+                      mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE,
+                      duels=(duels_now()[0] or None) if avoid and duels else None, speed=my_speed())
     except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot
         log(f'/navto: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -2963,13 +3056,24 @@ def mob_avoid(q):
     return min(1500.0, rng), mob_cone(q)
 
 
-def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
+def my_speed():
+    """the wizard's walking speed (units / s - MobMotion's, off the readings), None not known yet"""
+    try:
+        return motion().my_speed()
+    except Exception:  # noqa: BLE001 - not known: navroute's WIZ_SPEED
+        return None
+
+
+def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0, duels=None):
     """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from - mob_near round
-    them, out of their sight cone (degrees wide, long) in front; arc_r: the wizard's turning circle - field 13 says
-    whether turning walking on round to the aim stays clear of the walls"""
+    them, out of their sight cone (degrees wide, long) in front, a walking one's swept along its way; arc_r: the
+    wizard's turning circle - field 13 says whether turning walking on round to the aim stays clear of the walls;
+    duels: other players' battles to keep out of (duels_now - duelavoid) - fields 14-16 the wait for one on the way"""
+    speed = my_speed()
     try:
         import navroute
-        res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
+        res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE,
+                                     duels=duels or None, speed=speed)
     except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
         log(f'route: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -2979,7 +3083,7 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
     if avoid:
         try:
             import navroute
-            a, b, c = router(game_dir).blind(r, avoid, mob_near or navroute.MOB_NEAR, cone or navroute.MOB_CONE)
+            a, b, c = router(game_dir).blind(r, avoid, mob_near or navroute.MOB_NEAR, cone or navroute.MOB_CONE, speed=speed)
             blind = ['blind|' + '|'.join(s.replace('|', ' ') for s in (a, b, c))]
         except Exception as e:  # noqa: BLE001 - no check: as before
             log(f'blind: {e!r}')
@@ -3000,7 +3104,40 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
         except Exception as e:  # noqa: BLE001 - not known: the walker's own limit
             log(f'arc: {e!r}')
     tail += '|' + ('' if arc is None else str(arc))
+    # (14-16: another player's battle on the way the route can't go round - the seconds waited for it, where it is)
+    duel = res.get('duel')
+    tail += '|||' if duel is None else f"|{duel:.0f}|{res['duel_at'][0]:.0f}|{res['duel_at'][1]:.0f}"
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
+
+
+def duels_now():
+    """(the other players' battles to keep out of [{pos, gid, template, phase, players, ...}], why) - navmem's duels():
+    the zone's duel circles that are active, not the wizard's own, with a player in them (or not known); ([], why) when
+    they can't be read (an older reader, the zone being looked at): nothing kept out of, as before. Never raises"""
+    try:
+        nm = nav_reader()
+        if not hasattr(nm, 'duels'):
+            return [], 'the reader has no duels'
+        got, why = nm.duels()
+    except Exception as e:  # noqa: BLE001 - none: as before
+        return [], f'the battles couldn\'t be read ({e!r})'
+    if got is None:
+        return [], why or '?'
+    return [d for d in got if d.get('active', True) and not d.get('mine') and d.get('players') != 0], ''
+
+
+def duel_lines(duels, r):
+    """/duels' answer: duel|template|x|y|z|distance|phase|parts|players|gid|active|mine one a duel circle in the zone
+    (nearest first), or none"""
+    me = (r or {}).get('pos') or (0.0, 0.0, 0.0)
+    out = []
+    for d in sorted(duels or [], key=lambda d: math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1])):
+        out.append('|'.join(['duel', mob_cell(d.get('template')), f"{d['pos'][0]:.1f}", f"{d['pos'][1]:.1f}",
+                             f"{d['pos'][2]:.1f}", f"{math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]):.0f}",
+                             mob_cell(d.get('phase_name') or d.get('phase')), mob_cell(d.get('parts')),
+                             mob_cell(d.get('players')), mob_cell(d.get('gid')), mob_cell(d.get('active')),
+                             mob_cell(d.get('mine'))]))
+    return out or ['none']
 
 
 def noplace_line(r):
@@ -3232,12 +3369,17 @@ def height_rgb(level):
     return np.stack([np.interp(lv, MAP_HEIGHT_STOPS, cols[:, c]) for c in range(3)], -1).astype(np.uint8)
 
 
-def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None):
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None, duels=None,
+                  walls=None):
     """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
     planned route's answer (navroute) to draw, if any; mobs: the zone's mobs (mobs_now) - red dots, the quest's
-    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across; items:
-    the things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named"""
+    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across - a walking
+    one (its 'vel') with an arrow the way it walks, as far as it's swept, and its ring's outline there; items: the
+    things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named; duels:
+    other players' battles kept out of (duels_now) - a violet circle each; walls: the walker's planner field
+    (navroute.Field) - its line of mobs' gaps closed (fill), faintly red"""
     from PIL import ImageDraw
+    import navroute
     upp = span / min(w, h)
     ukey = round(upp, 4)
     x0, y0 = r['pos'][0], r['pos'][1]
@@ -3339,10 +3481,49 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
                 face = math.degrees(math.atan2(math.cos(m['yaw']), -math.sin(m['yaw'])))
                 dr.pieslice([q[0] - sight_r, q[1] - sight_r, q[0] + sight_r, q[1] + sight_r], face - cone[0] / 2, face + cone[0] / 2,
                             fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
+        # (walking: an arrow the way it walks, as far as the route sweeps it - and its ring's outline there)
+        vel = m.get('vel') if m.get('moving') else None
+        if vel is not None:
+            ahead, along = navroute.sweep_of(vel)
+            if along > 0:
+                e = at((m['pos'][0] + vel[0] * ahead, m['pos'][1] + vel[1] * ahead))
+                d.line([q, e], fill=col + (200,), width=max(1, int(unit)))
+                ux, uy = (e[0] - q[0]) / (math.hypot(e[0] - q[0], e[1] - q[1]) or 1.0), (e[1] - q[1]) / (math.hypot(e[0] - q[0], e[1] - q[1]) or 1.0)
+                L = 3.5 * unit
+                d.polygon([(e[0], e[1]), (e[0] - ux * L - uy * L * 0.6, e[1] - uy * L + ux * L * 0.6),
+                           (e[0] - ux * L + uy * L * 0.6, e[1] - uy * L - ux * L * 0.6)], fill=col + (220,))
+                if not m.get('quest') and rings_on:
+                    ring_r = sight_r if sector and m.get('yaw') is None else near_r
+                    d.ellipse([e[0] - ring_r, e[1] - ring_r, e[0] + ring_r, e[1] + ring_r], outline=col + (110,),
+                              width=max(1, int(unit * 0.6)))
         s = 2.8 * unit
         d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=col + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.7)))
         if k < 6 and on_pic(q, 4 * unit):
             d.text((q[0] + s * 1.6, q[1]), m['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
+    # a line of mobs' wall (the walker's field: the gaps between them closed) - faintly, on the rings' layer
+    fill = getattr(walls, 'fill', None) if walls is not None and rings_on else None
+    if fill is not None and fill.any() and getattr(walls, 'zone', None) == r.get('zone'):
+        if rings is None:
+            rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+            dr = ImageDraw.Draw(rings)
+        sq = navroute.CELL
+        for j, i in np.argwhere(fill)[:20000]:
+            xa, ya = walls.x0 + i * sq, walls.y0 + j * sq
+            a, b = at((xa, ya + sq)), at((xa + sq, ya))
+            if b[0] >= 0 and b[1] >= 0 and a[0] <= w * S and a[1] <= h * S:
+                dr.rectangle([a, b], fill=MAP_WALL + (60,))
+    # other players' battles kept out of: a violet circle each
+    for du in duels or []:
+        q = at(du['pos'])
+        rr = float(du.get('r') or navroute.DUEL_R) / upp * S
+        if not on_pic(q, -rr):
+            continue
+        if rings is None:
+            rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+            dr = ImageDraw.Draw(rings)
+        dr.ellipse([q[0] - rr, q[1] - rr, q[0] + rr, q[1] + rr], fill=MAP_DUEL + (40,), outline=MAP_DUEL + (160,), width=max(1, int(unit)))
+        s = 3.0 * unit
+        d.rectangle([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=MAP_DUEL + (255,), outline=MAP_BG + (255,))
     # the quest items: a green diamond each (the goal's brighter, named); the goal's off the picture: a pointer
     for it in sorted(items or [], key=lambda it: bool(it.get('quest'))):
         q = at(it['pos'])
@@ -3558,7 +3739,8 @@ class Handler(BaseHTTPRequestHandler):
                     spare = min(5000.0, max(0.0, float(q.get('spare') or 0)))
                 except ValueError:
                     spare = 0.0
-                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone, spare)))
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone, spare,
+                                                        q.get('duels', '0') not in ('', '0'))))
             if u.path == '/blockers':
                 nm = nav_reader()
                 r, why = nm.read(path=False)
@@ -3584,6 +3766,17 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + repr(e))
             if u.path == '/caught':
                 return self.reply(caught_line())
+            if u.path == '/duels':
+                nm = nav_reader()
+                r, why = nm.read(path=False)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                if not hasattr(nm, 'duels'):
+                    return self.reply('ERR the reader has no duels')
+                got, why = nm.duels()
+                if got is None:
+                    return self.reply('ERR ' + (why or '?'))
+                return self.reply('\n'.join(duel_lines(got, r)))
             if u.path == '/cards' and 'x1' not in q:
                 return self.reply(cards_answer())
             if u.path == '/mobs':
@@ -3665,20 +3858,26 @@ class Handler(BaseHTTPRequestHandler):
                 goal, _ = goal_now(r)
                 if with_route:
                     # (the mobs kept away from: all but the quest's - asked for with avoid=1)
-                    avoid, near = None, None
+                    avoid, near, cone, duels = None, None, None, None
                     if q.get('avoid', '0') not in ('', '0'):
                         near, cone = mob_avoid(q)
                         mobs, _ = mobs_now(r, q.get('goal', ''), trail=True, goal=goal)
                         avoid = [m for m in mobs if not m['quest']]
                         MOBS_SHOWN.update(quest={m['gid'] for m in mobs if m['quest']}, near=near, avoid=True, at=time.time(),
                                           cone=cone)
+                        # (other players' battles kept out of too - duels=1: the duelavoid setting)
+                        if q.get('duels', '0') not in ('', '0'):
+                            duels, _ = duels_now()
+                        DUELS_SHOWN.update(list=duels or [], at=time.time())
                     else:
                         MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
+                        DUELS_SHOWN.update(list=[], at=time.time())
                     try:
                         arc_r = min(1200.0, max(0.0, float(q.get('arcr') or 0)))
                     except ValueError:
                         arc_r = 0.0
-                    lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'), arc_r)
+                    # (this ask's own cone - not MOBS_SHOWN's, which a /navto running alongside may have changed)
+                    lines += route_lines(r, nm.game_dir, avoid, near, cone, arc_r, duels)
                 lines.append(goal_nav_line(goal))
                 return self.reply('\n'.join(lines))
             if u.path == '/goal':
@@ -3723,8 +3922,12 @@ class Handler(BaseHTTPRequestHandler):
                 for it in items:
                     it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
                 items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
+                # (other players' battles as the walker's last ask kept out of them; its field's line-of-mobs walls)
+                duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
+                walls = ROUTER.field if ROUTER is not None else None
                 with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items)
+                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items,
+                                        duels, walls)
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':
