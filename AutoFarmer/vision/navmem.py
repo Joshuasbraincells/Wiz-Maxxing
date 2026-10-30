@@ -1747,8 +1747,8 @@ class NavMem:
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the deck's signature failed (%r)" % (e,)
 
-    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None):
-        """(r, why): the decks - deckmem.DeckMem.read(kinds=False) plus sig (its signature) and read_at (monotonic s).
+    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False):
+        """(r, why): the decks - deckmem.DeckMem.read(kinds=kinds) plus sig (its signature) and read_at (monotonic s).
         fresh False: the last reading (None, "not read yet" when there's none). fresh True: read now unless the worn
         deck's signature is the last reading's - under the lock, PACED: it is let go when it has been held DECK_HOLD s,
         or at once when idle(0) says a gated request (the bot's or the walker's reads; vision.GATE.idle) is in flight;
@@ -1756,11 +1756,14 @@ class NavMem:
         idle within DECK_IDLE s, or stop() true (the battle recorder's: a battle began, the read ran long): the read
         GIVES WAY - (None, "gave way ..."), the lock not taken again; read again later (the spell names' walk goes on
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
-        only_equipped: the backpack's decks left out. Never raises; read only"""
+        only_equipped: the backpack's decks left out. kinds: each card's kind, value, heads and boosts too (handmem's
+        reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first time a card is seen): a
+        reading without them doesn't answer it (read again). Never raises; read only"""
         try:
             with self.lock:
                 c = self._deck_cache
-                cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) else None
+                cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
+                    (c.get("kinds") or not kinds) else None
             if not fresh:
                 if cached is None:
                     return None, "not read yet"
@@ -1818,14 +1821,15 @@ class NavMem:
                 sig = dm.signature(pace)
                 if cached is not None and sig is not None and sig == cached["sig"]:
                     return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
-                r = dm.read(books=False, kinds=False, only_equipped=only_equipped, pace=pace)
+                r = dm.read(books=False, kinds=kinds, only_equipped=only_equipped, pace=pace)
                 if gave[0] is not None or not holding[0]:
                     return None, gave[0] or "gave way - read again later"
                 sig2 = dm.signature(pace)
                 at = time.monotonic()
                 keep = sig2 if sig2 == sig and not r.get("names_cut") else None
                 if r.get("decks"):
-                    self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped}
+                    self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
+                                        "kinds": kinds}
             finally:
                 if holding[0]:
                     holding[0] = False

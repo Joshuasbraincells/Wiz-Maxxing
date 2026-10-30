@@ -26,11 +26,11 @@ Every card known from the game's memory and played well, with a deck that fits t
 - [ ] Every card cast by the game's memory (where it sits in hand, its target's plate), pictures only a fallback - and every other on-screen check switched to memory where it can be
 - [ ] Battle logic learned (an enormous task), in steps:
   - [ ] Every battle recorded from the game's memory (enemies, hands, cards played and why, damage, rounds to the kill; school, deck, party seat and role)
-  - [ ] A battle simulator on the bot's damage maths, the deck's real cards, the wiki's spells and each enemy's cast history
+  - [ ] A battle simulator on the bot's damage maths, the deck's real cards, the wiki's spells and each enemy's cast history - built in v1.4.0 (vision\battlesim.py: resists, block and hits from the battles recorded), to try in the game; not in it yet: shields, the enemies' boosts and heals, DoTs past their first part, stuns, the party's other wizards
   - [ ] A planner that tries the plays in the simulator each round - learned plays kept per school, all schools' data while a school has few battles; decks matched to each enemy
   - [ ] In a party: the leader plans the whole team's round (each bot told its card), and the hitter announces its hit round and schools so the others time their blades and traps to it (also when a bot doesn't answer the leader in time)
-- [ ] "Can this deck beat it": the deck's damage against an enemy's health, block and resists
-- [ ] Decks learned from the ones set up in the game
+- [ ] "Can this deck beat it": the deck's damage against an enemy's health, block and resists - built in v1.4.0 (a boss ahead fought in the simulator with each deck for bosses, the likeliest winner picked), to try in the game
+- [ ] Decks learned from the ones set up in the game - built in v1.4.0 (the Cards tab's From game, and every 30 minutes: each in-game deck in an Equipment Set linked to a deck here, its set, school and the settings its cards call for), to try in the game
 
 Done: cards read from memory, blades and traps by damage school, traps on the enemy with the most health, deck profiles with the boss deck put on before the fight, the Spells and Keys tabs.
 

@@ -351,6 +351,38 @@ read: the boss ahead it was walked into); a fight on the way to the boss keeps
 the boss deck's settings while its Equipment Set is the one on ("(its deck is
 on)"). Alt+1 works as before. No memory (navmem:0, no helper, dual mode):
 Alt+1 only.
+Decks from the game (the Cards tab's From game button, and by itself every 30
+minutes out of battle, the bot on): every in-game deck that's in an Equipment
+Set is read from the game's memory (read-only - all your decks, the
+backpack's too, each card's kind from the game's own spell data) and made a
+deck here, linked to it: its Equipment Set, its school, its name and what it's
+for (big single hits and 4+ blades / traps: bosses; else anything else and
+collect goals; your only deck: anything else) and the settings its cards call
+for - no blades in it: blades off (traps, auras, bubbles, heals, Tower Shield,
+Reshuffle the same), boost first with 4+ boosts and a big hit, hit first with
+mostly AoEs. A deck already on that Equipment Set takes the link instead of a
+new one; six decks at most on the tab. Read again later, a linked deck
+follows its in-game deck (a set moved, cards changed) - but a setting you set
+or clear yourself on the tab is yours: never changed again (the file's
+learned| line lists the ones learning set).
+Can this deck beat it (the battle simulator - vision\battlesim.py): when a boss
+is ahead, each deck for bosses linked to an in-game deck is fought against it
+300 times in the simulator - your real cards (shuffled, 7 in hand, pips each
+round, power pips), the bot's way of playing (its card logic, boosts before a
+hit, the kill check, heals under healat), your damage, pierce and critical for
+that school, the boss's max health from the game's memory, its resists and
+block from the battles recorded (learned\battles\), its spells from the wiki
+(else its hits recorded on you). Logged: "Deck: can Large deck beat Governor
+Nereus? likely: 78% won, 2% lost, 20% ran out (about 9 rounds; 300 battles) -
+Governor Nereus 9000 health: Kraken at its best 2153 with Stormblade, Storm
+Trap - 5 hits"; the deck most likely to win it is the one picked (5 points
+better or more; else the priority), and "no deck for bosses is likely to beat
+it" when none wins 65%. The Cards tab shows each deck's last verdict under its
+damage. Not in the simulator yet: shields on either side, the enemies' blades,
+traps and heals, damage over time after its first part, stuns, the party's
+other wizards - so against a boss that shields or heals it's optimistic.
+Try it on the command line:
+    python vision\battlesim.py --deck deck.json --foe "Governor Nereus:9000:ice"
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines

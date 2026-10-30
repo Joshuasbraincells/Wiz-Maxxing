@@ -316,6 +316,21 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              the last reading + deckage|<s>, or none|<why>; fresh=1 reads it now
                                              (paced, refused "none|in a battle" while a battle is on - and while the
                                              battle recorder isn't following the game's log)
+  /decks[?fresh=1[&ob=1]]                 -> EVERY deck (the backpack's too) with its cards' kinds (deckmem, read-only - as
+                                             /deck, fresh=1 refused in a battle - ob=1: the bot says it's out of
+                                             battle, for when the battle recorder is off) and the bot deck profile each one in an
+                                             Equipment Set would make (vision\battlesim.py learn_decks):
+                                             deckmem.deck_lines + learn|gid|name|school|eqset|when|k=v,...|why lines +
+                                             deckage|<s>, or none|<why>
+  /sim?foes=name~health~school~boss|...&deck=<gid hex>&school=&hp=&damage=&pierce=&crit=&block=&level=&acc=&resist=
+       &team=&pp=&vals=k:v,...&boss=1&n=300[&fresh=1]
+                                          -> "can this deck beat it": the battle simulator (vision\battlesim.py) - the
+                                             deck (gid hex: one of /decks' - else the worn one) from the decks' last
+                                             reading with their kinds (fresh=1: read now, out of battle only), the
+                                             wizard's stats, the deck's settings (vals), each enemy (its health from the
+                                             game's memory when given; resists, block and hits from the battles
+                                             recorded; spells from the wiki) - n battles: battlesim.sim_lines (sim|...,
+                                             verdict|word|text, foe|..., cast|..., note|...), or none|<why>
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -2260,7 +2275,8 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy), and so does the battle recorder (GATE)
-GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck'}
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck', '/decks',
+         '/sim'}
 
 
 class Gate:
@@ -2318,6 +2334,107 @@ def deck_lines(fresh):
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
     return deckmem.deck_lines(r) + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
+
+
+# ---------------------------------------------------------------- the battle simulator (battlesim.py)
+SIM = {'book': None, 'facts': None, 'at': 0.0}
+SIM_LOCK = threading.Lock()
+SIM_BOOK_S = 600        # the battles recorded read again this often
+
+
+def sim_book():
+    """(FoeBook, facts): the battles recorded by enemy and cards.jsonl's card facts (AutoFarmer\\learned\\battles) -
+    read again every SIM_BOOK_S"""
+    import battlesim
+    with SIM_LOCK:
+        if SIM['book'] is None or time.monotonic() - SIM['at'] > SIM_BOOK_S:
+            base = os.path.join(ROOT, 'learned', 'battles')
+            SIM['book'], SIM['facts'] = battlesim.FoeBook(base), battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+            SIM['at'] = time.monotonic()
+        return SIM['book'], SIM['facts']
+
+
+def decks_reading(fresh, out=False):
+    """(every deck's reading with the cards' kinds, why) - the last one, or (fresh) one read now: only while the battle
+    recorder follows the game's log and sees no duel (deck_lines' rule) - or, the recorder off, when the bot says it's out
+    of battle (out: its own battle check and the game's log)"""
+    rec = REC if REC is not None and REC.on and not REC.broken and REC.started and REC.tail is not None else None
+    if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
+        return None, ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
+                                                             "battle can't be ruled out)")
+    return nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
+                             stop=rec.in_duel if fresh else None, only_equipped=False, kinds=True)
+
+
+def decks_lines(fresh, out=False):
+    """/decks' answer: every deck (deckmem.deck_lines) + the profiles they'd make (battlesim.learn_lines) + deckage"""
+    import battlesim
+    import deckmem
+    r, why = decks_reading(fresh, out)
+    if r is None:
+        return ['none|' + mob_cell(why or 'not read')]
+    _book, facts = sim_book()
+    return (deckmem.deck_lines(r) + battlesim.learn_lines(battlesim.learn_decks(r, facts))
+            + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))])
+
+
+def sim_lines_for(q):
+    """/sim's answer (see the docstring) - never raises"""
+    import battlesim as B
+    try:
+        r, why = decks_reading(q.get('fresh') == '1', q.get('ob') == '1')
+        if r is None:
+            return ['none|' + mob_cell(why or "the decks haven't been read with their cards yet (/decks?fresh=1)")]
+        want = (q.get('deck') or '').strip().lower()
+        decks = r.get('decks') or []
+        if want:
+            deck = next((d for d in decks if '%x' % d['gid'] == want), None)
+        else:
+            deck = next((d for d in decks if d.get('equipped')), None)
+        if deck is None:
+            return ['none|' + ("deck %s isn't among the decks read" % want if want else 'no deck worn')]
+        book, facts = sim_book()
+        notes = []
+        cards = B.deck_cards(deck, facts, notes)
+
+        def fl(k, d=0.0):
+            try:
+                return float(q.get(k) or d)
+            except ValueError:
+                return d
+        me = B.Me(q.get('school') or deck.get('school'), fl('hp', 3000), damage=fl('damage'), pierce=fl('pierce'),
+                  crit=fl('crit'), block=fl('block'), level=fl('level', 100), accuracy=fl('acc'), resist=fl('resist'),
+                  power_pip=fl('pp', 0.4), team=fl('team', 1))
+        vals = {}
+        for kv in (q.get('vals') or '').split(','):
+            k, _, v = kv.partition(':')
+            if k.strip():
+                vals[k.strip().lower()] = v.strip()
+        wiki, casts = enemy_state()
+        foes = []
+        for spec in (q.get('foes') or '').split('|'):
+            bits = (spec.split('~') + ['', '', '', ''])[:4]
+            name = bits[0].strip()
+            if not name:
+                continue
+            hp = int(float(bits[1])) if re.fullmatch(r'\d+(\.\d+)?', bits[1].strip()) else None
+            foes.append(book.foe(name, wiki, casts, hp=hp, school=bits[2].strip() or None,
+                                 boss=True if bits[3].strip() == '1' else None))
+        if not foes:
+            return ['none|no enemies named (foes=)']
+        boss = q.get('boss') == '1' or any(f.boss for f in foes)
+        opts = B.Opts.of(vals, boss=boss)
+        if any(vals.get('usehit%d' % i) == '0' for i in range(1, 5)) and all(
+                vals.get('usehit%d' % i) == '0' for i in range(1, 5)):
+            opts.usehit = False
+        res = B.simulate(cards, me, foes, opts, n=int(fl('n', 300)))
+        res['why'] = notes + res['why']
+        if any(not f.spells and 'pending' not in f.src and wiki.creature(f.name) is None for f in foes):
+            res['why'].append("the wiki is still being asked about an enemy: ask again in a moment")
+        return B.sim_lines(res, B.verdict(res, cards, me, foes, opts), foes) + [
+            'deck|%x|%s' % (deck['gid'], str(deck.get('display') or deck.get('object_name') or '').replace('|', '/'))]
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the simulation failed (%r)' % (e,)]
 
 
 def places_busy(on):
@@ -3488,6 +3605,10 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(REC.stat() if REC is not None else "rec|off|0|0||the battle recorder isn't running")
             if u.path == '/deck':
                 return self.reply('\n'.join(deck_lines(q.get('fresh') == '1')))
+            if u.path == '/decks':
+                return self.reply('\n'.join(decks_lines(q.get('fresh') == '1', q.get('ob') == '1')))
+            if u.path == '/sim':
+                return self.reply('\n'.join(sim_lines_for(q)))
             if u.path == '/uiroot':
                 size, why = nav_reader().ui_root(wait=0.3)
                 return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))
