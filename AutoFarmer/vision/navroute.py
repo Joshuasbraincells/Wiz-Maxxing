@@ -79,8 +79,11 @@ Mobs (the game's memory: navmem's mobs, those the caller wants avoided - not the
     squares cost MOB_COST as well (the line is one wall), and the window takes in the whole line (its mobs on the
     wizard's storey within each other's reach and PASS_GAP: a group) so the way round its end can be found - unless
     that would make it wider than MAX_CELLS (logged: as before, through the gap). The route on still going through
-    such a gap is a mob on the way ('wall': the nearest of them) - the same wait, given up after MOB_GIVEUP: then only
-    the gaps by those mobs are let go of (their rings and sight kept) for MOB_IGNORE s. PASS_GAP 0: no walls.
+    such a gap (no way round - a street the line stands across) is walked through it at once, out of the mobs' rings
+    and sight, as before - unless the caller asks for the wall's wait (wall_wait: the mobwall setting, off by default
+    till PASS_GAP is measured in the game): then it's a mob on the way ('wall': the nearest of them) - the same wait,
+    given up after MOB_GIVEUP: then only the gaps by those mobs are let go of (a 'gap' in mob_ignored - their rings and
+    sight kept) for MOB_IGNORE s. PASS_GAP 0: no walls.
   * Other players' battles (duels: the caller's - the game's memory's duel circles with players in them, behind the
     duelavoid setting): a circle DUEL_R round each costs DUEL_COST a square, dearer up to DUEL_SOFT further, so the
     route goes round it where there's room (walking in joins the battle); the window takes it in like a line of mobs.
@@ -1598,12 +1601,13 @@ class Planner:
         t = _duel_tuple(d)
         return (round(t[0] / 100), round(t[1] / 100))
 
-    def route(self, r, wait=True, mobs=None, mob_near=MOB_NEAR, cone=MOB_CONE, duels=None, speed=None):
+    def route(self, r, wait=True, mobs=None, mob_near=MOB_NEAR, cone=MOB_CONE, duels=None, speed=None, wall_wait=False):
         """the answer (see the top); wait: count the time at a teleport or a mob (the walker's asks - not the
         map's); mobs: [{'pos': (x, y, z), 'yaw', 'gid', 'name'[, 'vel': (vx, vy), 'moving']}] to keep away from -
         mob_near round each, and out of a cone (degrees wide, long) in front of it - a walking one (vel, moving not
         False) swept along its way; duels: [{'pos', 'gid'[, 'r']}] other players' battles to keep out of; speed: the
-        wizard's walking speed (units / s - None: WIZ_SPEED) for the waits' look ahead"""
+        wizard's walking speed (units / s - None: WIZ_SPEED) for the waits' look ahead; wall_wait: a line of mobs'
+        wall the route can't go round is a mob on the way (the mobwall setting) - else walked through its gap"""
         if r is None or r.get('pos') is None or r.get('goal') is None or not r.get('zone'):
             return {'why': 'no position or goal'}
         pos, goal, zone = tuple(r['pos']), tuple(r['goal']), r['zone']
@@ -1754,7 +1758,7 @@ class Planner:
         # a mob on the way the route can't go round: wait for it to move off - one wait however mobs take turns being
         # the one in the way (asks less than 2 s apart), given up as a whole after MOB_GIVEUP. (Not cleared while a
         # new field is being worked out for mobs that moved: only a field that knows where they are clears it)
-        blocker = self._mob_on_way(pts, mobs, mob_near, pos[2], cone, f, speed) if mobs and not escaping else None
+        blocker = self._mob_on_way(pts, mobs, mob_near, pos[2], cone, f, speed, wall_wait) if mobs and not escaping else None
         # (the field doesn't have it where it is now, or facing as it is: a new field - the way round it may be
         # clear - before a long wait on this one)
         if blocker is not None and not self._pose_known(f, blocker, cone):
@@ -1778,11 +1782,13 @@ class Planner:
                     w['waited'] += now - w['last']
                 w['last'] = now
                 w['left'] = min(w['left'], out['left'])
-                # (what of it was in the way: its ring, its cone, or only the gap by it in a line of mobs - the ring
-                # counts once it has been, then the cone)
+                # (what of it was in the way: its ring, its cone, or only the gap by it in a line of mobs - _mob_on_way's
+                # 'wall': given up, only its gaps let go of, its ring and sight kept - the ring counts once it has been,
+                # then the cone)
                 gid = blocker.get('gid')
                 rank = {'gap': 1, 'cone': 2, 'ring': 3}
-                kind = blocker.get('block') if blocker.get('block') in rank else 'cone'
+                kind = {'wall': 'gap'}.get(blocker.get('block'), blocker.get('block'))
+                kind = kind if kind in rank else 'cone'
                 w['gids'][gid] = max(kind, w['gids'].get(gid, 'gap'), key=lambda k: rank[k])
                 if w['waited'] > MOB_GIVEUP:
                     for g, kind in w['gids'].items():
@@ -2095,15 +2101,16 @@ class Planner:
                     yaw=m.get('yaw') if m.get('yaw') is not None else heading_yaw(vel))
 
     @staticmethod
-    def _mob_on_way(pts, mobs, mob_near, z, cone=None, f=None, speed=None):
+    def _mob_on_way(pts, mobs, mob_near, z, cone=None, f=None, speed=None, wall_wait=False):
         """the first mob along the route's first MOB_AHEAD that it comes within 0.85 mob_near of - and nearer than
         the wizard is to it now (not one behind, nor one whose ring it leads out of) - or into whose sight cone it
         walks (the wizard not in it now; a wall between - field f's - hides him), on the wizard's storey; a walking
         one (its 'vel') where it will be when the wizard gets to that point (speed: his, units / s - None WIZ_SPEED -
         no further on than its sweep - and only when walking on brings him nearer it, or into its sight, than standing
-        would); or the first square of a line of mobs' wall (field f's wall_band: a gap closed, or a ring or sight
-        beside one - the wizard not in it now) - the nearest mob still a wall (walls not False); or None. The mob comes back as a copy
-        with 'block': 'ring', 'cone' or 'wall' (what of it is in the way)"""
+        would); or, wall_wait (the mobwall setting - else a line's gap is walked through as before), the first square
+        of a line of mobs' wall (field f's wall_band: a gap closed, or a ring or sight beside one - the wizard not in it
+        now) - the nearest mob still a wall (walls not False); or None. The mob comes back as a copy with 'block':
+        'ring', 'cone' or 'wall' (what of it is in the way)"""
         near = mob_near * 0.85
         sp = speed if speed and speed > 0 else WIZ_SPEED
 
@@ -2115,7 +2122,7 @@ class Planner:
                 continue
             v = _vel(m)
             here.append((m, math.hypot(m['pos'][0] - pts[0][0], m['pos'][1] - pts[0][1]), spots(m, pts[0]), v, sweep_of(v)[0]))
-        fill = getattr(f, 'wall_band', None) if f is not None else None
+        fill = getattr(f, 'wall_band', None) if f is not None and wall_wait else None
         walls = [m for m, *_ in here if m.get('walls', True)]
         if fill is not None:
             j0, i0 = f.cell(pts[0])
@@ -2147,8 +2154,12 @@ class Planner:
             if fill is not None and walls:
                 j, i = f.cell(q)
                 if f.inside(j, i) and fill[j, i]:
-                    m = min(walls, key=lambda m: math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1]))
-                    return dict(m, block='wall')
+                    # (the gap by the mob nearest that square: not one whose gaps were just let go of - walls False, a
+                    # 'gap' wait given up - though the field has it closed till the next one's made: no new wait on its
+                    # neighbour meanwhile)
+                    m = min((m for m, *_ in here), key=lambda m: math.hypot(m['pos'][0] - q[0], m['pos'][1] - q[1]))
+                    if m.get('walls', True):
+                        return dict(m, block='wall')
         return None
 
     @staticmethod

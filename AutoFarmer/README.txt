@@ -171,7 +171,10 @@ A line of mobs (v0.9.0 work): a gap narrower than 250 game units between two
 mobs' rings or sight is closed - the line is one wall - and the route goes all
 the way round its end (the planned area is widened to take the whole line in;
 a line too long for it - "too long to go round in one window" in vision.log -
-is routed as before). Still no way but through a gap, the wizard waits as for a
+is routed as before). Still no way but through a gap (a street the line stands
+across), the wizard walks through it at once, out of the mobs' rings and sight,
+as before - or, with mobwall:1 (off by default till the 250 is measured in the
+game - Settings: "...wait at a line of mobs with no way round"), waits as for a
 mob on the way (25 s at most), then walks on through the gap, still out of the
 mobs' rings and sight. The Map shades the closed gaps.
 

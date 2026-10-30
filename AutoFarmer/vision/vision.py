@@ -138,6 +138,9 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              &duels=1 (with avoid=1 - the duelavoid setting, off by default): out of
                                              other players' battles too (the zone's duel circles - navmem.duels:
                                              not confirmed in the game yet)
+                                             &walls=1 (with avoid=1 - the mobwall setting, off by default): a line of
+                                             mobs' wall the route can't go round waited at as a mob on the way
+                                             (fields 8-11); without it walked through its gap, as before
                                                goalline|text|type|status|count|total|shown   (last, always: the quest's
                                                                      goal from the game's memory as /goal's - all
                                                                      empty when it can't be read; an older bot
@@ -3064,16 +3067,18 @@ def my_speed():
         return None
 
 
-def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0, duels=None):
+def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0, duels=None, wall_wait=False):
     """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from - mob_near round
     them, out of their sight cone (degrees wide, long) in front, a walking one's swept along its way; arc_r: the
     wizard's turning circle - field 13 says whether turning walking on round to the aim stays clear of the walls;
-    duels: other players' battles to keep out of (duels_now - duelavoid) - fields 14-16 the wait for one on the way"""
+    duels: other players' battles to keep out of (duels_now - duelavoid) - fields 14-16 the wait for one on the way;
+    wall_wait: a line of mobs' wall with no way round is waited at as a mob on the way (fields 8-11 - the mobwall
+    setting; off: walked through its gap at once, as before)"""
     speed = my_speed()
     try:
         import navroute
         res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE,
-                                     duels=duels or None, speed=speed)
+                                     duels=duels or None, speed=speed, wall_wait=wall_wait)
     except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
         log(f'route: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -3108,6 +3113,22 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0, du
     duel = res.get('duel')
     tail += '|||' if duel is None else f"|{duel:.0f}|{res['duel_at'][0]:.0f}|{res['duel_at'][1]:.0f}"
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
+
+
+def map_route(r, game_dir, avoid, duels):
+    """/navmap's route: the walker's own planner (router) asked as the walker last asked it - its mobs (avoid: the
+    ones kept away from, None not), MOBS_SHOWN's reach and cone, the battles it kept out of (duels: DUELS_SHOWN's,
+    None not known) and the wizard's speed - so the map's asks (every second while the dashboard's Map is open) never
+    hand the walker a field made for other mobs or battles than its own (one with no battle in it: its next ask walked
+    at the battle, or stood waiting for it with a way round - the field flipping each second). Not a wait (wait=False);
+    None when it fails (the map without it)"""
+    try:
+        import navroute
+        return router(game_dir).route(r, wait=False, mobs=avoid, mob_near=MOBS_SHOWN.get('near') or navroute.MOB_NEAR,
+                                      cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE, duels=duels or None,
+                                      speed=my_speed())
+    except Exception:  # noqa: BLE001 - the map without it
+        return None
 
 
 def duels_now():
@@ -3876,8 +3897,10 @@ class Handler(BaseHTTPRequestHandler):
                         arc_r = min(1200.0, max(0.0, float(q.get('arcr') or 0)))
                     except ValueError:
                         arc_r = 0.0
-                    # (this ask's own cone - not MOBS_SHOWN's, which a /navto running alongside may have changed)
-                    lines += route_lines(r, nm.game_dir, avoid, near, cone, arc_r, duels)
+                    # (this ask's own cone - not MOBS_SHOWN's, which a /navto running alongside may have changed; a line
+                    # of mobs' wall with no way round waited at only with walls=1 - the mobwall setting)
+                    lines += route_lines(r, nm.game_dir, avoid, near, cone, arc_r, duels,
+                                         bool(avoid) and q.get('walls', '0') not in ('', '0'))
                 lines.append(goal_nav_line(goal))
                 return self.reply('\n'.join(lines))
             if u.path == '/goal':
@@ -3908,13 +3931,11 @@ class Handler(BaseHTTPRequestHandler):
                 fresh = time.time() - (MOBS_SHOWN.get('at') or 0) < 10
                 for m in mobs:
                     m['quest'] = m['gid'] in MOBS_SHOWN.get('quest', ()) if fresh else False
-                try:
-                    import navroute
-                    avoid = [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None
-                    route = router(nm.game_dir).route(r, wait=False, mobs=avoid, mob_near=MOBS_SHOWN.get('near') or navroute.MOB_NEAR,
-                                                      cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE)
-                except Exception:  # noqa: BLE001 - the map without it
-                    route = None
+                # (other players' battles as the walker's last ask kept out of them - drawn, and in the map's route ask:
+                # the field it may make is the walker's own - map_route)
+                duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
+                route = map_route(r, nm.game_dir, [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None,
+                                  duels)
                 # (the quest items as the walker's last /items split them - the items lying about, and any other
                 # thing it took as the quest's: not every object and NPC of the zone)
                 items, _ = items_now()
@@ -3922,8 +3943,7 @@ class Handler(BaseHTTPRequestHandler):
                 for it in items:
                     it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
                 items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
-                # (other players' battles as the walker's last ask kept out of them; its field's line-of-mobs walls)
-                duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
+                # (the walker's field's line-of-mobs walls)
                 walls = ROUTER.field if ROUTER is not None else None
                 with MAP_LOCK:
                     img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items,

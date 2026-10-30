@@ -5444,6 +5444,10 @@ WalkDuelWait()
 	{
 	static wdAt := 0, wdSaid := "", wdLong := 0
 	global WkBestTime, WkLastRead, WkTries ; (v1 globals it sets)
+	;(a battle said but not asked about for 5 s - the walk stopped (F8) or ended, or another wait came first: a fresh
+	;start, not said - else the next walk's first step logs an old walk's battle as gone from the way)
+	if (wdSaid != "" && A_TickCount - wdAt > 5000)
+		wdAt := 0, wdSaid := "", wdLong := 0
 	wdSecs := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.duel : ""
 	if (wdSecs != "" && WkNavJump = "")
 		{
@@ -5454,9 +5458,11 @@ WalkDuelWait()
 		}
 	else if (!wdAt || WkNavOk || WkNavJump != "" || A_TickCount - wdAt >= 1500)
 		{
-		;(over: said - the helper walking on past it after its 4 minutes, or the battle gone from the way)
+		;(over: said - the helper walking on past it after its 4 minutes, or the battle gone from the way. Given up: the
+		;helper's last seconds said were within 2 of its 240 - its asks counted only less than 2 s apart - so 235 and
+		;more; a battle that ended sooner is gone from the way)
 		if (wdSaid != "")
-			WalkLog("another player's battle at " wdSaid (wdLong >= 200 ? " still going after " Round(wdLong) " s - walking on past it, round its edge where there's room" : " no longer on the way - walking on"))
+			WalkLog("another player's battle at " wdSaid (wdLong >= 235 ? " still going after " Round(wdLong) " s - walking on past it, round its edge where there's room" : " no longer on the way - walking on"))
 		wdAt := 0, wdSaid := "", wdLong := 0
 		return false
 		}

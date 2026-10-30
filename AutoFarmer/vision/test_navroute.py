@@ -405,7 +405,9 @@ class Walls(unittest.TestCase):
         self.assertIsNotNone(f.fill)
         pts = route_pts(f, (0.0, 300.0))
         mobs = [mob(m[0], m[1], gid=k) for k, m in enumerate(self.line)]
-        blk = R.Planner._mob_on_way(pts, mobs, 300.0, 0.0, None, f)
+        # (the wall's wait only when asked for - the mobwall setting; else through the gap as before)
+        self.assertIsNone(R.Planner._mob_on_way(pts, mobs, 300.0, 0.0, None, f))
+        blk = R.Planner._mob_on_way(pts, mobs, 300.0, 0.0, None, f, wall_wait=True)
         self.assertEqual(blk['block'], 'wall')
         # (given up: only the gaps by those mobs let go of - walls False - their rings kept)
         p, _, _ = planner()
@@ -415,8 +417,61 @@ class Walls(unittest.TestCase):
         self.assertTrue(all(m['walls'] is False and m.get('sees', True) for m in kept))
         f2 = field([m[:5] + (None, k, False) for k, m in enumerate(self.line)])
         self.assertIsNone(f2.fill)
-        blk2 = R.Planner._mob_on_way(route_pts(f2, (0.0, 0.0)), kept, 300.0, 0.0, None, f2)
+        blk2 = R.Planner._mob_on_way(route_pts(f2, (0.0, 0.0)), kept, 300.0, 0.0, None, f2, wall_wait=True)
         self.assertTrue(blk2 is None or blk2['block'] != 'wall')
+
+    def test_wall_wait_given_up_through_route(self):
+        # (the line across a street, sight a semi-circle in front: the wall's wait asked for - route() itself to
+        # MOB_GIVEUP - is a 'gap' wait: only the gaps by the nearest mob let go of, its ring and sight kept)
+        geo = FlatGeo([(-4000.0, -1000.0, -1500.0, 3000.0), (1500.0, -1000.0, 4000.0, 3000.0)])
+        p, logs, _ = planner(geo)
+        r = reading(pos=(0.0, 300.0, 0.0), goal=(0.0, 2500.0, 0.0))
+        mobs = [mob(m[0], m[1], yaw=0.0, gid=k, name='Crab%d' % k) for k, m in enumerate(self.line)]
+        cone = (180.0, 300.0)
+        out = settle(p, r, wait=True, mobs=mobs, cone=cone, wall_wait=True)
+        self.assertIn('mob', out)
+        self.assertEqual(out['mob_name'], 'Crab2')
+        self.assertEqual(p.mwait['gids'], {2: 'gap'})
+        p.mwait['waited'] = R.MOB_GIVEUP + 1
+        out = p.route(r, wait=True, mobs=mobs, cone=cone, wall_wait=True)
+        self.assertNotIn('mob', out)
+        self.assertEqual(p.mob_ignored[2][1], 'gap')
+        self.assertTrue(any('walking on through the gap' in s for s in logs))
+        kept = {m['gid']: m for m in p._given_up(mobs)}
+        self.assertEqual(len(kept), 5)
+        self.assertIs(kept[2]['walls'], False)
+        self.assertTrue(kept[2].get('sees', True))                  # (its sight kept)
+        # (the field still with its gaps closed - till the next one's made - no new wait on its neighbour; then through
+        # the gap by it, out of every ring)
+        out = p.route(r, wait=True, mobs=mobs, cone=cone, wall_wait=True)
+        self.assertNotIn('mob', out)
+        time.sleep(R.MOB_REPLAN + 0.05)
+        out = settle(p, r, wait=True, mobs=mobs, cone=cone, wall_wait=True)
+        self.assertNotIn('mob', out)
+        self.assertIs([m for m in p.field.mobs if m[6] == 2][0][7], False)
+        self.assertLess(abs(crossing(out['route'], 1000.0)), 700.0)
+        self.assertGreater(min(min(math.hypot(q[0] - m[0], q[1] - m[1]) for m in self.line) for q in out['route']),
+                           R.MOB_NEAR * 0.85)
+
+    def test_two_mobs_across_a_street_as_before(self):
+        # (two mobs either side of a street, their rings' gap closed: walked through it at once, as before - the wall's
+        # wait only with wall_wait, the mobwall setting)
+        geo = FlatGeo([(-3000.0, -1000.0, -700.0, 3000.0), (700.0, -1000.0, 3000.0, 3000.0)])
+        mobs = [mob(-400.0, 1000.0, gid=1, name='A'), mob(400.0, 1000.0, gid=2, name='B')]
+        r = reading(pos=(0.0, 300.0, 0.0))
+        p, _, _ = planner(geo)
+        out = settle(p, r, wait=True, mobs=mobs, cone=(0.0, 0.0))
+        self.assertIsNotNone(p.field.fill)
+        self.assertNotIn('mob', out)
+        R.PASS_GAP = 0.0
+        p0, _, _ = planner(geo)
+        out0 = settle(p0, r, wait=True, mobs=mobs, cone=(0.0, 0.0))
+        self.assertNotIn('mob', out0)
+        self.assertAlmostEqual(crossing(out['route'], 1000.0), crossing(out0['route'], 1000.0), delta=2 * R.CELL)
+        R.PASS_GAP = 250.0
+        p2, _, _ = planner(geo)
+        out2 = settle(p2, r, wait=True, mobs=mobs, cone=(0.0, 0.0), wall_wait=True)
+        self.assertIn('mob', out2)
 
     def test_groups(self):
         ts = [R._mob_tuple(m) for m in self.line]
@@ -791,10 +846,48 @@ class Helper(unittest.TestCase):
             self.assertEqual(f[13:16], ['12', '50', '60'])
             self.assertEqual(f[12], '1')
             self.assertEqual(fake.kw['duels'], [{'pos': (50.0, 60.0, 0.0), 'gid': 3}])
+            self.assertIs(fake.kw['wall_wait'], False)
+            V.route_lines({'pos': (0.0, 0.0, 0.0)}, '', [mob(0.0, 500.0)], 300.0, (0.0, 0.0), wall_wait=True)
+            self.assertIs(fake.kw['wall_wait'], True)
             fake.route = lambda r, **kw: {'aim': (1.0, 2.0), 'left': 300.0, 'route': [], 'why': ''}
             f = V.route_lines({'pos': (0.0, 0.0, 0.0)}, '', None, 300.0, (0.0, 0.0))[0].split('|')
             self.assertEqual(len(f), 16)
             self.assertEqual(f[13:16], ['', '', ''])
+        finally:
+            V.router = old
+
+    def test_map_route_keeps_the_walkers_field(self):
+        # (the dashboard's map asks the walker's planner every second: with the battles the walker kept out of, its
+        # field stays the walker's - before, a map ask with none replaced it with one walking at the battle)
+        V = self.V
+        p, _, _ = planner()
+        r = reading()
+        mobs = [mob(1500.0, 1000.0)]
+        duels = [{'pos': (0.0, 1000.0, 0.0), 'gid': 77}]
+        out = settle(p, r, wait=True, mobs=mobs, duels=duels)
+        f1 = p.field
+        self.assertTrue(f1.duels)
+        V.MOBS_SHOWN.update(near=R.MOB_NEAR, cone=R.MOB_CONE, avoid=True, at=time.time(), quest=set())
+        V.DUELS_SHOWN.update(list=duels, at=time.time())
+        old = V.router
+        V.router = lambda game_dir='': p
+        try:
+            time.sleep(R.MOB_REPLAN + 0.05)
+            self.assertIsNotNone(V.map_route(r, '', mobs, V.DUELS_SHOWN['list']))
+            t0 = time.time()
+            while (p.busy or p.want is not None) and time.time() - t0 < 10:
+                time.sleep(0.005)
+            self.assertIs(p.field, f1)
+            out = p.route(r, wait=True, mobs=mobs, duels=duels)
+            self.assertNotIn('duel', out)
+            self.assertGreater(min(math.hypot(q[0], q[1] - 1000.0) for q in out['route']), R.DUEL_R)
+            # (the map's ask as it was - no battles: a field without the battle, the walker's next ask walking at it)
+            time.sleep(R.MOB_REPLAN + 0.05)
+            V.map_route(r, '', mobs, None)
+            t0 = time.time()
+            while (p.busy or p.want is not None) and time.time() - t0 < 10:
+                time.sleep(0.005)
+            self.assertEqual(p.field.duels, ())
         finally:
             V.router = old
 

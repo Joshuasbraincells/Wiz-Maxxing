@@ -1187,7 +1187,9 @@ MobShape()
 	}
 
 ;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off;
-;duelavoid (off unless 1 - the duel circles aren't confirmed in the game yet): out of other players' battles too (&duels=1)
+;duelavoid (off unless 1 - the duel circles aren't confirmed in the game yet): out of other players' battles too (&duels=1);
+;mobwall (off unless 1 - the gap's width isn't measured in the game yet): a line of mobs' wall with no way round waited at
+;as a mob on the way (&walls=1 - /nav's; else walked through its gap at once, as before)
 NavMobArgs()
 	{
 	if (Stats.Has("mobavoid") && !Stats["mobavoid"])
@@ -1195,6 +1197,7 @@ NavMobArgs()
 	s := MobShape()
 	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "") (s.shape > 1 ? "&body=" s.body : "")
 		. (Stats.Has("duelavoid") && Stats["duelavoid"] = 1 ? "&duels=1" : "")
+		. (Stats.Has("mobwall") && Stats["mobwall"] = 1 ? "&walls=1" : "")
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08
