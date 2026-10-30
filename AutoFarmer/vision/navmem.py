@@ -20,11 +20,14 @@
 
     goal, why = nm.goal()           # the quest's active goal: its line as the game shows it under the arrow, its kind,
                                     # count and the mob / item / NPC it names (questmem.py), or None and why
+    quests, why = nm.quests()       # EVERY quest in the game's quest manager, each goal's kind / status / line, the
+                                    # tracked one marked (questmem.py - /quests), or None and why
 
     deck, why = nm.deck(fresh=True) # the worn deck (deckmem.py: its cards, treasure cards, item cards, limits), read
                                     # paced under the lock (12 ms at a time, let go at once for a gated request; it
                                     # gives way - None - when not idle for 1 s or stop() says so) - the battle
-                                    # recorder's, out of battle only;
+                                    # recorder's, out of battle only; nm.deck(fresh=True, books=True): the spellbook
+                                    # and treasure book too (/book - its own cache: the decks' stays theirs)
     sig, why = nm.deck_sig()        # its signature (~2 ms); nm.mob_infos(gids): the mobs' cached infos, no read
 
     python navmem.py [-n 5] [-i 1] [--path] [--mobs [--motion SECONDS]] [--goal]   readings from the command line (and how
@@ -1129,6 +1132,9 @@ class NavMem:
         # the decks (deckmem.py - the battle recorder's and /deck): its reader of the attached game, the thread making it,
         # why it couldn't be made, the last reading {st, r, sig, read_at, only_equipped}
         self._deckm, self._deckm_thread, self._deckm_fail, self._deck_cache = None, None, (None, 0.0, ""), None
+        # the books' last reading (deck(books=True) - /book: {st, r, sig, read_at, kinds}) - its own, so a book read never
+        # takes the place of the decks' (with their kinds: /decks, /sim)
+        self._book_cache = None
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1413,6 +1419,49 @@ class NavMem:
             return
         with self.lock:
             self._quest = qm
+
+    QUEST_GAP = 0.002       # s the lock is let go between two quests' reads (quests(): the walker's /nav gets in)
+
+    def quests(self, wait=0.5):
+        """(rows, why): EVERY quest in the game's quest manager (questmem.QuestMem.quest_ids / quest_raw /
+        quests_resolve: [{id, title, title_key, tracked, goals [{gid, text, type, status, count, total, mob, item, npc,
+        place, name_key, ...}], props {WizQuestData property: value}}]) - the tracked one (the HUD's ids, as goal()'s)
+        marked. The map walked under the lock, then each quest read under it on its own (let go QUEST_GAP s in between:
+        /nav waits on it), the names looked up outside it. (None, why) when there are none to give (the game not
+        running, the quest classes being read, no quests - the login screen...). Never raises; read only"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            qm, why = self._quest_reader(st, wait)
+            if qm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st:
+                    return None, "the game changed"
+                r = self._read(st, False)
+                snap = qm.snapshot((r.get("quest"), r.get("goalid")))
+                ids, why = qm.quest_ids()
+            if ids is None:
+                return None, why
+            raws, gone = [], 0
+            for qid, q in ids:
+                time.sleep(self.QUEST_GAP)
+                with self.lock:
+                    if self.st is not st:
+                        return None, "the game changed"
+                    raw = qm.quest_raw(qid, q)
+                if raw is None:
+                    gone += 1                # (done or dropped since the map was walked)
+                else:
+                    raws.append(raw)
+            tracked = (snap.get("ids") or (None, None))[0]
+            rows = qm.quests_resolve(raws, tracked=tracked, block=wait > 0)
+            notes = [w for w in (snap.get("why") if tracked is None else "",
+                                 "%d quest(s) left the map while it was read" % gone if gone else "") if w]
+            return rows, "; ".join(notes)
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the quests failed (%r)" % (e,)
 
     # ------------------------------------------------------------ the mobs' titles and the battle (bossmem.py)
     BOSS_RETRY = 5.0        # s before a mob whose template couldn't be read is tried again
@@ -1834,7 +1883,7 @@ class NavMem:
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the deck's signature failed (%r)" % (e,)
 
-    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False):
+    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False, books=False):
         """(r, why): the decks - deckmem.DeckMem.read(kinds=kinds) plus sig (its signature) and read_at (monotonic s).
         fresh False: the last reading (None, "not read yet" when there's none). fresh True: read now unless the worn
         deck's signature is the last reading's - under the lock, PACED: it is let go when it has been held DECK_HOLD s,
@@ -1845,12 +1894,19 @@ class NavMem:
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
         only_equipped: the backpack's decks left out. kinds: each card's kind, value, heads and boosts too (handmem's
         reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first time a card is seen): a
-        reading without them doesn't answer it (read again). Never raises; read only"""
+        reading without them doesn't answer it (read again). books: the spellbook and the treasure book too
+        (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it was - a book read
+        never takes the place of the decks' with their kinds) and is never answered by the worn deck's signature (a spell
+        learned doesn't change the worn deck): fresh True always reads. Never raises; read only"""
         try:
             with self.lock:
-                c = self._deck_cache
-                cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
-                    (c.get("kinds") or not kinds) else None
+                if books:
+                    c = self._book_cache
+                    cached = c if c is not None and c["st"] is self.st and (c.get("kinds") or not kinds) else None
+                else:
+                    c = self._deck_cache
+                    cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
+                        (c.get("kinds") or not kinds) else None
             if not fresh:
                 if cached is None:
                     return None, "not read yet"
@@ -1906,15 +1962,18 @@ class NavMem:
                 if self.st is not st or dm.st is not st or dm.hm is not self._hand:
                     return None, "the game changed"
                 sig = dm.signature(pace)
-                if cached is not None and sig is not None and sig == cached["sig"]:
+                if not books and cached is not None and sig is not None and sig == cached["sig"]:
                     return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
-                r = dm.read(books=False, kinds=kinds, only_equipped=only_equipped, pace=pace)
+                r = dm.read(books=books, kinds=kinds, only_equipped=only_equipped, pace=pace)
                 if gave[0] is not None or not holding[0]:
                     return None, gave[0] or "gave way - read again later"
                 sig2 = dm.signature(pace)
                 at = time.monotonic()
                 keep = sig2 if sig2 == sig and not r.get("names_cut") else None
-                if r.get("decks"):
+                if books:
+                    if r.get("spellbook") is not None:
+                        self._book_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "kinds": kinds}
+                elif r.get("decks"):
                     self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
                                         "kinds": kinds}
             finally:

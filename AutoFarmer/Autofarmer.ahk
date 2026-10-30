@@ -7,6 +7,7 @@ SettingsBlank(), AlertsBlank(), DashboardBlank(), BugReportBlank() ; (v2 port: v
 DungeonsBlank(), CollectBlank(), NetworkBlank(), DecksBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 QuickSellBlank(), HotkeysBlank(), SpellsBlank(), WalkerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 MouseSteerBlank(), PlannerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+TrainingBlank() ; (Training.ahk - v2-only globals, blank at start too)
 UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
@@ -3396,6 +3397,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Puzzle.ahk"
 #Include "%A_ScriptDir%\Network.ahk"
 #Include "%A_ScriptDir%\Decks.ahk"
+#Include "%A_ScriptDir%\Training.ahk"
 #Include "%A_ScriptDir%\QuickSell.ahk"
 #Include "%A_ScriptDir%\Hotkeys.ahk"
 #Include "%A_ScriptDir%\Spells.ahk"
@@ -4164,6 +4166,9 @@ Loop
 		;The backpack full after the battle (Prospector Zeke's alert, the game's memory): quick sold for gold - quicksell,
 		;Settings: THE BACKPACK (QuickSell.ahk). Here, before the walker's step: walking waits while it runs
 		QsTick()
+		;(the spellbook watched for new spells - read only, about every 10 minutes; the spell quest, trainer and deck
+		;settings aren't built: said once - Training.ahk)
+		TrainBookTick()
 		MouseLetGo()
 		;(the log's OneDrive copy, when it's on: a picture of the game every 2 minutes - LogMirrorSnap)
 		LogMirrorSnap(120000)

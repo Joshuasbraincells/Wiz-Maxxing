@@ -521,6 +521,50 @@ Not asked in dual mode, as a party's blader or healer, after you played a
 round of the battle, while learning every card, or with navmem off. Playing
 the advised card itself (planner 2) isn't built: it needs every card cast by
 the game's memory and each enemy's plate matched first.
+New spells, training points and spell quests (Training.ahk - TODO goal 4;
+mostly NOT BUILT yet). What runs now only reads: out of battle, the bot on,
+about every 10 minutes the spells your wizard knows are read from the game's
+memory (read-only, the vision helper's /book) and kept in learned\
+spellbook_<wizard>.txt; a spell that wasn't there is written in debug.log once
+- "Spells: new spell Thunder Snake (Storm, 1 pip, damage) [tid 1001]" - and
+the dashboard's What it sees shows "Spells  142 known - new: Thunder Snake
+(12:04)". The first look at a wizard only writes its file. Nothing is
+clicked, typed or spent. Three settings (Settings > NEW SPELLS AND SPELL
+QUESTS), all off - leave them off for now:
+	- deckadd (put new spells in the deck): on, a new spell is also announced
+	  (a tray tip and the Discord alert - add it to a deck yourself); putting
+	  it in the deck isn't built: it needs the deck page's windows.
+	- trainspells (spend training points at the trainers, by a plan per
+	  school): not built - needs the training points and the trainer's
+	  window read from the game; on, debug.log says so once.
+	- spellquests (take and do spell quests): not built - needs to know what
+	  marks a spell quest and the quest book's windows; on, debug.log says so
+	  once. The walker does the TRACKED quest as ever; NPCs offering a quest
+	  with a '!' aren't talked to (only a '?').
+	The training plan: trainplans.txt (a draft - every spell name, trainer,
+	level and cost in it written from memory of the wikis, none checked in
+	the game yet: each line says checked 0). The names must be the game's own
+	display names. Keep your own copy in learned\trainplans.txt (updates
+	replace trainplans.txt, never learned\). See what it would train next,
+	with the bot (its helper) running:
+	      python vision\spellplan.py --school storm --level 20 --tp 2 --live
+	  (--fresh: the spellbook read now - out of battle; or --book book.txt
+	  --quests quests.txt for saved answers). It also checks the file and
+	  names the plan's spells your wizard doesn't know yet.
+	The helper's answers, in a browser while the bot runs (read-only):
+	  http://127.0.0.1:47128/book (?fresh=1&ob=1 read now, out of battle;
+	  &kinds=1 each spell's kind and value) - every spell known, and the
+	  treasure cards; http://127.0.0.1:47128/quests - every quest you have,
+	  the tracked one marked, each with all the properties the game keeps for
+	  it (to find what marks a spell quest). From the command line:
+	      python vision\deckmem.py --book
+	      python vision\questmem.py --all
+	To help build the rest, send: the /quests answer with a spell quest open
+	(and say which one it is); python vision\reflect.py --class WizQuestData
+	--class WizGameStats --grep "rain|Level" --out spells.txt; and with each
+	window open - the quest book, a trainer's window (X at a professor), the
+	deck page - python vision\bagmem.py --tree --all --out <name>.txt. Never
+	click anything with Crowns on it: training points are never bought.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines
