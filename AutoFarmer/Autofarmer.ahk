@@ -6,7 +6,7 @@ PotionsBlank(), FleeBlank(), DrawBlank(), EnemySpellsBlank(), PartyBlank() ; (v2
 SettingsBlank(), AlertsBlank(), DashboardBlank(), BugReportBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 DungeonsBlank(), CollectBlank(), NetworkBlank(), DecksBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 QuickSellBlank(), HotkeysBlank(), SpellsBlank(), WalkerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
-MouseSteerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+MouseSteerBlank(), PlannerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
@@ -3205,6 +3205,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Draw.ahk"
 #Include "%A_ScriptDir%\EnemySpells.ahk"
 #Include "%A_ScriptDir%\BattleRec.ahk"
+#Include "%A_ScriptDir%\Planner.ahk"
 #Include "%A_ScriptDir%\Party.ahk"
 #Include "%A_ScriptDir%\Settings.ahk"
 #Include "%A_ScriptDir%\Alerts.ahk"
@@ -4584,6 +4585,14 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 
 ;(the healer: Tower Shield on the ally that's low, else on the hitter - Party.ahk PartyShield)
 if (BattleRole = "healer") && PartyShield()
+{
+	Goto("EndRound")
+}
+
+;The round planner (Planner.ahk - Settings: planner, off unless you switch it on): every card in hand tried in the
+;battle simulator from this round on, its advice logged and recorded - planner 1 never casts, the round goes on below
+;exactly as without it (PlannerRound returns false; planner 2, a cast of its own, isn't built). planner 0: nothing asked
+if (PlannerMode() && PlannerRound())
 {
 	Goto("EndRound")
 }

@@ -271,6 +271,84 @@ class Fixes(unittest.TestCase):
         self.assertIsNone(b.pick_boost(plan))      # another Stormblade adds nothing
 
 
+class FromState(unittest.TestCase):
+    """v0.9.0: a battle started in the middle (the planner's round now)"""
+
+    def cards(self):
+        lord = S.Card("Storm Lord", "damage", "storm", 7, heads={"storm": 1000}, tid=1)
+        snake = S.Card("Thunder Snake", "damage", "storm", 2, heads={"storm": 150}, tid=2)
+        blade = S.Card("Stormblade", "blade", "storm", 0, boosts={"storm": 35}, tid=3)
+        trap = S.Card("Storm Trap", "trap", "storm", 0, boosts={"storm": 30}, tid=4)
+        return lord, snake, blade, trap
+
+    def test_of_deck_takes_the_hand_out(self):
+        lord, snake, blade, trap = self.cards()
+        pet = S.Card("Pet Blade", "blade", "storm", 0, boosts={"storm": 20}, tid=99)
+        st = S.State.of_deck([lord, snake, snake, pet], [lord] * 3 + [snake] * 4 + [blade] * 2, rnd=3)
+        self.assertEqual(sorted(c.name for c in st.pile), ["Storm Lord"] * 2 + ["Stormblade"] * 2 + ["Thunder Snake"] * 2)
+        self.assertEqual(st.used, 2)                  # (about a card a round drawn before)
+        self.assertEqual(S.State([lord], rnd=1, used=5).used, 5)
+
+    def test_state_carried_over(self):
+        lord, snake, blade, trap = self.cards()
+        st = S.State([lord, blade], [snake] * 10 + [trap] * 5, pips=5, power=2, hp=1234, fhp=[800, None, 0],
+                     blades=[("Stormblade", {"storm": 35}), ("Stormblade", {"storm": 35})],
+                     traps=[[], [{"storm": 30}]], aura=({"storm": 25}, 2), rnd=4, boosts_run=1, me_first=True,
+                     fpips=[3, None, 1])
+        foes = [S.Foe("A", 1000), S.Foe("B", 2000), S.Foe("C", 500)]
+        b = S._Battle.from_state(st, S.Me("storm", 3000), foes, S.Opts(), random.Random(1))
+        self.assertEqual([c.name for c in b.hand], ["Storm Lord", "Stormblade"])
+        self.assertEqual(len(b.pile), 15 - 3)       # (the 3 cards drawn before round 4 taken off)
+        self.assertEqual((b.pips, b.power, b.hp, b.fhp), (5, 2, 1234, [800, 2000, 0]))
+        self.assertEqual(b.blades, [("Stormblade", {"storm": 35})])   # (identical blades don't stack)
+        self.assertEqual(b.traps, [[], [{"storm": 30}], []])
+        self.assertEqual((b.aura, b.round0, b.boosts_run, b.me_first), (({"storm": 25}, 2), 4, 1, True))
+        self.assertEqual(b.fpips[0], 3)
+        self.assertEqual(b.fpips[2], 1)
+        self.assertEqual(b.alive(), [0, 1])
+        # (the state itself is never changed by a rollout)
+        b.run_from(None, None, 3)
+        self.assertEqual((st.pips, len(st.hand), len(st.pile), st.blades[0][0]), (5, 2, 15, "Stormblade"))
+
+    def test_forced_play_and_aim(self):
+        lord, snake, blade, trap = self.cards()
+        foes = [S.Foe("A", 3000), S.Foe("B", 900)]
+        st = S.State([lord, trap], [snake] * 10, pips=7, fhp=[3000, 900], me_first=True)
+        me = S.Me("storm", 3000, accuracy=30)        # (never a miss)
+        b = S._Battle.from_state(st, me, foes, S.Opts(), random.Random(2))
+        b.run_from(b.hand[0], 1, horizon=1)          # (Storm Lord at B, not the one with the most health)
+        self.assertEqual(b.fhp[1], 0)
+        self.assertEqual(b.fhp[0], 3000)
+        self.assertIsNone(b.aim)
+        b = S._Battle.from_state(st, me, foes, S.Opts(), random.Random(2))
+        b.force(b.hand[1], 1)                         # (the trap on B)
+        self.assertEqual(b.traps, [[], [{"storm": 30}]])
+        b = S._Battle.from_state(st, me, foes, S.Opts(), random.Random(2))
+        b.force(b.hand[1])                            # (no aim: the bot's own - the most health)
+        self.assertEqual(b.traps, [[{"storm": 30}], []])
+
+    def test_round_now_has_no_pip_or_draw(self):
+        lord, snake, blade, trap = self.cards()
+        st = S.State([snake], [lord] * 10, pips=2, fhp=[5000], me_first=True)
+        b = S._Battle.from_state(st, S.Me("storm", 3000, power_pip=0), [S.Foe("A", 5000)], S.Opts(), random.Random(3))
+        r = b.run_from(None, None, horizon=1)        # (a pass: nothing spent, nothing drawn in the round now)
+        self.assertEqual((r, b.pips, len(b.hand), b.rounds_run), ("cut", 2, 1, 1))
+        b = S._Battle.from_state(st, S.Me("storm", 3000, power_pip=0), [S.Foe("A", 5000)], S.Opts(), random.Random(3))
+        b.run_from(None, None, horizon=2)            # (round two: a pip and the hand refilled)
+        self.assertEqual(b.pips, 3 - (2 if b.casts.get("Thunder Snake") else 0))
+        self.assertGreaterEqual(len(b.hand) + sum(b.casts.values()), 7)
+
+    def test_chain_as_simulate_plays_it(self):
+        # (play=False: the round now is the bot's chain - choose - with no draw or discard)
+        lord, snake, blade, trap = self.cards()
+        st = S.State([snake, blade], [lord] * 5, pips=3, fhp=[5000], me_first=True)
+        b = S._Battle.from_state(st, S.Me("storm", 3000, accuracy=30), [S.Foe("A", 5000)], S.Opts(cardlogic=1),
+                                 random.Random(4))
+        self.assertIs(b.choose(), b.hand[1])        # (boost first: the blade for the planned hit)
+        b.run_from(False, None, horizon=1)
+        self.assertEqual(b.casts, {"Stormblade": 1})
+
+
 def hit_dict():
     return hit()
 

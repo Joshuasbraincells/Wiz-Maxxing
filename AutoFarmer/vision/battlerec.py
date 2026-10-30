@@ -129,7 +129,7 @@ A battle (rec "battle"):
                     bot        the bot's round, null it didn't play it: {rule, rule_v, plan, casts, lines, seen_s,
                                lock_s, flags, role, hitschool, botround, blround, dropped}
                                  rule what decided it (RULES below): kill defend heal party-heal party-shield flee
-                                 boostmax-hit learned-hit trap blade aura bubble hit tower reshuffle pass failed user
+                                 planner boostmax-hit learned-hit trap blade aura bubble hit tower reshuffle pass failed user
                                  botoff unknown-school learnall other; rule_v the classifier's version (lines are kept:
                                  old records can be classified again); plan the text after "plan: "; casts the bot's
                                  titles that went out ("@cast" lines); lines [[ms since the round opened, text]] every
@@ -165,8 +165,8 @@ A battle (rec "battle"):
                   crit_rating, level, target_levels, final_crit} - my first StatRebalance as caster / as target and
                   GetCritParams}; mem (Phase B)
   settings        {k: v} the effective Stat(k) of a whitelist (the deck keys + enemyspells, defendat, healat,
-                  learnedhits, roundwait, partybattle, navmem, handsoff, handsoffon; null: not set) - never anything
-                  typed
+                  learnedhits, roundwait, partybattle, navmem, handsoff, handsoffon, planner; null: not set) - never
+                  anything typed
   who             {bot: [n..], user: [..], none: [..], unknown: [..]}
   src             {log, mem, ahk, hands "k/n", deck, phase_b [groups on]} what fed the record
   partial         {from_round, why}: rounds before from_round lack memory or bot data (a helper restart, the log
@@ -204,7 +204,7 @@ import traceback
 
 SCHEMA = "wizmaxx-battles"
 V = 1
-RULE_V = 1
+RULE_V = 2                   # (2: the planner rule - v0.9.0)
 # Phase B groups switched on (each needs its live probe item first - SPEC 8): "snapshot" (LIVE-1..4, 6: a memory
 # snapshot of every participant after each round), "wizstats" (LIVE-5: WizGameStats at the battle's first PrePlanning).
 # None yet: their fields are not written.
@@ -235,7 +235,7 @@ SETTINGS_KEYS = ("cardlogic", "boostmax", "useblades", "usetraps", "usebubble", 
                  "usereshuffle", "reboost", "solotraps", "healthocr", "killmargin", "drawenchant", "pipsave",
                  "discardunused", "discardmax", "discardunaffordable", "healat", "defendat", "fleeon", "usehit1",
                  "usehit2", "usehit3", "usehit4", "useheal", "enemyspells", "learnedhits", "roundwait", "partybattle",
-                 "navmem", "handsoff", "handsoffon")
+                 "navmem", "handsoff", "handsoffon", "planner")
 STAT_KEYS = ("school", "damage", "pierce", "critical", "accuracy", "block", "maxhealth", "charid_ok")
 PIP_KINDS = ("generic", "power", "balance", "death", "fire", "ice", "life", "myth", "storm", "shadow")
 BAD_WORDS = re.compile(r"http|webhook|token|password|login", re.I)
@@ -1103,6 +1103,9 @@ RULES = [
     ("heal", (r"own health: .*healing",)),
     ("party-heal", (r"\bhealer: .* - a heal on ",)),
     ("party-shield", (r"^\s*(?:hitter|blader|healer): Tower Shield on ",)),
+    # (a card the round planner cast itself - Planner.ahk, planner:2, not built yet: its advice alone - planner:1, "Plan:
+    # would play ..." - never matches, the round is its own rule's)
+    ("planner", (r"\bplanner: .* cast",)),
     ("boostmax-hit", (r"boosts? since the last hit \(boostmax",)),
     ("learned-hit", (r"\blearned hit .* cast at",)),
     ("trap", (r"\bUseTrap \S+: found=1", r" - the kill check counts it there", r" - not counted \(solotraps:0\)")),
@@ -1125,7 +1128,7 @@ LOCKED = re.compile(r"Mouse unlocked - the round's done \(locked ([\d.]+) s\)")
 
 
 def classify(lines):
-    """(rule, plan, casts) of a bot round's lines ([[ms, text]]) - the first rule that matches (RULES, rule_v 1)"""
+    """(rule, plan, casts) of a bot round's lines ([[ms, text]]) - the first rule that matches (RULES, rule_v 2)"""
     texts = [t for _, t in lines if isinstance(t, str)]
     plan = next((t.split("plan: ", 1)[1] for t in texts if "plan: " in t), None)
     casts = [t[6:].strip() for t in texts if t.startswith("@cast ")]
