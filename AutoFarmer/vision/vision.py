@@ -246,6 +246,19 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              (read-only - navmem.ui_root): "root|<w>|<h>" (1827|1027 at 2560x1440,
                                              UI 1.144 - the window's pixels over it are the GUI's scale; AutoFarmer
                                              cross-checks its picture set's UI scale with it), or "none|<why>"
+  /guitree[?under=Anc/Name][&all=1][&depth=N]
+                                          -> EVERY window under the one named (the GUI root without under; all=1 the
+                                             hidden ones too; depth=N that many levels below it, else 24) from the
+                                             game's memory (read-only - vision\bagmem.py's tree / tree_lines: the
+                                             discovery tool for windows nobody has looked at yet, and a list's rows):
+                                             root|w|h, tree|under|matches|dups|rows|walked|capped|all, then one line a
+                                             window depth|name|type|shown|l|t|r|b|text|key|greyed|checked|texture|kids|
+                                             parent|flags (in the root's units; parent: its parent's line number among
+                                             the window lines); or "none|<why>". The whole tree can take a while: ask
+                                             under a window - only its windows are walked and described (every window
+                                             is still read once to find it, as /gui does - not those in hidden ones
+                                             without all=1); capped 1: cut short (with matches 0: the window may be past
+                                             where finding it stopped - not "no such window")
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -2276,7 +2289,7 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy), and so does the battle recorder (GATE)
 GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck', '/decks',
-         '/sim'}
+         '/sim', '/guitree'}
 
 
 class Gate:
@@ -3630,6 +3643,18 @@ class Handler(BaseHTTPRequestHandler):
                                       400)
                 g, why = nav_reader().gui(paths, wait=0.3)
                 return self.reply('\n'.join(bagmem.gui_lines(g, why, paths)))
+            if u.path == '/guitree':
+                # (every window under one - under=Anc/Name, the GUI root without; all=1 the hidden ones too; depth=N -
+                # one line each: the discovery tool for windows not looked at yet and a list's rows, vision\bagmem.py's
+                # tree - read-only)
+                import bagmem
+                under = bagmem.tree_under(q.get('under', ''))
+                if under is None:
+                    return self.reply('ERR under: one window path (Anc/Name - letters, digits and _)', 400)
+                dep = q.get('depth', '')
+                t, why = bagmem.nav_tree(nav_reader(), under, q.get('all', '0') in ('', '0'),
+                                         int(dep) if dep.isdigit() else None, wait=0.3)
+                return self.reply('\n'.join(bagmem.tree_lines(t, why)))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

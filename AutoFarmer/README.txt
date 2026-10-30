@@ -1279,6 +1279,31 @@ read-only, never a picture):
 	  quicksellfree:N sells with N slots or fewer left. debug.log:
 	  "Backpack: ..."; the dashboard: Quick sells.
 
+Discovery tools (vision\bagmem.py --tree and vision\reflect.py - read-only):
+to teach the bot pets, gear, card quests and puzzles it first has to know the
+names the game uses for their windows and values. These two print them from
+the game's memory. They only read - nothing in the game is written, clicked or
+typed, and nothing is sent anywhere: you send the file back yourself. Run them
+in a command prompt in the AutoFarmer folder while Wizard101 is running and
+your wizard is in the world (the same Python as the vision helper):
+	- The windows on screen, one a line (depth, name, type, shown, where, its
+	  text): open the window you're asked about first (a battle's planning
+	  phase, a trainer, the pet window, the quest book...) - only what's open
+	  is shown - then
+	      python vision\bagmem.py --tree --out tree.txt
+	  --under <Window> for only that window and those in it (quicker - and
+	  when a list was cut short, a 1 in the 7th field of its tree| line, ask
+	  under the window you want), --all for the hidden ones too, --indent to
+	  read it yourself. For a battle's Pass, Flee and Draw buttons, in a
+	  battle's planning phase:
+	      python vision\bagmem.py --tree --under CombatPlanningPhaseWindow --all --out combat.txt
+	- Every property of one of the game's classes and where it is (--class,
+	  repeated or A,B), and the names that match a word (--grep):
+	      python vision\reflect.py --class WizGameStats --grep "Training|Level" --out stats.txt
+	  --pid <n> picks the client when more than one is running.
+	Send the .txt file. The vision helper gives the bot the same window list
+	(/guitree); nothing the bot does uses it yet.
+
 Along side simply playing the game this program has certain modes
 all of which include, command mode, response mode, dual mode and lore mode.
 Just as a note, all of these can be turned off be re-inputing the

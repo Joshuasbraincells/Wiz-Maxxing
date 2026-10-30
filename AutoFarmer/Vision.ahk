@@ -406,6 +406,8 @@ global NavGoalWhy, NavGoalWaitUntil
 global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 ;Why the last NavBag / NavGui got nothing; when each may ask again (declared only: a top-level := never runs here)
 global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
+;Why the last NavGuiTree got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavGuiTreeWhy, NavGuiTreeWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
 ;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
@@ -1057,6 +1059,83 @@ NavGui(paths, timeoutMs := 600)
 	return nguOut
 	}
 
+;Every window under one from the game's memory (the helper's /guitree - READ-ONLY, vision\bagmem.py's tree): the names
+;of a window's buttons, lists and a box's keys nobody has looked at yet, and the rows of a list (a trainer's spells, the
+;quest book's entries). Nothing calls it yet - it's there for the readers still to be written (pets, gear, quests,
+;puzzles: TODO.md); "python vision\bagmem.py --tree --under Anc/Name" is the same reading for a person. under: "Anc/Name"
+;(a window named Name with an ancestor named Anc - more ancestors allowed, in order; the first shown match), "" the GUI
+;root (the whole tree can take a while: ask under a window - only its windows are walked and described, though every
+;window is still read once to find it, as NavGui does); withHidden: hidden windows too (else only those shown - VISIBLE
+;on it and every ancestor - and a hidden window's windows not even read); depth: that many levels below it at most
+;("" 24 - deeper ones left out: capped). An object: rootW, rootH (the GUI in its own units), under, matches (windows
+;under names among those read - 0 none: no rows), dups (its shown matches), walked (windows read), capped (1: cut
+;short - under it: ask under a window lower down; with matches 0 the window may be past where finding it stopped -
+;not "no such window"), all (1: hidden ones listed), rows ([{depth (0 the window
+;asked for), name, type, shown, l, t, r, b (in the root's units), text (its words, the markup out), key (the .gui file's
+;"<string;KEY>" when that's all its text), greyed, checked (1/0, "" not a button / check box), tex (a sprite's or a
+;button's texture file), kids (its children, hidden ones too), parent (its parent's index in rows, 0 the top one), flags
+;(m_Flags in hex, bit 0 VISIBLE)}] in the game's order: an ancestor before its windows). "" when it can't be read - as
+;NavGui: NavGuiTreeWhy (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+NavGuiTree(under := "", withHidden := false, depth := "", timeoutMs := 1500)
+	{
+	global NavGuiTreeWhy, NavGuiTreeWaitUntil ; (v1 globals it sets)
+	NavGuiTreeWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavGuiTreeWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGuiTreeWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavGuiTreeWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavGuiTreeWaitUntil && A_TickCount < NavGuiTreeWaitUntil)
+		{
+		NavGuiTreeWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	ngtAns := VisionGet("/guitree?under=" NavUri(under) (withHidden ? "&all=1" : "") (depth != "" ? "&depth=" depth : ""), timeoutMs, true)
+	if (ngtAns = "")
+		{
+		NavGuiTreeWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGuiTreeWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavGuiTreeWaitUntil := 0
+	ngtOut := V1Obj({rootW: "", rootH: "", under: "", matches: "", dups: "", walked: "", capped: 0, all: 0, rows: []})
+	Loop Parse, ngtAns, "`n", "`r"
+		{
+		ngtF := StrSplit(A_LoopField, "|")
+		if (V1At(ngtF, 1) = "none")
+			{
+			NavGuiTreeWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (V1At(ngtF, 1) = "root")
+			ngtOut.rootW := NavNum(V1At(ngtF, 2)), ngtOut.rootH := NavNum(V1At(ngtF, 3))
+		else if (V1At(ngtF, 1) = "tree" && ngtF.Length >= 8)
+			ngtOut.under := Trim(V1At(ngtF, 2)), ngtOut.matches := NavNum(V1At(ngtF, 3)), ngtOut.dups := NavNum(V1At(ngtF, 4)), ngtOut.walked := NavNum(V1At(ngtF, 6))
+				, ngtOut.capped := V1At(ngtF, 7) = "1" ? 1 : 0, ngtOut.all := V1At(ngtF, 8) = "1" ? 1 : 0
+		else if (RegExMatch(V1At(ngtF, 1), "^\d+$") && ngtF.Length >= 16)   ; (a window's line: its depth first - every other line a word)
+			ngtOut.rows.Push(V1Obj({depth: NavNum(V1At(ngtF, 1)), name: Trim(V1At(ngtF, 2)), type: Trim(V1At(ngtF, 3)), shown: V1At(ngtF, 4) = "1" ? 1 : 0
+				, l: NavNum(V1At(ngtF, 5)), t: NavNum(V1At(ngtF, 6)), r: NavNum(V1At(ngtF, 7)), b: NavNum(V1At(ngtF, 8)), text: Trim(V1At(ngtF, 9)), key: Trim(V1At(ngtF, 10))
+				, greyed: NavNum(V1At(ngtF, 11)), checked: NavNum(V1At(ngtF, 12)), tex: Trim(V1At(ngtF, 13)), kids: NavNum(V1At(ngtF, 14)), parent: NavNum(V1At(ngtF, 15))
+				, flags: Trim(V1At(ngtF, 16))}))
+		}
+	if (ngtOut.rootW = "" || ngtOut.rootW <= 0 || ngtOut.matches = "")
+		{
+		NavGuiTreeWhy := "an odd answer (no root / tree line): " SubStr(RegExReplace(ngtAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return ngtOut
+	}
+
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
 ;mobs' real sight against the mobshape / mobradius settings
@@ -1199,4 +1278,5 @@ VisionBlank()
 	global NavGoalWaitUntil := "", NavMobsWhy := "", NavMobsWaitUntil := "", NavBattleWhy := "", NavBattleWaitUntil := "", NavBagWhy := ""
 	global NavBagWaitUntil := "", NavGuiWhy := "", NavGuiWaitUntil := "", NavItemsWhy := "", NavItemsWaitUntil := "", NavUiWhy := ""
 	global NavUiWaitUntil := "", NavUiRootW := ""
+	global NavGuiTreeWhy := "", NavGuiTreeWaitUntil := ""
 	}
