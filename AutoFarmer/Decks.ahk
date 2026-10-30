@@ -13,7 +13,7 @@
 ; walked into is found in the battle.
 ; One file per deck: decks\<id>.txt - yours (updates keep them). The dashboard's Cards tab shows and edits them
 ; (Dashboard.ahk). AutoHotkey v2 (ported from v1.1), #Included by Autofarmer.ahk.
-; Decks learned from the game (v1.4.0, TODO goal 3, 2026-10-30): every in-game deck in an Equipment Set read from the
+; Decks learned from the game (v0.8.0, TODO goal 3, 2026-10-30): every in-game deck in an Equipment Set read from the
 ; game's memory (the helper's /decks - READ-ONLY, vision\deckmem.py) becomes a deck here - linked to it by its id (game|
 ; in the file), its Equipment Set, school and the settings its cards call for (no blades in it: blades off...; boost or
 ; hit first; for bosses or anything else - vision\battlesim.py learn_decks); a setting you set yourself is never changed
@@ -1210,7 +1210,7 @@ DeckDelClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
 	DeckViewShow(0)
 	}
 
-;---- Decks learned from the game (v1.4.0, TODO goal 3) ----
+;---- Decks learned from the game (v0.8.0, TODO goal 3) ----
 ;
 ;The helper's /decks (READ-ONLY - vision\deckmem.py: every deck the wizard owns, the backpack's too, each card's kind
 ;from its effects; vision\battlesim.py learn_decks) answers a "learn" line for each in-game deck in an Equipment Set:
@@ -1418,7 +1418,7 @@ DeckGameClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
 		DeckViewShow(DeckView)
 	}
 
-;---- Can this deck beat it (v1.4.0, TODO goal 3) ----
+;---- Can this deck beat it (v0.8.0, TODO goal 3) ----
 
 ;Deck d fought against foes ([{name, health, school, boss}]) in the battle simulator (the helper's /sim - vision\
 ;battlesim.py: its linked in-game deck's cards, your stats for its school, its settings): {word (yes / likely / risky /
