@@ -604,8 +604,19 @@ DungeonStep()
 		if (r.loadUntil && nav.zone = r.fromZone && r.loadStep)
 			{
 			r.loadTries += 1
+			;(its X twice for nothing at a sigil - 2026-10-26 21:44: one never started after a relog: left and come back to before the
+			;last try, once a run - a Mark here, Home, the Recall back: the walker's WalkSigilReset, which says why not - Settings:
+			;sigilhome; no Commons way, a run can't walk back from there. Back: the X step again as below)
+			if (r.loadTries = 2 && !r.sigilLeft && V1At(V1At(r.steps, r.loadStep), "kind") = "x")
+				{
+				r.sigilLeft := 1
+				if (WalkSigilReset("step " r.loadStep "'s X didn't load twice ('" r.name "')", r.fromZone, false))
+					DebugLog("Dungeons: back at step " r.loadStep " after Home and the Recall")
+				}
 			if (r.loadTries > 2)
 				{
+				;(counted badly stuck - the dashboard's STATISTICS, vision\stuckreport.py)
+				WalkBadlyStuckCount("dungeon", "the way from " r.fromZone " into " st.zone " didn't load (3 tries) - '" r.name "'")
 				DgStop("the way from " r.fromZone " into " st.zone " didn't load (3 tries)")
 				return
 				}
@@ -653,6 +664,8 @@ DungeonStep()
 		r.unstuck += 1
 		if (r.unstuck > 4)
 			{
+			;(counted badly stuck - the dashboard's STATISTICS, vision\stuckreport.py)
+			WalkBadlyStuckCount("dungeon", "stuck " Round(d) " from step " r.i " (" st.zone ") - '" r.name "'")
 			DgStop("stuck " Round(d) " from step " r.i " (" st.zone ") - no closer after backing up 4 times")
 			return
 			}

@@ -296,6 +296,23 @@ PotionByMark()
 	return !(Stats.Has("potionmark") && !Stats["potionmark"])
 	}
 
+;A sigil that won't start (the walker's WalkSigilReset - Settings: sigilhome): may a Mark (Page Down) be made there, to Recall back to
+;after Home? Never moving your Mark kept at the potion seller - potionmark:1 with buying recorded at this wizard's Mark (PotionRunMark
+;recalls to it); otherwise as the potion runs themselves Mark (potionmark:0's route way at every run, the map walk with nothing
+;recorded). Never in battles only. taken: the sigil's Mark made - a potion run's own, kept for its Recall (PotionMarkKept), is gone
+SigilMarkOk(taken := false)
+	{
+	global PotionMarkZone, PotionMarkAt ; (v1 globals it sets)
+	if (taken)
+		{
+		PotionMarkZone := "", PotionMarkAt := 0
+		return true
+		}
+	if (BattlesOnly())
+		return false
+	return !(PotionByMark() && PotionMarkFile(PotionWho()) != "")
+	}
+
 ;The Mark way: Recall to the seller, the buying recorded there, drink, carry on from there. True if it
 ;bought (it never presses Page Down: that would move your Mark off the seller)
 PotionRunMark()

@@ -921,6 +921,12 @@ DashParse(line)
 		DashAdd("flees")
 	else if (InStr(msg, "Defeated:") = 1)
 		DashAdd("deaths"), DashDeathsAll(1)
+	;(the walker's badly-stuck count and the time lost to being stuck - Walker.ahk WalkBadlyStuckCount / WalkLostClose; a dungeon run's
+	;stop for being stuck is counted there too: Dungeons.ahk)
+	else if (RegExMatch(msg, "^Walk: badly stuck #\d+"))
+		DashAdd("badstuck"), DashStuckAll(1, 0)
+	else if (RegExMatch(msg, "^Walk: stuck over - (\d+) s lost", &m))
+		DashAdd("stuckLost", m[1] + 0), DashStuckAll(0, m[1] + 0)
 	else if (RegExMatch(msg, "^  kill check: (.*) -> (.*)$", &m))
 		{
 		DashSees.enemies := m[1]
@@ -1255,6 +1261,7 @@ DashRefresh()
 	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
 		. "Battles          " DashNum(battles) (V1IsFunc("BrecToday") ? BrecToday.Call() : "") "`n"
 		. "Deaths           " DashNum(n.deaths) "   (all time: " DashDeathsAll() ")`n"
+		. "Badly stuck      " DashNum(n.badstuck) "   (time lost " DashLostSay(n.stuckLost) "; all time: " DashStuckAll().n ", " DashLostSay(DashStuckAll().s) ")`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
@@ -1295,7 +1302,6 @@ DashCut(text)
 	return StrLen(text) > fit ? SubStr(text, 1, fit - 1) "~" : text
 	}
 
-;A count, right-aligned (blank = 0)
 ;Deaths over every run (dashboard.ini [stats] deaths - updates keep it): add one or more, and the total
 DashDeathsAll(add := 0)
 	{
@@ -1313,6 +1319,38 @@ DashDeathsAll(add := 0)
 	return total
 	}
 
+;Badly stuck over every run, and the seconds lost to being stuck (dashboard.ini [stats] badstuck, stucklost - updates keep them; the
+;walker's "badly stuck #N" and "stuck over - N s lost" lines, DashParse): add to them, and the totals {n, s}
+DashStuckAll(addN := 0, addS := 0)
+	{
+	static all := ""
+	if (!IsObject(all))
+		{
+		all := V1Obj({n: IniRead(A_ScriptDir "\dashboard.ini", "stats", "badstuck", 0), s: IniRead(A_ScriptDir "\dashboard.ini", "stats", "stucklost", 0)})
+		all.n := RegExMatch(all.n, "^\d+$") ? all.n + 0 : 0
+		all.s := RegExMatch(all.s, "^\d+$") ? all.s + 0 : 0
+		}
+	if (addN)
+		{
+		all.n += addN
+		V1Do(IniWrite, all.n, A_ScriptDir "\dashboard.ini", "stats", "badstuck")
+		}
+	if (addS)
+		{
+		all.s += addS
+		V1Do(IniWrite, all.s, A_ScriptDir "\dashboard.ini", "stats", "stucklost")
+		}
+	return all
+	}
+
+;Seconds lost to being stuck, said short: "0 min", "12 min", "3.4 h" (blank = 0)
+DashLostSay(s)
+	{
+	s := V1N(s)
+	return s < 3600 ? Round(s / 60) " min" : Round(s / 3600, 1) " h"
+	}
+
+;A count, right-aligned (blank = 0)
 DashNum(v)
 	{
 	return Format("{:6}", v = "" ? 0 : v)
