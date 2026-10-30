@@ -22,6 +22,8 @@ global VisionDir, VisionPort, VisionErr ;(v1 never ran: VisionDir := "", VisionP
 global VisionPlateWhy
 ;Why the last VisionCards (the hand from the game's memory) got nothing; its last answer kept, its why and when
 global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy
+;Why the last VisionPhase (the round's phase from the game's memory) got nothing; asked again from (after a failure)
+global VisionPhaseWhy, VisionPhaseWaitUntil
 ;How many fresh looks at the hand VisionFind has taken (CardLearn.ahk LearnBoostPicFix: one miss a look) - declared only:
 ;a top-level := never runs here
 global VisionLookN
@@ -240,8 +242,13 @@ VisionForget()
 ;         template id), text (about as the card says it), heads (a damage card's damage by school, every head of it:
 ;         "fire:230,ice:230,storm:230" - KillCalc.ahk HeadsParse), boosts (what a blade, trap or aura boosts by school:
 ;         "ice:35,storm:35,fire:35", "all:25" - BoostsParse; either "?" not to be trusted, "" none or an older helper), nf
-;         (the line's fields: 23 an older helper's, with no heads or boosts)}]
+;         (the line's fields: 23 an older helper's, with no heads or boosts), l, t, r, b (v0.9.0: its box in the game's GUI
+;         root, in the GUI's own units - rootW, rootH below; "" not read or an older helper - VisionCardPx turns it into
+;         pixels. NOT CHECKED against the screen yet: KillCalc.ahk MemBoxCheck logs it against /hand's boxes)}]
 ;  ms     how long the read took in the helper
+;  rootW, rootH  the GUI root's size in its own units (the cards' boxes are in it; "" not read or an older helper)
+;  plateSchool   the school the badge by your plate said when it isn't the memory's (one game running: the badge was
+;         another wizard's - a party battle; "" they agree)
 ;While the game says the hand is changing (dealing, laying the cards out) it's asked again every 100 ms, up to waitMs.
 ;maxAgeMs: the last answer (or its why) if it's no older than that - the hand doesn't change till a card's cast or
 ;discarded (VisionForget forgets it)
@@ -250,6 +257,8 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 	;(when the last wait for a settled hand ran out: for 10 s after, asked once with no retries - the 1.5 s wait was paid
 	;two to six times a round)
 	static vcGaveUp := 0
+	;(the memory's school and the plate's that disagreed, said once a pair)
+	static vcSaid := V1Obj()
 	global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy ; (v1 globals it sets)
 	if (maxAgeMs > 0 && VisionMemAt && A_TickCount - VisionMemAt <= maxAgeMs)
 		{
@@ -296,7 +305,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			}
 		Sleep(100)
 		}
-	vcOut := V1Obj({me: "", cards: [], ms: ""})
+	vcOut := V1Obj({me: "", cards: [], ms: "", rootW: "", rootH: "", plateSchool: ""})
 	Loop Parse, vcAns, "`n", "`r"
 		{
 		vcF := StrSplit(A_LoopField, "|")
@@ -317,12 +326,16 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			vcCard := V1Obj({slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
 				, pips: NavNum(vcF[8]), xpip: vcF[9] = 1, shadow: NavNum(vcF[10]), castable: vcF[11], tc: vcF[12] = 1, item: vcF[13] = 1
 				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(V1At(vcF, 18)), schoolpips: V1At(vcF, 19)
-				, enchfx: V1At(vcF, 20), valueench: V1At(vcF, 21), tid: V1At(vcF, 22), text: V1At(vcF, 23), heads: V1At(vcF, 24), boosts: V1At(vcF, 25), nf: vcF.Length})
+				, enchfx: V1At(vcF, 20), valueench: V1At(vcF, 21), tid: V1At(vcF, 22), text: V1At(vcF, 23), heads: V1At(vcF, 24), boosts: V1At(vcF, 25), nf: vcF.Length
+				, l: NavNum(V1At(vcF, 26)), t: NavNum(V1At(vcF, 27)), r: NavNum(V1At(vcF, 28)), b: NavNum(V1At(vcF, 29))})
 			vcCard.num := RegExMatch(vcCard.value, "\d+", &vcNum) ? vcNum[0] + 0 : ""
 			vcOut.cards.Push(vcCard)
 			}
 		else if (V1At(vcF, 1) = "hand")
 			vcOut.ms := V1At(vcF, 3)
+		;(v0.9.0: the GUI root's size the cards' boxes are in - an older helper has no such line)
+		else if (V1At(vcF, 1) = "root")
+			vcOut.rootW := NavNum(V1At(vcF, 2)), vcOut.rootH := NavNum(V1At(vcF, 3))
 		}
 	vcGaveUp := 0
 	if (!IsObject(vcOut.me))
@@ -330,13 +343,53 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 		VisionCardsWhy := "an odd answer: " SubStr(RegExReplace(vcAns, "\s+", " "), 1, 60)
 		return VisionCardsKeep("")
 		}
-	;(the wizard on screen another school than the game's memory's: another client's - not used)
+	;(the wizard on screen another school than the game's memory's: another client's - not used. Only while more than one
+	;game runs, though: with one, the memory's can't be another client's, and the badge read by your plate was another
+	;wizard's - a party battle, where player.png can match a teammate's plate (PlayerPlates2) - so the hand is kept, said
+	;once a pair (v0.9.0: before, the whole memory hand was thrown away for the round - every memory cast, false-match drop
+	;and memory pip read lost))
 	if (vcOut.me.school != "" && school != "" && V1IsFunc("BadgeNumber") && BadgeNumber.Call(school) && Format("{:L}", school) != vcOut.me.school)
 		{
-		VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
-		return VisionCardsKeep("")
+		if (VisionGameClients() != 1)
+			{
+			VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
+			return VisionCardsKeep("")
+			}
+		vcOut.plateSchool := Format("{:L}", school)
+		if (!vcSaid.Has(vcOut.me.school "|" vcOut.plateSchool))
+			vcSaid[vcOut.me.school "|" vcOut.plateSchool] := 1, DebugLog("Vision: the game's memory says your school is " vcOut.me.school ", the badge read by your plate " vcOut.plateSchool " - one game running, so that badge was another wizard's (a party battle?): the memory's hand kept (said once)")
 		}
 	return VisionCardsKeep(vcOut)
+	}
+
+;How many game windows there are (VisionCards: not one - the game's memory may be another client's), 0 none found
+VisionGameClients()
+	{
+	try
+		return WinGetCount("ahk_class " GameClass " ahk_exe " GameExe)
+	catch
+		return 0
+	}
+
+;A card of the hand from the game's memory (VisionCards' hand, card one of its cards) in screen pixels: x, y the middle
+;of its box (QuickSell.ahk QsPx's rule: GameLeft + its GUI units over the root's width x GameW). False, x and y "": its
+;box or the root not read (an older helper), the box not inside the root, or the pixel off the game window. It clicks
+;nothing: a click there is KillCalc.ahk's (MemCardAt - memclicks, off, and only once MemBoxCheck has seen the boxes line up)
+VisionCardPx(hand, card, &x, &y)
+	{
+	x := "", y := ""
+	if (!IsObject(hand) || !IsObject(card) || hand.rootW = "" || hand.rootH = "" || hand.rootW <= 0 || hand.rootH <= 0 || GameW <= 0)
+		return false
+	if (card.l = "" || card.t = "" || card.r = "" || card.b = "" || card.r <= card.l || card.b <= card.t)
+		return false
+	if (card.l < -2 || card.t < -2 || card.r > hand.rootW + 2 || card.b > hand.rootH + 2)
+		return false
+	vcpX := Round(GameLeft + (card.l + card.r) / 2 * GameW / hand.rootW)
+	vcpY := Round(GameTop + (card.t + card.b) / 2 * GameH / hand.rootH)
+	if (vcpX < GameLeft || vcpY < GameTop || vcpX >= GameLeft + GameW || vcpY >= GameTop + GameH)
+		return false
+	x := vcpX, y := vcpY
+	return true
 	}
 
 ;VisionCards' answer kept, with its why, for its maxAgeMs
@@ -803,7 +856,10 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 ;planning phase: {me: the wizard's own (or ""), foes: the other side's, parts: all} - each {me (1 the wizard's own), team,
 ;name (the mob's - "" a wizard), health, max, boss (1: the game's own boss flag), title, rank, school (its mob's - "" not
 ;known), player (1 a wizard), gid, x (the middle of its plate across the game's window, 0..1 - "" not read or an older
-;helper)}. "" when it can't be read - navmem:0, the helper not running or older (no /battle), dual
+;helper), l, t, r, b (v0.9.0: its plate's box across and down the game's window, 0..1 each - "" not read or an older
+;helper; NavPlatePx turns it into pixels - NOT CHECKED against the screen yet), hide (1: the game hides its health -
+;m_HideCurrentHP: its health may not be what the plate shows; 0 not, "" not read)}. "" when it can't be read - navmem:0,
+;the helper not running or older (no /battle), dual
 ;mode, not in a battle's planning phase, the readers being made: NavBattleWhy says why (after an ERR or no answer not
 ;asked again for 5 s; an older helper's "unknown request": 60 s)
 NavBattle(timeoutMs := 700)
@@ -852,7 +908,9 @@ NavBattle(timeoutMs := 700)
 			continue
 		nbP := V1Obj({me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
 			, boss: (nbF[7] = "1" ? 1 : nbF[7] = "0" ? 0 : ""), title: Trim(nbF[8]), rank: NavNum(nbF[9]), school: Trim(nbF[10])
-			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""})
+			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""
+			, l: NavNum(V1At(nbF, 14)), t: NavNum(V1At(nbF, 15)), r: NavNum(V1At(nbF, 16)), b: NavNum(V1At(nbF, 17))
+			, hide: (V1At(nbF, 18) = "1" ? 1 : V1At(nbF, 18) = "0" ? 0 : "")})
 		nbOut.parts.Push(nbP)
 		if (nbP.me && !IsObject(nbOut.me))
 			nbOut.me := nbP
@@ -867,6 +925,67 @@ NavBattle(timeoutMs := 700)
 		if (!nbP.me && (nbOut.me.team = "" || nbP.team = "" ? !nbP.player : nbP.team != nbOut.me.team))
 			nbOut.foes.Push(nbP)
 	return nbOut
+	}
+
+;A participant's plate (NavBattle's, p one of its parts) in screen pixels: x, y the middle of its box (fractions of the game's
+;window, as /battle gives them). False, x and y "": the box not read (an older helper, the wizard's own read without its
+;window), not inside the window, or empty. It clicks nothing: a click there (memclicks, off) is the caller's
+NavPlatePx(p, &x, &y)
+	{
+	x := "", y := ""
+	if (!IsObject(p) || p.l = "" || p.t = "" || p.r = "" || p.b = "" || p.r <= p.l || p.b <= p.t || GameW <= 0)
+		return false
+	if (p.l < -0.002 || p.t < -0.002 || p.r > 1.002 || p.b > 1.002)
+		return false
+	x := Round(GameLeft + (p.l + p.r) / 2 * GameW), y := Round(GameTop + (p.t + p.b) / 2 * GameH)
+	return true
+	}
+
+;The round's phase from the game's memory, cheaply (the helper's /phase - READ-ONLY, vision\handmem.py HandMem.phase: no
+;spell read, about a ms): {state ("none" not in a battle, "round" in one out of the planning phase, "waiting" planning with
+;no card shown but cards in the hand - one's chosen, "changing" the cards shown not as many as the hand, "hand" as many),
+;inBattle, planning (1/0), shown, own (card windows shown, those but the pet's), size (the hand list's), ms, why}. ""
+;when it can't be read - navmem:0, the helper not running or older (no /phase), dual mode, the game not read: VisionPhaseWhy
+;says why (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s).
+;v0.9.0: read for the log only (Autofarmer.ahk CastPhaseShadow) - nothing acts on it till what the hand does between a
+;card's click and its target's, and after a cast goes out, has been seen in the game (TODO.md goal 3: the cast checks and
+;the round's start from memory - TargetPending, CastWentOut, BattleLoop's TestRound)
+VisionPhase(timeoutMs := 300)
+	{
+	global VisionPhaseWhy, VisionPhaseWaitUntil ; (v1 globals it sets)
+	VisionPhaseWhy := ""
+	if (!Stat("navmem") || !VisionOn || dualmode == 1)
+		{
+		VisionPhaseWhy := !Stat("navmem") ? "navmem:0 in PlayerStats.txt" : !VisionOn ? "the vision helper isn't running" : "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (VisionPhaseWaitUntil && A_TickCount < VisionPhaseWaitUntil)
+		{
+		VisionPhaseWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	vpAns := Trim(VisionGet("/phase", timeoutMs, true), " `t`r`n")
+	if (vpAns = "")
+		{
+		VisionPhaseWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		VisionPhaseWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	VisionPhaseWaitUntil := 0
+	vpF := StrSplit(vpAns, "|")
+	;(v1: a field that isn't there read blank)
+	if (V1At(vpF, 1) = "none")
+		{
+		VisionPhaseWhy := Trim(SubStr(vpAns, 6))
+		return ""
+		}
+	if (V1At(vpF, 1) != "phase" || vpF.Length < 8)
+		{
+		VisionPhaseWhy := "an odd answer: " SubStr(vpAns, 1, 60)
+		return ""
+		}
+	return V1Obj({state: Trim(vpF[2]), inBattle: vpF[3] = "1" ? 1 : 0, planning: vpF[4] = "1" ? 1 : 0, shown: NavNum(vpF[5]), own: NavNum(vpF[6])
+		, size: NavNum(vpF[7]), ms: NavNum(vpF[8]), why: Trim(V1At(vpF, 9))})
 	}
 
 ;The game's UI scale from its memory (the helper's /uiroot - READ-ONLY: the GUI root's size in GUI units, vision\navmem.py
@@ -1299,4 +1418,5 @@ VisionBlank()
 	global NavBagWaitUntil := "", NavGuiWhy := "", NavGuiWaitUntil := "", NavItemsWhy := "", NavItemsWaitUntil := "", NavUiWhy := ""
 	global NavUiWaitUntil := "", NavUiRootW := ""
 	global NavGuiTreeWhy := "", NavGuiTreeWaitUntil := ""
+	global VisionPhaseWhy := "", VisionPhaseWaitUntil := ""
 	}

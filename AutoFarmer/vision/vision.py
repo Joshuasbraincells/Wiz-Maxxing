@@ -48,7 +48,13 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   or bubble boosts by school: "ice:35,storm:35,fire:35", "all:25" (every school);
                                                   either "?" when it can't be trusted (not all of the card read, a head
                                                   of an odd kind or school), "" none - handmem.heads_field /
-                                                  boosts_field; an older helper has no fields 24-25)
+                                                  boosts_field; an older helper has no fields 24-25);
+                                                  l|t|r|b (26-29, v0.9.0) the card's box in the GUI's root, GUI units
+                                                  (its m_Window plus every window's left / top on the way down - NOT
+                                                  CHECKED against the screen yet: AutoFarmer's MemBoxCheck logs it
+                                                  against /hand's boxes), "" not read
+                                               root|<w>|<h>                  (v0.9.0: the GUI root's size in the same
+                                                                             units - only when it's read)
                                                hand|<cards>|<ms>
   /badge?x1=&y1=&x2=&y2=&scale=&schools=  -> one line per school whose badge is there: "school|x|y|dist",
                                              best first ("unclear": two schools too close at the best spot)
@@ -257,7 +263,8 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /battle                                 -> the battle's participants, read from the game's memory (read-only, see
                                              vision\bossmem.py) - in a battle's planning phase - one line each, the
                                              wizard's own first:
-                                               part|me|team|name|health|max|boss|title|rank|school|player|gid|x
+                                               part|me|team|name|health|max|boss|title|rank|school|player|gid|x|
+                                                  l|t|r|b|hide
                                                                      (me 1: the wizard's own; team the game's number -
                                                                      the wizard's side vs the enemies'; name the mob's
                                                                      ("" a wizard); health and max its health now and
@@ -265,10 +272,25 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      rank, school its mob's template's (as /mobs');
                                                                      player 1 a wizard; gid its owner's global id; x
                                                                      the middle of its plate across the game's window,
-                                                                     0..1 (its GUI rect over the root's) - "" a field
-                                                                     not read)
+                                                                     0..1 (its GUI rect over the root's); l|t|r|b
+                                                                     (v0.9.0) its plate's box across and down the
+                                                                     game's window, 0..1 each (NOT CHECKED against the
+                                                                     screen yet); hide 1: the game hides its health
+                                                                     (m_HideCurrentHP) - "" a field not read)
                                              or one line "none|<why>" (not in a battle's planning phase, the readers
                                              being made - once per game -, the game not running...)
+  /phase                                  -> the round's phase from the game's memory, cheaply (read-only, no spell read
+                                             - vision\handmem.py HandMem.phase, about a ms):
+                                               phase|state|in battle|planning|shown|own|size|ms|why
+                                                                     (state none: not in a battle; round: in one, out of
+                                                                     the planning phase; waiting: planning, no card
+                                                                     shown but cards in the hand list - one's chosen;
+                                                                     changing: the cards shown not as many as the list;
+                                                                     hand: as many - not checked card by card as /cards
+                                                                     does; shown the card windows shown, own those but
+                                                                     the pet's, size the hand list's; 1/0 flags, "" not
+                                                                     read)
+                                             or "none|<why>" when the game can't be read
   /uiroot                                 -> the game's GUI root's size in GUI units, read from the game's memory
                                              (read-only - navmem.ui_root): "root|<w>|<h>" (1827|1027 at 2560x1440,
                                              UI 1.144 - the window's pixels over it are the GUI's scale; AutoFarmer
@@ -1955,7 +1977,9 @@ def cards_answer():
     r, why = nav_reader().cards()
     _rec_hook('saw_hand', r)
     text = handmem.answer(r, why)
-    key = '\n'.join(ln for ln in text.split('\n') if not ln.startswith('hand|'))
+    # (logged when the cards change - not their boxes, fields 26-29, nor the root line: a card zoomed up or the hand
+    # sliding back isn't a new hand)
+    key = '\n'.join('|'.join(ln.split('|')[:25]) for ln in text.split('\n') if not ln.startswith(('hand|', 'root|')))
     if key != CARDS_LOGGED['text']:
         CARDS_LOGGED['text'] = key
         if text.startswith('none|'):
@@ -2233,9 +2257,26 @@ def plate_x(p):
         return ''
 
 
+def plate_box(p):
+    """a participant's plate as fractions of the client: [left, top, right, bottom], each 0..1 (its box - in the root,
+    bossmem's GUI units - over the root's width / height, as plate_x), four '' when it isn't read (the wizard's own when
+    no window holds it: source handmem) or is empty. NOT CHECKED against the screen yet (v0.9.0)"""
+    b, r = p.get('box'), p.get('root')
+    try:
+        w, h = r[2] - r[0], r[3] - r[1]
+        if w > 0 and h > 0 and b[2] > b[0] and b[3] > b[1]:
+            return [f'{b[0] / w:.4f}', f'{b[1] / h:.4f}', f'{b[2] / w:.4f}', f'{b[3] / h:.4f}']
+    except (TypeError, IndexError):
+        pass
+    return ['', '', '', '']
+
+
 def battle_lines(parts, why=''):
-    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x a
-    participant (the wizard's own first), or none|<why> - x (plate_x) last: an older bot reads the first 12"""
+    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x|
+    l|t|r|b|hide a participant (the wizard's own first), or none|<why> - x (plate_x) the 13th: an older bot reads the
+    first 12; l|t|r|b (plate_box: the plate's box across and down the client, 0..1) and hide (1: the game hides its
+    health - m_HideCurrentHP - its health field may not be what the plate shows; 0 not, '' not read) after it (v0.9.0):
+    a bot before that reads its 13"""
     if not parts:
         return ['none|' + mob_cell(why or 'not in a battle')]
     out = []
@@ -2245,7 +2286,8 @@ def battle_lines(parts, why=''):
                              mob_cell(p.get('health')), mob_cell(p.get('max_health')), mob_cell(p.get('boss')),
                              mob_cell(mob.get('title')), mob_cell(mob.get('rank')),
                              mob_cell(mob.get('school') or (p.get('school') or '').capitalize() or None),
-                             mob_cell(p.get('player')), mob_cell(p.get('owner')), plate_x(p)]))
+                             mob_cell(p.get('player')), mob_cell(p.get('owner')), plate_x(p)]
+                            + plate_box(p) + [mob_cell(p.get('hide_hp'))]))
     return out
 
 
@@ -3653,7 +3695,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         # (a read of the game's memory the walker waits on: placements' builds in their thread wait at their next step
         # meanwhile - the GIL: a cold zone file read in another thread took a /nav past its 150 ms)
-        gated = u.path in GATED or (u.path == '/cards' and 'x1' not in q)
+        gated = u.path in GATED or u.path == '/phase' or (u.path == '/cards' and 'x1' not in q)
         if gated:
             places_busy(True)
             GATE.enter()
@@ -3813,6 +3855,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(duel_lines(got, r)))
             if u.path == '/cards' and 'x1' not in q:
                 return self.reply(cards_answer())
+            if u.path == '/phase':
+                # (the round's phase alone - no spell read, about a ms: vision\handmem.py HandMem.phase, read-only; gated
+                # as memory /cards is)
+                import handmem
+                p, why = handmem.nav_phase(nav_reader(), wait=0.3)
+                return self.reply(handmem.phase_line(p, why))
             if u.path == '/mobs':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

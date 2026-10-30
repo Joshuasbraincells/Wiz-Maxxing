@@ -177,7 +177,7 @@ PartyKey(name)
 PartyBattleRole()
 	{
 	global
-	local want, h, p, bx, by
+	local want, h, p, bx, by, pbrM
 	BattleRole := "hitter", HammerName := "", HammerSlot := 0, HammerPlan := ""
 	want := PartyBattleSet()
 	if (want = "hitter" || DualBattle = 1 || BattleTeam() < 2)
@@ -197,8 +197,11 @@ PartyBattleRole()
 	if (!IsObject(p))
 		return PartyRoleNote(h.wiz "'s name plate wasn't read this round - this wizard hits")
 	hammerX := p.x + Px(25), hammerY := p.y + Px(8)
-	;(its school: as it says, else its plate's badge - left of its name)
-	HammerSchool := BadgeNumber(h.school) ? h.school : BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), &bx, &by, p.x - Px(45), p.y + Px(15))
+	;(its school: as it says, else the game's memory's for the wizard at its plate (v0.9.0 - PartyMemAlly), else its plate's
+	;badge - left of its name)
+	pbrM := BadgeNumber(h.school) ? "" : PartyMemAlly(V1IsFunc("NavBattle") ? NavBattle.Call() : "", p.x, false)
+	HammerSchool := BadgeNumber(h.school) ? h.school : (IsObject(pbrM) && BadgeNumber(pbrM.school)) ? pbrM.school
+		: BestBadge(p.x - Px(100), p.y - Px(60), p.x + Px(10), p.y + Px(80), &bx, &by, p.x - Px(45), p.y + Px(15))
 	BattleRole := want, HammerName := h.wiz, HammerSlot := h.slot
 	;(its planned hit's schools - the boosts are for them: KillCalc.ahk BoostSearch, BoostPick)
 	HammerPlan := PartySchools(h.plan)
@@ -386,21 +389,26 @@ PartyReblade(h)
 ;The ally on your side lowest on health this round (the healer): each of your side's plates but yours read (Autofarmer.ahk
 ;PlateHealth - a low reading only with 3 of its 4 reads agreeing, as for your own). PartyLowX/Y: its plate (the name),
 ;PartyLowPct, PartyLowName ("" none read). Read once a round. True if one was read
+;v0.9.0: each one's health from the game's memory first (PartyMemAlly - the wizard there by NavBattle, read for sure); the
+;plates themselves, where a heal is clicked, still the ones read off the screen (ReadSidePlates)
 PartyLowest()
 	{
 	global
-	local i, p, r, pct, limit, key
+	local i, p, r, pct, limit, key, plB
 	key := BlDuel "|" roundnumber
 	if (PartyLowKey = key)
 		return PartyLowName != ""
 	PartyLowKey := key, PartyLowX := "", PartyLowY := "", PartyLowPct := 101, PartyLowName := ""
 	limit := StatOr("healat", 40)
 	ReadSidePlates()
+	plB := V1IsFunc("NavBattle") ? NavBattle.Call() : ""
 	for i, p in SidePlates
 		{
 		if (p.me)
 			continue
-		r := PlateHealth(p.x, p.y)
+		r := PartyMemAlly(plB, p.x)
+		if (!IsObject(r))
+			r := PlateHealth(p.x, p.y)
 		if (!IsObject(r))
 			{
 			DebugLog("  " p.name "'s health: not read for sure")
@@ -413,11 +421,38 @@ PartyLowest()
 			DebugLog("  " p.name "'s health: read " r.cur "/" r.max " only " r.votes " times out of 4 - not sure enough to heal")
 			continue
 			}
-		DebugLog("  " p.name "'s health: " r.cur "/" r.max " (" pct "%)")
+		DebugLog("  " p.name "'s health: " r.cur "/" r.max " (" pct "%)" (V1At(r, "src") != "" ? " - " r.src : ""))
 		if (pct < PartyLowPct)
 			PartyLowPct := pct, PartyLowName := p.name, PartyLowX := p.x + Px(25), PartyLowY := p.y + Px(8)
 		}
 	return PartyLowName != ""
+	}
+
+;An ally in the game's memory (v0.9.0 - b: Vision.ahk NavBattle's battle, READ-ONLY) whose plate is at x (a side plate's
+;name start, ReadSidePlates'): of the wizards on your side (player, your team, not you) the one whose plate's box holds x
+;across (its l..r - one only), else - no boxes: an older helper - the one whose plate's middle is nearest, within Px(160).
+;{cur, max, votes: 3 (read, not guessed: sure enough to heal on), school (its own, lower case - "" not read), src}; "" none
+;there, or (health 1) its health not read, hidden, or 0 (out of the battle)
+PartyMemAlly(b, x, health := 1)
+	{
+	if (!IsObject(b) || !IsObject(b.me) || !IsObject(b.parts) || x = "" || b.me.team = "")
+		return ""
+	pmaIn := [], pmaNear := "", pmaD := ""
+	for pmaI, pmaP in b.parts
+		{
+		if (pmaP.me || !pmaP.player || pmaP.team != b.me.team)
+			continue
+		if (pmaP.l != "" && pmaP.r != "" && x >= GameLeft + pmaP.l * GameW && x <= GameLeft + pmaP.r * GameW)
+			pmaIn.Push(pmaP)
+		if (pmaP.x != "" && (pmaD = "" || Abs(GameLeft + pmaP.x * GameW - x) < pmaD))
+			pmaNear := pmaP, pmaD := Abs(GameLeft + pmaP.x * GameW - x)
+		}
+	pmaA := (pmaIn.Length = 1) ? pmaIn[1] : (!pmaIn.Length && IsObject(pmaNear) && pmaNear.l = "" && pmaD <= Px(160)) ? pmaNear : ""
+	if (!IsObject(pmaA))
+		return ""
+	if (health && (pmaA.health = "" || pmaA.max = "" || pmaA.max <= 0 || pmaA.health <= 0 || pmaA.health > pmaA.max || pmaA.hide = 1))
+		return ""
+	return V1Obj({cur: pmaA.health, max: pmaA.max, votes: 3, school: StrLower(Trim(pmaA.school)), src: "the game's memory"})
 	}
 
 ;The healer: the ally lowest on health (PartyLowest) under healat % and lower than you - a heal for one wizard on it, or
