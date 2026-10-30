@@ -7,6 +7,7 @@ SettingsBlank(), AlertsBlank(), DashboardBlank(), BugReportBlank() ; (v2 port: v
 DungeonsBlank(), CollectBlank(), NetworkBlank(), DecksBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 QuickSellBlank(), HotkeysBlank(), SpellsBlank(), WalkerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 MouseSteerBlank(), PlannerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+GearBlank() ; (v2-only: Gear.ahk's globals blank at start too - CONVENTIONS.md "Blank start")
 UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
@@ -3397,6 +3398,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Network.ahk"
 #Include "%A_ScriptDir%\Decks.ahk"
 #Include "%A_ScriptDir%\QuickSell.ahk"
+#Include "%A_ScriptDir%\Gear.ahk"
 #Include "%A_ScriptDir%\Hotkeys.ahk"
 #Include "%A_ScriptDir%\Spells.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\Walker.ahk"

@@ -326,6 +326,20 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              is still read once to find it, as /gui does - not those in hidden ones
                                              without all=1); capped 1: cut short (with matches 0: the window may be past
                                              where finding it stopped - not "no such window")
+  /gear[?school=&level=&role=hitter|healer|blader&weights=off:1,def:0.5,...&margin=2&sets=1&hp=&damage=&pierce=&crit=
+       &block=&acc=&resist=&pp=&heal=&incheal=][&run=<name>&mark=1|&end=1&slots=hat,robe,...&stopafter=30]
+                                          -> the worn gear and the backpack's from the game's memory (read-only -
+                                             vision\gearmem.py: each piece's equip effects and requirements, NOT
+                                             CONFIRMED in the game yet) and the swap plan for the wizard's totals given
+                                             (vision\gearrank.py - advice: AutoFarmer's Gear.ahk equips nothing yet):
+                                             gearrank.gear_lines - gear|..., stats|..., worn|slot|gid|tid|name|display|
+                                             level|stats|sets, item|gid|tid|name|display|slot|verdict|delta|basis|why|
+                                             stats|reqs|crowns|nosell|sets, plan|slot|gid|tid|name|worn gid|worn name|
+                                             delta|basis|held|why, note|...; run= a dungeon run's drop log in
+                                             AutoFarmer\learned\drops (mark=1 at its start: the backpack's ids kept;
+                                             end=1 at its end: drop|tid|name|slot|display|count|first a new piece,
+                                             run|name|runs|dry|stopafter|done|why|new|marked - slots none: the
+                                             dungeon's from resources\dungeons_known.txt); or "none|<why>"
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -2043,6 +2057,26 @@ def bag_answer():
         BAG_LOGGED['key'] = key
         log('/bag (memory): ' + ' / '.join(ln for ln in lines if not ln.startswith(('cat|', 'set|', 'setitem|', 'crownshop|')))[:600])
     return lines
+
+
+def gear_lines_for(q):
+    """/gear: the gear from the game's memory (navmem's reader, read-only - vision\\gearmem.py) through gearrank.answer -
+    the swap plan for the totals in q, and with run= the run's drop log in AutoFarmer\\learned\\drops (the catalogue,
+    resources\\dungeons_known.txt, for a run with no slots); its gear|, plan| and run| lines logged. Never raises"""
+    import gearrank
+    try:
+        r, why = nav_reader().gear(wait=2.0)
+        known = ''
+        try:
+            with open(os.path.join(ROOT, 'resources', 'dungeons_known.txt'), encoding='utf-8', errors='replace') as f:
+                known = f.read()
+        except OSError:
+            pass
+        lines = gearrank.answer(r, why, q, os.path.join(ROOT, 'learned', 'drops'), known)
+        log('/gear (memory): ' + ' / '.join(ln for ln in lines if ln.startswith(('gear|', 'plan|', 'run|', 'none|')))[:600])
+        return lines
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ["none|the gear couldn't be read (%r)" % (e,)]
 
 
 def cards_by_school(c):
@@ -4199,6 +4233,11 @@ class Handler(BaseHTTPRequestHandler):
                 # (the backpack, the HUD's tips, the backpack page's N/M - vision\bagmem.py, read-only: AutoFarmer's
                 # QuickSell.ahk)
                 return self.reply('\n'.join(bag_answer()))
+            if u.path == '/gear':
+                # (the worn gear and the backpack's with their equip effects and requirements - vision\gearmem.py,
+                # read-only - and gearrank.py's swap plan; run=&mark=1 / end=1: a dungeon run's drop log in
+                # learned\drops - AutoFarmer's Gear.ahk)
+                return self.reply('\n'.join(gear_lines_for(q)))
             if u.path == '/gui':
                 # (the game's windows by name - w=Anc/Name,... - and the message box up: where QuickSell.ahk may click)
                 import bagmem

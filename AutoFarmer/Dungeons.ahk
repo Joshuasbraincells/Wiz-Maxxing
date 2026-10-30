@@ -1,7 +1,7 @@
 #Warn Unreachable, Off
 ; Dungeons.ahk - dungeon farming: a run you record once, walked again and again (the dashboard's Dungeons tab).
-; AHK v1.1, functions and labels only; #Included by Autofarmer.ahk. Needs the vision helper and the game's memory
-; (read-only: where the wizard is, which zone) - the same as walking by the map.
+; AutoHotkey v2 (ported from v1.1), functions and labels; #Included by Autofarmer.ahk. Needs the vision helper and the
+; game's memory (read-only: where the wizard is, which zone) - the same as walking by the map.
 ;
 ; Recording (Record a run): stand where the run starts - outside the dungeon, by its sigil - and play one run the
 ; way the bot should: X at the sigil, walk to the boss (fighting on the way), and walk back out to where you started.
@@ -14,13 +14,25 @@
 ; presses X where you did, lets every battle be fought (the battle loop - the bot on, F6), Spaces through a
 ; dialogue, and at the end starts over - so many times (0: till you stop it). A loading screen into a zone further
 ; on: it carries on from there. Walking off (F8), you playing, a battle: it waits. Somewhere the recording doesn't
-; go (another zone - a potion run, a defeat), stuck for good, or the game's memory unreadable: it stops and says
-; why (debug.log "Dungeons: ...", the Dungeons tab, Discord).
+; go (another zone), stuck for good, or the game's memory unreadable: it stops and says why (debug.log "Dungeons: ...",
+; the Dungeons tab, Discord). A defeat or a potion run that leaves the wizard in an earlier zone of the run (v0.9.0): on
+; from the nearest step there, 3 times a run at most.
+;
+; Between runs (v0.9.0, TODO goal 5): a run that ends back where it starts is "between runs" from its end to its first X
+; (or another zone) - its drops looked at and the gear pass (Gear.ahk - Settings: gearswap, a rehearsal: the plan logged,
+; nothing equipped), and a full backpack quick sold there (QuickSell.ahk - quicksell on; the dungeon's hold still holds it
+; unless the gear pass looked through it or "...even with a dungeon's drops in it" is ticked). "Until its gear is swapped"
+; (the tab's box - untilgear| in the run's file): once every slot it drops (slots|, else resources\dungeons_known.txt's) is
+; worn with its own drop, or stopafter| runs (30) brought no upgrade, it goes on to its "then" run (next|) when that starts
+; where the wizard stands - else it stops and says where to take the wizard (Discord). A boss's own deck: boss|<name>|<deck
+; id> lines (Decks.ahk DeckPick). Older versions skip these lines. python vision\dglint.py checks a run's file.
 
 ;The run being walked: {name, file, steps [{kind, zone, x, y, z}], i (the step walked to), runs (done), want (0
 ;till stopped), the step's progress (best, bestLeft, bestAt, unstuck), fightUntil / fightBattles (waiting at a
 ;battle spot), loadUntil (waiting for a loading screen out of zone fromZone), push (a spot past a doorway to walk at
-;meanwhile), misses, seen (battles at the last look)} - "" when none
+;meanwhile), misses, seen (battles at the last look); v0.9.0: between (1 a run just done back at its start - the pass
+;due, 2 done, "" in the run), resumes (back in an earlier zone this run), slots, stopafter, next, untilgear, bosses
+;([{name, deck}]), gearSaid} - "" when none
 global DgRun
 ;Recording: on, its steps so far, the last spot recorded, its zone, when the Pass button was last up
 global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt, DgRecPrev, DgRecOut
@@ -31,6 +43,9 @@ global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote, DgDeck, DgDeckT
 global DgRecKey
 ;(the Deck box's decks by their place in it - 2 on; 1 is "(none)")
 global DgDeckIds
+;(v0.9.0: the tab's "Until its gear is swapped" box, its "then" label and list - and the list's runs by their place in it,
+;2 on; 1 is "(stop)")
+global DgUntilGear, DgNextT, DgNextRun, DgNextNames
 
 ;The folder the runs are kept in
 DgDir()
@@ -38,10 +53,11 @@ DgDir()
 	return A_ScriptDir "\dungeons"
 	}
 
-;A run's file read: {name, file, steps} - "" if it can't be read or has fewer than two steps
+;A run's file read: {name, file, steps, deck, slots, stopafter, next, untilgear, bosses} - "" if it can't be read or has
+;fewer than two steps
 DgLoad(file)
 	{
-	steps := [], name := "", deck := ""
+	steps := [], name := "", deck := "", slots := "", stopafter := "", nxt := "", untilgear := 0, bosses := []
 	;(v1: a file that can't be read - the loop skipped; v2 throws)
 	try
 	Loop Read, file
@@ -56,6 +72,19 @@ DgLoad(file)
 		;(the deck the run's fought with - Decks.ahk; older versions skip the line)
 		else if (f[1] = "deck")
 			deck := RegExReplace(V1At(f, 2), "[^\w-]")
+		;(v0.9.0 - older versions skip these: the gear slots the dungeon drops, the runs with no upgrade before its gear counts
+		;as all swapped, the run after it, "until its gear is swapped", a boss's own deck - Gear.ahk, Decks.ahk DeckPick;
+		;python vision\dglint.py checks them)
+		else if (f[1] = "slots")
+			slots := RegExReplace(StrLower(V1At(f, 2)), "[^a-z, ;/]")
+		else if (f[1] = "stopafter")
+			stopafter := RegExMatch(Trim(V1At(f, 2)), "^\d{1,5}$") ? Trim(V1At(f, 2)) + 0 : ""
+		else if (f[1] = "next")
+			nxt := Trim(V1At(f, 2))
+		else if (f[1] = "untilgear")
+			untilgear := Trim(V1At(f, 2)) = "1" ? 1 : 0
+		else if (f[1] = "boss" && Trim(V1At(f, 2)) != "")
+			bosses.Push(V1Obj({name: Trim(V1At(f, 2)), deck: RegExReplace(V1At(f, 3), "[^\w-]")}))
 		else if (RegExMatch(f[1], "^(walk|x|fight)$") && f.Length >= 5 && f[3] f[4] f[5] != "")
 			steps.Push(V1Obj({kind: f[1], zone: f[2], x: V1Add(f[3], 0), y: V1Add(f[4], 0), z: V1Add(f[5], 0)}))
 		}
@@ -63,7 +92,61 @@ DgLoad(file)
 		return ""
 	if (name = "")
 		SplitPath(file, , , , &name)
-	return V1Obj({name: name, file: file, steps: steps, deck: deck})
+	return V1Obj({name: name, file: file, steps: steps, deck: deck, slots: slots, stopafter: stopafter, next: nxt, untilgear: untilgear, bosses: bosses})
+	}
+
+;The distance across (x, y) between two steps or spots - "" when a coordinate isn't a number (a step's blank: DgLoad keeps
+;one with a coordinate or two)
+DgDist(ddA, ddB)
+	{
+	if (!(V1IsNum(ddA.x) && V1IsNum(ddA.y) && V1IsNum(ddB.x) && V1IsNum(ddB.y)))
+		return ""
+	return Sqrt((ddA.x - ddB.x) ** 2 + (ddA.y - ddB.y) ** 2)
+	}
+
+;A run that ends back where it starts (the same zone, within 400 - Record a run's own warning): between two runs the wizard
+;stands outside the dungeon
+DgEndsAtStart(r)
+	{
+	deaD := DgDist(r.steps[1], r.steps[r.steps.Length])
+	return r.steps[1].zone = r.steps[r.steps.Length].zone && deaD != "" && deaD <= 400
+	}
+
+;The run file named name in the folder (its name| - else its file's name -, not case-sensitive), "" none
+DgFindRun(name)
+	{
+	if (name = "")
+		return ""
+	Loop Files, DgDir() "\*.txt"
+		{
+		SplitPath(A_LoopFilePath, , , , &dfrBase)
+		if (dfrBase = name)
+			return A_LoopFilePath
+		dfrD := DgLoad(A_LoopFilePath)
+		if (IsObject(dfrD) && dfrD.name = name)
+			return A_LoopFilePath
+		}
+	return ""
+	}
+
+;A run's name as its drop log's file name (vision\gearrank.py run_file: no path characters, 80 at most)
+DgRunFile(name)
+	{
+	drfS := Trim(SubStr(RegExReplace(Trim(name), "[^\w .()-]+", "-"), 1, 80), " .")
+	return drfS != "" ? drfS : "run"
+	}
+
+;The Dungeons tab's Gear column for run name: its gear pass's state (learned\drops\<run>.state - written at each run's end
+;with gearswap on): "done", "N runs, M dry", "" none yet - "(until swapped)" when its box is ticked
+DgGearCell(name, untilgear)
+	{
+	dgcF := A_ScriptDir "\learned\drops\" DgRunFile(name) ".state"
+	dgcU := untilgear ? "until swapped" : ""
+	if (!FileExist(dgcF))
+		return dgcU
+	dgcRuns := IniRead(dgcF, "run", "runs", ""), dgcDry := IniRead(dgcF, "run", "dry", ""), dgcDone := IniRead(dgcF, "run", "done", "")
+	dgcT := dgcDone = 1 ? "done" : dgcRuns != "" ? dgcRuns " run" (dgcRuns = 1 ? "" : "s") ", " dgcDry " dry" : ""
+	return dgcT (dgcT != "" && dgcU != "" ? " - " : "") dgcU
 	}
 
 ;The list on the Dungeons tab filled from the folder (the run being walked selected)
@@ -86,7 +169,8 @@ DgListFill()
 		for z in zones
 			nz++
 		when := FormatTime(A_LoopFileTimeModified, "yyyy-MM-dd HH:mm")
-		row := LV.Add("", d.name, d.steps.Length, nz, nx, nf, when, A_LoopFilePath)
+		;(v0.9.0: its gear pass's state after the hidden File column - DgSelected reads the 7th)
+		row := LV.Add("", d.name, d.steps.Length, nz, nx, nf, when, A_LoopFilePath, DgGearCell(d.name, d.untilgear))
 		if (IsObject(DgRun) && DgRun.file = A_LoopFilePath)
 			LV.Modify(row, "Select Focus")
 		}
@@ -114,7 +198,8 @@ DgShow(text := "")
 		if (DgRecording)
 			text := "Recording: " DgRecSteps.Length " steps so far, in " DgRecZone ". Press " HkName(DgRecKey) " (or Stop recording) once you're back where you started."
 		else if (IsObject(DgRun))
-			text := "Running '" DgRun.name "': run " DgRun.runs + 1 (DgRun.want ? " of " DgRun.want : "") ", step " DgRun.i " of " DgRun.steps.Length (Walking ? "" : " - paused (walking off: " HkText("walk") ")")
+			text := "Running '" DgRun.name "': run " DgRun.runs + 1 (DgRun.want ? " of " DgRun.want : "") (DgRun.untilgear ? " (until its gear is swapped)" : "")
+				. (DgRun.between ? ", between runs" : ", step " DgRun.i " of " DgRun.steps.Length) (Walking ? "" : " - paused (walking off: " HkText("walk") ")")
 		else
 			text := "Not running. Record a run, or pick one and click Run."
 		}
@@ -216,8 +301,13 @@ DgRecTickF()
 	;(right after a battle the wizard stands where its circle was: carry on from there)
 	if (nav.zone != DgRecZone)
 		{
-		;(the old zone's last spot - at its doorway - unless it's the last step already: the replay walks on past it)
-		if (IsObject(DgRecPrev) && DgRecPrev.zone = DgRecZone && Sqrt((DgRecPrev.x - DgRecLast.x) ** 2 + (DgRecPrev.y - DgRecLast.y) ** 2) > 30)
+		;(the old zone's last spot - at its doorway - unless it's the last step already: the replay walks on past it. Not right
+		;after an X there, within 100 (v0.9.0): that's the wizard drifting while a sigil counted down, not a doorway - the X took
+		;him through, and a walk step after it had the replay walk on past it, off the sigil, which stops its countdown (DgNext
+		;waits for the load at such a step in a run recorded before))
+		drtDrift := IsObject(DgRecPrev) && DgRecPrev.zone = DgRecZone ? DgDist(DgRecPrev, DgRecLast) : ""
+		drtAfterX := DgRecSteps.Length && DgRecSteps[DgRecSteps.Length].kind = "x"
+		if (drtDrift != "" && drtDrift > 30 && !(drtAfterX && drtDrift <= 100))
 			DgRecAdd("walk", DgRecPrev)
 		DgRecZone := nav.zone
 		DebugLog("Dungeons: recording - into " nav.zone)
@@ -293,46 +383,38 @@ DgRecordStop(save := true)
 
 ;---- Running ----
 
-;The run in file started (times: how many - 0 till stopped; avoid: keep away from mobs on the way)
-DgRunStart(file, times, avoid)
+;The run in file started (times: how many - 0 till stopped; avoid: keep away from mobs on the way; quiet: no message box -
+;a run started by the one before it, its gear all swapped (DgGearDone): why it couldn't start into the log). True started
+DgRunStart(file, times, avoid, quiet := false)
 	{
 	global DgRun, Walking ; (v1 globals it sets)
 	if (DgRecording || IsObject(DgRun))
-		return
+		return false
 	;(battles only - Settings: battlesonly: no run - it walks the wizard; said on the tab and in the log)
 	if (BattlesOnly())
 		{
 		DebugLog("Dungeons: no run - battles only is on (Settings): the bot moves nothing out of battle")
 		DgShow("Battles only is on (Settings): the bot moves nothing out of battle - switch it off to run a dungeon.")
-		return
+		return false
 		}
 	d := DgLoad(file)
 	if (!IsObject(d))
-		{
-		MsgBox("Couldn't read " file " (a run needs at least two steps).", "Dungeons", 262192)
-		return
-		}
+		return DgRunNot(quiet, "Couldn't read " file " (a run needs at least two steps).")
 	if (!WkNavChecked && !WkNavTrusted)
-		{
-		MsgBox("The game's memory hasn't been checked against the quest arrow yet - walk a quest for a minute first (" HkText("walk") "), then run the dungeon.", "Dungeons", 262192)
-		return
-		}
+		return DgRunNot(quiet, "The game's memory hasn't been checked against the quest arrow yet - walk a quest for a minute first (" HkText("walk") "), then run the dungeon.")
 	nav := NavRead(2000)
 	if (!IsObject(nav) || nav.x = "" || nav.zone = "")
-		{
-		MsgBox("The bot can't read where your wizard is from the game's memory (" NavWhy ").", "Dungeons", 262192)
-		return
-		}
+		return DgRunNot(quiet, "The bot can't read where your wizard is from the game's memory (" NavWhy ").")
 	;(v1: a blank times + 0 - blank: till stopped)
 	DgRun := V1Obj({name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: V1Add(times, 0), avoid: avoid, misses: 0, seen: battles
-		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck})
+		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck, between: 0, resumes: 0, slots: d.slots, stopafter: d.stopafter, next: d.next
+		, untilgear: d.untilgear, bosses: d.bosses, gearSaid: 0})
 	;(not at the start: on from the nearest spot in this zone)
 	k := DgNearest(nav)
 	if (!k)
 		{
 		DgRun := ""
-		MsgBox("The wizard is in " nav.zone " - the run '" d.name "' doesn't go there. Go to where it starts (" d.steps[1].zone ") and run it again.", "Dungeons", 262192)
-		return
+		return DgRunNot(quiet, "The wizard is in " nav.zone " - the run '" d.name "' doesn't go there. Go to where it starts (" d.steps[1].zone ") and run it again.")
 		}
 	DgRun.i := k, DgRun.lastStep := A_TickCount, DgRun.loadTries := 0
 	DgFresh()
@@ -340,11 +422,33 @@ DgRunStart(file, times, avoid)
 	if (!Walking)
 		Walking := 1
 	ReleaseKeys()
-	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length (avoid ? " (keeping away from mobs)" : ""))
+	DebugLog("Dungeons: running '" d.name "' " (DgRun.want ? DgRun.want " times" : "till stopped") " - from step " k " of " d.steps.Length (avoid ? " (keeping away from mobs)" : "")
+		. (d.untilgear ? " - until its gear is swapped" (d.next != "" ? ", then '" d.next "'" : "") : ""))
+	if (d.untilgear && !(V1IsFunc("GearMode") && GearMode.Call()))
+		DebugLog("Dungeons: '" d.name "' - until its gear is swapped needs the gear pass (Settings: gearswap): till it's on, it runs as 'Run it " (DgRun.want ? DgRun.want : 0) " times'")
+	if (!DgEndsAtStart(DgRun))
+		DebugLog("Dungeons: '" d.name "' doesn't end where it starts - no gear pass or quick sell between its runs")
 	DgShow()
 	;(its drops are the good gear: the next full backpack held, not quick sold - QuickSell.ahk)
 	if (V1IsFunc("QsDungeonMark"))
 		QsDungeonMark.Call()
+	;(the backpack's items noted - its drops are the new ones at each run's end: Gear.ahk, gearswap on)
+	if (V1IsFunc("GearRunMark"))
+		GearRunMark.Call(DgRun)
+	return true
+	}
+
+;A run that couldn't start (DgRunStart): why in a message box - quiet: into the log and on the tab. False
+DgRunNot(quiet, why)
+	{
+	if (quiet)
+		{
+		DebugLog("Dungeons: no run - " why)
+		DgShow(why)
+		}
+	else
+		MsgBox(why, "Dungeons", 262192)
+	return false
 	}
 
 ;The step nearest the wizard in its zone (1 when it's the start's); 0 if no step is in its zone
@@ -439,7 +543,8 @@ DgZoneAhead(zone)
 DgNext()
 	{
 	r := DgRun
-	cur := r.steps[r.i]
+	ci := r.i
+	cur := r.steps[ci]
 	r.i += 1
 	DgFresh()
 	if (r.i > r.steps.Length)
@@ -448,15 +553,32 @@ DgNext()
 		DebugLog("Dungeons: '" r.name "' - run " r.runs " done")
 		if (r.want && r.runs >= r.want)
 			{
+			;(the last run's drops logged and the gear plan too - Gear.ahk, gearswap on)
+			if (V1IsFunc("GearRunEnd"))
+				GearRunEnd.Call(r)
 			DgStop("done - " r.runs " run" (r.runs = 1 ? "" : "s"), false)
 			TrayTip("Dungeon runs done: " r.runs, "Wizard101 bot", 1)
 			return
 			}
-		;(the next run: a sigil that won't start may be left and come back to once in it too - DungeonStep's r.sigilLeft)
-		r.i := 1, r.sigilLeft := 0
+		;(the next run: a sigil that won't start may be left and come back to once in it too - DungeonStep's r.sigilLeft; back in an
+		;earlier zone 3 times again - r.resumes)
+		r.i := 1, r.sigilLeft := 0, r.resumes := 0
+		;(v0.9.0: back at the start spot outside - a run that ends where it starts: between runs till its first X or another zone -
+		;the drops looked at, the gear pass and a full backpack sold there: DgBetweenRuns, at the next step)
+		r.between := DgEndsAtStart(r) ? 1 : 0
 		}
 	nxt := r.steps[r.i]
-	if (nxt.zone != cur.zone && cur.kind != "x")
+	;(a walk step right after an X in the same zone, close by, into another zone - the recorder's doorway step after a sigil's X:
+	;the wizard drifted while it counted down (recorded so before v0.9.0 - DgRecTickF): no walking on past it - walking off a
+	;sigil stops its countdown -, the loading screen waited for as after the X itself, a try again pressing that X again)
+	pv := ci > 1 ? r.steps[ci - 1] : ""
+	pvD := IsObject(pv) ? DgDist(pv, cur) : ""
+	if (nxt.zone != cur.zone && cur.kind = "walk" && IsObject(pv) && pv.kind = "x" && pv.zone = cur.zone && pvD != "" && pvD <= 100)
+		{
+		DebugLog("Dungeons: step " ci " - a walk " Round(pvD) " from the X before it, into " nxt.zone ": a sigil's countdown - waiting for the load, not walking on")
+		r.push := "", r.loadUntil := A_TickCount + 30000, r.fromZone := cur.zone, r.loadStep := ci - 1, r.loadBattles := battles
+		}
+	else if (nxt.zone != cur.zone && cur.kind != "x")
 		{
 		;(the way the wizard walked to the last spot - from an earlier spot in that zone some way off, not a battle's
 		;or an X's copy of it - 400 further on)
@@ -565,6 +687,13 @@ DungeonStep()
 			}
 		return
 		}
+	;(v0.9.0: a run just done, back at its start spot outside: its drops looked at, the gear pass and a full backpack sold -
+	;once a run, DgBetweenRuns)
+	if (r.between = 1)
+		{
+		DgBetweenRuns()
+		return
+		}
 	nav := DgNavTo(IsObject(r.push) ? r.push : st)
 	if (!IsObject(nav))
 		{
@@ -580,6 +709,9 @@ DungeonStep()
 		return
 		}
 	r.misses := 0
+	;(between runs till the run leaves its start zone - QuickSell.ahk's QsDungeonNow sells nothing from then on)
+	if (r.between && nav.zone != r.steps[1].zone)
+		r.between := 0
 	if (nav.zone != st.zone)
 		{
 		;(a battle while waiting for the load: the countdown or the walk through was cut short - tried again)
@@ -640,7 +772,21 @@ DungeonStep()
 			DgShow()
 			return
 			}
-		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone " (a potion run, a defeat, or a door that didn't load?)")
+		;(v0.9.0: an earlier zone of the run - a defeat's respawn, a potion run's Recall back (the main loop's PotionCheck has had
+		;its look before this step): on from the nearest step of that zone's first visit (DgNearest - its start when that's within
+		;300), 3 times a run at most - a fourth: stopped (defeated again and again?). DgZoneAhead only looks ahead: it used to stop
+		;here at the first defeat)
+		k := DgNearest(nav)
+		if (k && V1N(r.resumes) < 3)
+			{
+			r.resumes := V1N(r.resumes) + 1
+			DebugLog("Dungeons: in " nav.zone " - an earlier zone of the run (a defeat or a potion run?): on from step " k " (" r.resumes " of 3 this run)")
+			r.i := k, r.push := "", r.loadUntil := 0, r.loadTries := 0, r.fightUntil := 0
+			DgFresh()
+			DgShow()
+			return
+			}
+		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone (k ? " - back in an earlier zone of the run 3 times this run (defeated again and again?)" : " (a potion run, a defeat, or a door that didn't load?)"))
 		return
 		}
 	if (r.loadUntil)
@@ -749,6 +895,8 @@ DgArrive(st)
 	r := DgRun
 	if (st.kind = "x")
 		{
+		;(the sigil: in the dungeon from here on - no more selling between runs)
+		r.between := 0
 		ReleaseKeys()
 		Sleep(150)
 		PressKey("x")
@@ -775,6 +923,68 @@ DgArrive(st)
 		return
 		}
 	DgNext()
+	}
+
+;---- Between runs (v0.9.0) ----
+
+;A run done, back at its start spot outside (DungeonStep, once a run: DgRun.between 1): its drops looked at and the gear pass
+;(Gear.ahk GearRunEnd - gearswap on: logged, nothing equipped), a full backpack quick sold here (QuickSell.ahk QsLook -
+;quicksell on: QsDungeonNow lets it while between; the dungeon's hold still holds it unless the gear pass looked through it
+;or "...even with a dungeon's drops in it" is ticked), then "Until its gear is swapped": its gear all swapped - on to its
+;next run, or stopped (DgGearDone). gearswap off: the quick sell's look only - as a battle's end looks
+DgBetweenRuns()
+	{
+	r := DgRun
+	r.between := 2
+	if (KeysDown || HeldW)
+		ReleaseKeys()
+	dbrG := V1IsFunc("GearRunEnd") ? GearRunEnd.Call(r) : ""
+	if (V1IsFunc("QsMode") && QsMode.Call() && V1IsFunc("QsLook"))
+		QsLook.Call("between dungeon runs - back outside '" r.name "'")
+	;(the run stopped meanwhile - F6, battles only, you: nothing more)
+	if (!IsObject(DgRun) || DgRun != r)
+		return
+	;(the time the pass took isn't the step's: not stuck for it)
+	r.lastStep := A_TickCount, r.bestAt := A_TickCount
+	if (!r.untilgear)
+		return
+	if (!IsObject(dbrG) || !IsObject(dbrG.run))
+		{
+		if (!r.gearSaid)
+			r.gearSaid := 1, DebugLog("Dungeons: '" r.name "' - until its gear is swapped: " (V1IsFunc("GearMode") && GearMode.Call() ? "the gear couldn't be read (" NavGearWhy ") - it runs on" : "the gear pass is off (Settings: gearswap) - it runs on as 'Run it " (r.want ? r.want : 0) " times'"))
+		return
+		}
+	if (dbrG.run.done)
+		DgGearDone(r, dbrG.run.why)
+	}
+
+;"Until its gear is swapped" done (DgBetweenRuns): its next run (next| - the tab's "then") started when it starts in the zone
+;the wizard's in (its own "until" and "then" with it, as many times as this one was asked for); else stopped - its next
+;run named in the why (Discord: where to take the wizard)
+DgGearDone(r, why)
+	{
+	dgdFile := r.next != "" ? DgFindRun(r.next) : ""
+	dgdN := dgdFile != "" ? DgLoad(dgdFile) : ""
+	if (r.next = "")
+		{
+		DgStop("its gear is all swapped (" why ")")
+		return
+		}
+	if (!IsObject(dgdN))
+		{
+		DgStop("its gear is all swapped (" why ") - its next run, '" r.next "', isn't in the dungeons folder")
+		return
+		}
+	dgdNav := NavRead(2000)
+	if (!(IsObject(dgdNav) && dgdNav.zone != "" && dgdNav.zone = dgdN.steps[1].zone))
+		{
+		DgStop("its gear is all swapped (" why ") - take the wizard to '" dgdN.name "' (it starts in " dgdN.steps[1].zone ") and run it")
+		return
+		}
+	dgdTimes := r.want, dgdAvoid := r.avoid, dgdName := r.name
+	DgStop("its gear is all swapped (" why ") - on to '" dgdN.name "'", false)
+	if (!DgRunStart(dgdFile, dgdTimes, dgdAvoid, true))
+		AlertSend("dungeon", "Dungeon run stopped", "'" dgdName "' - its gear is all swapped (" why "); its next run, '" dgdN.name "', didn't start (the Dungeons tab, debug.log `"Dungeons: ...`").")
 	}
 
 ;---- The tab's buttons (labels run in the global scope: Dg-named variables only) ----
@@ -821,6 +1031,11 @@ DgDeckPick:
 DgDeckPick()
 	return
 
+;(v0.9.0) The "Until its gear is swapped" box or the "then" list changed: the run's file gets its untilgear| and next| lines
+DgGearPick:
+DgGearPick()
+	return
+
 ;The Deck box filled with your decks (by place: two may share a name, one's name may start another's), the picked run's
 ;own chosen - again after a deck's saved, made or deleted on the Cards tab (DeckLoadAll)
 DgDeckShow()
@@ -861,27 +1076,84 @@ DgDeckSet()
 	for i, k in IsObject(DeckList) ? DeckList : []
 		if (k.id = id)
 			pick := k.name
+	if (!DgSetLine(file, "deck", id))
+		return
+	;(the run being walked: its deck from now on, not from its next start)
+	if (IsObject(DgRun) && DgRun.file = file)
+		DgRun.deck := id, DeckDirty := 1
+	DebugLog("Dungeons: " file " - its deck " (id != "" ? pick : "none (the usual pick)"))
+	}
+
+;A run file's key| line set to value (deck|, untilgear|, next| - "": the line taken out), right after its name| line (else
+;first) - its steps and other lines kept as they are. Written as it was read (the ANSI code page, as FileAppend recorded it)
+;and its date kept (the list's Recorded). False when it couldn't be written (DgDeckSet's way, v0.9.0 for every such line)
+DgSetLine(file, key, value)
+	{
 	;(v1: a file that can't be read - blank, ErrorLevel 1; v2 throws)
 	made := V1Try(FileGetTime, file, "M")
 	text := V1FileRead(file)
 	;(v1's newline was `r`n only: in a file with bare `n lines its ^ didn't start a line there - (*CRLF) gives v1's)
-	text := RegExReplace(text, "m)(*CRLF)^deck\|[^\r\n]*\R?", "")
-	if (id != "")
-		text := RegExMatch(text, "m)(*CRLF)^name\|") ? RegExReplace(text, "m)(*CRLF)^(name\|[^\r\n]*\R?)", "$1deck|" id "`r`n", , 1) : "deck|" id "`r`n" text
-	;(written as it was read - the ANSI code page, as FileAppend recorded it - and its date kept: the list's Recorded)
+	text := RegExReplace(text, "m)(*CRLF)^" key "\|[^\r\n]*\R?", "")
+	;(a $ in the value - a run's name may have one - is a $ in the replacement, not a group)
+	if (value != "")
+		text := RegExMatch(text, "m)(*CRLF)^name\|") ? RegExReplace(text, "m)(*CRLF)^(name\|[^\r\n]*\R?)", "$1" key "|" StrReplace(value, "$", "$$") "`r`n", , 1)
+			: key "|" value "`r`n" text
 	;(v1's FileOpen gave no object when it couldn't open the file; v2 throws)
 	f := V1Try(FileOpen, file ".tmp", "w", "CP0")
 	if (!IsObject(f))
-		return
+		return false
 	f.Write(text)
 	f.Close()
 	V1Do(FileMove, file ".tmp", file, 1)
 	if (made != "")
 		V1Do(FileSetTime, made, file, "M")
-	;(the run being walked: its deck from now on, not from its next start)
-	if (IsObject(DgRun) && DgRun.file = file)
-		DgRun.deck := id, DeckDirty := 1
-	DebugLog("Dungeons: " file " - its deck " (id != "" ? pick : "none (the usual pick)"))
+	return true
+	}
+
+;The tab's "Until its gear is swapped" box and "then" list from the picked run's file (untilgear|, next|) - the list: (stop)
+;and every other run by name
+DgGearShow()
+	{
+	global DgNextNames ; (v1 globals it sets)
+	if (!DashHwnd)
+		return
+	dgsFile := DgSelected()
+	dgsD := dgsFile != "" ? DgLoad(dgsFile) : ""
+	dgsItems := ["(stop)"], dgsWant := 1, DgNextNames := []
+	Loop Files, DgDir() "\*.txt"
+		{
+		if (A_LoopFilePath = dgsFile)
+			continue
+		dgsO := DgLoad(A_LoopFilePath)
+		if (!IsObject(dgsO))
+			continue
+		DgNextNames.Push(dgsO.name), dgsItems.Push(dgsO.name)
+		if (IsObject(dgsD) && dgsD.next != "" && dgsO.name = dgsD.next)
+			dgsWant := dgsItems.Length
+		}
+	Dash["DgUntilGear"].Value := IsObject(dgsD) && dgsD.untilgear ? 1 : 0
+	Dash["DgNextRun"].Delete()
+	Dash["DgNextRun"].Add(dgsItems)
+	Dash["DgNextRun"].Choose(dgsWant)
+	}
+
+;The picked run's "Until its gear is swapped" and "then" written into its file (untilgear|1, next|<name> - off / (stop): the
+;line taken out - DgSetLine); the run being walked: from now on
+DgGearSet()
+	{
+	dgtFile := DgSelected()
+	if (dgtFile = "" || !FileExist(dgtFile))
+		return
+	dgtU := Dash["DgUntilGear"].Value ? 1 : 0
+	dgtPos := Dash["DgNextRun"].Value
+	dgtN := (IsObject(DgNextNames) && dgtPos >= 2 && dgtPos - 1 <= DgNextNames.Length) ? DgNextNames[dgtPos - 1] : ""
+	if (!DgSetLine(dgtFile, "untilgear", dgtU ? 1 : "") || !DgSetLine(dgtFile, "next", dgtN))
+		return
+	if (IsObject(DgRun) && DgRun.file = dgtFile)
+		DgRun.untilgear := dgtU, DgRun.next := dgtN
+	DebugLog("Dungeons: " dgtFile " - until its gear is swapped " (dgtU ? "on" : "off") (dgtN != "" ? ", then '" dgtN "'" : ""))
+	if (dgtU && !(V1IsFunc("GearMode") && GearMode.Call()))
+		DgShow("Until its gear is swapped needs the gear pass: Settings > THE BACKPACK, gearswap (a rehearsal: it logs the plan, equips nothing). Till then the run goes 'Run it N times'.")
 	}
 
 ;###############  (v2 port: v1's labels, as functions)  ###############
@@ -975,9 +1247,9 @@ DgListEvent(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a labe
 	global
 	if (A_GuiEvent = "DoubleClick" && !DgRecording && !IsObject(DgRun))
 		DgRunClick() ; (v1: Gosub DgRunClick - the same thread)
-	;(a run picked: its deck in the Deck box)
+	;(a run picked: its deck in the Deck box; its "Until its gear is swapped" and "then")
 	else if (A_GuiEvent = "I" || A_GuiEvent = "ItemSelect")
-		DgDeckShow()
+		DgDeckShow(), DgGearShow()
 	return
 }
 ;##############################################
@@ -985,6 +1257,14 @@ DgListEvent(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a labe
 DgDeckPick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label - its code ran in the global scope)
 	global
 	DgDeckSet()
+	return
+}
+;##############################################
+;(v0.9.0, written for v2: the "Until its gear is swapped" box and the "then" list - Dashboard.ahk's OnEvent("Click") /
+;OnEvent("Change"), DgGearPick.Bind("Normal"))
+DgGearPick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) {
+	global
+	DgGearSet()
 	return
 }
 
@@ -996,4 +1276,5 @@ DungeonsBlank()
 	global DashTabs := "", DgList := "", DgHelp := "", DgRecBtn := "", DgRecStopBtn := "", DgRunBtn := "", DgStopBtn := "", DgDelBtn := ""
 	global DgFolderBtn := "", DgTimes := "", DgTimesUD := "", DgAvoid := "", DgStatus := "", DgTimesLabel := "", DgTimesNote := "", DgDeck := ""
 	global DgDeckT := "", DgRecKey := "", DgDeckIds := ""
+	global DgUntilGear := "", DgNextT := "", DgNextRun := "", DgNextNames := ""
 	}
