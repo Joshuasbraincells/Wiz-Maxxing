@@ -318,16 +318,24 @@ gate still there with no collision wall by it no longer counts as shut: the
 bot walks through to see; any of the doors by the block going from memory
 counts too. A lever or pedestal the game names nowhere is found through the
 zone's own triggers: an object with no name whose template's name has the
-words of one of their use events ("PedestalUsed": CL-Pedestal-01) is X'd
-with the things with a prompt (any press prompt within 150 - never with
-Crowns, never a teleporter, lock or shop), one whose trigger opens the gate
-at the block first (debug.log's plan line: "levers (zone's triggers): ...").
+words of one of their use events ("PedestalUsed": CL-Pedestal-01 - a guess
+by the name; only the placements the zone's file ranks best, at most 2 of
+the things tried), named in debug.log's plan line ("levers (zone's
+triggers): ..."). With puzzlelevers (Settings > WALKING, off - not tried
+yet) it's X'd with the things with a prompt (any press prompt within 150 -
+never with Crowns, never a teleporter, lock or shop), one whose trigger
+opens the gate at the block first. Off: named only, the tries as before.
 A thing or NPC named Block, Clock or Warlock is no longer taken for a lock.
 A gate's state (open / shut) is read from the game's memory and written in
 debug.log ("now Closed" by each door); puzzlestate (Settings > WALKING, off)
 goes by it: a state changed since a try began counts as the way maybe open,
-one still the same as shut. Turn it on once vision\statemem.py --watch (the
-discovery tools below) shows the gate's state change as it opens.
+one still the same as shut, and a gate already in an open state (Open,
+Unlocked...) that isn't the zone file's starting one isn't the block (a gate
+shut as the zone begins still is). Turn it on once vision\statemem.py
+--watch (the discovery tools below) shows the gate's state change as it
+opens. Leaving a dungeon and coming back (a new instance: every object's id
+new) no longer counts as the doors by the block gone - they're found by
+their name and place too.
 The quest's page: every "needs you" notice about the quest (stuck, collect,
 waiting, no arrow, a blocked way) has a link to the quest on Wizard101 Central
 (and its search) - in the notice, in debug.log and in the Discord alert. A

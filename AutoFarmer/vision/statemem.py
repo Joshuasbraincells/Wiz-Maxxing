@@ -38,7 +38,8 @@ import - the tests run it on made-up memory: test_statemem.py).
 WHAT IS READ (offsets by name each attach):
   CoreObject.m_inactiveBehaviors (the BEH_LISTS found): std::vector<SharedPointer<BehaviorInstance>> (16 bytes each) ->
     the ObjectStateBehavior: the element whose vtable is one of BEH_CLASSES' (their GetType's), else whose type name ends
-    ObjectStateBehavior (bagmem's way) - BehaviorInstance +0x48 its object (== obj: checked - bossmem's beh_owner)
+    ObjectStateBehavior (bagmem's way) - BehaviorInstance +0x48 its object (== obj: checked - bossmem's beh_owner; not
+    there, in another build: looked for in its first OWNER_SPAN bytes and kept once two objects agree - bossmem's _place)
   -> the state property (STATE_PROP once pinned; else the first of STATE_PROPS / STATE_RX the class registers): a
     std::string (MSVC x64: 16-byte inline buffer or a pointer, size +0x10, capacity +0x18)
 """
@@ -64,7 +65,9 @@ STATE_PROP, STATE_BUILD = "", ""
 STATE_PROPS = ("m_currentState", "m_curState", "m_currentStateName", "m_stateName", "m_state", "m_sState",
                "m_sCurrentState")
 STATE_RX = re.compile(r"(?i)^m_(s|str)?_?(current|cur)?_?state(_?name)?$")
-KNOWN = {"beh_owner": 0x48}         # BehaviorInstance's object (not reflected - bossmem's KNOWN, checked at each read)
+KNOWN = {"beh_owner": 0x48}         # BehaviorInstance's object (not reflected - bossmem's KNOWN, checked at each read; a
+                                    # first guess: another build's looked for - StateMem._owner)
+OWNER_SPAN = 0x100                  # ...in the behaviour's first bytes (bossmem's _place: 0x100)
 VEC_LIMIT = 128                     # behaviours an object holds at most (a vector longer than this isn't one)
 
 
@@ -110,6 +113,7 @@ class StateMem:
             props = {c: {k: v[0] for k, v in got[c][0].items()} for c in got}
             vts = {c: set(got[c][2]) for c in got}
         self.P = {c: dict(props.get(c) or {}) for c in CLASSES}
+        self.o, self._cand = {}, {}     # places found and kept (the owner's, another build's) / candidates seen
         self.vt = {c: set((vts or {}).get(c) or ()) for c in CLASSES}
         self.lists = [(k, self.P["CoreObject"][k]) for k in BEH_LISTS if k in self.P["CoreObject"]]
         if not self.lists:
@@ -160,10 +164,30 @@ class StateMem:
         n = self.tname(b) or ""
         return n.endswith("ObjectStateBehavior")
 
+    def _owner(self, b, obj):
+        """the behaviour b's object is obj: at the place kept for it (KNOWN's +0x48 first) - else, another build, the first
+        8-byte slot of b's first OWNER_SPAN bytes holding obj, the place kept once two different behaviours agree (bossmem's
+        _place; a pointer to obj in its own behaviour is its owner)"""
+        off = self.o.get("beh_owner", KNOWN["beh_owner"])
+        if self.u64(b + off) == obj:
+            return True
+        raw = self.p.try_read(b, OWNER_SPAN) if ptr_ok(b) else None
+        for i in range(0, len(raw or b"") - 7, 8):
+            if struct.unpack_from("<Q", raw, i)[0] != obj:
+                continue
+            seen = self._cand.setdefault(i, set())
+            seen.add(b)
+            if len(seen) >= 2:
+                self.o["beh_owner"] = i
+                self._cand.clear()
+                self.log("statemem: the behaviour's object found at +%#x" % i)
+            return True
+        return False
+
     # ------------------------------------------------------------------ an object
     def behavior(self, obj):
-        """(the ObjectStateBehavior of the zone object obj, "") - by vtable or type name, its owner (+0x48) obj - or (0,
-        why). Never raises"""
+        """(the ObjectStateBehavior of the zone object obj, "") - by vtable or type name, its owner (+0x48, or where
+        another build has it - _owner) obj - or (0, why). Never raises"""
         try:
             if not ptr_ok(obj):
                 return 0, "not an object"
@@ -171,7 +195,7 @@ class StateMem:
             if not cands:
                 return 0, "no ObjectStateBehavior"
             for b in cands:
-                if self.u64(b + KNOWN["beh_owner"]) == obj:
+                if self._owner(b, obj):
                     return b, ""
             return 0, "its ObjectStateBehavior isn't the object's"
         except Exception as e:  # noqa: BLE001 - never into the caller

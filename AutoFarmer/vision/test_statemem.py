@@ -75,25 +75,31 @@ class Mem:
 class World:
     """a made-up game: a door object whose behaviour vector holds an NPC-like behaviour and an ObjectStateBehavior"""
 
-    def __init__(self, state="Closed", owner=True, with_state=True):
+    def __init__(self, state="Closed", owner=True, with_state=True, owner_at=None):
         self.p = Mem()
         self.types = {}
         self.tn = types.SimpleNamespace(of=lambda obj: self.types.get(obj))
         self.m = types.SimpleNamespace(build="TEST-1")
+        self.obj, self.npc, self.beh = self.door(state, owner, with_state, owner_at)
+
+    def door(self, state="Closed", owner=True, with_state=True, owner_at=None):
+        """(object, its NPC-like behaviour, its ObjectStateBehavior) - another door in the same memory; owner_at: where the
+        behaviour holds its object (KNOWN's +0x48 when None - another build's elsewhere)"""
         p = self.p
-        self.obj = p.alloc(0x200)
-        self.npc = p.alloc(0x100)
-        p.write(self.npc, struct.pack("<Q", VT_NPC))
-        self.beh = p.alloc(0x100)
-        p.write(self.beh, struct.pack("<Q", VT_STATE))
-        p.write(self.beh + S.KNOWN["beh_owner"], struct.pack("<Q", self.obj if owner else self.npc))
-        p.put_string(self.beh + 0x60, "GateStates")
-        p.put_string(self.beh + 0x80, state)
-        p.write(self.beh + 0xA0, struct.pack("<QQQQ", 0xFFFFFFFFFFFFFFFF, 0, 0x5000, 0x10))     # (not a text)
-        elems = [self.npc] + ([self.beh] if with_state else [])
+        obj = p.alloc(0x200)
+        npc = p.alloc(0x100)
+        p.write(npc, struct.pack("<Q", VT_NPC))
+        beh = p.alloc(0x100)
+        p.write(beh, struct.pack("<Q", VT_STATE))
+        p.write(beh + (S.KNOWN["beh_owner"] if owner_at is None else owner_at), struct.pack("<Q", obj if owner else npc))
+        p.put_string(beh + 0x60, "GateStates")
+        p.put_string(beh + 0x80, state)
+        p.write(beh + 0xA0, struct.pack("<QQQQ", 0xFFFFFFFFFFFFFFFF, 0, 0x5000, 0x10))     # (not a text)
+        elems = [npc] + ([beh] if with_state else [])
         arr = p.alloc(16 * len(elems))
         p.write(arr, b"".join(struct.pack("<QQ", e, 0) for e in elems))
-        p.write(self.obj + 0xE0, struct.pack("<QQ", arr, arr + 16 * len(elems)))
+        p.write(obj + 0xE0, struct.pack("<QQ", arr, arr + 16 * len(elems)))
+        return obj, npc, beh
 
     def reader(self, props=None, vts=None, **kw):
         return S.StateMem(self, props=PROPS if props is None else props,
@@ -151,6 +157,29 @@ class Reader(unittest.TestCase):
         sm6.p = Boom()
         self.assertEqual(sm6.state(w6.obj)[0], None)                            # (never raises)
         self.assertEqual(sm6.strings(w6.beh), [])
+
+    def test_owner_elsewhere(self):
+        # (another build: the behaviour's object not at +0x48 - looked for in its first bytes, the place kept once two
+        # behaviours agree - bossmem's _place)
+        w = World(owner_at=0x50)
+        said = []
+        sm = w.reader(log=said.append)
+        self.assertEqual(sm.behavior(w.obj), (w.beh, ""))
+        self.assertEqual(sm.state(w.obj), ("Closed", ""))
+        self.assertNotIn("beh_owner", sm.o)                                     # (one behaviour: not kept yet)
+        obj2, _npc2, beh2 = w.door("Open", owner_at=0x50)
+        self.assertEqual(sm.state(obj2), ("Open", ""))
+        self.assertEqual(sm.o.get("beh_owner"), 0x50)                           # (two agree: kept)
+        self.assertTrue(any("+0x50" in m for m in said))
+        self.assertEqual(sm.behavior(w.obj), (w.beh, ""))                       # (read at the kept place now)
+        # (an object's own behaviour holding another object nowhere: still not its)
+        obj3, _npc3, _beh3 = w.door(owner=False, owner_at=0x50)
+        self.assertEqual(sm.behavior(obj3), (0, "its ObjectStateBehavior isn't the object's"))
+        # (+0x48 as before: never looked further)
+        w4 = World()
+        sm4 = w4.reader()
+        self.assertEqual(sm4.behavior(w4.obj), (w4.beh, ""))
+        self.assertEqual(sm4.o, {})
 
     def test_lookup(self):
         w = World()
