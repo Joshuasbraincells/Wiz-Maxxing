@@ -517,8 +517,9 @@ those battles went - per school, all schools' together while yours has few
 helper remakes them every 10 minutes while the planner is on (learned\
 battles\plays.json); look:
     python vision\battlelearn.py [--school storm]
-Not asked in dual mode, as a party's blader or healer, after you played a
-round of the battle, while learning every card, or with navmem off. Playing
+Not asked in dual mode, with two or more game windows open, as a party's
+blader or healer, after you played a round of the battle, while learning
+every card, or with navmem off. Playing
 the advised card itself (planner 2) isn't built: it needs every card cast by
 the game's memory and each enemy's plate matched first.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
@@ -1151,8 +1152,9 @@ and each name plate's box (/battle), read from the memory the same way.
 	  memory says ..."), your own health ("own health: N/M (P%) - the
 	  game's memory"), the enemies' health on the plates the screen shows
 	  ("enemies' health from the game's memory: ..." - not a boss whose
-	  health the game hides, nor with an Alt+1 boss) and your party's
-	  wizards' health. Only while one game window is open: with two or
+	  health the game hides, nor with an Alt+1 boss), your party's
+	  wizards' health and the party hitter's school. Only while one game
+	  window is open: with two or
 	  more the memory read can be the other window's wizard (debug.log
 	  "Vision: N game window(s) found ..."), so all of it - and
 	  memclicks below - is taken off the screen as before.

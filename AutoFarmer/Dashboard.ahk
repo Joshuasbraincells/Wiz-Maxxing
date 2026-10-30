@@ -937,8 +937,9 @@ DashParse(line)
 		DashSees.pips := (m[1] < 0 ? "?" : m[1])
 	;(v1: a max health of 0 - a division by zero - gave a blank, rounded to 0)
 	else if (RegExMatch(msg, "^  own health: (\d+)/(\d+)", &m))
-		DashSees.hp := m[1] "/" m[2] " (" V1Round(V1Div(100 * m[1], m[2])) "%, name plate)"
-	else if (RegExMatch(msg, "school=(\w*) \| hitter=(\w*)", &m))
+		DashSees.hp := m[1] "/" m[2] " (" V1Round(V1Div(100 * m[1], m[2])) "%, " (InStr(msg, "the game's memory") ? "the game's memory" : "name plate") ")"
+	;(the round's line: " school=storm (the game's memory) | hitter=..." when the school came from the memory)
+	else if (RegExMatch(msg, "school=(\w*)(?: \([^)]*\))? \| hitter=(\w*)", &m))
 		DashSees.school := m[1], DashSees.hitter := m[2]
 	else if (RegExMatch(msg, "^  learned a new card: (.*?)( \(picture:|$)", &m))
 		DashAdd("learned"), DashSees.lastLearned := m[1]

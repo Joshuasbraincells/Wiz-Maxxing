@@ -16,11 +16,11 @@
 ; often the bot's card was the one advised, and how those battles went). The bot then plays its own way, as ever: the
 ; planner never clicks, never changes a play and never sets a global the round reads. 2 play: NOT BUILT (PlannerRound's
 ; TODO) - read as 1, said once.
-; Not asked (said once a battle): in dual mode, the helper not running, navmem off, learning every card, after you took a
-; round of this battle (PlayerTookRound: the bot's count of the blades and traps on isn't sure), a party battle's blader
-; or healer (the simulator has one wizard), no school known (hitter 0). Once a round at most (the log's round and the
-; bot's); the helper keeps to 300 ms (budget=, the game's reads included), the bot waits 1.5 s at most - a slow or
-; missing answer is never counted against the helper (VisionGet's noCount).
+; Not asked (said once a battle): in dual mode, two or more game windows open, the helper not running, navmem off,
+; learning every card, after you took a round of this battle (PlayerTookRound: the bot's count of the blades and traps on
+; isn't sure), a party battle's blader or healer (the simulator has one wizard), no school known (hitter 0). Once a round
+; at most (the log's round and the bot's); the helper keeps to 300 ms (budget=, the game's reads included), the bot waits
+; 1.5 s at most - a slow or missing answer is never counted against the helper (VisionGet's noCount).
 
 ;(v2-only globals - declared here with no value: a top-level := in an #Included file never runs - PlannerBlank sets
 ;them blank, the entry script calls it first thing) The round last asked about (duel|log round|bot round); the last
@@ -51,6 +51,10 @@ PlannerOn(&why := "")
 		{
 		if (dualmode == 1)
 			why := "dual mode (the game's memory is one client's)"
+		;(two or more game windows: the helper's memory read may be the other window's battle - Vision.ahk VisionMemOneClient,
+		;the rule the bot's own memory reads keep to)
+		else if (!V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
+			why := "two or more game windows (the game's memory may be the other window's)"
 		else if (!VisionOn)
 			why := "the vision helper isn't running"
 		else if (!Stat("navmem"))

@@ -361,7 +361,7 @@ BrecSetKeys()
 		try
 			for brK in DeckKeys()
 				brAll.Push(brK)
-		for brK in ["enemyspells", "defendat", "healat", "learnedhits", "roundwait", "partybattle", "navmem", "handsoff", "handsoffon", "planner"]
+		for brK in ["enemyspells", "defendat", "healat", "learnedhits", "roundwait", "partybattle", "navmem", "handsoff", "handsoffon", "planner", "memclicks"]
 			brAll.Push(brK)
 		for brK in brAll
 			if (!brSeen.Has(brK))
