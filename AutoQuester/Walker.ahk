@@ -1205,6 +1205,9 @@ WalkStep()
 		Sleep(300)
 		return true
 		}
+	;Another player's battle on the way that the route can't go round (duelavoid): stand still till it ends - WalkDuelWait
+	if (WalkDuelWait())
+		return true
 	;A party's leader (AutoFarmer's Party.ahk): it waits while a follower is far, in another zone or not ready - walking,
 	;not mid-talk or mid-push, and never inside a mob's reach (getting out of it first)
 	if ((WkArrived = 0 || WkArrived = 1) && A_TickCount - WkNavEscAt > 1500 && WkNavMob = "" && V1IsFunc("PartyHoldWhy"))
@@ -6001,6 +6004,45 @@ WalkNav(hScr, dScr)
 	;(no way on but teleports that don't take the wizard - the helper gave them up: WalkStep stops walking)
 	if (why = "" && InStr(nav.routewhy, "teleport that doesn't take the wizard") && !WkJumpStuck)
 		WkJumpStuck := 1
+	}
+
+;Another player's battle on the way that the helper's route can't go round (AutoFarmer's duelavoid setting - off unless 1:
+;the duel circles in the game's memory aren't confirmed in the game yet; the helper's route line's 14-16, NavRead's duel):
+;stand still till it ends - also through a reading missed meanwhile (1.5 s) - said once a battle, and when the wait ends.
+;The helper gives up after 4 minutes (a battle takes minutes, and walking in joins it) and routes on past it, round its edge
+;where there's room. Not at a teleport. True while waiting (WalkStep returns then); an older helper, or none: never
+WalkDuelWait()
+	{
+	static wdAt := 0, wdSaid := "", wdLong := 0
+	global WkBestTime, WkLastRead, WkTries ; (v1 globals it sets)
+	;(a battle said but not asked about for 5 s - the walk stopped (F8) or ended, or another wait came first: a fresh
+	;start, not said - else the next walk's first step logs an old walk's battle as gone from the way)
+	if (wdSaid != "" && A_TickCount - wdAt > 5000)
+		wdAt := 0, wdSaid := "", wdLong := 0
+	wdSecs := (WkNavOk && IsObject(WkNavObj)) ? WkNavObj.duel : ""
+	if (wdSecs != "" && WkNavJump = "")
+		{
+		wdAt := A_TickCount, wdLong := wdSecs
+		wdWhere := V1Round(WkNavObj.duelx) "," V1Round(WkNavObj.duely)  ; (v1: Round of a blank - 0)
+		if (wdSaid = "")
+			wdSaid := wdWhere, WalkLog("another player's battle on the way at " wdWhere " and no way round it - waiting for it to end (walked past after 4 minutes)")
+		}
+	else if (!wdAt || WkNavOk || WkNavJump != "" || A_TickCount - wdAt >= 1500)
+		{
+		;(over: said - the helper walking on past it after its 4 minutes, or the battle gone from the way. Given up: the
+		;helper's last seconds said were within 2 of its 240 - its asks counted only less than 2 s apart - so 235 and
+		;more; a battle that ended sooner is gone from the way)
+		if (wdSaid != "")
+			WalkLog("another player's battle at " wdSaid (wdLong >= 235 ? " still going after " Round(wdLong) " s - walking on past it, round its edge where there's room" : " no longer on the way - walking on"))
+		wdAt := 0, wdSaid := "", wdLong := 0
+		return false
+		}
+	if (KeysDown || HeldW)
+		ReleaseKeys(true)
+	WkBestTime := A_TickCount, WkLastRead := A_TickCount, WkTries := 0
+	SetStatus("waiting - another player's battle on the way (" Round(wdLong) " s)")
+	Sleep(300)
+	return true
 	}
 
 ;Logs the route round walls coming and going: once each way (a moment with none while it plans isn't a change)

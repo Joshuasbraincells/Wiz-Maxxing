@@ -427,6 +427,9 @@ global NavUiWhy, NavUiWaitUntil, NavUiRootW
 ;  left      (withRoute only) how far is left to walk along that route and the game's path on from it (game units)
 ;  jump, jx, jy  (withRoute only) right at a teleport on the game's path (the route stops at it): the seconds
 ;            waited there, and where it is; "" otherwise
+;  duel, duelx, duely  (withRoute, avoidMobs and duelavoid only) another player's battle on the way the route can't go
+;            round (a duel circle in the game's memory - not confirmed in the game yet): the seconds waited for it, where
+;            it is; "" otherwise (an older helper sends none)
 ;  goaltext, goaltype, goalstatus, goalcount, goaltotal, goalshown  the quest's goal line from the game's memory and its
 ;            kind, status, count, total, on screen (1/0) - as NavGoal's; "" when it can't be read (or an older helper)
 ;  noplace   1: the game shows no way to the goal - no arrow (its goal reads exactly 0, 0, 0 and the arrow's distance -1:
@@ -477,7 +480,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := V1Obj({ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""
+		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: "", duel: "", duelx: "", duely: ""
 		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: "", noplace: "", noplaceheld: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
@@ -505,6 +508,10 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			;(12: inside a mob's ring or sight - its name: the aim leads out of it; 13: turning walking on round to the
 			;aim - 1 its arc's clear of the walls, 0 not, "" not known)
 			nav.escape := Trim(V1At(f, 12)), nav.arc := f.Length >= 13 ? Trim(V1At(f, 13)) : ""
+			;(14-16: another player's battle on the way the route can't go round - the seconds waited for it, where it is;
+			;an older helper's line stops at 13)
+			if (f.Length >= 16)
+				nav.duel := NavNum(V1At(f, 14)), nav.duelx := NavNum(V1At(f, 15)), nav.duely := NavNum(V1At(f, 16))
 			}
 		;(the mob whose ring or sight the arrow's straight way comes into, and backing up would - moves off the route)
 		else if (V1At(f, 1) = "blind" && withRoute)
@@ -648,7 +655,9 @@ NavGoal(timeoutMs := 800)
 ;where it faces to the wizard, "" not known), title (as the game names it: Boss, Elite, Normal, Easy, Minion), rank (the
 ;one the game shows: "Rank 9 Boss"), health (its starting - max - health), school (Ice...), boss (1: the game's own boss
 ;flag, 0 not), gid, named (1: the quest's by its name or its goal only - quest without a same-family match elsewhere in
-;the zone, 0 not), template (its template's name - "CL-DeepOne-GreenHead-R10": a newer helper's 16th field)} - title...template
+;the zone, 0 not), template (its template's name - "CL-DeepOne-GreenHead-R10": a newer helper's 16th field), vx, vy (how fast
+;it walks along x and y, game units a second - its last second of readings), moving (1 walking, 0 standing: a newer helper's
+;17th-19th fields)} - title...moving
 ;"" while not known (the helper's reader being made, a build it can't read, an older helper). [] when there are none (the helper's plain "none"); "" when they can't be read - navmem:0, the helper not
 ;running, dual mode (one client's memory), "none (<why>)" (not attached, a new zone being looked at...), an ERR or no
 ;answer: NavMobsWhy says why, and after an ERR or no answer it isn't asked again for 5 s
@@ -702,7 +711,7 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		if (V1At(nmF, 1) != "mob" || nmF.Length < 8)   ; (v1: an empty line's first field read blank)
 			continue
 		nmM := V1Obj({name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
-			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: "", template: ""})
+			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: "", template: "", vx: "", vy: "", moving: ""})
 		;(9-14: what it is - an older helper's lines have none)
 		if (nmF.Length >= 14)
 			nmM.title := Trim(nmF[9]), nmM.rank := NavNum(nmF[10]), nmM.health := NavNum(nmF[11]), nmM.school := Trim(nmF[12])
@@ -714,6 +723,9 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		;lines stop at 15)
 		if (nmF.Length >= 16)
 			nmM.template := Trim(nmF[16])
+		;(17-19: how it moves - its speed along x and y, walking 1 / standing 0, "" not known; an older helper's lines stop at 16)
+		if (nmF.Length >= 19)
+			nmM.vx := NavNum(nmF[17]), nmM.vy := NavNum(nmF[18]), nmM.moving := (Trim(nmF[19]) = "1" ? 1 : Trim(nmF[19]) = "0" ? 0 : "")
 		nmOut.Push(nmM)
 		}
 	return nmOut
@@ -1154,7 +1166,10 @@ CaughtLog()
 		where := "its facing unknown"
 	else
 		where := ((V1Le(f[4], s.wide / 2) && V1Le(f[3], s.range)) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
-	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
+	;(8: it was walking - 1 - or standing - 0 - the second before it noticed you: a walking mob's sight swept ahead of it,
+	;vision\navroute.py; an older helper's line stops at 7)
+	clWalk := V1At(f, 8) = "1" ? ", walking" : V1At(f, 8) = "0" ? ", standing" : ""
+	DebugLog("  Caught by " f[2] clWalk ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
 		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
 	MobGrow(f, s)
 	}
@@ -1250,13 +1265,18 @@ MobShape()
 		, body: V1Gt(Stat("mobbody"), 0) ? V1Round(Stat("mobbody")) : 120, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"})
 	}
 
-;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off
+;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off;
+;duelavoid (off unless 1 - the duel circles aren't confirmed in the game yet): out of other players' battles too (&duels=1);
+;mobwall (off unless 1 - the gap's width isn't measured in the game yet): a line of mobs' wall with no way round waited at
+;as a mob on the way (&walls=1 - /nav's; else walked through its gap at once, as before)
 NavMobArgs()
 	{
 	if (Stats.Has("mobavoid") && !Stats["mobavoid"])
 		return ""
 	s := MobShape()
 	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "") (s.shape > 1 ? "&body=" s.body : "")
+		. (Stats.Has("duelavoid") && Stats["duelavoid"] = 1 ? "&duels=1" : "")
+		. (Stats.Has("mobwall") && Stats["mobwall"] = 1 ? "&walls=1" : "")
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08

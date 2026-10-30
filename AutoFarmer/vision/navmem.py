@@ -25,7 +25,8 @@
                                     # recorder's, out of battle only;
     sig, why = nm.deck_sig()        # its signature (~2 ms); nm.mob_infos(gids): the mobs' cached infos, no read
 
-    python navmem.py [-n 5] [-i 1] [--path] [--mobs] [--goal]   readings from the command line (and how long each took)
+    python navmem.py [-n 5] [-i 1] [--path] [--mobs [--motion SECONDS]] [--goal]   readings from the command line (and how
+                                    # long each took); --motion: the mobs watched walking (navroute.MobMotion)
 
 SAFETY. The game is opened with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else. The only process APIs used are
@@ -873,6 +874,18 @@ class _Attached:
         yaw = (yaw + math.pi) % (2 * math.pi) - math.pi
         return {"pos": (x, y, z), "yaw": yaw, "source": src}, ""
 
+    def player_gid(self, gc):
+        """the wizard's own global id - the object the camera follows (player()'s), its +0x48 - or None (a duel circle's
+        participant whose owner it is: his own battle)"""
+        is_cam = lambda n: n == "ElasticCamController"
+        cam = self._member("gc_elastic_cam", gc,
+                           lambda obj, size: self._scan_typed(obj, size, is_cam), 0x30000,
+                           lambda obj, off: self._typed(obj, off, is_cam))
+        if not cam:
+            return None
+        co = self._member("cam_attached_object", cam, self._scan_objects, 0x400, self._object_at)
+        return (self.p.u64(co + DATA["co_gid"]) or None) if co else None
+
     def zone_ptr(self, gc):
         """the ClientZone the game is in (every object of the zone holds it at +0x130), or 0"""
         if self.o.get("gc_zone") is None:
@@ -1079,6 +1092,10 @@ class NavMem:
         # (the zone's doors, gates and collision walls - no name key, a blocker's template name: {object address: (gid,
         # template name, template name, vtable)})
         self._blockers = {}
+        # (the zone's duel circles - no name key, a duel behaviour (bossmem.is_duel_object): {object address: (gid, template
+        # name, template name, vtable)}; each object looked at once {(object, gid, vtable): duel or not}; when duels() was
+        # last asked for - only then are objects looked at for them: the duelavoid setting)
+        self._duels, self._duel_seen, self._duel_asked = {}, {}, 0.0
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
         self._names_said = 0.0           # (when a failure to ask for the things' name tables may be logged again)
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
@@ -1879,6 +1896,42 @@ class NavMem:
         never "none" then: not read isn't gone. Never raises."""
         return self._live("blockers")
 
+    def duels(self):
+        """(duels, why): duels = [{name, pos (x, y, z), yaw, gid, template, duel, behavior, phase, phase_name, round, parts,
+        players, teams, mine, pvp, active}] - the zone's duel circles (objects with no name key holding a duel behaviour:
+        bossmem.is_duel_object - looked for only while duels are asked for, the duelavoid setting), read now, and each
+        one's battle (bossmem.duel_of - None each when it can't be read; mine: the wizard's own). None and why as mobs().
+        NOT CONFIRMED in the game yet (bossmem.py --duels is the check). Never raises."""
+        try:
+            with self.lock:
+                self._duel_asked = time.monotonic()
+            got, why = self._live("duels")
+            if got is None:
+                return None, why
+            if not got:
+                return got, ""
+            import bossmem
+            st = self.st
+            bm, _ = self._boss_reader(st) if st is not None else (None, "")
+            with self.lock:
+                ok = bm is not None and self.st is st and bm.st is st
+                me = None
+                if ok:
+                    try:
+                        gc = st.gameclient()
+                        me = st.player_gid(gc) if ptr_ok(gc) else None
+                    except ReadError:
+                        me = None
+                by_gid = {v[0]: obj for obj, v in self._duels.items()}
+                for d in got:
+                    obj = by_gid.get(d["gid"])
+                    info = bm.duel_of(obj, me) if ok and obj else None
+                    for k in bossmem.DUEL_FIELDS:
+                        d[k] = info.get(k) if info else None
+            return got, ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the duels failed (%r)" % (e,)
+
     def _live(self, which):
         """mobs() / items() / blockers(): the objects thread's of that kind still the same live objects, their places read
         now"""
@@ -1889,7 +1942,8 @@ class NavMem:
                     self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
                     self._obj_thread.start()
                 st, cz, why = self.st, self._obj_cz, self._obj_why
-                objs = list({"mobs": self._objs, "items": self._items, "blockers": self._blockers}[which].items())
+                objs = list({"mobs": self._objs, "items": self._items, "blockers": self._blockers,
+                             "duels": self._duels}[which].items())
             if st is None or not cz or why:
                 return None, why or "not attached"
             out, gids, live = [], set(), []
@@ -1997,10 +2051,35 @@ class NavMem:
             want.append(key)
         return t or ""
 
-    def _set_objs(self, cz, objs, why, items=None, blockers=None):
+    def _set_objs(self, cz, objs, why, items=None, blockers=None, duels=None):
         with self.lock:
             self._obj_cz, self._objs, self._obj_why, self._items = cz, objs, why, items or {}
             self._blockers = blockers or {}
+            self._duels = duels or {}
+
+    def _duel_look(self, st, cands):
+        """(the objects thread) which of cands [(object, gid, template name, vtable)] - objects with no name key that aren't
+        mobs, things or blockers - are duel circles: {object: (gid, template name, template name, vtable)}. Only while
+        duels() is asked for (OBJ_IDLE); each object looked at once (bossmem.is_duel_object, under the lock), kept per
+        (object, gid, vtable); {} while the boss reader isn't made"""
+        with self.lock:
+            if time.monotonic() - self._duel_asked > OBJ_IDLE:
+                return {}
+        bm, _ = self._boss_reader(st)
+        out = {}
+        with self.lock:
+            if bm is None or bm.st is not st or self.st is not st:
+                return {}
+            seen = self._duel_seen
+            if len(seen) > 20000:
+                seen.clear()
+            for obj, gid, tname, vt in cands:
+                key = (obj, gid, vt)
+                if key not in seen:
+                    seen[key] = bool(bm.is_duel_object(obj))
+                if seen[key]:
+                    out[obj] = (gid, tname, tname, vt)
+        return out
 
     def _objects_run(self):
         """the objects thread: the zone's mobs looked for every OBJ_QUICK s (see the top) while anyone asks"""
@@ -2036,7 +2115,7 @@ class NavMem:
                     found, where = st.scan_objects(cz, None if full else regions)
                     if full:
                         regions, last_full = where, t0
-                    objs, items, doors, want = {}, {}, {}, []
+                    objs, items, doors, want, cands = {}, {}, {}, [], []
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -2057,6 +2136,9 @@ class NavMem:
                         elif k and not k[3] and k[1] and k[4] != "mob" and _is_blocker(k[1]):
                             # (no name key, a door's or a gate's template name: a blocker - its name its template's)
                             doors[obj] = (gid, k[1], k[1], vt)
+                        elif k and not k[3] and k[4] != "mob":
+                            # (no name key, nothing else: maybe a duel circle - looked at below, only while asked for)
+                            cands.append((obj, gid, k[1], vt))
                     if want:
                         try:
                             import placements
@@ -2065,8 +2147,14 @@ class NavMem:
                             if time.monotonic() >= self._names_said:
                                 self._names_said = time.monotonic() + 60.0
                                 self.log("navmem: the things' name tables couldn't be asked for (%r)" % (e,))
-                    self._set_objs(cz, objs, "", items, doors)
+                    # (the duel circles - other players' battles: only while duels() is asked for - duelavoid)
+                    try:
+                        duels = self._duel_look(st, cands) if cands else {}
+                    except Exception:  # noqa: BLE001 - none: as before
+                        duels = {}
+                    self._set_objs(cz, objs, "", items, doors, duels)
                     self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "doors": len(doors),
+                                      "duels": len(duels),
                                       "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
             except Exception as e:  # noqa: BLE001 - tried again next time
@@ -2075,6 +2163,71 @@ class NavMem:
 
 
 # ============================================================================ command line
+def _motion_cli(nm, seconds, every=0.15):
+    """--mobs --motion SECONDS: the zone's mobs read every `every` s through a navroute.MobMotion (as the vision helper
+    feeds it), a line a mob every 2 s (the nearest 12) and a summary at the end - what tunes MOVE_MIN, MOTION_AHEAD_S,
+    MOTION_FIT and PASS_GAP and confirms a walking mob's body yaw is its way (agree near 1): its speed (units / s),
+    walking or standing and for how long, its way against its facing, its walks and stops, its jumps (respawns,
+    teleports), and how often its position changes between readings (every frame, or in steps)"""
+    import navroute
+    mm = navroute.MobMotion()
+    stats = {}                  # gid -> {name, n, changed, last, speeds, agrees, gaps}
+    t_end, said = time.time() + seconds, 0.0
+    reads, me = 0, None
+    while time.time() < t_end:
+        t0 = time.time()
+        r, _ = nm.read(path=False, wait=5)
+        mobs, why = nm.mobs()
+        now = time.time()
+        if r is not None and r.get("pos"):
+            me = r["pos"]
+        if mobs:
+            reads += 1
+            mm.update(now, mobs, me)
+            for m in mobs:
+                s = stats.setdefault(m["gid"], {"name": m["name"], "n": 0, "changed": 0, "last": None, "speeds": [],
+                                                "agrees": [], "gaps": []})
+                s["n"] += 1
+                p = (round(m["pos"][0], 2), round(m["pos"][1], 2))
+                if s["last"] is not None and p != s["last"][1]:
+                    s["changed"] += 1
+                    s["gaps"].append(now - s["last"][0])
+                if s["last"] is None or p != s["last"][1]:
+                    s["last"] = (now, p)
+                i = mm.info(m["gid"])
+                if i.get("moving") and i.get("speed") is not None:
+                    s["speeds"].append(i["speed"])
+                if i.get("agree") is not None:
+                    s["agrees"].append(i["agree"])
+        if now - said >= 2.0:
+            said = now
+            print("-- %s  %s mobs (%s)  the wizard's speed %s" % (
+                time.strftime("%H:%M:%S"), len(mobs) if mobs else 0, why or "ok",
+                "%.0f" % mm.my_speed() if mm.my_speed() else "not known"))
+            near = sorted(mobs or [], key=lambda q: math.hypot(q["pos"][0] - me[0], q["pos"][1] - me[1]) if me else 0)[:12]
+            for m in near:
+                i = mm.info(m["gid"])
+                state = ("walking %.1f s" % i["walk_s"] if i.get("moving") else "standing %.1f s" % i["still_s"]
+                         if i.get("moving") is False else "not known")
+                print("   %-26s %-9s %s  speed %s  way vs facing %s  jumps %s  legs %s" % (
+                    m["name"], "%#x" % m["gid"], state, "%.0f" % i["speed"] if i.get("speed") is not None else "-",
+                    i.get("agree"), i.get("jumps"), i.get("legs", [])[-4:]))
+        time.sleep(max(0.0, every - (time.time() - t0)))
+    print("== %d readings in %.0f s" % (reads, seconds))
+    for gid, s in sorted(stats.items(), key=lambda kv: -len(kv[1]["speeds"])):
+        i = mm.info(gid)
+        sp = sorted(s["speeds"])
+        gaps = sorted(s["gaps"])
+        walks = [d for w, d in i.get("legs", []) if w]
+        stops = [d for w, d in i.get("legs", []) if not w]
+        print("   %-26s %-9s readings %d, position changed %d (median %.2f s apart)  speed walking: median %s max %s  "
+              "way vs facing: mean %s  walks %s  stops %s  jumps %s" % (
+                  s["name"], "%#x" % gid, s["n"], s["changed"], gaps[len(gaps) // 2] if gaps else 0.0,
+                  "%.0f" % sp[len(sp) // 2] if sp else "-", "%.0f" % sp[-1] if sp else "-",
+                  "%.2f" % (sum(s["agrees"]) / len(s["agrees"])) if s["agrees"] else "-",
+                  [round(d, 1) for d in walks[-6:]], [round(d, 1) for d in stops[-6:]], i.get("jumps", 0)))
+
+
 def _main():
     import argparse
     ap = argparse.ArgumentParser(description="read-only: the wizard's position and the quest goal")
@@ -2083,8 +2236,15 @@ def _main():
     ap.add_argument("--path", action="store_true")
     ap.add_argument("--mobs", action="store_true", help="the zone's mobs too")
     ap.add_argument("--goal", action="store_true", help="the quest's goal line too (questmem.py)")
+    ap.add_argument("--motion", type=float, default=0, metavar="SECONDS",
+                    help="with --mobs: watch the mobs walk for this long (read every 150 ms) - each one's speed, its way "
+                         "against its facing, its walks and stops, its jumps (navroute.MobMotion's numbers to tune)")
     a = ap.parse_args()
     nm = NavMem(log=print)
+    if a.mobs and a.motion > 0:
+        _motion_cli(nm, a.motion)
+        print(nm.describe())
+        return
     for k in range(a.n):
         t0 = time.perf_counter()
         r, why = nm.read(path=a.path, wait=30)
