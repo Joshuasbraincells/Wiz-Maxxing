@@ -11,7 +11,16 @@ names the game's own log gives for its own side.
     followers') out, as JSON. Only from private addresses; every field checked.
   * A follower's helper calls the leader's every BEAT s in its own thread (AutoFarmer never waits on the network).
   * The leader's "door": when it changes zone, the last spot in the zone it left and which way it was going there -
-    a follower in that zone walks there and on through.
+    a follower in that zone walks there and on through. Each is marked walked (it moved WALK_MIN units or more in the
+    DOOR_WINDOW s before it left - its readings while zoning, navmem's 'object' ones, left out) or not (it stood still:
+    End, Home, a sigil, a potion run, a friend's teleport - no door a follower can walk through); the last MAX_DOORS are
+    kept with their ages, so a follower two zones behind still has the door out of its own zone (A -> B -> C: a follower
+    in A walks A -> B, then B -> C). Walked or not isn't checked in the game yet: Party.ahk only logs it, and walks to
+    the door all the same, unless Settings' partytpdoors is on.
+  * The leader's loading flag and how long it's been in its zone go to the followers too, and port_advice() says when a
+    follower should teleport to it (TODO goal 1 - the Friends list's Teleport; the AutoHotkey side decides and clicks).
+  * A follower's teleport state (tp: wait - it can't follow -, stuck, porting, refused) goes to the leader, which stops
+    waiting for one that can't follow.
   * The leader's battle spot: where it stood when its battle started - followers walk into the circle there.
 Never sent: the game's login, anything from Credential Manager, the character's id, file paths, screenshots, gold."""
 import http.client
@@ -35,6 +44,16 @@ REBIND_JOIN = 1.0       # s a new server on the port of one still closing waits 
 REBIND_TRIES = 6        # ...then its bind tried this many times...
 REBIND_GAP = 0.25       # ...this far apart (s): about 1.5 s in all
 REBIND_RECENT = 3.0     # an old server on the port closed this recently (s): the new one's bind is waited and retried too
+FRESH = 3.0             # s a reading of the wizard's place is good for (older: its zone not known - a loading screen?)
+MAX_DOORS = 3           # the leader's last doors kept and sent (a follower behind by up to that many zones)
+DOOR_WINDOW = 1.5       # s before a zone change its trail is looked at: the door's way on, and walked or not...
+WALK_MIN = 60.0         # ...walked: this many units or more covered in it (walking is ~1000 units a second - Walker.ahk;
+                        # stood still before End / Home / a sigil / a friend's teleport: 0)
+WALK_SPAN_MIN = 0.3     # less trail than this (s) before the change: walked not known (None)
+PORT_ZONE_AGE = 3.0     # s the leader has been in its zone before a follower should teleport to it (not mid-arrival)
+LEADER_FRESH = 5.0      # s since the leader's answer: older, nothing's decided on it (as Party.ahk's 5 s)
+TP_STATES = ('wait', 'stuck', 'porting', 'refused')     # a follower's tp ('' following)
+MAX_PATH = 1024         # the longest request the leader's server takes (characters): a longer beat gets a 403
 NAME_RE = re.compile(r"^[\w .'-]{1,24}$")
 ZONE_RE = re.compile(r"^[\w/\\ .'-]{1,120}$")
 HOLD_RE = re.compile(r"^[\w .,'()/-]{0,80}$")
@@ -90,7 +109,133 @@ def clean_state(q):
             if p in SCHOOLS and p not in seen:
                 seen.append(p)
         s[k] = ','.join(seen)
+    # (a follower's teleport state - TODO goal 1: '' following; wait - it can't follow (the leader went where no door it
+    # walked through leads from here, or its door didn't take it); stuck - five stuck tries on the way; porting - the
+    # Friends list's teleport under way; refused - the game said no. And why, as the leader's hold is checked)
+    tp = str(q.get('tp') or '').strip()
+    s['tp'] = tp if tp in TP_STATES else ''
+    tpwhy = str(q.get('tpwhy') or '').strip()
+    s['tpwhy'] = tpwhy if s['tp'] and HOLD_RE.match(tpwhy) else ''
     return s
+
+
+def _walked(v):
+    """a door's walked flag as sent (True / 1 / '1', False / 0 / '0'), else None (not known - an older helper)"""
+    if v is True or v is False:
+        return v
+    if str(v) in ('1', '0'):
+        return str(v) == '1'
+    return None
+
+
+def _ms(v):
+    """an age in ms as sent: a whole number from 0 up to ~11 days, else None. (Not _f: its 1e6 - a zone's reach - is 16.7
+    minutes in ms: a leader that long in its zone, or a door that old, read as no age - "an older version" - and the
+    teleport advice never came)"""
+    if isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(x) if math.isfinite(x) and 0 <= x < 1e9 else None
+
+
+def clean_door(door):
+    """one of the leader's doors as a follower got it, each field checked: {zone, to, x, y, z, dx, dy, walked, age} or
+    None (not a door)"""
+    if not isinstance(door, dict):
+        return None
+    z, to = str(door.get('zone') or ''), str(door.get('to') or '')
+    # (fullmatch: a trailing newline - which $ lets by - would break the lines AutoHotkey reads)
+    d = {'zone': z if ZONE_RE.fullmatch(z) else '', 'to': to if ZONE_RE.fullmatch(to) else '',
+         **{k: _f(door.get(k)) for k in ('x', 'y', 'z', 'dx', 'dy')}}
+    d['walked'], d['age'] = _walked(door.get('walked')), _ms(door.get('age'))
+    return d
+
+
+def door_from(zone, doors):
+    """the leader's door out of zone: the latest of its doors (oldest first) left from there - the way its path went on
+    from zone the last time it was in it; None when none was (or zone isn't known)"""
+    if not zone:
+        return None
+    for d in reversed(doors or []):
+        if isinstance(d, dict) and d.get('zone') == zone:
+            return d
+    return None
+
+
+def walked_before(trail):
+    """how the wizard left a zone, from its trail there [(t, zone, x, y, z) ...], oldest first: (walked, moved, span, back)
+    - walked True when it covered WALK_MIN units or more in the last DOOR_WINDOW s (walking through a door), False when it
+    didn't (it stood still: a teleport - End, Home, a sigil, a potion run, a friend's), None when there's too little of its
+    trail to tell (under WALK_SPAN_MIN s); moved the units covered, span the s looked at, back the trail point the door's
+    way on is measured from"""
+    if not trail:
+        return None, 0.0, 0.0, None
+    last = trail[-1]
+    win = [p for p in trail if last[0] - p[0] <= DOOR_WINDOW]
+    # (readings far apart - a slow read -: the one before too)
+    if len(win) < 2 and len(trail) >= 2:
+        win = trail[-2:]
+    span = last[0] - win[0][0]
+    moved = sum(math.hypot(b[2] - a[2], b[3] - a[3]) for a, b in zip(win, win[1:]))
+    if span < WALK_SPAN_MIN:
+        return None, moved, span, win[0]
+    return moved >= WALK_MIN, moved, span, win[0]
+
+
+def still_for(trail, tol=1.0):
+    """how long (s) the wizard's place hadn't moved (more than tol units) at the end of its trail [(t, zone, x, y, ...)]:
+    0.0 when its last reading had moved. (For the log: a door walked through whose last readings stood still - the game
+    keeping the old zone into the loading screen, its place frozen, with a body - is how WALK_MIN / DOOR_WINDOW would go
+    wrong)"""
+    if not trail:
+        return 0.0
+    last = trail[-1]
+    t0 = last[0]
+    for p in reversed(trail[:-1]):
+        if math.hypot(p[2] - last[2], p[3] - last[3]) > tol:
+            break
+        t0 = p[0]
+    return last[0] - t0
+
+
+def port_advice(me_zone, leader, now):
+    """should a follower teleport to its leader now (the Friends list's Teleport - TODO goal 1)? ('1', why) or ('0', why).
+    me_zone: the follower's own zone ('' not known); leader: its view of the leader (Party.leader: zone, loading, zage -
+    ms in its zone as sent -, doors, at - when heard), now: time.time(). Yes only when the leader's been heard from in
+    LEADER_FRESH s, its zone is known and isn't the follower's, it isn't loading, it's been there PORT_ZONE_AGE s or more
+    (not mid-arrival - or about to go on), and no door it walked through leads on from the follower's zone (one whose
+    walked isn't known - an older leader's helper - counts as walked: tried as ever). Pure: Party.ahk decides (the setting,
+    the game in front, you not playing, a try at most once a minute...) and clicks. why: words for the log and the status
+    - no |"""
+    if not isinstance(leader, dict) or not leader:
+        return '0', 'the leader not heard from'
+    heard = now - (leader.get('at') or 0)
+    if heard > LEADER_FRESH:
+        return '0', f'the leader not heard from in {heard:.0f} s'
+    lz = leader.get('zone') or ''
+    if not lz:
+        return '0', "the leader's zone isn't known (loading?)"
+    if not me_zone:
+        return '0', "this wizard's zone isn't known (loading?)"
+    if lz == me_zone:
+        return '0', 'in the same zone'
+    if str(leader.get('loading')) == '1':
+        return '0', 'the leader is loading'
+    zage = leader.get('zage')
+    if zage is None:
+        return '0', "the leader's helper doesn't say how long it's been in its zone (an older version)"
+    zage += max(0.0, heard) * 1000
+    if zage < PORT_ZONE_AGE * 1000:
+        return '0', f'the leader only just got to {lz} ({zage / 1000:.0f} s ago)'
+    d = door_from(me_zone, leader.get('doors'))
+    if d is not None and d.get('walked') is not False:
+        return '0', f"a door the leader walked through leads on from here (to {d.get('to') or '?'})"
+    if d is not None:
+        return '1', f"the leader teleported from here (to {d.get('to') or '?'}) and is in {lz} - no door to walk through"
+    return '1', f'the leader is in {lz} - no door it walked through leads there from here'
 
 
 def clean_peer(d):
@@ -98,13 +243,16 @@ def clean_peer(d):
     unchecked)"""
     d = d if isinstance(d, dict) else {}
     s = clean_state({k: str(v) for k, v in d.items() if isinstance(v, (str, int, float))})
-    door = d.get('door')
-    if isinstance(door, dict):
-        z, to = str(door.get('zone') or ''), str(door.get('to') or '')
-        s['door'] = {'zone': z if ZONE_RE.match(z) else '', 'to': to if ZONE_RE.match(to) else '',
-                     **{k: _f(door.get(k)) for k in ('x', 'y', 'z', 'dx', 'dy')}}
+    s['door'] = clean_door(d.get('door'))
+    # (its last doors, oldest first, with their ages and walked - an older leader's helper sends only the last: that one,
+    # walked and age not known)
+    doors = d.get('doors')
+    if isinstance(doors, list):
+        s['doors'] = [c for c in (clean_door(x) for x in doors[-MAX_DOORS:]) if c is not None]
     else:
-        s['door'] = None
+        s['doors'] = [s['door']] if s['door'] else []
+    # (ms it's been in its zone - None not known: an older helper, or its zone isn't read)
+    s['zage'] = _ms(d.get('zage'))
     b = d.get('bspot')
     s['bspot'] = tuple(_f(v) for v in b[:3]) if isinstance(b, (list, tuple)) and len(b) >= 3 else None
     return s
@@ -131,8 +279,12 @@ class Party:
         self.ahk = {}                       # what AutoFarmer said last (clean_state)
         self.ahk_at = 0.0
         self.mem = {}                       # zone, x, y, z, yaw, at - read here
-        self.trail = []                     # (t, zone, x, y, z) of the last few seconds (the door)
-        self.door = None                    # {zone, x, y, z, dx, dy, at}: the last spot in the zone left, the way on
+        self.trail = []                     # (t, zone, x, y, z, zoning) of the last few seconds (the door) - zoning:
+                                            # navmem's 'object' reading (the wizard has no body)
+        self.door = None                    # {zone, x, y, z, dx, dy, to, walked, at}: the last spot in the zone left,
+                                            # the way on
+        self.doors = []                     # the last MAX_DOORS of those, oldest first (self.door the last)
+        self.zone_at = 0.0                  # when its zone last changed (its first reading there)
         self.battle_spot = None             # (x, y, z) where its battle started
         self.members = {}                   # leader: follower id -> state (with 'at', 'ip')
         self.leader = None                  # follower: the leader's answer (with 'at')
@@ -286,7 +438,7 @@ class Party:
                 except ValueError:
                     ok = False
                 u = urllib.parse.urlparse(self.path)
-                if not ok or len(self.path) > 1024 or u.path != '/party/beat':
+                if not ok or len(self.path) > MAX_PATH or u.path != '/party/beat':
                     self.send_response(403)
                     self.end_headers()
                     return
@@ -311,15 +463,21 @@ class Party:
 
     # ------------------------------------------------------------------ state
     def _me(self):
-        """this wizard's state to send: AutoFarmer's fields and the memory's place, the door, the battle spot"""
+        """this wizard's state to send: AutoFarmer's fields and the memory's place, the door (the last - as older helpers
+        read it), the doors (the last MAX_DOORS, oldest first, each with its age in ms - the PCs' clocks differ - and
+        walked), how long it's been in its zone (zage, ms - None while its zone isn't read), the battle spot"""
         with self.lock:
+            now = time.time()
             s = dict(self.ahk)
             m = self.mem
-            fresh = m and time.time() - m.get('at', 0) < 3
+            fresh = bool(m) and now - m.get('at', 0) < FRESH
             for k in ('zone', 'x', 'y', 'z', 'yaw'):
                 s[k] = m.get(k) if fresh else (None if k != 'zone' else '')
             s['name'] = self.cfg['name']
             s['door'] = dict(self.door) if self.door else None
+            s['doors'] = [dict({k: d.get(k) for k in ('zone', 'x', 'y', 'z', 'dx', 'dy', 'to', 'walked')},
+                               age=max(0, round((now - d['at']) * 1000))) for d in self.doors]
+            s['zage'] = max(0, round((now - self.zone_at) * 1000)) if fresh and self.zone_at else None
             s['bspot'] = self.battle_spot
         return s
 
@@ -336,7 +494,7 @@ class Party:
         me = self._me()
         return {'v': 1, 'leader': me, 'others': [{k: o.get(k) for k in
                 ('name', 'zone', 'x', 'y', 'z', 'battle', 'hp', 'ready', 'walk', 'age', 'brole', 'wiz', 'school', 'hits',
-                 'hitr', 'plan', 'lasthit')} for o in others]}
+                 'hitr', 'plan', 'lasthit', 'tp', 'tpwhy')} for o in others]}
 
     def _beat_out(self):
         """a follower's beat to the leader (its own thread); a failure backs off and says why"""
@@ -356,9 +514,7 @@ class Party:
                 with self.lock:
                     self.state, self.why = 'error', 'the leader address isn\'t an address'
                 return
-        me = self._me()
-        q = {k: ('' if v is None else v) for k, v in me.items() if k not in ('door', 'bspot')}
-        q['id'] = self.id
+        q = self._beat_query()
         try:
             c = http.client.HTTPConnection(host, port, timeout=1.5)
             c.request('GET', '/party/beat?' + urllib.parse.urlencode(q))
@@ -389,6 +545,20 @@ class Party:
             self._fail(f'can\'t reach it ({e.strerror or e})')
         except (ValueError, http.client.HTTPException):
             self._fail('its answer couldn\'t be read')
+
+    def _beat_query(self):
+        """a follower's beat's fields: its state (_me - its tp and tpwhy too) and its id; not its doors, battle spot or
+        zone's age (the leader's to send - a list in a query would only make it longer: the leader's server takes
+        MAX_PATH characters). Longer than that - a 120-character zone of backslashes, an 80-character hold and why of
+        commas and apostrophes, 3 characters each in the URL: ~1300 - its why, then its hold, left out till it fits (~820
+        without them; the leader answered 403 to the whole beat, and the follower went 'unreachable')"""
+        q = {k: ('' if v is None else v) for k, v in self._me().items() if k not in ('door', 'doors', 'bspot', 'zage')}
+        q['id'] = self.id
+        for k in ('tpwhy', 'hold'):
+            if len('/party/beat?' + urllib.parse.urlencode(q)) <= MAX_PATH:
+                break
+            q[k] = ''
+        return q
 
     def _fail(self, why):
         with self.lock:
@@ -428,30 +598,60 @@ class Party:
             return
         now = time.time()
         x, y, z = r['pos'][:3]
+        # (navmem's reading from the ClientObject's own copy of its place - it has no body: zoning. The game can keep the
+        # old zone a while into the loading screen - Dungeons.ahk: "still in the zone it's leaving" -, its place frozen
+        # at the doorway: that isn't standing still)
+        zoning = r.get('source') == 'object'
+        said = None
         with self.lock:
             last = self.trail[-1] if self.trail else None
             if last and last[1] != r['zone']:
-                # (the zone changed: the last spot in the old one, and the way it was going there - from ~1.5 s before)
+                # (the zone changed: the last spot in the old one, and the way it was going there - from ~1.5 s before;
+                # walked or not - it stood still: a teleport, no door a follower can walk through. Both from its readings
+                # with a body: 1.5 s of frozen zoning reads made a door walked through a teleport, and its way on none.
+                # All of them zoning: all, as before)
                 old = [p for p in self.trail if p[1] == last[1]]
-                back = next((p for p in old if last[0] - p[0] <= 1.5), old[0])
+                body = [p for p in old if not (len(p) > 5 and p[5])] or old
+                walked, moved, span, back = walked_before(body)
+                nz, still = len(old) - len(body), still_for(old)
                 dx, dy = last[2] - back[2], last[3] - back[3]
                 n = math.hypot(dx, dy) or 1.0
                 self.door = {'zone': last[1], 'x': last[2], 'y': last[3], 'z': last[4], 'dx': dx / n, 'dy': dy / n,
-                             'to': r['zone'], 'at': now}
+                             'to': r['zone'], 'walked': walked, 'at': now}
+                self.doors = (self.doors + [self.door])[-MAX_DOORS:]
                 self.trail = []
-            self.trail.append((now, r['zone'], x, y, z))
+                said = (f'party: {last[1]} -> {r["zone"]}: '
+                        + ('walked through a door' if walked else 'a teleport (it stood still)' if walked is False
+                           else 'walked or not not known (too little of its trail)')
+                        + f' - moved {moved:.0f} in the last {span:.1f} s'
+                        + (f', still for the last {still:.1f} s' if still >= BEAT else '')
+                        + (f' ({nz} zoning reads left out)' if nz else ''))
+            if last is None or last[1] != r['zone']:
+                self.zone_at = now
+            self.trail.append((now, r['zone'], x, y, z, zoning))
             self.trail = [p for p in self.trail if now - p[0] <= 4.0]
             self.mem = {'zone': r['zone'], 'x': x, 'y': y, 'z': z, 'yaw': r.get('yaw'), 'at': now}
+        if said:
+            # (one line a zone change - how the doors are told apart, to check in the game: WALK_MIN, DOOR_WINDOW - and
+            # whether its last readings in the old zone stand still with a body: "still for")
+            self.log(said)
 
     # ------------------------------------------------------------------ to AutoFarmer
     def lines(self):
-        """party|role|state|why; me|zone|x|y|z|yaw; leader|...; member|... (one per follower, the leader's view)"""
+        """party|role|state|why; me|zone|x|y|z|yaw; leader|...; member|... (one per follower, the leader's view).
+        AutoHotkey's fields (Party.ahk PartyTick - f[1] the line's kind): the leader's 2-31 as ever, then 32 loading,
+        33 dwalk (the door below walked: 1, 0, '' not known), 34 zage (ms in its zone), 35 dage (the door's age, ms), 36
+        port, 37 its why (port_advice); a member's 2-21 as ever, then 22 tp, 23 tpwhy. (38-39 / 24-25: the battle
+        planner's hit round, later.) The door (14-20): the leader's latest out of this wizard's zone (door_from), else its
+        last as before. Old bots read only the fields they know"""
         def num(v, d=0):
             return '' if v is None else f'{v:.{d}f}'
         now = time.time()
         with self.lock:
             role, state, why = self.cfg['role'], self.state, self.why
-            m = self.mem
+            # (this wizard's place as last read - not when that's FRESH s old: a loading screen, its zone not known - as
+            # _me sends it to the leader)
+            m = self.mem if self.mem and now - self.mem.get('at', 0) < FRESH else {}
             out = [f'party|{role}|{state}|{why}',
                    f"me|{m.get('zone', '')}|{num(m.get('x'))}|{num(m.get('y'))}|{num(m.get('z'))}|{num(m.get('yaw'), 4)}"]
             if role == 'follower' and self.leader:
@@ -460,15 +660,23 @@ class Party:
                 dist = ''
                 if L.get('zone') and L.get('zone') == m.get('zone') and L.get('x') is not None and m.get('x') is not None:
                     dist = f"{math.hypot(L['x'] - m['x'], L['y'] - m['y']):.0f}"
-                d = L.get('door') or {}
+                doors = L.get('doors') or []
+                d = door_from(m.get('zone'), doors) or (doors[-1] if doors else None) or L.get('door') or {}
                 b = L.get('bspot') or (None, None, None)
+                walked = d.get('walked')
+                port, pwhy = port_advice(m.get('zone') or '', L, now)
                 out.append('leader|' + '|'.join([
                     L.get('name') or '', L.get('zone') or '', num(L.get('x')), num(L.get('y')), num(L.get('z')),
                     num(L.get('yaw'), 4), L.get('battle', '0'), num(L.get('hp')), L.get('ready', '0'), L.get('walk', '0'),
                     str(age), dist, d.get('zone', ''), num(d.get('x')), num(d.get('y')), num(d.get('z')),
                     num(d.get('dx'), 3), num(d.get('dy'), 3), d.get('to', ''), num(b[0]), num(b[1]), num(b[2]),
                     L.get('hold') or '', L.get('brole') or '', L.get('wiz') or '', L.get('school') or '',
-                    num(L.get('hits')), num(L.get('hitr')), L.get('plan') or '', L.get('lasthit') or '']))
+                    num(L.get('hits')), num(L.get('hitr')), L.get('plan') or '', L.get('lasthit') or '',
+                    # (32-37: its loading flag; the door's walked, the leader's time in its zone and the door's age - each
+                    # as sent and since that answer -; the teleport advice)
+                    L.get('loading', '0'), '' if walked is None else ('1' if walked else '0'),
+                    '' if L.get('zage') is None else str(L['zage'] + age),
+                    '' if d.get('age') is None else str(d['age'] + age), port, pwhy.replace('|', '/')]))
                 # (the other followers: as the leader's own rows below - walk, loading and hold where it doesn't say)
                 for o in L.get('others') or []:
                     # (its age as the leader last heard it, and since that answer: a leader gone quiet takes them along)
@@ -477,7 +685,8 @@ class Party:
                                num(o.get('y')), num(o.get('z')), o.get('battle', '0'), num(o.get('hp')),
                                o.get('ready', '0'), str(oa + age) if isinstance(oa, int) else '', '', o.get('walk', '0'), '0', '',
                                o.get('brole') or '', o.get('wiz') or '', o.get('school') or '', num(o.get('hits')),
-                               num(o.get('hitr')), o.get('plan') or '', o.get('lasthit') or '']))
+                               num(o.get('hitr')), o.get('plan') or '', o.get('lasthit') or '', o.get('tp') or '',
+                               o.get('tpwhy') or '']))
             elif role == 'leader':
                 for v in self.members.values():
                     dist = ''
@@ -488,5 +697,5 @@ class Party:
                                v.get('ready', '0'), str(round((now - v['at']) * 1000)), dist, v.get('walk', '0'),
                                v.get('loading', '0'), v.get('hold') or '', v.get('brole') or '', v.get('wiz') or '',
                                v.get('school') or '', num(v.get('hits')), num(v.get('hitr')), v.get('plan') or '',
-                               v.get('lasthit') or '']))
+                               v.get('lasthit') or '', v.get('tp') or '', v.get('tpwhy') or '']))
         return out

@@ -480,7 +480,35 @@ its wizard's name, school and hits. Nothing one sends makes another press
 anything: a blader's boosts go to the hitter's plate as its own screen shows it,
 found by the name the game's own log gives for its side. Still to come: teleport
 to friend when the leader is somewhere a door doesn't lead (the follower waits
-and says so).
+and says so - below).
+	- Doors and teleports (v0.9.0): the leader's helper tells a door the leader
+	  walked through from a teleport (End, Home, a sigil, a potion run, a
+	  friend's teleport - it stood still before its zone changed) and keeps its
+	  last 3 doors, so a follower a zone or two behind walks door after door.
+	  That guess isn't checked in the game yet, so a follower still walks to
+	  where the leader teleported from ("Party: the helper says <leader>
+	  teleported from here ... - walking to its spot all the same" in
+	  debug.log) unless Settings' "...a follower trusts the helper's teleport
+	  guess" (partytpdoors, off by default) is on. A door that hasn't taken the
+	  follower in 3 tries is given up till its zone changes, or for 6 minutes
+	  (a try a battle cut short isn't counted; it walked to it and pushed for
+	  good before). Wherever no door leads - the leader teleported (with
+	  partytpdoors on), or its door was given up - the follower
+	  stands where it is and says so: "party: can't follow - <why> - waiting
+	  here" on the dashboard, "Party: can't follow <leader> - <why>" in
+	  debug.log once a wait, a Discord alert after 5 minutes of it. The leader
+	  is told and doesn't wait for it ("Party: <name> can't follow (<why>) -
+	  walking on without them till they're near again"). While the leader is
+	  loading the follower waits ("party: waiting - <leader> is loading"). Five
+	  stuck tries on the way: it waits 30 s, then tries again - at once in a new
+	  zone or with the leader near (it walked 3 s, stopped 1 s, for good
+	  before). The helper's log has a line at each zone change ("party: A -> B:
+	  walked through a door - moved 1234 in the last 1.2 s", or "a teleport (it
+	  stood still)"), and debug.log says when teleporting to the leader would
+	  be the way ("Party: teleporting to <wizard> would be the way now ...") -
+	  the teleport itself isn't in yet: the Friends list's clicks need its
+	  window names from the game. partywaitmax 0: the leader never waits (it
+	  waited for good, though the setting said 0 = no waiting).
 	- Your own plate in a party battle: found by your wizard's name (learned
 	  from a battle with no other wizard on your side - the game's log; one
 	  such battle first), read off the plates along the bottom.
