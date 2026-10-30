@@ -12,9 +12,11 @@ names the game's own log gives for its own side.
   * A follower's helper calls the leader's every BEAT s in its own thread (AutoFarmer never waits on the network).
   * The leader's "door": when it changes zone, the last spot in the zone it left and which way it was going there -
     a follower in that zone walks there and on through. Each is marked walked (it moved WALK_MIN units or more in the
-    DOOR_WINDOW s before it left) or not (it stood still: End, Home, a sigil, a potion run, a friend's teleport - no door
-    a follower can walk through); the last MAX_DOORS are kept with their ages, so a follower two zones behind still has
-    the door out of its own zone (A -> B -> C: a follower in A walks A -> B, then B -> C).
+    DOOR_WINDOW s before it left - its readings while zoning, navmem's 'object' ones, left out) or not (it stood still:
+    End, Home, a sigil, a potion run, a friend's teleport - no door a follower can walk through); the last MAX_DOORS are
+    kept with their ages, so a follower two zones behind still has the door out of its own zone (A -> B -> C: a follower
+    in A walks A -> B, then B -> C). Walked or not isn't checked in the game yet: Party.ahk only logs it, and walks to
+    the door all the same, unless Settings' partytpdoors is on.
   * The leader's loading flag and how long it's been in its zone go to the followers too, and port_advice() says when a
     follower should teleport to it (TODO goal 1 - the Friends list's Teleport; the AutoHotkey side decides and clicks).
   * A follower's teleport state (tp: wait - it can't follow -, stuck, porting, refused) goes to the leader, which stops
@@ -51,6 +53,7 @@ WALK_SPAN_MIN = 0.3     # less trail than this (s) before the change: walked not
 PORT_ZONE_AGE = 3.0     # s the leader has been in its zone before a follower should teleport to it (not mid-arrival)
 LEADER_FRESH = 5.0      # s since the leader's answer: older, nothing's decided on it (as Party.ahk's 5 s)
 TP_STATES = ('wait', 'stuck', 'porting', 'refused')     # a follower's tp ('' following)
+MAX_PATH = 1024         # the longest request the leader's server takes (characters): a longer beat gets a 403
 NAME_RE = re.compile(r"^[\w .'-]{1,24}$")
 ZONE_RE = re.compile(r"^[\w/\\ .'-]{1,120}$")
 HOLD_RE = re.compile(r"^[\w .,'()/-]{0,80}$")
@@ -126,9 +129,16 @@ def _walked(v):
 
 
 def _ms(v):
-    """an age in ms as sent: a whole number from 0 up to ~11 days, else None"""
-    x = _f(v)
-    return int(x) if x is not None and 0 <= x < 1e9 else None
+    """an age in ms as sent: a whole number from 0 up to ~11 days, else None. (Not _f: its 1e6 - a zone's reach - is 16.7
+    minutes in ms: a leader that long in its zone, or a door that old, read as no age - "an older version" - and the
+    teleport advice never came)"""
+    if isinstance(v, bool):
+        return None
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return None
+    return int(x) if math.isfinite(x) and 0 <= x < 1e9 else None
 
 
 def clean_door(door):
@@ -173,6 +183,22 @@ def walked_before(trail):
     if span < WALK_SPAN_MIN:
         return None, moved, span, win[0]
     return moved >= WALK_MIN, moved, span, win[0]
+
+
+def still_for(trail, tol=1.0):
+    """how long (s) the wizard's place hadn't moved (more than tol units) at the end of its trail [(t, zone, x, y, ...)]:
+    0.0 when its last reading had moved. (For the log: a door walked through whose last readings stood still - the game
+    keeping the old zone into the loading screen, its place frozen, with a body - is how WALK_MIN / DOOR_WINDOW would go
+    wrong)"""
+    if not trail:
+        return 0.0
+    last = trail[-1]
+    t0 = last[0]
+    for p in reversed(trail[:-1]):
+        if math.hypot(p[2] - last[2], p[3] - last[3]) > tol:
+            break
+        t0 = p[0]
+    return last[0] - t0
 
 
 def port_advice(me_zone, leader, now):
@@ -253,7 +279,8 @@ class Party:
         self.ahk = {}                       # what AutoFarmer said last (clean_state)
         self.ahk_at = 0.0
         self.mem = {}                       # zone, x, y, z, yaw, at - read here
-        self.trail = []                     # (t, zone, x, y, z) of the last few seconds (the door)
+        self.trail = []                     # (t, zone, x, y, z, zoning) of the last few seconds (the door) - zoning:
+                                            # navmem's 'object' reading (the wizard has no body)
         self.door = None                    # {zone, x, y, z, dx, dy, to, walked, at}: the last spot in the zone left,
                                             # the way on
         self.doors = []                     # the last MAX_DOORS of those, oldest first (self.door the last)
@@ -411,7 +438,7 @@ class Party:
                 except ValueError:
                     ok = False
                 u = urllib.parse.urlparse(self.path)
-                if not ok or len(self.path) > 1024 or u.path != '/party/beat':
+                if not ok or len(self.path) > MAX_PATH or u.path != '/party/beat':
                     self.send_response(403)
                     self.end_headers()
                     return
@@ -521,10 +548,16 @@ class Party:
 
     def _beat_query(self):
         """a follower's beat's fields: its state (_me - its tp and tpwhy too) and its id; not its doors, battle spot or
-        zone's age (the leader's to send - a list in a query would only make it longer: the leader's server takes 1024
-        characters)"""
+        zone's age (the leader's to send - a list in a query would only make it longer: the leader's server takes
+        MAX_PATH characters). Longer than that - a 120-character zone of backslashes, an 80-character hold and why of
+        commas and apostrophes, 3 characters each in the URL: ~1300 - its why, then its hold, left out till it fits (~820
+        without them; the leader answered 403 to the whole beat, and the follower went 'unreachable')"""
         q = {k: ('' if v is None else v) for k, v in self._me().items() if k not in ('door', 'doors', 'bspot', 'zage')}
         q['id'] = self.id
+        for k in ('tpwhy', 'hold'):
+            if len('/party/beat?' + urllib.parse.urlencode(q)) <= MAX_PATH:
+                break
+            q[k] = ''
         return q
 
     def _fail(self, why):
@@ -565,14 +598,22 @@ class Party:
             return
         now = time.time()
         x, y, z = r['pos'][:3]
+        # (navmem's reading from the ClientObject's own copy of its place - it has no body: zoning. The game can keep the
+        # old zone a while into the loading screen - Dungeons.ahk: "still in the zone it's leaving" -, its place frozen
+        # at the doorway: that isn't standing still)
+        zoning = r.get('source') == 'object'
         said = None
         with self.lock:
             last = self.trail[-1] if self.trail else None
             if last and last[1] != r['zone']:
                 # (the zone changed: the last spot in the old one, and the way it was going there - from ~1.5 s before;
-                # walked or not - it stood still: a teleport, no door a follower can walk through)
+                # walked or not - it stood still: a teleport, no door a follower can walk through. Both from its readings
+                # with a body: 1.5 s of frozen zoning reads made a door walked through a teleport, and its way on none.
+                # All of them zoning: all, as before)
                 old = [p for p in self.trail if p[1] == last[1]]
-                walked, moved, span, back = walked_before(old)
+                body = [p for p in old if not (len(p) > 5 and p[5])] or old
+                walked, moved, span, back = walked_before(body)
+                nz, still = len(old) - len(body), still_for(old)
                 dx, dy = last[2] - back[2], last[3] - back[3]
                 n = math.hypot(dx, dy) or 1.0
                 self.door = {'zone': last[1], 'x': last[2], 'y': last[3], 'z': last[4], 'dx': dx / n, 'dy': dy / n,
@@ -582,14 +623,17 @@ class Party:
                 said = (f'party: {last[1]} -> {r["zone"]}: '
                         + ('walked through a door' if walked else 'a teleport (it stood still)' if walked is False
                            else 'walked or not not known (too little of its trail)')
-                        + f' - moved {moved:.0f} in the last {span:.1f} s')
+                        + f' - moved {moved:.0f} in the last {span:.1f} s'
+                        + (f', still for the last {still:.1f} s' if still >= BEAT else '')
+                        + (f' ({nz} zoning reads left out)' if nz else ''))
             if last is None or last[1] != r['zone']:
                 self.zone_at = now
-            self.trail.append((now, r['zone'], x, y, z))
+            self.trail.append((now, r['zone'], x, y, z, zoning))
             self.trail = [p for p in self.trail if now - p[0] <= 4.0]
             self.mem = {'zone': r['zone'], 'x': x, 'y': y, 'z': z, 'yaw': r.get('yaw'), 'at': now}
         if said:
-            # (one line a zone change - how the doors are told apart, to check in the game: WALK_MIN)
+            # (one line a zone change - how the doors are told apart, to check in the game: WALK_MIN, DOOR_WINDOW - and
+            # whether its last readings in the old zone stand still with a body: "still for")
             self.log(said)
 
     # ------------------------------------------------------------------ to AutoFarmer

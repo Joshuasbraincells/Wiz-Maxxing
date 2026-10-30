@@ -13,10 +13,12 @@
 ; a blader's or healer's boosts go to the party's hitter's plate, found on its own screen by the name the game's log
 ; gives for its own side. Phase 2 (teleport to friend across zones) isn't in yet: a follower whose leader went where it
 ; can't follow waits, and says so - "can't follow" (v0.9.0: the helper tells a door the leader walked through from a
-; teleport - End, Home, a sigil, a potion run: it stood still before its zone changed -, keeps its last 3 doors - a
-; follower two zones behind walks door after door - and says when a teleport to the leader would be the way: its
-; port_advice. A door that doesn't take the follower is given up after 3 tries; one that can't follow tells the leader -
-; tp -, which stops waiting for it. Where the Friends list's Teleport plugs in, once its windows are known: PartyCantFollow).
+; teleport - End, Home, a sigil, a potion run: it stood still before its zone changed; not checked in the game yet, so
+; only acted on with Settings' partytpdoors on, else logged -, keeps its last 3 doors - a follower two zones behind
+; walks door after door - and says when a teleport to the leader would be the way: its port_advice. A door that doesn't
+; take the follower is given up after 3 tries - a try a battle cut short not counted, tried again 6 minutes on; one that
+; can't follow tells the leader - tp -, which stops waiting for it. Where the Friends list's Teleport plugs in, once its
+; windows are known: PartyCantFollow).
 ;
 ; Battle roles (phase 3 - Settings: partybattle): with more than one wizard on your side, a Blader puts its blades on the
 ; hitter (the wizard set to Hitter - the leader's first -, else the leader), its traps on the enemy the hitter goes for,
@@ -42,9 +44,10 @@ global PartyTgt, PartyStillAt, PartyStillX, PartyStillY, PartyTries, PartyPushUn
 ;it's waited, what was last logged (once a wait), the zone the helper's teleport advice was logged for, the Discord alert
 ;sent; the door tried (its key), the tries at it and the one given up; the zones last seen (this wizard's - the stuck and
 ;door tries start again when it changes -, the leader's - the stuck tries); when the stuck tries ran out (30 s, then
-;they start again)
+;they start again); when the door was given up (tried again 6 minutes on), the battle count at its last push (a battle
+;since cut that try short: not counted), the door the helper called a teleport last logged (partytpdoors off)
 global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted, PartyDoorKey, PartyDoorTries
-global PartyDoorGave, PartyMyZone, PartyLdZone, PartyStuckAt
+global PartyDoorGave, PartyMyZone, PartyLdZone, PartyStuckAt, PartyDoorGaveAt, PartyDoorBattles, PartyDwalkSaid
 
 ;The role set in Settings: "off", "leader" or "follower"
 PartyRoleSet()
@@ -586,13 +589,15 @@ PartyHoldWhy()
 ;door it took (its last spot in this zone, then 400 on the way it was going). Stuck (its own place hardly moving with W
 ;down for 3 s): back up, turn 90, walk - 4 times at most, then it waits for the leader to come back near
 ;(v0.9.0 - TODO goal 1: the door is the leader's latest out of this wizard's zone - two zones behind, door after door; one
-;the leader didn't walk through - a teleport: End, Home, a sigil, a potion run - isn't walked to; one that hasn't taken
-;this wizard in 3 tries is given up till its zone changes; wherever no door leads it waits and says so - PartyCantFollow,
-;the leader told. Five stuck tries: it waits 30 s, then they start again - before, they never did till it had stood by
-;the leader: W 3 s, stop 1 s, for good. A new zone - its own or the leader's - starts them again at once: PartyZoneCheck)
+;the helper says the leader didn't walk through - a teleport: End, Home, a sigil, a potion run - isn't walked to with
+;partytpdoors on (off, the default - the guess isn't checked in the game yet: logged, and walked to as ever); one that
+;hasn't taken this wizard in 3 tries is given up till its zone changes, or for 6 minutes (a try a battle cut short not
+;counted); wherever no door leads it waits and says so - PartyCantFollow, the leader told. Five stuck tries: it waits
+;30 s, then they start again - before, they never did till it had stood by the leader: W 3 s, stop 1 s, for good. A new
+;zone - its own or the leader's - starts them again at once: PartyZoneCheck)
 PartyFollowStep()
 	{
-	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY, PartyDoorKey, PartyDoorTries, PartyDoorGave, PartyStuckAt ; (v1 globals it sets)
+	global WkFrontLook, PartyNear, PartyTries, PartyStillAt, PartyPushUntil, PartyStillX, PartyStillY, PartyDoorKey, PartyDoorTries, PartyDoorGave, PartyStuckAt, PartyDoorGaveAt, PartyDoorBattles, PartyDwalkSaid ; (v1 globals it sets)
 	;(battles only - Autofarmer.ahk, Settings: battlesonly: no following - the main loop doesn't ask then; never a step all the same)
 	if (BattlesOnlyNo("following the party's leader"))
 		{
@@ -663,12 +668,30 @@ PartyFollowStep()
 		{
 		pfKey := L.dzone "|" Round(V1N(L.dx)) "|" Round(V1N(L.dy)) "|" L.dto
 		;(not walked through - a teleport: End, Home, a sigil, a potion run (the leader stood still before its zone changed) -
-		;nowhere to walk. Blank - an older helper: walked to as ever)
+		;nowhere to walk. Only with Settings' partytpdoors on: the helper's guess isn't checked in the game yet (vision\party.py
+		;WALK_MIN, DOOR_WINDOW - a loading screen still in the old zone, its place frozen, would look like standing still,
+		;and the leader walks on without one that says it can't follow). Off, the default: logged once a door, and walked to
+		;as ever - the 3 tries below give a real teleport's spot up. Blank - an older helper: walked to as ever)
 		if (L.dwalk = "0")
-			return PartyCantFollow(L, "the leader teleported from here to " L.dto " - no door to walk through")
-		;(given up - 3 tries didn't take this wizard: not again till its zone changes, or the leader takes a door again)
-		if (PartyDoorGave = pfKey)
+			{
+			if (Stat("partytpdoors"))
+				return PartyCantFollow(L, "the leader teleported from here to " L.dto " - no door to walk through")
+			if (PartyDwalkSaid != pfKey)
+				{
+				PartyDwalkSaid := pfKey
+				DebugLog("Party: the helper says " pfWho " teleported from here to " L.dto " (it stood still) - walking to its spot all the same (Settings: partytpdoors off)")
+				}
+			}
+		;(given up - 3 tries didn't take this wizard: not again till its zone changes, or the leader takes a door again, or
+		;6 minutes on - the Discord alert goes at 5 (PartyCantFollow): a try something passing spoilt - a dialog, the game
+		;behind another window - doesn't keep it here for good)
+		if (PartyDoorGave = pfKey && V1Lt(V1Ago(PartyDoorGaveAt), 360000))
 			return PartyCantFollow(L, "the leader's door here to " L.dto " didn't take this wizard (3 tries)")
+		if (PartyDoorGave = pfKey)
+			{
+			PartyDoorGave := "", PartyDoorTries := 0
+			DebugLog("Party: trying " pfWho "'s door here to " L.dto " again (6 minutes after giving it up)")
+			}
 		tgt := V1Obj({x: L.dx, y: L.dy, z: L.dz, kind: "door", stop: 100})
 		}
 	else if (L.zone = "" || L.loading = 1)
@@ -706,13 +729,16 @@ PartyFollowStep()
 		{
 		;(a try at it: one more each time it's reached - the push on through after. The 4th time with no zone change between,
 		;it's given up: it doesn't take this wizard - a door that needs more than walking, or one only the leader's quest
-		;opens. It looped door, push, door for good before)
+		;opens. It looped door, push, door for good before. A battle since the last push - a mob by the doorway: the push
+		;isn't walked round mobs - cut that try short: not counted - Autofarmer.ahk's battles, as Dungeons.ahk's loadBattles)
 		if (PartyDoorKey != pfKey)
 			PartyDoorKey := pfKey, PartyDoorTries := 0
-		PartyDoorTries := V1N(PartyDoorTries) + 1
+		else if (V1N(battles) != V1N(PartyDoorBattles))
+			PartyDoorTries := Max(0, V1N(PartyDoorTries) - 1)
+		PartyDoorTries := V1N(PartyDoorTries) + 1, PartyDoorBattles := battles
 		if (PartyDoorTries > 3)
 			{
-			PartyDoorGave := pfKey
+			PartyDoorGave := pfKey, PartyDoorGaveAt := A_TickCount
 			return PartyCantFollow(L, "the leader's door here to " L.dto " didn't take this wizard (3 tries)")
 			}
 		PartyPushUntil := A_TickCount + 4000
@@ -1164,4 +1190,5 @@ PartyBlank()
 	global BattleRole := "", hammerX := "", hammerY := "", HammerName := ""
 	global PartyTp := "", PartyTpWhy := "", PartyCantAt := "", PartyCantSaid := "", PartyPortSaid := "", PartyCantAlerted := ""
 	global PartyDoorKey := "", PartyDoorTries := "", PartyDoorGave := "", PartyMyZone := "", PartyLdZone := "", PartyStuckAt := ""
+	global PartyDoorGaveAt := "", PartyDoorBattles := "", PartyDwalkSaid := ""
 	}

@@ -434,10 +434,16 @@ and says so - below).
 	- Doors and teleports (v0.9.0): the leader's helper tells a door the leader
 	  walked through from a teleport (End, Home, a sigil, a potion run, a
 	  friend's teleport - it stood still before its zone changed) and keeps its
-	  last 3 doors, so a follower a zone or two behind walks door after door. A
-	  door that hasn't taken the follower in 3 tries is given up till its zone
-	  changes (it walked to it and pushed for good before). Wherever no door
-	  leads - the leader teleported, or its door was given up - the follower
+	  last 3 doors, so a follower a zone or two behind walks door after door.
+	  That guess isn't checked in the game yet, so a follower still walks to
+	  where the leader teleported from ("Party: the helper says <leader>
+	  teleported from here ... - walking to its spot all the same" in
+	  debug.log) unless Settings' "...a follower trusts the helper's teleport
+	  guess" (partytpdoors, off by default) is on. A door that hasn't taken the
+	  follower in 3 tries is given up till its zone changes, or for 6 minutes
+	  (a try a battle cut short isn't counted; it walked to it and pushed for
+	  good before). Wherever no door leads - the leader teleported (with
+	  partytpdoors on), or its door was given up - the follower
 	  stands where it is and says so: "party: can't follow - <why> - waiting
 	  here" on the dashboard, "Party: can't follow <leader> - <why>" in
 	  debug.log once a wait, a Discord alert after 5 minutes of it. The leader

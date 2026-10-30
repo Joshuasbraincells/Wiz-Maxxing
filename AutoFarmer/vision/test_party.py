@@ -64,9 +64,10 @@ class PartyCase(unittest.TestCase):
         p.cfg['role'] = role
         return p
 
-    def at(self, p, zone, x, y, z=0.0):
-        """one reading of p's wizard (zone, place), then the clock on 0.4 s"""
-        p.box['r'] = {'zone': zone, 'pos': (x, y, z), 'yaw': 0.0}
+    def at(self, p, zone, x, y, z=0.0, source='body'):
+        """one reading of p's wizard (zone, place - navmem's source: 'body', or 'object' while zoning), then the clock on
+        0.4 s"""
+        p.box['r'] = {'zone': zone, 'pos': (x, y, z), 'yaw': 0.0, 'source': source}
         p._read()
         self.clock.t += 0.4
 
@@ -109,6 +110,38 @@ class Doors(PartyCase):
         self.assertIs(d['walked'], False)
         self.assertEqual((d['x'], d['y'], d['dx'], d['dy']), (100, 100, 0.0, 0.0))
         self.assertIn('a teleport', self.logged[-1])
+
+    def test_zoning_reads_left_out(self):
+        # (walked 2 s at 1000 a second, then 1.6 s of readings still in the old zone, frozen at the doorway, from the
+        # ClientObject's own copy - no body: zoning -, then the new zone: a door walked through, its way on the way it
+        # went - it was "a teleport", its way on none, and a follower refused the door)
+        L = self.make('leader')
+        self.walk(L, 'A', 0, 0, 1000, 0)
+        for _ in range(4):
+            self.at(L, 'A', 2000, 0, source='object')
+        self.at(L, 'B', 0, 0)
+        d = L.door
+        self.assertIs(d['walked'], True)
+        self.assertEqual((d['x'], d['y']), (2000, 0))              # its last spot in A, as before
+        self.assertAlmostEqual(d['dx'], 1.0)
+        self.assertIn('walked through a door', self.logged[-1])
+        self.assertIn('4 zoning reads left out', self.logged[-1])
+        self.assertIn('still for the last 1.6 s', self.logged[-1])
+
+    def test_all_zoning_reads_kept(self):
+        # (nothing but zoning reads in the zone left: those, as before - here it stood still)
+        L = self.make('leader')
+        self.stand(L, 'A', 5, 5)
+        L.trail = [p[:5] + (True,) for p in L.trail]
+        self.at(L, 'B', 0, 0)
+        self.assertIs(L.door['walked'], False)
+        self.assertNotIn('zoning reads left out', self.logged[-1])
+
+    def test_still_for(self):
+        trail = [(0.0, 'A', 0, 0, 0), (0.4, 'A', 400, 0, 0), (0.8, 'A', 400.5, 0, 0), (1.2, 'A', 400, 0, 0)]
+        self.assertAlmostEqual(P.still_for(trail), 0.8)
+        self.assertEqual(P.still_for(trail[:2]), 0.0)
+        self.assertEqual(P.still_for([]), 0.0)
 
     def test_too_little_trail(self):
         L = self.make('leader')
@@ -249,6 +282,24 @@ class Lines(PartyCase):
         self.assertGreaterEqual(int(f[34]), 3000)                  # its zone's age
         self.assertGreaterEqual(int(f[35]), int(f[34]))            # the door's: older
 
+    def test_long_in_its_zone(self):
+        # (17 minutes in Home, its door 20 minutes old - past 1e6 ms: they read as no age, "an older version", and the
+        # teleport advice never came)
+        L, F = self.make('leader'), self.make('follower')
+        self.stand(L, 'A', 50, 50)
+        self.at(L, 'Home', 0, 0)
+        L.zone_at = self.clock.t - 17 * 60
+        L.doors[-1]['at'] = L.door['at'] = self.clock.t - 20 * 60
+        self.stand(L, 'Home', 0, 0, secs=0.4)
+        self.at(F, 'A', 300, 0)
+        self.follow(L, F)
+        self.assertGreater(F.leader['zage'], 1000000)
+        f = self.leader_row(F)
+        self.assertGreaterEqual(int(f[34]), 17 * 60 * 1000)
+        self.assertGreaterEqual(int(f[35]), 20 * 60 * 1000)
+        self.assertEqual(f[36], '1')
+        self.assertIn('teleported', f[37])
+
     def test_fields_known_before_stay(self):
         L, F = self.make('leader'), self.make('follower')
         L.ahk = P.clean_state({'battle': '1', 'hp': '77', 'ready': '1', 'walk': '1', 'hold': 'Bob is loading',
@@ -358,17 +409,29 @@ class TeleportState(PartyCase):
         for k in ('door', 'doors', 'bspot', 'zage'):
             self.assertNotIn(k, q)
         self.assertEqual((q['tp'], q['id']), ('stuck', F.id))
-        # (the longest a beat gets - a 120-letter zone, an 80-letter why, every school: under the server's 1024)
-        F.ahk = P.clean_state({'name': 'N' * 24, 'wiz': 'W' * 24, 'tp': 'wait', 'tpwhy': "(x'/y, z)-" * 8,
-                               'hold': "(x'/y, z)-" * 8, 'plan': ','.join(P.SCHOOLS), 'lasthit': ','.join(P.SCHOOLS),
+        # (an everyday long one - a 40-character zone, a 70-character why and hold, every school: all of it sent)
+        F.ahk = P.clean_state({'name': 'Bob', 'wiz': 'Bob Stormblade', 'tp': 'wait', 'tpwhy': 'x' * 70,
+                               'hold': 'Ned is in another zone (stuck on its way)', 'plan': ','.join(P.SCHOOLS)})
+        self.at(F, 'WizardCity/WC_Streets/Interiors/WC_Ravenwood', 1234.5, -5678.5, 90.25)
+        q = F._beat_query()
+        self.assertEqual((q['tpwhy'], q['hold']), ('x' * 70, 'Ned is in another zone (stuck on its way)'))
+        # (the longest the checks let by - each field of the characters the URL makes 3 of: a 120-character zone of
+        # backslashes, 24-character names and an 80-character hold and why of apostrophes, every school: ~1300, over the
+        # server's 1024 - its why and hold left out till it fits, the rest kept)
+        F.ahk = P.clean_state({'name': "'" * 24, 'wiz': "'" * 24, 'tp': 'wait', 'tpwhy': "'" * 80,
+                               'hold': "'" * 80, 'plan': ','.join(P.SCHOOLS), 'lasthit': ','.join(P.SCHOOLS),
                                'hits': '999999', 'hitr': '999999', 'hp': '100', 'brole': 'healer', 'school': 'balance'})
-        F.cfg['name'] = 'N' * 24
-        self.at(F, "Z/" + "a'b-c/d.e " * 11 + "ab'-/.", -99999.5, -99999.5, -99999.5)
-        self.assertEqual(len(F._me()['zone']), 118)
+        F.cfg['name'] = "'" * 24
+        self.at(F, '\\' * 120, -99999.5, -99999.5, -99999.5)
+        self.assertEqual(len(F._me()['zone']), 120)
+        full = dict(F._me(), id=F.id)
+        full = {k: ('' if v is None else v) for k, v in full.items() if k not in ('door', 'doors', 'bspot', 'zage')}
+        self.assertGreater(len('/party/beat?' + urllib.parse.urlencode(full)), P.MAX_PATH)
         path = '/party/beat?' + urllib.parse.urlencode(F._beat_query())
-        self.assertLess(len(path), 1024)
-        self.assertEqual(P.clean_state({k: v[0] for k, v in urllib.parse.parse_qs(path.split('?', 1)[1]).items()})['tp'],
-                         'wait')
+        self.assertLessEqual(len(path), P.MAX_PATH)
+        got = P.clean_state({k: v[0] for k, v in urllib.parse.parse_qs(path.split('?', 1)[1]).items()})
+        self.assertEqual((got['tp'], got['zone'], got['name'], got['wiz']), ('wait', '\\' * 120, "'" * 24, "'" * 24))
+        self.assertEqual((got['tpwhy'], got['hold']), ('', ''))
 
 
 class Clean(unittest.TestCase):
@@ -386,6 +449,16 @@ class Clean(unittest.TestCase):
         self.assertIsNone(P.clean_peer({'zage': 'soon'})['zage'])
         self.assertEqual(P.clean_peer({'zage': 4000})['zage'], 4000)
         self.assertEqual(P.clean_peer('not a dict')['doors'], [])
+
+    def test_ages_past_16_minutes(self):
+        # (ms ages aren't places: 1e6 - _f's cap - is 16.7 minutes; up to ~11 days taken)
+        self.assertEqual((P._ms(999999), P._ms(1000000), P._ms('1200000'), P._ms(1026000.7)),
+                         (999999, 1000000, 1200000, 1026000))
+        for junk in (1e9, -1, 'nan', 'inf', None, '', 'soon', True, [5]):
+            with self.subTest(age=junk):
+                self.assertIsNone(P._ms(junk))
+        s = P.clean_peer({'zage': 1026000, 'doors': [{'zone': 'A', 'to': 'Home', 'walked': 0, 'age': 1200000}]})
+        self.assertEqual((s['zage'], s['doors'][0]['age']), (1026000, 1200000))
 
 
 if __name__ == '__main__':
