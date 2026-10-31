@@ -11,7 +11,13 @@ letters: 2026-10-24 "Opiio (jn -rhe" for "Defeat Optio Agenor ...", and the ques
 
     g, why = navmem.NavMem().goal()     # the same through navmem's own attached game and lock (vision.py's way)
 
-    python questmem.py [-n 3] [-i 2] [--all]     readings from the command line (and how long each took)
+    ids, why = qm.quest_ids()           # EVERY quest in the quest manager's map [(GID, WizQuestData)] - under the lock,
+    raw = qm.quest_raw(qid, q)          # each one's keys, goals and properties - under the lock (one quest at a time),
+    rows = qm.quests_resolve([raw...], tracked=qid)   # the names looked up - outside it (navmem.NavMem.quests, /quests)
+    print("\n".join(quest_lines(rows)))   # one line a quest, one a goal
+
+    python questmem.py [-n 3] [-i 2] [--all]     readings from the command line (and how long each took); --all: every
+                                                 quest too, as /quests answers
 
 SAFETY. The game is opened by navmem.py's Proc - PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else - and only read: ReadProcessMemory, plus the module /
@@ -46,7 +52,10 @@ WHAT IS READ (build QUEST_BUILD, 2026-10-24 - the offsets are found by name each
              the values are WizQuestData whose m_id is the key (+0x90 holds the same quests by another key)
              WizQuestData: m_id, m_title (QuestTitle_...); +0xB0 std::map<u64 goal GID, SharedPointer<WizGoalData>> (not
              a reflected property - m_goalList is an empty list: found by shape, the map whose values are WizGoalData
-             with m_goalID = key, then kept)
+             with m_goalID = key, then kept); for /quests, EVERY other reflected property of its own whose type is one
+             of KIND_REF's (int, unsigned int, bool, float, std::string, std::wstring, a gid - told by its property adder,
+             as a madlib argument's) - none named here: what tells a spell quest apart isn't known yet, so all of them
+             are read and shown (QUEST_PROPS_CAP at most, by offset)
              WizGoalData: m_goalID, m_name (WizardQuestGoals_Kill ...), m_status (GOAL_STATUS_*), m_type
              (GoalTemplate::GOAL_TYPE_*), m_location (ZoneLocName_...), m_madLibs -> MadlibBlock
              MadlibBlock.m_madlibs: std::list<SharedPointer<MadlibArg>> (head, size; node +0 next, +0x10 the arg)
@@ -104,6 +113,10 @@ PLAIN = "$GOAL_NAME$ $GOAL_TALLYTEXT2$ $GOAL_TALLYTEXT$ in $GOAL_LOCATION$"
 KEY = re.compile(r"^[A-Za-z][A-Za-z0-9-]*_\S.*$")
 TABLE = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 PRELOAD = ("Quest", "WizardQuestGoals", "ZoneLocName", "WizardMobs", "WizItems", "QuestTitle")
+QUESTS_CAP = 200            # quests read at most (/quests - a wizard holds a few dozen at most)
+GOALS_CAP = 40              # goals of one quest read at most
+QUEST_PROPS_CAP = 32        # WizQuestData's other properties read at most (by offset)
+QUEST_SKIP = ("m_id", "m_title")    # (read already: not among its other properties)
 
 
 # ============================================================================ reflection (handmem's, a longer prologue)
@@ -245,6 +258,69 @@ def raw_key(v):
     return v if isinstance(v, str) and KEY.match(v) else ""
 
 
+def adder_kinds(P):
+    """{property adder rva: kind} of KIND_REF's known properties in P ({class: {property: (offset, adder rva, ...)}}) -
+    the adder (AddProperty<T>) a property is registered by names its type T (madlib_arg_kinds' way)"""
+    out = {}
+    for kind, (cls, prop) in KIND_REF.items():
+        v = (P.get(cls) or {}).get(prop)
+        if v and len(v) > 1 and v[1] is not None:
+            out.setdefault(v[1], kind)
+    return out
+
+
+def quest_props(props, kinds, skip=QUEST_SKIP, cap=QUEST_PROPS_CAP):
+    """[(property, offset, kind)] of a class's properties ({property: (offset, adder rva, ...)}) whose adder names a
+    type that can be read (kinds - adder_kinds'), by offset (then name), skip left out, cap at most - every scalar one,
+    none named: WizQuestData's for /quests (what marks a spell quest isn't known yet)"""
+    out = []
+    for name, v in (props or {}).items():
+        if name in skip or not v or len(v) < 2 or v[0] is None:
+            continue
+        kind = kinds.get(v[1])
+        if kind:
+            out.append((name, v[0], kind))
+    return sorted(out, key=lambda x: (x[1], x[0]))[:cap]
+
+
+def _qcell(v):
+    """a field of /quests' lines: no | or line breaks in it; None as empty"""
+    return '' if v is None else re.sub(r'[|\r\n]+', ' ', str(v)).strip()
+
+
+def _pval(v):
+    """a property's value in quest|'s props field: bools 1/0, no , = | or line breaks"""
+    if isinstance(v, bool):
+        return "1" if v else "0"
+    return re.sub(r'[,=|\r\n]+', ' ', '' if v is None else str(v)).strip()
+
+
+def quest_lines(rows, why="", ms=None):
+    """/quests' answer for quests_resolve's rows (None: none|why):
+    quest|quest id|title|tracked (1/0)|goals|goals complete|title key|props (name=value,... - WizQuestData's other
+        properties: an empty value not read)
+    goal|quest id|goal id|kind|status|count|total|text|mob|item|npc|place|name key
+    quests|quests n|tracked quest id|ms|why
+    (ids decimal, as /goal's quest| line; a field not read: empty)"""
+    if rows is None:
+        return ["none|" + _qcell(why or "no quests read")]
+    out, tracked = [], None
+    for q in rows:
+        goals = q.get("goals") or []
+        if q.get("tracked"):
+            tracked = q.get("id")
+        props = ",".join("%s=%s" % (k, _pval(v)) for k, v in (q.get("props") or {}).items())
+        out.append("|".join(["quest", _qcell(q.get("id")), _qcell(q.get("title")), "1" if q.get("tracked") else "0",
+                             str(len(goals)), str(sum(1 for g in goals if g.get("status") == "COMPLETE")),
+                             _qcell(q.get("title_key")), _qcell(props)]))
+        for g in goals:
+            out.append("|".join(["goal", _qcell(q.get("id")), _qcell(g.get("gid"))] +
+                                [_qcell(g.get(k)) for k in ("type", "status", "count", "total", "text", "mob", "item",
+                                                            "npc", "place", "name_key")]))
+    out.append("|".join(["quests", str(len(rows)), _qcell(tracked), "" if ms is None else "%.1f" % ms, _qcell(why)]))
+    return out
+
+
 # ============================================================================ the name tables
 class Lang:
     """Root.wad's name tables (Locale/en-US/<table>.lang, handmem.parse_lang), each read once - the tables a batch of keys
@@ -362,6 +438,8 @@ class QuestMem:
             self.log("questmem: the goal kind names couldn't be read in this build (%s) - numbers only" % self.build)
             self.type_names = {}
         self.arg_kinds = madlib_arg_kinds(img, st, P)
+        # (WizQuestData's other properties, each read by its type - /quests; none named: whichever this build has)
+        self.quest_extra = quest_props(P.get("WizQuestData"), adder_kinds(P))
         kinds = {k for k, _ in self.arg_kinds.values()}
         if not {"string", "int"} <= kinds:
             self.log("questmem: the goal's madlib argument types couldn't be read in this build (%s) - the HUD's line only"
@@ -424,6 +502,24 @@ class QuestMem:
             return data.decode("utf-16-le") if data is not None else None
         except UnicodeDecodeError:
             return None
+
+    def read_kind(self, a, kind):
+        """a value of one of KIND_REF's types at a (string, wstring, int, uint, float, gid, bool) - None not read"""
+        if kind == "string":
+            return self.p.try_string(a)
+        if kind == "wstring":
+            return self.wstr(a)
+        if kind == "int":
+            return self.i32(a)
+        if kind == "uint":
+            return self.u32(a)
+        if kind == "gid":
+            b = self.p.try_read(a, 8) if N.ptr_ok(a) else None
+            return struct.unpack("<Q", b)[0] if b else None
+        b = self.p.try_read(a, 4 if kind == "float" else 1) if N.ptr_ok(a) and kind in ("float", "bool") else None
+        if not b:
+            return None
+        return round(struct.unpack("<f", b)[0], 4) if kind == "float" else bool(b[0])
 
     def _due(self, key, every):
         now = time.monotonic()
@@ -913,23 +1009,61 @@ class QuestMem:
         if not out["text"] and not out["why"]:
             out["why"] = snap.get("shown_why") or "no goal line"
 
-    # ---------------------------------------------------------------- every quest's goals (the command line)
-    def all_goals(self):
-        """[(quest GID, title, resolve()-like dict)] of every quest's goals in the manager's map"""
-        res = []
+    # ---------------------------------------------------------------- every quest (/quests, the command line's --all)
+    def quest_ids(self):
+        """([(quest GID, its WizQuestData)] of the quest manager's map - by GID, QUESTS_CAP at most -, "") or (None, why)
+        (call it under navmem's lock; each quest read after with quest_raw - the lock let go in between)"""
         qm = self.qmap()
-        for qid, q in sorted(self.map_nodes(qm[0]) if qm else []):
-            if self.tname(q) != "WizQuestData":
-                continue
-            title_key = self.p.try_string(q + self.off("WizQuestData", "m_title"))
-            gm = self.goal_map(q)
-            for gid, g in (self.map_nodes(gm[0]) if gm else []):
-                if self.tname(g) == "WizGoalData":
-                    snap = {"ids": (qid, gid), "ids_from": "map", "quest": {"id": qid, "title_key": title_key},
-                            "goal": self.goal_raw(g)}
-                    r = self.resolve(snap)
-                    res.append((qid, r["quest"], r))
-        return res
+        if qm is None:
+            return None, "no quests in the game's memory (%s)" % self.how.get("qm", "?")
+        return sorted(self.map_nodes(qm[0], QUESTS_CAP))[:QUESTS_CAP], ""
+
+    def quest_raw(self, qid, q):
+        """one quest's keys and numbers as they are in memory - {id, title_key, goals [goal_raw...] (by GID), props
+        {property: value} (quest_extra's)} - or None when q is no longer quest qid (its type name and m_id checked: done
+        or dropped since the map was walked). Call it under navmem's lock"""
+        if not q or self.tname(q) != "WizQuestData" or self.u64(q + self.off("WizQuestData", "m_id")) != qid:
+            return None
+        gm = self.goal_map(q)
+        goals = []
+        for gid, g in sorted(self.map_nodes(gm[0], GOALS_CAP) if gm else [])[:GOALS_CAP]:
+            if self.tname(g) == "WizGoalData" and self.u64(g + self.off("WizGoalData", "m_goalID")) == gid:
+                goals.append(self.goal_raw(g))
+        return {"id": qid, "title_key": self.p.try_string(q + self.off("WizQuestData", "m_title")), "goals": goals,
+                "props": {name: self.read_kind(q + off, kind) for name, off, kind in self.quest_extra}}
+
+    def quests_resolve(self, raws, tracked=None, block=True):
+        """[{id, title, title_key, tracked, goals [{gid, text, type, type_raw, status, count, total, mob, item, npc, place,
+        name_key, item_key, mob_key, npc_keys, why}], props}] for quest_raw's readings - the names looked up (outside
+        navmem's lock; every table they need in one pass, block False: in a thread, not waited for), each goal as
+        resolve() reads it from the quest's data (text None when a name isn't in the tables - there's no HUD line to fall
+        back on here); tracked: the quest GID the HUD shows (goal()'s). Never raises - a quest that fails is left out"""
+        keys = ["Quest_x"]
+        for raw in raws:
+            keys.append(raw.get("title_key"))
+            for g in raw.get("goals") or []:
+                keys += [g.get("name_key"), g.get("location_key")] + [v for _t, _k, v in (g.get("madlibs") or [])]
+        try:
+            self.lang.load([k for k in keys if isinstance(k, str)], block)
+        except Exception as e:  # noqa: BLE001 - the keys then (resolve says a name isn't found)
+            self.log("questmem: the quests' name tables couldn't be read (%r)" % (e,))
+        rows = []
+        for raw in raws:
+            try:
+                qid, tk = raw["id"], raw.get("title_key")
+                goals = []
+                for g in raw.get("goals") or []:
+                    r = self.resolve({"ids": (qid, g.get("gid")), "ids_from": "map", "quest": {"id": qid, "title_key": tk},
+                                      "goal": g}, block=False)
+                    goals.append(dict({k: r.get(k) for k in ("text", "type", "type_raw", "status", "count", "total",
+                                                            "mob", "item", "npc", "place", "name_key", "item_key",
+                                                            "mob_key", "npc_keys", "why")}, gid=g.get("gid")))
+                rows.append({"id": qid, "title": self.name(tk) or "", "title_key": tk or "",
+                             "tracked": tracked is not None and qid == tracked, "goals": goals,
+                             "props": dict(raw.get("props") or {})})
+            except Exception as e:  # noqa: BLE001 - that quest left out, the rest given
+                self.log("questmem: quest %s couldn't be read (%r)" % (raw.get("id"), e))
+        return rows
 
 
 # ============================================================================ command line
@@ -956,11 +1090,9 @@ def _main():
         print("           quest %r; on screen %r visible=%s distance=%s; read in %.2f ms" % (
             g["quest"], g["shown"], g["visible"], g["distance"], g["ms"]))
     if a.all:
-        with nm.lock:
-            qm = nm._quest
-        for qid, title, gl in (qm.all_goals() if qm else []):
-            print("  [%s] %s | %s | %s %s | %s/%s" % (qid, title, gl["text"], gl["type"], gl["status"], gl["count"],
-                                                     gl["total"]))
+        t0 = time.perf_counter()
+        rows, why = nm.quests(wait=60)
+        print("\n".join(quest_lines(rows, why, (time.perf_counter() - t0) * 1000)))
     print(nm.describe())
 
 

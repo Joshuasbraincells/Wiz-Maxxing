@@ -1,0 +1,14 @@
+; Wiz-Maxxing - gear dungeons known (the seed that ships with the bot - replaced by updates). One dungeon a line:
+;   name|world|Wizard101 Central link|slots it drops|zones (its instance's)|sigil (zone x y z)|bosses (names, comma between)
+; slots: hat, robe, shoes, weapon, athame, amulet, ring (never decks, pets or mounts - the gear pass leaves those alone).
+; A dungeon run whose name holds one of these names (the Dungeons tab's "Waterworks 2026-10-30") goes by its slots when
+; its own file has no slots| line (vision\gearrank.py catalogue_for): its gear counts as all swapped once each of those
+; slots is worn with a piece the run dropped, or after stopafter runs (30) with no upgrade. The slots are the hat, robe
+; and boots each of these is known for - more may drop: the drop log shows them after a few runs (AutoFarmer\learned\
+; drops\<run>.txt) - put a slots| line in the run's file to go by those. Zones, sigil spot and bosses are left blank till
+; a run is recorded (python vision\dglint.py lists its zones) and its boss is seen (the dashboard's Deck line, /mobs'
+; boss title); the links are Wizard101 Central searches (yours to open - the bot never fetches them).
+Olympus|Aquila|https://wiki.wizard101central.com/wiki/index.php?title=Special:Search&search=Olympus&go=Go|hat,robe,shoes|||
+Waterworks|Celestia|https://wiki.wizard101central.com/wiki/index.php?title=Special:Search&search=Waterworks&go=Go|hat,robe,shoes|||
+Hades|Aquila|https://wiki.wizard101central.com/wiki/index.php?title=Special:Search&search=Hades&go=Go|hat,robe,shoes|||
+Darkmoor|Darkmoor|https://wiki.wizard101central.com/wiki/index.php?title=Special:Search&search=Castle%20Darkmoor&go=Go|hat,robe,shoes|||

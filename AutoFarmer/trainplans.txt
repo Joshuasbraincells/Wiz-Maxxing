@@ -1,0 +1,51 @@
+; Wiz-Maxxing - training plans: the spells a wizard buys with training points at the trainers, in order, per school
+; (TODO goal 4, "training points spent at trainers"). NOT BUILT YET: the bot doesn't visit trainers - Settings' trainspells
+; is off, and on it only says so. This file is read by vision\spellplan.py, which says what the plan would train next:
+;     python vision\spellplan.py --school storm --level 20 --tp 2 --live
+; This copy ships with the bot and is replaced by updates; to keep your own, copy it to learned\trainplans.txt and edit
+; that one (it wins when it's there - puzzles_known.txt's way).
+;
+; A DRAFT, NOT CHECKED IN THE GAME: every spell name, school, trainer, zone, level, cost and prerequisite below was
+; written from memory of the Wizard101 wikis - none of it has been seen in the game, so every line says checked 0. The
+; spell names must be the game's own DISPLAY names, letter for letter: as /book shows them once the spell is known
+; (http://127.0.0.1:47128/book while the bot runs), or as the trainer's window lists them (python vision\bagmem.py --tree
+; --out trainer.txt with it open). The levels, costs and prerequisite chains (needs) aren't filled in: the trainer's
+; window greys a spell it won't teach yet - read those there. Fix a line, then set its checked to 1.
+;
+;   school|<storm, fire, ice, life, death, myth, balance - or any: every school's plan>
+;   train|spell|taught by (its school)|trainer|zone|level (? not known)|cost in training points (? not known)|needs (spell+spell)|kind|checked (1 seen in the game, 0 not)
+;   spellquest|title|<regex>                 a quest whose title this finds is a spell quest (none known yet)
+;   spellquest|prop|<m_property>|<value>     ...or one whose WizQuestData property has this value (/quests' props)
+;
+; A school's own lines are tried first, in order, then any's - leaving out the spells that school teaches itself: a
+; wizard's own school's spells come with the school (its professor, its spell quests), not for training points. A spell
+; is bought in order: one that costs more than the points there are is saved for; one whose level or needs aren't met yet
+; is passed by for the next.
+
+; Blades for your school's hits: Elemental Blade boosts storm, fire and ice; Spirit Blade life, death and myth (balance's
+; own spells - its wizards have them)
+school|storm
+train|Elemental Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|fire
+train|Elemental Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|ice
+train|Elemental Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|life
+train|Spirit Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|death
+train|Spirit Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|myth
+train|Spirit Blade|balance|Alhazred|WizardCity/WC_Ravenwood|?|?||blade|0
+school|balance
+
+; Every school: a shield, heals and a trap from the other schools' professors in Ravenwood
+school|any
+train|Tower Shield|ice|Lydia Greyrose|WizardCity/WC_Ravenwood|?|?||ward|0
+train|Fairy|life|Moolinda Wu|WizardCity/WC_Ravenwood|?|?||heal|0
+train|Satyr|life|Moolinda Wu|WizardCity/WC_Ravenwood|?|?||heal|0
+train|Feint|death|Dworgyn|WizardCity/WC_Ravenwood|?|?||trap|0
+
+; Spell quests: how the game tells one apart isn't known yet - compare a spell quest with the others in /quests (its
+; props field) or by its title, then add the rule here, e.g.
+;spellquest|title|^Spell Quest
+;spellquest|prop|m_someFlag|1
