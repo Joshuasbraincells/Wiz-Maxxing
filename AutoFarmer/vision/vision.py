@@ -429,6 +429,27 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              bot's own way, learned|, note|) + foe|index|name|health|max|boss|plate x
                                              (target: that index; i the card's place in the hand, -1 a pass) +
                                              planned|rollouts|ms|ms in all, or none|<why> (never an ERR)
+       [&role=hitter|blader|healer&seat=4-7&mates=name~seat~school~hp~max~role~pips~power~hand|...&teamplan=1&charms=log]
+                                             (v0.9.0 batch 3 - none given: as above) the team model: mates the party's
+                                             other wizards on your side (hand: tid:kind:pips:school:value;... - each
+                                             card's kind and value from cards.jsonl's facts when known; empty: not
+                                             known, its role's way), each with its own hand, pips and health in your
+                                             side's cast order (seat), the enemies' single hits on one of you at random;
+                                             role / seat yours. teamplan=1: also a play for each wizard whose hand is
+                                             known (battlesim.plan_team: order|who|seat|name|i|tid|kind|target|won %|
+                                             why|card, teamnote|) - advice. charms=log: the blades, traps, shields,
+                                             weaknesses and absorbs on you and each enemy rebuilt from the game's log
+                                             (battlerec.charms_now - the party's and the enemies' too) instead of the
+                                             bot's own count (the enemies matched by their gid; note| says how many)
+  /deckfor?zone=<zone path>[&foes=name~name|name...]&school=&hp=&damage=&pierce=&crit=&block=&acc=&resist=&vals=&n=60
+                                          -> decks matched to a zone's enemies (battlesim.best_decks): each in-game deck
+                                             in an Equipment Set (the decks' last reading - never read here), its
+                                             settings what its cards call for on top of vals, simulated against the
+                                             enemy groups fought most in that zone (the battles recorded - else foes=,
+                                             one group a |) - deckfor|gid|name|won %|rounds|hp left %|lost %|groups|
+                                             battles|why best first, group|battles|names, zone|, note|; worked out in a
+                                             thread and kept 10 minutes: the first ask answers none|working it out -
+                                             ask again (Decks.ahk DeckForZone, Settings: deckzone, off)
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -2581,6 +2602,99 @@ def sim_lines_for(q):
         return ['none|the simulation failed (%r)' % (e,)]
 
 
+# ---------------------------------------------------------------- decks matched to a zone's enemies (battlesim.best_decks)
+DECKFOR = {'cache': {}, 'thread': None}
+DECKFOR_LOCK = threading.Lock()
+DECKFOR_S = 600         # an answer kept this long (the battles recorded are read again as often - SIM_BOOK_S)
+
+
+def deckfor_lines_for(q, ctx=None, wait=False):
+    """/deckfor's answer (see the docstring) - never raises. Worked out in a thread (each deck against each group: a
+    few seconds), kept DECKFOR_S for the same question: the first ask answers none|working it out, an ask after it the
+    lines. ctx {book, facts, wiki, casts, decks} and wait (work it out here) - a test's"""
+    import battlesim as B
+    try:
+        zone = (q.get('zone') or '').strip()
+        foes_q = (q.get('foes') or '').strip()
+        if ctx is None:
+            # (the decks' last reading now - never read here; the battles recorded and the wiki in the thread below)
+            r, why = decks_reading(False)
+            ctx = {'decks': r, 'why': why}
+        reading = ctx.get('decks') or {}
+        decks = [d for d in reading.get('decks') or [] if d.get('sets') or d.get('equipped')]
+        if not decks:
+            return ['none|' + mob_cell(ctx.get('why') or "the decks haven't been read with their cards yet (the Cards "
+                                       "tab's From game)")]
+        sig = tuple(sorted((d.get('gid'), d.get('main_n'), d.get('item_n')) for d in decks))
+        key = (zone, foes_q, q.get('school') or '', q.get('hp') or '', q.get('damage') or '', q.get('vals') or '',
+               q.get('n') or '', sig)
+        now = time.monotonic()
+        with DECKFOR_LOCK:
+            hit = DECKFOR['cache'].get(key)
+            if hit is not None and now - hit[0] < DECKFOR_S:
+                return hit[1]
+            busy = DECKFOR['thread'] is not None and DECKFOR['thread'].is_alive()
+            if busy and not wait:
+                return ['none|working out another zone\'s decks - ask again in a few seconds']
+
+        def fl(k, d=0.0):
+            try:
+                v = float(q.get(k) or d)
+                return v if math.isfinite(v) else d
+            except (TypeError, ValueError):
+                return d
+
+        def work():
+            try:
+                if 'book' in ctx:
+                    book, facts = ctx.get('book') or B.FoeBook(battles=[]), ctx.get('facts') or {}
+                    wiki, casts = ctx.get('wiki'), ctx.get('casts')
+                else:
+                    book, facts = sim_book()
+                    wiki, casts = enemy_state()
+                if foes_q:
+                    groups = [[x.strip() for x in g.split('~') if x.strip()] for g in foes_q.split('|')]
+                else:
+                    groups = (book.groups or {}).get(zone) or {}
+                vals = {}
+                for kv in (q.get('vals') or '').split(','):
+                    k, _, v = kv.partition(':')
+                    if k.strip():
+                        vals[k.strip().lower()] = v.strip()
+                specs = []
+                for d in decks:
+                    cards = B.deck_cards(d, facts)
+                    # (each deck's own settings - the ones its cards call for, learn_deck's - on top of yours)
+                    dv = dict(vals)
+                    try:
+                        dv.update({k: str(v) for k, v in B.learn_deck(d, facts, len(decks))['vals'].items()})
+                    except Exception:  # noqa: BLE001 - your settings alone
+                        pass
+                    specs.append(('%x' % d['gid'] if isinstance(d.get('gid'), int) else str(d.get('gid') or ''),
+                                  str(d.get('display') or d.get('object_name') or 'deck'), cards, B.Opts.of(dv)))
+                sch = (q.get('school') or '').lower()
+                me = B.Me(sch, fl('hp', 3000), damage=fl('damage'), pierce=fl('pierce'), crit=fl('crit'),
+                          block=fl('block'), accuracy=fl('acc'), resist=fl('resist'), power_pip=fl('pp', 0.4))
+                res = B.best_decks(specs, groups, lambda names: [book.foe(nm, wiki, casts) for nm in names], me,
+                                   n=int(min(300, max(10, fl('n', B.DECKFOR_N)))), budget_ms=20000)
+                lines = B.deckfor_lines(res, zone)
+            except Exception as e:  # noqa: BLE001 - said, not kept
+                lines = ['none|the decks couldn\'t be simulated (%r)' % (e,)]
+            with DECKFOR_LOCK:
+                if len(DECKFOR['cache']) > 32:
+                    DECKFOR['cache'].clear()
+                DECKFOR['cache'][key] = (time.monotonic(), lines)
+            return lines
+        if wait:
+            return work()
+        with DECKFOR_LOCK:
+            DECKFOR['thread'] = threading.Thread(target=work, name='deckfor', daemon=True)
+            DECKFOR['thread'].start()
+        return ['none|working it out - ask again in a few seconds']
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the decks couldn\'t be simulated (%r)' % (e,)]
+
+
 # ---------------------------------------------------------------- the round planner (battlesim.plan_round, battlelearn)
 PLAN = {'plays': None, 'at': 0.0, 'thread': None}
 PLAN_LOCK = threading.Lock()
@@ -2634,6 +2748,68 @@ def plan_book():
         return {'book': battlesim.FoeBook(battles=[]), 'facts': {}, 'plays': PLAN['plays'],
                 'why': 'the battles recorded are still being read - nothing learned from them this round'}
     return {'book': book, 'facts': facts or {}, 'plays': PLAN['plays'], 'why': ''}
+
+
+def plan_mates(text, facts):
+    """/plan's mates= (name~seat~school~hp~max~role~pips~power~hand|... - hand: tid:kind:pips:school:value;... each card's
+    kind and value from cards.jsonl's facts when it has none, empty: not known) as [battlesim.Mate] - a field it can't
+    read the default, a card it can't make left out; never raises"""
+    import battlesim as B
+    out = []
+    try:
+        for spec in (text or '').split('|')[:12]:
+            bits = (spec.split('~') + [''] * 9)[:9]
+            if not any(b.strip() for b in bits):
+                continue
+            if len(out) >= 3:
+                break
+
+            def num(v, d=None):
+                v = (v or '').strip()
+                return int(v) if re.fullmatch(r'\d{1,6}', v) else d
+            hand = None
+            if bits[8].strip():
+                hand = []
+                for item in bits[8].split(';')[:9]:
+                    f = (item.split(':') + [''] * 5)[:5]
+                    c = {'template_id': num(f[0]), 'kind': f[1].strip().lower() or None, 'pips': num(f[2]),
+                         'school': f[3].strip().lower(), 'value': f[4].strip() or None,
+                         'value_text': f[4].strip() or None}
+                    card = B.card_of(c, facts)
+                    if card is not None:
+                        hand.append(card)
+            school = bits[2].strip().lower()
+            me = B.Me(school, num(bits[4], 3000), hp=num(bits[3]))
+            out.append(B.Mate(re.sub(r'[^\w .\'-]', '', bits[0])[:24], num(bits[1]), me, bits[5].strip().lower(), hand,
+                              [c for c in hand for _ in range(2)] if hand else [], num(bits[6], 0), num(bits[7], 0),
+                              num(bits[3])))
+    except Exception:  # noqa: BLE001 - the ones read so far
+        pass
+    return out
+
+
+def plan_charms(state, plates, facts, ctx):
+    """(/plan's charms=log) the charms on now from the game's log (battlerec.charms_now on the battle recorder's open
+    duel - ctx['duel'] a test's) put in state (State.charms_from: the enemies matched to the memory's plates by gid) -
+    [notes]; never raises"""
+    try:
+        import battlerec
+        if 'duel' in ctx:
+            d = ctx['duel']
+        else:
+            rec = REC
+            d = rec.parser.duel if rec is not None and rec.on and not rec.broken else None
+        if not isinstance(d, dict):
+            return ["the log's charms not read (the battle recorder isn't following this battle) - the bot's own count"]
+        ch = battlerec.charms_now(d, facts)
+        gids = {str(p.get('gid')): sc for sc, p in list((d.get('parts') or {}).items())
+                if isinstance(p, dict) and p.get('gid')}
+        scs = [gids.get(str(p.get('owner'))) if isinstance(p, dict) and p.get('owner') else None for p in plates]
+        n = state.charms_from(ch, d.get('me_sc'), scs if any(s is not None for s in scs) else None)
+        return ["%d charm%s on from the game's log (%d of %d enemies matched by gid)" % (
+            n, '' if n == 1 else 's', sum(1 for s in scs if s is not None), len(scs))] + list(ch.get('why') or [])
+    except Exception as e:  # noqa: BLE001 - the bot's own count then
+        return ["the log's charms couldn't be read (%r) - the bot's own count" % (e,)]
 
 
 def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
@@ -2789,19 +2965,43 @@ def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
         opts = B.Opts.of(vals, boss=q.get('boss') == '1' or any(f.boss for f in foes))
         if all(vals.get('usehit%d' % i) == '0' for i in range(1, 5)):
             opts.usehit = False
+        # (batch 3 - the team model and the log's charms; none asked: as before) my party battle role and seat, the
+        # party's other wizards on my side
+        role = (q.get('role') or '').strip().lower()
+        if role in ('blader', 'healer'):
+            opts.role = role
+        if re.fullmatch(r'[4-7]', (q.get('seat') or '').strip()):
+            state.seat = int(q['seat'])
+        mates = plan_mates(q.get('mates'), facts)
+        if mates:
+            state.mates = mates
+            notes.append('the team model: %d mate%s on your side (%s)' % (len(mates), '' if len(mates) == 1 else 's',
+                                                                          ', '.join('%s %s%s' % (
+                                                                              m.name or 'seat %s' % m.seat, m.role,
+                                                                              '' if m.hand is not None else
+                                                                              ' - its hand not known') for m in mates)))
+        if q.get('charms') == 'log':
+            notes.extend(plan_charms(state, plates, facts, ctx))
         plays = ctx.get('plays')
         prior = plays.prior_fn(me.school) if plays is not None and getattr(plays, 'rounds', 0) else None
         left = budget - int((time.monotonic() - t0) * 1000) - 15
         if left < 20:
             return ['none|' + mob_cell('no time left to plan (the game read %d ms of the %d ms)' % (
                 budget - left - 15, budget))]
+        teamplan = q.get('teamplan') == '1'
         plan = B.plan_round(state, me, foes, opts, n=int(fl('n', B.PLAN_N)),
-                            horizon=int(fl('horizon')) if fl('horizon') > 0 else None, budget_ms=left,
+                            horizon=int(fl('horizon')) if fl('horizon') > 0 else None,
+                            budget_ms=int(left * 0.6) if teamplan else left,
                             seed=int(fl('seed')) if q.get('seed') else None, prior=prior)
         plan['why'] = notes + plan['why']
         out = B.plan_lines(plan, foes, ids)
         if out and out[0].startswith('none|'):
             return out
+        if teamplan:
+            tleft = budget - int((time.monotonic() - t0) * 1000) - 15
+            out += B.team_lines(B.plan_team(state, me, foes, opts, n=int(fl('n', B.PLAN_N)),
+                                            budget_ms=max(20, tleft), seed=int(fl('seed')) if q.get('seed') else None),
+                                foes)
         for k, f in enumerate(foes):
             out.append('|'.join(['foe', str(k), mob_cell(f.name), mob_cell(fhp[k]), str(f.maxhp), '1' if f.boss else '0',
                                  plate_x(plates[k]) if plates[k] else '']))
@@ -4192,6 +4392,8 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(sim_lines_for(q)))
             if u.path == '/plan':
                 return self.reply('\n'.join(plan_lines_for(q)))
+            if u.path == '/deckfor':
+                return self.reply('\n'.join(deckfor_lines_for(q)))
             if u.path == '/uiroot':
                 size, why = nav_reader().ui_root(wait=0.3)
                 return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))

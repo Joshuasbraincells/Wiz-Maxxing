@@ -116,6 +116,13 @@ def clean_state(q):
     s['tp'] = tp if tp in TP_STATES else ''
     tpwhy = str(q.get('tpwhy') or '').strip()
     s['tpwhy'] = tpwhy if s['tp'] and HOLD_RE.match(tpwhy) else ''
+    # (the party's hit round - TODO goal 3, v0.9.0: the hitter's planned hit's round in its game's log, the earliest it can
+    # go out - its supports time their blades and traps to it, Party.ahk PartyHitHold -, and each wizard's seat in the
+    # battle: its subcircle 4-7, the cast order of our side. None: not said - an older bot, no hit planned)
+    v = _f(q.get('hitat'))
+    s['hitat'] = int(v) if v is not None and v == int(v) and 1 <= v <= 99 else None
+    v = _f(q.get('seat'))
+    s['seat'] = int(v) if v is not None and v == int(v) and 4 <= v <= 7 else None
     return s
 
 
@@ -494,7 +501,7 @@ class Party:
         me = self._me()
         return {'v': 1, 'leader': me, 'others': [{k: o.get(k) for k in
                 ('name', 'zone', 'x', 'y', 'z', 'battle', 'hp', 'ready', 'walk', 'age', 'brole', 'wiz', 'school', 'hits',
-                 'hitr', 'plan', 'lasthit', 'tp', 'tpwhy')} for o in others]}
+                 'hitr', 'plan', 'lasthit', 'tp', 'tpwhy', 'hitat', 'seat')} for o in others]}
 
     def _beat_out(self):
         """a follower's beat to the leader (its own thread); a failure backs off and says why"""
@@ -550,11 +557,12 @@ class Party:
         """a follower's beat's fields: its state (_me - its tp and tpwhy too) and its id; not its doors, battle spot or
         zone's age (the leader's to send - a list in a query would only make it longer: the leader's server takes
         MAX_PATH characters). Longer than that - a 120-character zone of backslashes, an 80-character hold and why of
-        commas and apostrophes, 3 characters each in the URL: ~1300 - its why, then its hold, left out till it fits (~820
-        without them; the leader answered 403 to the whole beat, and the follower went 'unreachable')"""
+        commas and apostrophes, 3 characters each in the URL: ~1300 - its why, then its hold, left out till it fits (~840
+        without them, the hit round's hitat and seat in; the leader answered 403 to the whole beat, and the follower went
+        'unreachable'). Still over: the seat, then hitat (the hit round not said: its supports cast as ever)"""
         q = {k: ('' if v is None else v) for k, v in self._me().items() if k not in ('door', 'doors', 'bspot', 'zage')}
         q['id'] = self.id
-        for k in ('tpwhy', 'hold'):
+        for k in ('tpwhy', 'hold', 'seat', 'hitat'):
             if len('/party/beat?' + urllib.parse.urlencode(q)) <= MAX_PATH:
                 break
             q[k] = ''
@@ -641,9 +649,9 @@ class Party:
         """party|role|state|why; me|zone|x|y|z|yaw; leader|...; member|... (one per follower, the leader's view).
         AutoHotkey's fields (Party.ahk PartyTick - f[1] the line's kind): the leader's 2-31 as ever, then 32 loading,
         33 dwalk (the door below walked: 1, 0, '' not known), 34 zage (ms in its zone), 35 dage (the door's age, ms), 36
-        port, 37 its why (port_advice); a member's 2-21 as ever, then 22 tp, 23 tpwhy. (38-39 / 24-25: the battle
-        planner's hit round, later.) The door (14-20): the leader's latest out of this wizard's zone (door_from), else its
-        last as before. Old bots read only the fields they know"""
+        port, 37 its why (port_advice), 38 hitat, 39 seat (the party's hit round - v0.9.0); a member's 2-21 as ever, then 22
+        tp, 23 tpwhy, 24 hitat, 25 seat. The door (14-20): the leader's latest out of this wizard's zone (door_from), else
+        its last as before. Old bots read only the fields they know (and pad the ones they don't: blank)"""
         def num(v, d=0):
             return '' if v is None else f'{v:.{d}f}'
         now = time.time()
@@ -676,7 +684,9 @@ class Party:
                     # as sent and since that answer -; the teleport advice)
                     L.get('loading', '0'), '' if walked is None else ('1' if walked else '0'),
                     '' if L.get('zage') is None else str(L['zage'] + age),
-                    '' if d.get('age') is None else str(d['age'] + age), port, pwhy.replace('|', '/')]))
+                    '' if d.get('age') is None else str(d['age'] + age), port, pwhy.replace('|', '/'),
+                    # (38-39: the hit round - its planned hit's log round, its seat)
+                    num(L.get('hitat')), num(L.get('seat'))]))
                 # (the other followers: as the leader's own rows below - walk, loading and hold where it doesn't say)
                 for o in L.get('others') or []:
                     # (its age as the leader last heard it, and since that answer: a leader gone quiet takes them along)
@@ -686,7 +696,7 @@ class Party:
                                o.get('ready', '0'), str(oa + age) if isinstance(oa, int) else '', '', o.get('walk', '0'), '0', '',
                                o.get('brole') or '', o.get('wiz') or '', o.get('school') or '', num(o.get('hits')),
                                num(o.get('hitr')), o.get('plan') or '', o.get('lasthit') or '', o.get('tp') or '',
-                               o.get('tpwhy') or '']))
+                               o.get('tpwhy') or '', num(o.get('hitat')), num(o.get('seat'))]))
             elif role == 'leader':
                 for v in self.members.values():
                     dist = ''
@@ -697,5 +707,6 @@ class Party:
                                v.get('ready', '0'), str(round((now - v['at']) * 1000)), dist, v.get('walk', '0'),
                                v.get('loading', '0'), v.get('hold') or '', v.get('brole') or '', v.get('wiz') or '',
                                v.get('school') or '', num(v.get('hits')), num(v.get('hitr')), v.get('plan') or '',
-                               v.get('lasthit') or '', v.get('tp') or '', v.get('tpwhy') or '']))
+                               v.get('lasthit') or '', v.get('tp') or '', v.get('tpwhy') or '', num(v.get('hitat')),
+                               num(v.get('seat'))]))
         return out

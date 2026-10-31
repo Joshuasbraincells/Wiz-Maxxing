@@ -739,5 +739,207 @@ class SimOnGameDecks(unittest.TestCase):
         self.assertEqual((kinds["damage"], kinds["blade"], kinds.get("?", 0)), (12, 5, 0))
 
 
+# ============================================================================ v0.9.0 batch 3: /plan's team, the log's charms
+class PlanTeam(unittest.TestCase):
+    """/plan's mates=, role=, seat=, teamplan=1 and charms=log (plan_lines_for with stand-in readers)"""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import vision
+        except ImportError as e:
+            raise unittest.SkipTest("vision.py can't be imported here (%s)" % e)
+        cls.V = vision
+        cls.log = vision.log
+        vision.log = lambda *a, **kw: None
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.V.log = cls.log
+
+    def ask(self, q, battle=None, ctx=None, hand=None, spy=None):
+        c = {"book": S.FoeBook(battles=[]), "facts": FACTS, "plays": None, "wiki": None, "casts": None,
+             "decks": {"decks": [deckmem_deck(777)]}}
+        c.update(ctx or {})
+        cr = lambda: (reading(HAND if hand is None else hand), "")                          # noqa: E731
+        br = lambda: (parts(("Bonestriker", 700, 2400, False)) if battle is None else battle, "")  # noqa: E731
+        if spy is None:
+            return self.V.plan_lines_for(q, cr, br, c)
+        real = S.plan_round
+
+        def grab(state, me, foes, opts=None, **kw):
+            spy.update(state=state, me=me, foes=foes, opts=opts)
+            return real(state, me, foes, opts, **kw)
+        with mock.patch.object(S, "plan_round", grab):
+            return self.V.plan_lines_for(q, cr, br, c)
+
+    def test_mates_parsed(self):
+        got = {}
+        q = {"seed": "1", "budget": "2000", "seat": "5", "role": "hitter",
+             "mates": "Ann~4~storm~1500~3000~blader~3~1~104:blade:0:storm:35%;105::0::|"
+                      "Bob~6~fire~~2800~hitter~~~|~~~~~~~~|Junk|x~y~z"}
+        out = self.ask(q, spy=got)
+        self.assertTrue(out[0].startswith("plan|"), out)
+        st = got["state"]
+        self.assertEqual(st.seat, 5)
+        self.assertEqual([m.name for m in st.mates], ["Ann", "Bob", "Junk"])   # (3 at most; the empty one skipped)
+        ann, bob = st.mates[0], st.mates[1]
+        self.assertEqual((ann.seat, ann.role, ann.me.school, ann.hp, ann.me.maxhp, ann.pips, ann.power),
+                         (4, "blader", "storm", 1500, 3000, 3, 1))
+        # (Ann's hand: a blade as sent; tid 105 with no kind - cards.jsonl's facts don't know it: left out)
+        self.assertEqual([(c.name, c.kind, c.boosts) for c in ann.hand], [("?", "blade", {"storm": 35.0})])
+        self.assertIsNone(bob.hand)                   # (not known: its role's way)
+        self.assertEqual((bob.seat, bob.me.maxhp, bob.hp), (6, 2800, None))
+        self.assertTrue(any("the team model: 3 mates" in ln and "Bob hitter - its hand not known" in ln for ln in out),
+                        out)
+
+    def test_teamplan_orders(self):
+        q = {"seed": "1", "budget": "3000", "n": "20", "teamplan": "1", "acc": "30",
+             "mates": "Ann~5~storm~3000~3000~hitter~7~0~777:damage:0:storm:95"}
+        out = self.ask(q)
+        orders = [ln.split("|") for ln in out if ln.startswith("order|")]
+        self.assertEqual([o[1] for o in orders], ["0", "1"], out)
+        self.assertEqual((orders[1][2], orders[1][3], orders[1][5]), ("5", "Ann", "777"))
+        self.assertTrue(out[0].startswith("plan|"))
+        self.assertTrue(out[-1].startswith("planned|"))
+        # (no teamplan: no order lines - the mates still in the rollouts)
+        out = self.ask(dict(q, teamplan="0"))
+        self.assertFalse(any(ln.startswith("order|") for ln in out))
+
+    def test_charms_from_the_log(self):
+        # (the recorder's duel stand-in: the party's Stormblade on me, my side's trap and the enemy's own shield on it -
+        # the enemy matched to the memory's plate by its gid, 100)
+        duel = {"me_sc": 4, "parts": {0: {"gid": "100"}, 4: {"gid": "7"}},
+                "rounds": [{"n": 1, "casts": [
+                    {"sc": 5, "spell": "Stormblade", "hang": [[4, "kModifyOutgoingDamage", 1, 35]]},
+                    {"sc": 5, "spell": "Storm Trap", "hang": [[0, "kModifyIncomingDamage", 0, 30]]},
+                    {"sc": 0, "spell": "Dark Shield", "hang": [[0, "kModifyIncomingDamage", 0, -40]]}]}]}
+        facts = dict(FACTS)
+        facts[104] = {"tid": 104, "name": "Stormblade", "boosts": "storm:35"}
+        facts[105] = {"tid": 105, "name": "Storm Trap", "boosts": "storm:30"}
+        got = {}
+        out = self.ask({"seed": "1", "budget": "2000", "charms": "log"}, ctx={"duel": duel, "facts": facts}, spy=got)
+        st = got["state"]
+        self.assertEqual(st.blades, [("Stormblade", {"storm": 35.0})])
+        self.assertEqual(st.traps, [[{"storm": 30.0}]])
+        self.assertEqual(st.fshields, [[(40, None)]])
+        self.assertTrue(any("3 charms on from the game's log (1 of 1 enemies matched by gid)" in ln for ln in out), out)
+        # (the copy of Stormblade in hand is on already: not tried)
+        self.assertFalse(any(ln.split("|")[0] in ("plan", "alt") and ln.split("|")[10] == "Stormblade" for ln in out))
+        # (no duel followed: the bot's own count, said)
+        out = self.ask({"seed": "1", "budget": "2000", "charms": "log"}, ctx={"duel": None})
+        self.assertTrue(any("the log's charms not read" in ln for ln in out), out)
+        # (not asked: nothing of it)
+        out = self.ask({"seed": "1", "budget": "2000"}, ctx={"duel": duel})
+        self.assertFalse(any("charm" in ln for ln in out))
+
+    def test_junk_team_params(self):
+        for q in ({"mates": "~" * 40, "teamplan": "1", "budget": "200"}, {"mates": "|" * 10, "seat": "99", "role": "x"},
+                  {"mates": "a~5~storm~-1~nan~healer~99~99~1:2:3:4:5:6;;;:::", "teamplan": "1", "budget": "150"},
+                  {"charms": "log", "budget": "200"}):
+            out = self.ask(q, ctx={"duel": {"rounds": "junk", "parts": "junk"}})
+            self.assertTrue(out and out[0].startswith(("plan|", "none|")), (q, out))
+        self.assertEqual(self.V.plan_mates(None, {}), [])
+        self.assertEqual(self.V.plan_mates(12, {}), [])
+
+
+class DeckFor(unittest.TestCase):
+    """/deckfor (deckfor_lines_for): each deck in an Equipment Set against the zone's enemy groups recorded"""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            import vision
+        except ImportError as e:
+            raise unittest.SkipTest("vision.py can't be imported here (%s)" % e)
+        cls.V = vision
+
+    def ctx(self):
+        rec = {"zone": "Z/Graveyard", "me": {"sc": 4, "school": "storm"}, "rounds": [],
+               "parts": [{"sc": 0, "side": "enemy", "name": "Rat", "max": 600},
+                         {"sc": 1, "side": "enemy", "name": "Rat", "max": 600}, {"sc": 4, "side": "me"}]}
+        strong = deckmem_deck()
+        weak = dict(deckmem_deck(), gid=0xDEF, equipped=False, sets=[2], display="Weak",
+                    cards=[dict(c, value=10, heads_text="storm:10", value_text="10-12") for c in deckmem_deck()["cards"]])
+        loose = dict(deckmem_deck(), gid=0x123, equipped=False, sets=[], display="Loose")
+        return {"book": S.FoeBook(battles=[rec, rec]), "facts": FACTS, "wiki": None, "casts": None,
+                "decks": {"decks": [weak, strong, loose]}}
+
+    def test_ranked_and_kept(self):
+        keep = dict(self.V.DECKFOR["cache"])
+        try:
+            self.V.DECKFOR["cache"].clear()
+            q = {"zone": "Z/Graveyard", "school": "storm", "hp": "3000", "n": "20", "acc": "30"}
+            out = self.V.deckfor_lines_for(q, self.ctx(), wait=True)
+            rows = [ln.split("|") for ln in out if ln.startswith("deckfor|")]
+            self.assertEqual([r[1] for r in rows], ["abc", "def"], out)      # (the loose deck: in no set)
+            self.assertIn("group|2|Rat,Rat", out)
+            self.assertIn("zone|Z/Graveyard", out)
+            # (asked again: kept - the same lines, nothing worked out)
+            with mock.patch.object(S, "best_decks", lambda *a, **kw: 1 / 0):
+                self.assertEqual(self.V.deckfor_lines_for(q, self.ctx()), out)
+            # (another zone with no battles recorded there)
+            out = self.V.deckfor_lines_for(dict(q, zone="Z/Nowhere"), self.ctx(), wait=True)
+            self.assertTrue(out[0].startswith("none|no enemy group known"), out)
+            # (foes= instead of the book's groups)
+            out = self.V.deckfor_lines_for(dict(q, zone="Z/Nowhere", foes="Rat~Rat|Rat"), self.ctx(), wait=True)
+            self.assertTrue(out[0].startswith("deckfor|abc|"), out)
+        finally:
+            self.V.DECKFOR["cache"].clear()
+            self.V.DECKFOR["cache"].update(keep)
+
+    def test_in_a_thread_and_junk(self):
+        keep = dict(self.V.DECKFOR["cache"])
+        try:
+            self.V.DECKFOR["cache"].clear()
+            q = {"zone": "Z/Graveyard", "n": "10"}
+            first = self.V.deckfor_lines_for(q, self.ctx())
+            self.assertEqual(first, ["none|working it out - ask again in a few seconds"])
+            self.V.DECKFOR["thread"].join(30)
+            self.assertTrue(self.V.deckfor_lines_for(q, self.ctx())[0].startswith("deckfor|"))
+            out = self.V.deckfor_lines_for({}, {"decks": None, "why": "not read"})
+            self.assertEqual(out, ["none|not read"])
+            out = self.V.deckfor_lines_for({"n": "abc", "hp": "inf"}, dict(self.ctx(), book=None), wait=True)
+            self.assertTrue(out[0].startswith("none|"), out)
+        finally:
+            self.V.DECKFOR["cache"].clear()
+            self.V.DECKFOR["cache"].update(keep)
+
+    def test_route(self):
+        """/deckfor on a local server: the decks' last reading, the battles recorded and the wiki stood in for"""
+        import tempfile
+        import threading
+        import urllib.request
+        from http.server import ThreadingHTTPServer
+        V, c = self.V, self.ctx()
+        keep_cache, keep_log = dict(V.DECKFOR["cache"]), V.LOG
+        with tempfile.TemporaryDirectory() as d, \
+                mock.patch.object(V, "decks_reading", lambda fresh, out=False: (c["decks"], "")), \
+                mock.patch.object(V, "sim_book", lambda: (c["book"], c["facts"])), \
+                mock.patch.object(V, "enemy_state", lambda: (None, None)):
+            V.LOG = os.path.join(d, "vision.log")
+            V.DECKFOR["cache"].clear()
+            srv = ThreadingHTTPServer(("127.0.0.1", 0), V.Handler)
+            threading.Thread(target=srv.serve_forever, daemon=True).start()
+            try:
+                def get(path):
+                    with urllib.request.urlopen("http://127.0.0.1:%d%s" % (srv.server_address[1], path),
+                                                timeout=10) as r:
+                        return r.status, r.read().decode().split("\n")
+                code, ln = get("/deckfor?zone=Z%2FGraveyard&school=storm&n=10")
+                self.assertEqual((code, ln), (200, ["none|working it out - ask again in a few seconds"]))
+                V.DECKFOR["thread"].join(30)
+                code, ln = get("/deckfor?zone=Z%2FGraveyard&school=storm&n=10")
+                self.assertEqual(code, 200)
+                self.assertTrue(ln[0].startswith("deckfor|abc|Storm Deck|"), ln)
+            finally:
+                srv.shutdown()
+                srv.server_close()
+                V.LOG = keep_log
+                V.DECKFOR["cache"].clear()
+                V.DECKFOR["cache"].update(keep_cache)
+        self.assertNotIn("/deckfor", V.GATED)          # (no memory read: the decks' last reading only)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -2319,7 +2319,10 @@ BoostPick()
 	{
 	global
 	local bpL, bpS, bpK, bpF, bpN, bpBest, bpG, bpC, bpI, bpFit, bpNot, bpLog, bpLc, bpCand, bpMax, bpWho, bpHand, bpBestV, bpHh
+	local bpHold, bpCost
 	PlanHit := "", PlanHeads := "", PlanList := "", BoostOneOfOff := V1Obj(), PlanWait := ""
+	;(the party's hit round - Party.ahk PartyTick sends it: none this round till the planned hit's known below)
+	PartyHitAt := "", PartyHitAtDuel := BlDuel
 	if (hitschool = "")
 		return
 	if (PartySupport() || (Manual = 1 && HammerSchool != hitschool))
@@ -2362,6 +2365,18 @@ BoostPick()
 		if (PlanHeads.sure)
 			for bpI, bpS in HeadsOrder(PlanHeads.heads)
 				PlanList .= (PlanList = "" ? "" : ",") bpS
+		;(the party's hit round - v0.9.0: the log round the planned hit is likely to go out in, the earliest it can - this
+		;round's when it's paid for, else when its pips can be there, a new pip a round worth 2 at most (a power pip, your
+		;school's hit). Early is the safe side: a support's blade cast a round early stays on till the hit. A learned hit in
+		;no slot, pips not read: not said - the supports cast as ever. Party.ahk PartyTick sends it, PartyHitHold reads it)
+		if (RegExMatch(PlanHit, "^hit[1-4]$"))
+			{
+			bpCost := Stat(hitschool "." PlanHit "pips")
+			if (Affordable(PlanHit))
+				PartyHitAt := V1N(BlRound) + 1
+			else if (PipsNow >= 0 && V1IsNum(bpCost) && bpCost > PipsNow)
+				PartyHitAt := V1N(BlRound) + 1 + Ceil((bpCost - PipsNow) / 2)
+			}
 		}
 	;(the school blade and trap, the group's)
 	blade := 0, BladeDir := "", BladeU1 := "", BladeU2 := ""
@@ -2406,6 +2421,16 @@ BoostPick()
 		{
 		BoostOneOf([["blade", BladeDir "/blade"], ["blade2", bladetype], ["blade3", "blade3"], ["blade4", "blade4"]], "blade")
 		BoostOneOf([["trap", TrapDir "/trap"], ["trap2", traptype], ["trap3", "trap3"]], "trap")
+		}
+	;(a party battle's blader or healer, the party's hit round - Settings: partyhitround, off: its blades and traps wait
+	;for the round the hitter's hit is due - Party.ahk PartyHitHold. Held: none of them this round - the chain goes on
+	;as with none in hand: Tower Shield, a hit only with nothing else to go, else a pass)
+	if (PartySupport() && (bpHold := PartyHitHold()) != "")
+		{
+		for bpI, bpK in ["blade", "blade2", "blade3", "blade4", "trap", "trap2", "trap3", "trap4", "feint"]
+			%bpK% := 0
+		BoostOneOfOff := V1Obj()
+		DebugLog("  " bpHold)
 		}
 	if (bpWho)
 		{

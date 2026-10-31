@@ -1560,6 +1560,171 @@ def state_at(events, lo, hi):
     return "off" if before["bot"] == 0 or before["acting"] == 1 else "on"
 
 
+# ============================================================================ the charms on now (from the log)
+# (v0.9.0, TODO goal 3 step 17 - Phase B's memory snapshot not built: the log's AddHangingEffect lines are the only
+# record of what's on whom. Its Effect is the game's SpellEffect type - "kModifyOutgoingDamage" or the same without the
+# k, matched either way: a charm out (a blade, + ; a weakness, -), a ward in (a trap, + ; a shield, -), an absorb)
+CHARM_KINDS = {"modifyoutgoingdamage": ("blades", "weak"), "modifyincomingdamage": ("traps", "shields"),
+               "absorbdamage": ("absorb", "absorb")}
+DAMAGE_FX = re.compile(r"damage|stealhealth", re.I)
+
+
+def _fx_name(e):
+    """an effect's type as the log names it, plain: 'kModifyOutgoingDamage' / 'ModifyOutgoingDamage' -> 'modifyoutgoingdamage'"""
+    s = str(e or "").strip()
+    return (s[1:] if s[:1] == "k" and s[1:2].isupper() else s).lower()
+
+
+def _fact_index(facts):
+    """{spell name or display (lower case): fact} of cards.jsonl's facts ({tid: fact})"""
+    out = {}
+    for f in (facts or {}).values():
+        if not isinstance(f, dict):
+            continue
+        for k in ("name", "display"):
+            n = str(f.get(k) or "").strip().lower()
+            if n and n not in out:
+                out[n] = f
+    return out
+
+
+def _schools_of(text):
+    """the schools of a heads / boosts text ('storm:35,fire:35', 'all:25') - None when it names none (not known)"""
+    out = []
+    for part in str(text or "").split(","):
+        k = part.partition(":")[0].strip().lower()
+        if k == "all":
+            return None
+        if k in ("balance", "death", "fire", "ice", "life", "myth", "storm") and k not in out:
+            out.append(k)
+    return out or None
+
+
+def _fits(charm, schools):
+    """charm ({schools: [..] or None - every school}) fits a hit of schools ([..], None - not known: every charm, the
+    bot's own rule when a hit's heads aren't known - KillCalc.ahk ConsumeBoosts)"""
+    return charm["schools"] is None or schools is None or any(s in charm["schools"] for s in schools)
+
+
+def charms_now(duel, facts=None):
+    """the blades, traps, shields, weaknesses and absorbs on each participant now, rebuilt from the log alone (Phase B's
+    memory snapshot isn't built): duel - the recorder's open duel (Parser.duel) or a battle record - its rounds' casts in
+    order: each cast's AddHangingEffect lines (hang [[target sc, effect, charm 1/0, param]]) put one on its target, its
+    schools those of the caster's spell in cards.jsonl's facts ({tid: fact}: its boosts, else its school - None not known:
+    an enemy's spell, a card never seen in a hand: it fits every school); each hit (a cast with damage on another sc -
+    ModifyHealth's or ProcessTargets' - not missed) uses up the caster's charms out and each target's wards in that fit its
+    schools (the spell's heads in the facts; not known: every one - KillCalc.ahk ConsumeBoosts' rule), absorbs taken off
+    by the damage; a REMOVED line (not seen in a log yet) takes its own off. Identical blades on one wizard don't stack (the
+    game's - one of a spell's name kept); traps and shields do.
+    -> {by: {sc: {blades, traps, shields, weak, absorb: [{pct (an absorb's: the damage it still soaks), schools, spell,
+    by (the caster's sc), round}]}}, me (my sc, None not known), round (the last round seen), n (the charms put on), why
+    [notes]}. Never raises: what it got to"""
+    out = {"by": {}, "me": None, "round": None, "n": 0, "why": []}
+    try:
+        if not isinstance(duel, dict):
+            out["why"].append("no battle")
+            return out
+        me = duel.get("me_sc")
+        if me is None and isinstance(duel.get("me"), dict):
+            me = duel["me"].get("sc")
+        out["me"] = me
+        idx = _fact_index(facts)
+        unknown = 0
+        by = out["by"]
+
+        def lists(sc):
+            return by.setdefault(sc, {"blades": [], "traps": [], "shields": [], "weak": [], "absorb": []})
+
+        def side(sc):
+            return None if not isinstance(sc, int) else (sc >= 4)
+        for r in duel.get("rounds") or []:
+            if not isinstance(r, dict):
+                continue
+            n = r.get("n")
+            out["round"] = n if n is not None else out["round"]
+            for c in r.get("casts") or []:
+                if not isinstance(c, dict) or c.get("pass") or not c.get("spell"):
+                    continue
+                f = idx.get(str(c["spell"]).strip().lower())
+                cs = c.get("sc")
+                # (the hit first - a spell that hits and puts a charm on keeps that one)
+                if not c.get("missed"):
+                    hit = set()
+                    dmg = collections.Counter()
+                    for e in c.get("hp") or []:
+                        if isinstance(e, (list, tuple)) and len(e) >= 3 and isinstance(e[2], (int, float)) and e[2] < 0 \
+                                and side(e[0]) is not None and side(e[0]) != side(cs):
+                            hit.add(e[0])
+                            dmg[e[0]] += -e[2]
+                    for e in c.get("fx") or []:
+                        if isinstance(e, (list, tuple)) and len(e) >= 2 and DAMAGE_FX.search(str(e[1])) \
+                                and side(e[0]) is not None and side(e[0]) != side(cs):
+                            hit.add(e[0])
+                    if hit:
+                        heads = _schools_of(f.get("heads")) if f else None
+                        if heads is None and f and f.get("school") and not f.get("heads"):
+                            heads = _schools_of(str(f.get("school")) + ":1")
+                        if cs in by:
+                            for k in ("blades", "weak"):
+                                by[cs][k] = [x for x in by[cs][k] if not _fits(x, heads)]
+                        for t in hit:
+                            if t in by:
+                                for k in ("traps", "shields"):
+                                    by[t][k] = [x for x in by[t][k] if not _fits(x, heads)]
+                                left = dmg.get(t, 0)
+                                keep = []
+                                for a in by[t]["absorb"]:
+                                    take = min(a["pct"], left)
+                                    left -= take
+                                    if a["pct"] - take > 0:
+                                        keep.append(dict(a, pct=a["pct"] - take))
+                                by[t]["absorb"] = keep
+                for e in c.get("hang") or []:
+                    if not (isinstance(e, (list, tuple)) and len(e) >= 4 and isinstance(e[3], (int, float))):
+                        continue
+                    kinds = CHARM_KINDS.get(_fx_name(e[1]))
+                    if kinds is None or not e[3]:
+                        continue
+                    k = kinds[0] if e[3] > 0 else kinds[1]
+                    sch = None
+                    if f:
+                        sch = _schools_of(f.get("boosts"))
+                        if sch is None and not f.get("boosts") and f.get("school"):
+                            sch = _schools_of(str(f.get("school")) + ":1")
+                    else:
+                        unknown += 1
+                    ch = {"pct": abs(e[3]), "schools": sch, "spell": c["spell"], "by": cs, "round": n}
+                    L = lists(e[0])[k]
+                    if k == "blades" and any(x["spell"] == ch["spell"] for x in L):
+                        continue
+                    L.append(ch)
+                    out["n"] += 1
+                for e in c.get("removed") or []:
+                    _charm_off(by, e)
+            for e in (r.get("fx") or {}).get("removed") or []:
+                _charm_off(by, e)
+        if unknown:
+            out["why"].append("%d charm%s from a spell not in cards.jsonl (an enemy's?) - taken to fit every school"
+                              % (unknown, "" if unknown == 1 else "s"))
+    except Exception as e:  # noqa: BLE001 - what it got to
+        out["why"].append("the charms couldn't all be read (%r)" % (e,))
+    return out
+
+
+def _charm_off(by, e):
+    """a REMOVED line's charm ([target sc, effect, param, how]) taken off its target - the first of that kind and %"""
+    if not (isinstance(e, (list, tuple)) and len(e) >= 3 and isinstance(e[2], (int, float))) or e[0] not in by:
+        return
+    kinds = CHARM_KINDS.get(_fx_name(e[1]))
+    if kinds is None or not e[2]:
+        return
+    L = by[e[0]][kinds[0] if e[2] > 0 else kinds[1]]
+    for i, x in enumerate(L):
+        if x["pct"] == abs(e[2]):
+            del L[i]
+            return
+
+
 # ============================================================================ the files
 def header(bot):
     return {"rec": "header", "v": V, "format": SCHEMA, "doc": "AutoFarmer\\vision\\battlerec.py",
