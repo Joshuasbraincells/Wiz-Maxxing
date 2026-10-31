@@ -12,10 +12,11 @@ Sell keeps pets with the wanted talents, vision\\petplan.py), deckmem's way. Goa
     cards = level_cards(rd, level_entries(rd, tpl, off_levels, off_level), level, PL)
                                      # a pet template's power cards at a level (deckmem.DeckMem.pet_cards' too)
 
-    python petmem.py [--json] [-n 1] [-i 2] [--pin FIELD=Class.m_prop:KIND ...] [--out pets.txt]
+    python petmem.py [--json] [-n 1] [-i 2] [--pin FIELD=Class.m_prop:KIND ...] [--out petread.txt]
                                      readings from the command line; --pin tries a value's name for one run (xp=
                                      BasePetItemBehavior.m_XP:u32 - FIELDS and KINDS below) - read it while the game
                                      shows the number (the pet window), and say which name and kind matched
+                                     (never --out pets.txt: that's the wanted talents QuickSell.ahk reads)
 
 SAFETY. The game is opened by navmem.py's Proc - PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else - and only read: ReadProcessMemory (try_read /
@@ -25,9 +26,11 @@ registration: handmem.Image / questmem.class_props) - a pin names its property, 
 by its type name before it's used. No memory scan: everything is followed from the wizard's own object (the camera's).
 
 FAILS SOFT. read() never raises: whatever goes wrong comes back as why. A value that can't be read for sure is None, never
-a guess; whole is False when the worn items or the backpack weren't read whole (a pet may be missing - QuickSell.ahk then
-keeps every pet). The constructor raises LookupError when a needed class or property isn't in this build. Importable
-anywhere (no Windows module at import - the tests run it on made-up memory: test_petmem.py).
+a guess; whole is False when the worn items or the backpack weren't read whole - a list cut short, an entry in it not an
+item, or an item whose global id or behaviours couldn't be read (a pet may be missing - QuickSell.ahk then keeps every
+pet; it also checks the backpack's pets read against /bag's Pet count). The constructor raises LookupError when a needed
+class or property isn't in this build. Importable anywhere (no Windows module at import - the tests run it on made-up
+memory: test_petmem.py).
 
 WHAT IS READ (deckmem's offsets, build 6A9721E9-370E000 - found by name each attach; the numbers are what they were):
   the wizard    the camera's object (navmem: GameClient -> ElasticCamController -> its ClientObject: a WizClientObject)
@@ -215,7 +218,8 @@ def pet_lines(r, why=""):
         behavior class                 (one a pet, the worn one first; cards "name*copies,..." - the power cards of its
                                        level; a list field "" not read, "-" none)
     energy|current|max                 ("" not read - not pinned yet)
-    pets|n|whole|ms|why                (whole 1: the worn items and the backpack both read whole - no pet missed)"""
+    pets|n|whole|ms|why                (whole 1: the worn items and the backpack both read whole, every item's id and
+                                       behaviours too - no pet missed)"""
     if not r:
         return ["none|" + _f(why or "the pets can't be read")]
     out = []
@@ -331,14 +335,21 @@ class PetMem:
         return size, out
 
     def vec16(self, a, limit=VEC_LIMIT):
-        """the objects of a std::vector<SharedPointer<T>> at a (begin, end: 16-byte elements); [] when it isn't one"""
+        """the objects of a std::vector<SharedPointer<T>> at a (begin, end: 16-byte elements; a null pointer in it left
+        out); [] read and empty (begin = end, 0 when never allocated); None when it can't be read or isn't one (begin
+        / end bad, its elements unreadable) - told apart from empty: an item whose behaviours can't be read isn't
+        taken for an item with none (a pet missed - read() says so)"""
         b = self._rd(a, 16)
         if not b:
-            return []
+            return None
         x, y = struct.unpack("<QQ", b)
-        if not (ptr_ok(x) and x <= y <= x + 16 * limit and (y - x) % 16 == 0):
+        if x == y and (x == 0 or ptr_ok(x)):
             return []
-        raw = (self._rd(x, y - x) or b"") if y > x else b""
+        if not (ptr_ok(x) and x < y <= x + 16 * limit and (y - x) % 16 == 0):
+            return None
+        raw = self._rd(x, y - x)
+        if raw is None:
+            return None
         return [v for v in (struct.unpack_from("<Q", raw, i)[0] for i in range(0, len(raw) - 7, 16)) if ptr_ok(v)]
 
     def value(self, a, kind, cap=LIST_CAP):
@@ -407,24 +418,38 @@ class PetMem:
         return co, ""
 
     def behaviors(self, obj):
-        """{type name: behaviour} of an object's m_inactiveBehaviors (the first of each type)"""
-        out = {}
-        for k, b in enumerate(self.vec16(obj + self.P["CoreObject"]["m_inactiveBehaviors"])):
+        """{type name: behaviour} of an object's m_inactiveBehaviors (the first of each type) - {} when they can't be
+        read (the wizard's: its worn items and backpack then aren't found - not whole)"""
+        return self.behaviors_sure(obj)[0]
+
+    def behaviors_sure(self, obj):
+        """({type name: behaviour}, sure) - sure False when the vector couldn't be read (vec16 None) or a behaviour's
+        type name couldn't: the one not seen could be a pet's (an item's: read() counts it as not read, whole False)"""
+        vec = self.vec16(obj + self.P["CoreObject"]["m_inactiveBehaviors"])
+        if vec is None:
+            return {}, False
+        out, sure = {}, True
+        for k, b in enumerate(vec):
             if k % 4 == 3:
                 self.pace()
             tn = self.tname(b)
-            if tn and tn not in out:
+            if not tn:
+                sure = False
+            elif tn not in out:
                 out[tn] = b
-        return out
+        return out, sure
 
     def items(self, beh, prop_cls, cap):
-        """(size, [WizClientObjectItem], whole) of an inventory / equipment behaviour's m_itemList; whole: every entry
-        walked (no more than cap, none cut short); (None, [], False) unreadable"""
+        """(size, [WizClientObjectItem], whole, odd) of an inventory / equipment behaviour's m_itemList; whole: every
+        entry walked (no more than cap, none cut short) and every one a *ClientObjectItem; odd: the entries walked that
+        weren't one (unreadable - the item being freed or moved as it's read: a pet could be one); (None, [], False, 0)
+        unreadable"""
         size, nodes = self.slist(beh + self.P[prop_cls]["m_itemList"], cap)
         if size is None:
-            return None, [], False
+            return None, [], False, 0
         its = [self.u64(n) for n in nodes]
-        return size, [i for i in its if (self.tname(i) or "").endswith("ClientObjectItem")], len(its) == size
+        ok = [i for i in its if (self.tname(i) or "").endswith("ClientObjectItem")]
+        return size, ok, len(its) == size and len(ok) == len(its), len(its) - len(ok)
 
     def _typed_member(self, key, obj, tname, span=0x78):
         """the first pointer in obj (span bytes) of type tname - the place kept under key, checked by type every time"""
@@ -497,7 +522,8 @@ class PetMem:
                   and the pinned values - None till pinned: xp, xp_next, talents [names], talent_ids, derby [names],
                   derby_ids, stats, max_stats}] - the worn pet first
           energy, energy_max  the wizard's pet energy (pinned only - None till then)
-          whole   True: the worn items and the backpack both read whole (no pet missed)"""
+          whole   True: the worn items and the backpack both read whole, every entry an item whose global id and
+                  behaviours were read (no pet missed)"""
         t0 = time.perf_counter()
         out = {"pets": [], "energy": None, "energy_max": None, "whole": False, "why": "", "ms": 0.0,
                "lack": list(self.lack)}
@@ -530,29 +556,46 @@ class PetMem:
                 out["energy_max"] = self.pinned("energy_max", {"stats": gs})
             else:
                 notes.append("the wizard's stats (WizGameStats) not found - no energy")
-        esize, worn, ewhole = self.items(eq, "ClientEquipmentBehavior", EQUIPPED_CAP) if eq else (None, [], False)
-        bsize, bag, bwhole = self.items(inv, "InventoryBehaviorBase", ITEMS_CAP) if inv else (None, [], False)
+        nothing = (None, [], False, 0)
+        esize, worn, ewhole, eodd = self.items(eq, "ClientEquipmentBehavior", EQUIPPED_CAP) if eq else nothing
+        bsize, bag, bwhole, bodd = self.items(inv, "InventoryBehaviorBase", ITEMS_CAP) if inv else nothing
         if not eq or esize is None:
             notes.append("the worn items can't be read")
         elif not ewhole:
-            notes.append("the worn items read in part (%d of %d)" % (len(worn), esize))
+            notes.append("the worn items read in part (%d of %d%s)" % (
+                len(worn), esize, (" - %d not an item" % eodd) if eodd else ""))
         if not inv or bsize is None:
             notes.append("the backpack can't be read")
         elif not bwhole:
-            notes.append("the backpack read in part (%d of %d - changing, or over %d)" % (len(bag), bsize, ITEMS_CAP))
+            notes.append("the backpack read in part (%d of %d - %s)" % (
+                len(bag), bsize, ("%d not an item, changing?" % bodd) if bodd else "changing, or over %d" % ITEMS_CAP))
         CO = self.P["CoreObject"]
         seen = set()
+        # (an item whose global id reads 0 or whose behaviours can't all be read - and none seen a pet's - could be a
+        # pet missed: counted, said, and whole False - QuickSell.ahk keeps every pet then. A gid seen again: the same
+        # item, read already)
+        unread = {"equipped": 0, "backpack": 0}
         for where, its in (("equipped", worn), ("backpack", bag)):
             for it in its:
                 self.pace()
                 gid = self.u64(it + CO["m_globalID.m_full"])
-                if not gid or gid in seen:
+                if not gid:
+                    unread[where] += 1
+                    continue
+                if gid in seen:
                     continue
                 seen.add(gid)
-                beh = next((b for n, b in self.behaviors(it).items() if n.endswith("PetItemBehavior")), 0)
+                bs_it, sure = self.behaviors_sure(it)
+                beh = next((b for n, b in bs_it.items() if n.endswith("PetItemBehavior")), 0)
                 if beh:
                     out["pets"].append(self.pet(it, beh, gid, where))
-        out["whole"] = bool(eq and inv and ewhole and bwhole)
+                elif not sure:
+                    unread[where] += 1
+        for where, what in (("equipped", "worn"), ("backpack", "backpack")):
+            if unread[where]:
+                notes.append("%d %s item(s) whose id or behaviours couldn't be read - a pet may be missed" % (
+                    unread[where], what))
+        out["whole"] = bool(eq and inv and ewhole and bwhole) and not any(unread.values())
         bad = [p for p in out["pets"] if p["level"] is None]
         if bad:
             notes.append("%d pet(s) whose level can't be read" % len(bad))

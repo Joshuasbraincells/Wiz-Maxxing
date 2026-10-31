@@ -1298,7 +1298,8 @@ NavGuiTree(under := "", withHidden := false, depth := "", timeoutMs := 1500)
 ;object: pets ([{gid (hex), where (equipped / backpack), level (1 Baby ... 7 Ultra), levelName, tid, name (its template's
 ;object name: PET_SwordShield_01), display (as the game names it), cards (its level's power cards: "name*copies,..."),
 ;xp, xpNext, talents, derby (arrays of names; "" not read), stats, maxStats (as read), cls}] - the worn one first),
-;energy, energyMax (the wizard's pet energy), whole (1: the worn items and the backpack both read whole - no pet missed),
+;energy, energyMax (the wizard's pet energy), whole (1: the worn items and the backpack both read whole, every item's id
+;and behaviours too - no pet missed; QsPetGuard also checks the backpack's pets against NavBag's Pet count),
 ;n, why (what couldn't be read), want ([names] as the helper read them), hatch, keep ({gid: why} - the pets to keep, a pet
 ;whose talents aren't read among them), keepWhere ({gid: where}). The values not confirmed in the game yet (xp, xpNext,
 ;talents, derby, stats, maxStats, energy - vision\petmem.py PINS) are "" till they're pinned: nothing acts on them yet.

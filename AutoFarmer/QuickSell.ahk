@@ -788,11 +788,11 @@ QsCategories(bag, &why)
 			qShop[qx.kind] := (qShop.Has(qx.kind) ? qShop[qx.kind] ", " : "") qx.name
 			}
 	;(pets to keep - goal 6, perfect pets: pets.txt's wanted talents, QsPetGuard. A pet to keep in the backpack - or the
-	;pets not read whole - leaves the Pet group out whole: the bot can't read locks, so it can't sell round one pet. No
-	;pets.txt, or no pet in the backpack: nothing asked, sold as before)
+	;pets not read whole, or fewer read in the backpack than its Pet count here - leaves the Pet group out whole: the bot
+	;can't read locks, so it can't sell round one pet. No pets.txt, or no pet in the backpack: nothing asked, sold as before)
 	if (QsPets() && (bag.cats.Has("pet") || bag.cats.Has("?")))
 		{
-		qPetKeep := QsPetGuard()
+		qPetKeep := QsPetGuard(bag)
 		if (qPetKeep != "")
 			qGuard["pet"] := (qGuard.Has("pet") ? qGuard["pet"] ", " : "") "kept: " qPetKeep
 		}
@@ -836,10 +836,11 @@ QsCategories(bag, &why)
 ;(QsPetWant - no file, no want: line: "" at once, nothing asked). Then the helper's /pets (NavPets): a pet in the backpack
 ;it keeps - one with every wanted talent (you're told: lock it), or one whose talents aren't read (not confirmed in the
 ;game yet - every pet, for now) - keeps the group out; so do the pets not read, or not read whole (a pet could be missed),
-;and a pets.txt that's there but can't be read (fails safe).
+;fewer pets read in the backpack than bag (NavBag's reading) counts in its Pet group, and a pets.txt that's there but
+;can't be read (fails safe).
 ;TODO (goal 6 steps 9-11 - they need the game's pet windows first): the pet program's own switches (training, hatching)
 ;plug in here - hatching on keeps the group out whole too (its parents and babies) and is passed on: NavPets(want, 1)
-QsPetGuard()
+QsPetGuard(bag)
 	{
 	qpgWant := QsPetWant(&qpgBad)
 	if (qpgBad != "")
@@ -851,6 +852,17 @@ QsPetGuard()
 		return "the pets can't be read from the game's memory (" NavPetsWhy ") - every pet"
 	if (!qpgPets.whole)
 		return "the pets not all read (" (qpgPets.why != "" ? qpgPets.why : "the backpack read in part") ") - every pet"
+	;(the backpack's pets /pets read checked against its Pet group's count in bag - NavBag's own reading, from the items'
+	;"Pet" adjective: fewer read - a pet whose behaviour petmem doesn't know, or one missed as the backpack changed - and
+	;the one not read could be sold with the group: every pet kept. More read is fine: an item whose kind bag couldn't
+	;read ("?") may be a pet)
+	qpgBagPets := bag.cats.Has("pet") ? bag.cats["pet"].n : 0
+	qpgRead := 0
+	for qpgI, qpgP in qpgPets.pets
+		if (qpgP.where = "backpack")
+			qpgRead += 1
+	if (qpgBagPets = "" || qpgRead < qpgBagPets)
+		return "the pets not all read (" (qpgBagPets = "" ? "the backpack's pet count not read" : qpgBagPets " in the backpack, " qpgRead " read") ") - every pet"
 	qpgNames := V1Obj()
 	for qpgI, qpgP in qpgPets.pets
 		qpgNames[qpgP.gid] := qpgP.display != "" ? qpgP.display : qpgP.name != "" ? qpgP.name : "pet " qpgP.gid

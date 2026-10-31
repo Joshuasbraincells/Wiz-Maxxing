@@ -11,8 +11,10 @@ TUTORIAL:
 KNOWN LIMITS (v0.9.0 - not fixed yet, AutoFarmer's own pet trainer is to replace this one: TODO.md goal 6):
 - It reads nothing from the game. It presses random W/A/S/D keys in the dance game instead of the moves the game
   shows, so most rounds fail; it doesn't stop at a level or when the pet is out of energy.
-- Its clicks are fixed spots of an 800x600 window: they only land right when your SCREEN is 800x600. At other sizes
-  check where they land before you leave it running.
+- Its clicks are fixed spots of an 800x600 area centred on your screen: they assume Wizard101 fills the screen (full
+  screen, or a borderless window the screen's size, starting at its top left) with the game's dialogs in that centred
+  area. In a smaller window, or one moved off the top left (an 800x600 window on a bigger screen), they miss. Check
+  where they land before you leave it running.
 - Keep Wizard101 the window in front: the keys and clicks go to whatever window is.
 - While a round plays your mouse is locked (between rounds, and after Esc, it's free).
 

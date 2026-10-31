@@ -13,9 +13,12 @@ SendMode("Event")
 ;keys and clicks go to whatever is). Esc closes it. Kept as it is till AutoFarmer's own pet trainer replaces it (TODO.md
 ;goal 6 - by the game's memory: vision\petmem.py reads the pets now; the pet game's windows have to be seen first).
 ;KNOWN, NOT FIXED BLIND (no game here to check against): the clicks below are an 800x600 window's spots plus offsets that
-;centre an 800x600 area on the SCREEN, while CoordMode is Window - right only when the screen itself is 800x600 (at
-;1920x1080 a click meant for (625, 470) lands at (1185, 710) of the window), and Wizard101's own windows scale with its UI
-;anyway. To check in the game before any click is moved: where each click lands at your resolution.
+;centre an 800x600 area on the SCREEN, while CoordMode is Window - so they assume the game window fills the screen from
+;its top left (full screen, or borderless at the screen's size: at 1920x1080 the click meant for (625, 470) lands at
+;(1185, 710), that centred area's spot - the original design) with the game's dialogs laid out as that centred 800x600
+;area. A smaller window, or one moved off the top left (an 800x600 window on a bigger screen: (1185, 710) is outside it),
+;is missed; and whether the dialogs keep to that centred area at every resolution (the game's UI may scale) isn't known.
+;To check in the game before any click is moved: where each click lands with your window.
 
 #1::
 {

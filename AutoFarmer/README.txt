@@ -1454,8 +1454,9 @@ hatchery come once their windows have been seen in the game):
 	  with pets.txt there, quick sell sells no pets while any pet is in the
 	  backpack: the bot can't read locks either, so it leaves the whole Pet
 	  group out (debug.log: "Backpack: left out ... Pet (kept: ...)"). The
-	  same when the pets can't be read. No pets.txt: pets are sold as before
-	  ("...pets too").
+	  same when the pets can't all be read (an item in the backpack not read,
+	  or fewer pets read than its Pet count). No pets.txt: pets are sold as
+	  before ("...pets too").
 	- Every pet you own, from the game's memory (read-only - nothing in the
 	  game is written, clicked or typed):
 	      python vision\petmem.py --out petread.txt

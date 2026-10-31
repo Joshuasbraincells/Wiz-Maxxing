@@ -379,6 +379,90 @@ class Reader(unittest.TestCase):
         self.assertIn("the game changed", r["why"])
         self.assertFalse(r["whole"])
 
+    def test_an_item_not_read_is_never_whole(self):
+        # (the review's finding: an item skipped without a word left whole True - QuickSell.ahk's guard then sold the
+        # Pet group with a pet pets.txt keeps in it. Each way an item can't be read: whole False, said, the rest read)
+        import petplan
+
+        def world(gid=0x33):
+            w = World()
+            w.item(0x22, 9001, "equipped", pet_level=6)                 # the worn pet
+            it, beh = w.item(gid, 9001, "backpack", pet_level=6)        # the backpack's
+            w.item(0x44, 9002, "backpack")                              # a hat
+            return w.done(), it, beh
+
+        def read(w):
+            return M.PetMem(w, Hand(w), props=PROPS, pins={}).read()
+        IB = PROPS["CoreObject"]["m_inactiveBehaviors"]
+        # its behaviours vector unreadable (freed or moved as it's read): not taken for an item with none
+        w, it, _beh = world()
+        w.p.write(it + IB, struct.pack("<QQ", 0x7DEAD0000, 0x7DEAD0020))
+        r = read(w)
+        self.assertEqual([p["gid"] for p in r["pets"]], [0x22])
+        self.assertFalse(r["whole"])
+        self.assertIn("1 backpack item(s) whose id or behaviours couldn't be read", r["why"])
+        ln = petplan.pets_answer(r, "", "Spell-Proof, Mighty")
+        self.assertEqual(next(x for x in ln if x.startswith("pets|")).split("|")[:3], ["pets", "1", "0"])
+        # (a vector that isn't one - end before begin, or not a whole number of elements: the same)
+        for bad in ((0x10000000, 0x0FFFFFF0), (0x10000000, 0x10000008)):
+            w, it, _beh = world()
+            w.p.write(it + IB, struct.pack("<QQ", *bad))
+            self.assertFalse(read(w)["whole"], bad)
+        # its global id reads 0
+        w, _it, _beh = world(gid=0)
+        r = read(w)
+        self.assertEqual(([p["gid"] for p in r["pets"]], r["whole"]), ([0x22], False))
+        self.assertIn("1 backpack item(s)", r["why"])
+        # a list entry that isn't an item (its type unreadable)
+        w, it, _beh = world()
+        w.types[it] = None
+        r = read(w)
+        self.assertEqual(([p["gid"] for p in r["pets"]], r["whole"]), ([0x22], False))
+        self.assertIn("1 not an item", r["why"])
+        # a behaviour whose type can't be read on an item with no pet behaviour seen: it could be the pet's
+        w, it, beh = world()
+        w.types[beh] = None
+        r = read(w)
+        self.assertEqual(([p["gid"] for p in r["pets"]], r["whole"]), ([0x22], False))
+        # (the same on the worn list: said as worn)
+        w = World()
+        _it_w, beh_w = w.item(0x22, 9001, "equipped", pet_level=6)
+        w.done()
+        w.types[beh_w] = None
+        r = read(w)
+        self.assertFalse(r["whole"])
+        self.assertIn("1 worn item(s)", r["why"])
+        # ... but a pet behaviour read beside one whose type can't be: the pet is there - nothing missed
+        w = World()
+        it2, _beh2 = w.item(0x33, 9001, "backpack", pet_level=6)
+        w.done()
+        vec = struct.unpack("<Q", w.p.try_read(it2 + IB, 8))[0]
+        w.types[struct.unpack("<Q", w.p.try_read(vec, 8))[0]] = None   # (the item's other behaviour)
+        r = read(w)
+        self.assertEqual(([p["gid"] for p in r["pets"]], r["whole"], r["why"]), ([0x33], True, ""))
+
+    def test_an_item_with_no_behaviours_is_read(self):
+        # (an empty vector - begin = end, or both 0: read, and not a pet - whole stays True)
+        for empty in ("same", "zero"):
+            w = World()
+            w.item(0x22, 9001, "equipped", pet_level=6)
+            it, _ = w.item(0x44, 9002, "backpack")
+            w.done()
+            a = PROPS["CoreObject"]["m_inactiveBehaviors"]
+            v = 0 if empty == "zero" else 0x10000000
+            w.p.write(it + a, struct.pack("<QQ", v, v))
+            r = M.PetMem(w, Hand(w), props=PROPS, pins={}).read()
+            self.assertEqual(([p["gid"] for p in r["pets"]], r["whole"], r["why"]), ([0x22], True, ""), empty)
+        # vec16 itself: [] read and empty, None not read
+        w = World()
+        pm = M.PetMem(w, Hand(w), props=PROPS, pins={})
+        a = w.p.alloc(16)
+        for begin_end, want in (((0, 0), []), ((0x10000000, 0x10000000), []), ((0x7DEAD0000, 0x7DEAD0010), None),
+                                ((0x10000010, 0x10000000), None), ((0, 0x10), None), ((0x10000000, 0x10000004), None)):
+            w.p.write(a, struct.pack("<QQ", *begin_end))
+            self.assertEqual(pm.vec16(a), want, begin_end)
+        self.assertIsNone(pm.vec16(0x7DEAD0000))                        # (the vector itself unreadable)
+
     def test_level_walk_and_cards(self):
         w = World()
         rd = M.PetMem(w, Hand(w), props=PROPS, pins={})
