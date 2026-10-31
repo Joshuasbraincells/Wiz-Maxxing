@@ -485,6 +485,8 @@ global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
 global NavGuiTreeWhy, NavGuiTreeWaitUntil
 ;Why the last NavGear got nothing; when it may ask again (declared only: a top-level := never runs here)
 global NavGearWhy, NavGearWaitUntil
+;Why the last NavPets got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavPetsWhy, NavPetsWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
 ;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
@@ -1390,6 +1392,99 @@ NavGear(query := "", timeoutMs := 5000)
 	return ngrOut
 	}
 
+;The wizard's pets from the game's memory (the helper's /pets - READ-ONLY, vision\petmem.py: nothing in the game is
+;written, injected or hooked; no key, click or window) and which of them to keep out of Quick Sell (vision\petplan.py -
+;goal 6, perfect pets: QuickSell.ahk QsPetGuard). want: the wanted talents ("Spell-Proof, Mighty, ..." - pets.txt's
+;want: line, QsPetWant); hatch: 1 hatching on (the pets still in training and the best pair of parents kept too). An
+;object: pets ([{gid (hex), where (equipped / backpack), level (1 Baby ... 7 Ultra), levelName, tid, name (its template's
+;object name: PET_SwordShield_01), display (as the game names it), cards (its level's power cards: "name*copies,..."),
+;xp, xpNext, talents, derby (arrays of names; "" not read), stats, maxStats (as read), cls}] - the worn one first),
+;energy, energyMax (the wizard's pet energy), whole (1: the worn items and the backpack both read whole, every item's id
+;and behaviours too - no pet missed; QsPetGuard also checks the backpack's pets against NavBag's Pet count),
+;n, why (what couldn't be read), want ([names] as the helper read them), hatch, keep ({gid: why} - the pets to keep, a pet
+;whose talents aren't read among them), keepWhere ({gid: where}). The values not confirmed in the game yet (xp, xpNext,
+;talents, derby, stats, maxStats, energy - vision\petmem.py PINS) are "" till they're pinned: nothing acts on them yet.
+;"" when it can't be read - navmem:0, the helper not running or older (no /pets), dual mode, "none|<why>" (not in the
+;world, the reader being made - once a game, the helper waits 1 s for it): NavPetsWhy says why (after an ERR or no
+;answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+NavPets(want := "", hatch := 0, timeoutMs := 1500)
+	{
+	global NavPetsWhy, NavPetsWaitUntil ; (v1 globals it sets)
+	NavPetsWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavPetsWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavPetsWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavPetsWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavPetsWaitUntil && A_TickCount < NavPetsWaitUntil)
+		{
+		NavPetsWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	npsAns := VisionGet("/pets?want=" NavUri(want) (hatch ? "&hatch=1" : ""), timeoutMs, true)
+	if (npsAns = "")
+		{
+		NavPetsWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavPetsWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavPetsWaitUntil := 0
+	npsOut := V1Obj({pets: [], energy: "", energyMax: "", whole: 0, n: "", why: "", want: [], hatch: 0, keep: V1Obj(), keepWhere: V1Obj()})
+	Loop Parse, npsAns, "`n", "`r"
+		{
+		npsF := StrSplit(A_LoopField, "|")
+		if (V1At(npsF, 1) = "none")
+			{
+			NavPetsWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (V1At(npsF, 1) = "pet" && npsF.Length >= 16)
+			npsOut.pets.Push(V1Obj({gid: Trim(V1At(npsF, 2)), where: Trim(V1At(npsF, 3)), level: NavNum(V1At(npsF, 4)), levelName: Trim(V1At(npsF, 5)), tid: NavNum(V1At(npsF, 6))
+				, name: Trim(V1At(npsF, 7)), display: Trim(V1At(npsF, 8)), cards: Trim(V1At(npsF, 9)), xp: NavNum(V1At(npsF, 10)), xpNext: NavNum(V1At(npsF, 11))
+				, talents: NavPetList(V1At(npsF, 12)), derby: NavPetList(V1At(npsF, 13)), stats: Trim(V1At(npsF, 14)), maxStats: Trim(V1At(npsF, 15)), cls: Trim(V1At(npsF, 16))}))
+		else if (V1At(npsF, 1) = "energy")
+			npsOut.energy := NavNum(V1At(npsF, 2)), npsOut.energyMax := NavNum(V1At(npsF, 3))
+		else if (V1At(npsF, 1) = "pets")
+			npsOut.n := NavNum(V1At(npsF, 2)), npsOut.whole := V1At(npsF, 3) = "1" ? 1 : 0, npsOut.why := Trim(V1At(npsF, 5))
+		else if (V1At(npsF, 1) = "want")
+			npsOut.want := NavPetList(V1At(npsF, 3)), npsOut.hatch := V1At(npsF, 4) = "1" ? 1 : 0
+		else if (V1At(npsF, 1) = "keep" && Trim(V1At(npsF, 2)) != "")
+			npsOut.keep[Trim(V1At(npsF, 2))] := Trim(V1At(npsF, 4)), npsOut.keepWhere[Trim(V1At(npsF, 2))] := Trim(V1At(npsF, 3))
+		}
+	if (npsOut.n = "")
+		{
+		NavPetsWhy := "an odd answer (no pets line): " SubStr(RegExReplace(npsAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return npsOut
+	}
+
+;A list field of /pets (talents, derby, want - names joined by commas): its names as an array - [] for "-" (read, none),
+;"" not read (empty)
+NavPetList(v)
+	{
+	v := Trim(v)
+	if (v = "")
+		return ""
+	npl := []
+	if (v = "-")
+		return npl
+	for each, nplName in StrSplit(v, ",")
+		if (Trim(nplName) != "")
+			npl.Push(Trim(nplName))
+	return npl
+	}
+
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
 ;mobs' real sight against the mobshape / mobradius settings
@@ -1542,5 +1637,6 @@ VisionBlank()
 	global NavUiWaitUntil := "", NavUiRootW := ""
 	global NavGuiTreeWhy := "", NavGuiTreeWaitUntil := ""
 	global NavGearWhy := "", NavGearWaitUntil := ""
+	global NavPetsWhy := "", NavPetsWaitUntil := ""
 	global VisionPhaseWhy := "", VisionPhaseWaitUntil := ""
 	}

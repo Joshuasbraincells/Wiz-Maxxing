@@ -342,6 +342,14 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              dungeon's from resources\dungeons_known.txt; nomark=1: its start wasn't
                                              noted - not counted, the backpack kept afresh); a piece whose template
                                              couldn't be read: item|...|<slot blank>|unknown|...; or "none|<why>"
+  /pets[?want=Talent,Talent...][&hatch=1] -> the wizard's pets from the game's memory (read-only - vision\petmem.py: the worn
+                                             one and the backpack's) and which to keep out of Quick Sell (vision\petplan.py -
+                                             want: AutoFarmer\pets.txt's wanted talents; hatch=1: hatching on): petmem.pet_lines
+                                             (pet|gid|where|level|level name|template id|object name|display|cards|xp|
+                                             xp next|talents|derby|stats|max stats|behavior class - the values not
+                                             confirmed in the game yet "" -, energy|cur|max, pets|n|whole|ms|why), then
+                                             want|n|names|hatch and keep|gid|where|why (a pet whose talents aren't read is
+                                             kept); or "none|<why>"
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -4261,6 +4269,13 @@ class Handler(BaseHTTPRequestHandler):
                 t, why = bagmem.nav_tree(nav_reader(), under, q.get('all', '0') in ('', '0'),
                                          int(dep) if dep.isdigit() else None, wait=0.3)
                 return self.reply('\n'.join(bagmem.tree_lines(t, why)))
+            if u.path == '/pets':
+                # (the wizard's pets and the ones to keep - vision\petmem.py / petplan.py, read-only: QuickSell.ahk
+                # QsPetGuard leaves the Pet group out while a pet to keep is in the backpack)
+                import petplan
+                r, why = nav_reader().pets(wait=1.0)     # (its reader made once a game: about half a second)
+                return self.reply('\n'.join(petplan.pets_answer(r, why, q.get('want', ''),
+                                                                 q.get('hatch', '0') not in ('', '0'))))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)

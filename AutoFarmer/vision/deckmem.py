@@ -78,6 +78,7 @@ import time
 import zlib
 
 import navmem as N
+import petmem as PM
 
 NEED = {"CoreObject": ("m_inactiveBehaviors", "m_globalID.m_full", "m_templateID.m_full"),
         "InventoryBehaviorBase": ("m_itemList",),
@@ -192,6 +193,7 @@ class DeckMem:
         self._pace = None        # (read's pace: called between decks, between cards and every 500 names)
         self._paced = 0.0        # (s spent in pace calls - off navmem's lock: not reading)
         self._k = 0              # (reads since the read began - _tick)
+        self.pet_unread = []     # (the pets whose cards _item_cards couldn't read - its last call's)
         self.attach_s = time.perf_counter() - t0
         self.log("deckmem: ready in %.2f s%s" % (self.attach_s, (" - not in this build: " + ", ".join(self.lack))
                                                  if self.lack else ""))
@@ -501,7 +503,10 @@ class DeckMem:
 
     def item_cards_of(self, it, tpl):
         """[(spell m_name, copies, how)] the cards an item gives: its template's equip effects (ProvideSpellEffectInfo -
-        gear) and, for a pet, its level's power cards (PetLevelInfo); None unreadable"""
+        gear) and, for a pet, its level's power cards (PetLevelInfo); None unreadable. A pet whose cards can't be read
+        (its classes not in this build, its level or template unreadable) loses only ITS cards: the item's equip effects
+        are kept and the item goes on self.pet_unread (_read's why says so) - before v0.9.0 the whole deck's item cards
+        went None with it"""
         if not tpl or self.off("ItemTemplate", "m_equipEffects") is None or \
                 any(self.off("ProvideSpellEffectInfo", k) is None for k in ("m_spellName", "m_numSpells")):
             return None
@@ -516,7 +521,8 @@ class DeckMem:
                             self.i32(e + self.P["ProvideSpellEffectInfo"]["m_numSpells"]), "equip effect"))
         pet = self.pet_cards(it)
         if pet is None:
-            return None
+            self.pet_unread.append(it)
+            return out
         return out + pet
 
     def _typed_member(self, key, obj, tname, span=0x78):
@@ -538,7 +544,8 @@ class DeckMem:
         """[(spell m_name, copies, 'pet level N')] of a pet item at its level (BasePetItemBehavior.m_level -> its
         PetItemBehaviorTemplate.m_Levels: a std::list of PetLevelInfo held in the nodes (+0x10) - m_powerCardName(2, 3),
         m_powerCardCount - each name taken that many times: whether the count is for each name isn't known, only one name
-        was seen); [] not a pet; None a pet that can't be read"""
+        was seen); [] not a pet; None a pet that can't be read. The list's walk is petmem's (level_entries /
+        level_cards - the pets reader's too)"""
         beh = next((b for n, b in self.behaviors(it).items() if n.endswith("PetItemBehavior")), 0)
         if not beh:
             return []
@@ -549,27 +556,10 @@ class DeckMem:
         bt = self._typed_member("pet_tpl", beh, "PetItemBehaviorTemplate")
         if level is None or not bt:
             return None
-        b = self._rd(bt + PT["m_Levels"], 16)
-        if not b:
+        ents = PM.level_entries(self, bt, PT["m_Levels"], PL["m_level"])
+        if ents is None:
             return None
-        head, size = struct.unpack("<QQ", b)
-        if not N.ptr_ok(head) or size > 32:
-            return None
-        n, k, out = self.u64(head), 0, []
-        while N.ptr_ok(n) and n != head and k < size:
-            self.pace()
-            li = n + 0x10                                 # (the PetLevelInfo itself, in the node)
-            if self.tname(li) != "PetLevelInfo":
-                return None
-            if self.u8(li + PL["m_level"]) == level:
-                cnt = self.i32(li + PL["m_powerCardCount"]) or 0
-                for key in ("m_powerCardName", "m_powerCardName2", "m_powerCardName3"):
-                    nm = self.string(li + PL[key])
-                    if nm and cnt > 0:
-                        out.append((nm, cnt, "pet level %d" % level))
-                return out
-            n, k = self.u64(n), k + 1
-        return out
+        return PM.level_cards(self, ents, level, PL)
 
     def deck_template(self, beh):
         """the DeckBehaviorTemplate of a deck behavior: the first pointer in it of that type (the place kept, checked by
@@ -807,6 +797,9 @@ class DeckMem:
             else:
                 gear, d["gear_from"] = None, "in no Equipment Set: its gear isn't known"
             d["item_cards"], d["item_n"] = self._item_cards(gear, objs, d.get("excluded"))
+            if self.pet_unread and d["item_cards"] is not None:
+                d["why"] = "; ".join(x for x in (d.get("why"), "the pet's cards couldn't be read (its level or template "
+                                                 "- BasePetItemBehavior / PetLevelInfo) - the gear's are there") if x)
             if self.by_name is None and any(c.get("template_id") is None for c in d["item_cards"] or []):
                 out["names_cut"] = True
                 d["why"] = "; ".join(x for x in (d.get("why"), "an item card's template isn't known yet (the spell "
@@ -885,6 +878,7 @@ class DeckMem:
             ex[e["template_id"]] = ex.get(e["template_id"], 0) + (e["count"] or 0)
         ex_names = {e["name"]: e["template_id"] for e in excluded or [] if e.get("name")}
         out, n = [], 0
+        self.pet_unread = []
         for g in gear:
             if g not in objs:
                 continue                      # (a set's item no longer owned)

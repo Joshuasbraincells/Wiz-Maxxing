@@ -758,7 +758,8 @@ QsOpenQuickSell()
 	}
 
 ;The groups sold - the gear's eight and the pets' (quicksellpets), never the All group - less any group an Equipment
-;Set's item or a Crown-shop item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
+;Set's item or a Crown-shop item in the backpack is in, and the pets' while a pet to keep is (pets.txt - QsPetGuard):
+;{list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
 ;petMax (the most each can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or
 ;unsellable, by the game's memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items),
 ;shopLeft (the groups left out for a Crown-shop item, with those items - for the alerts)};
@@ -806,6 +807,15 @@ QsCategories(bag, &why)
 			qGuard[qx.kind] := (qGuard.Has(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)"
 			qShop[qx.kind] := (qShop.Has(qx.kind) ? qShop[qx.kind] ", " : "") qx.name
 			}
+	;(pets to keep - goal 6, perfect pets: pets.txt's wanted talents, QsPetGuard. A pet to keep in the backpack - or the
+	;pets not read whole, or fewer read in the backpack than its Pet count here - leaves the Pet group out whole: the bot
+	;can't read locks, so it can't sell round one pet. No pets.txt, or no pet in the backpack: nothing asked, sold as before)
+	if (QsPets() && (bag.cats.Has("pet") || bag.cats.Has("?")))
+		{
+		qPetKeep := QsPetGuard(bag)
+		if (qPetKeep != "")
+			qGuard["pet"] := (qGuard.Has("pet") ? qGuard["pet"] ", " : "") "kept: " qPetKeep
+		}
 	;(shopLeft: the groups left out for a Crown-shop item - for the alerts)
 	qOut := V1Obj({list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""})
 	for qi, qc in qAll
@@ -835,10 +845,86 @@ QsCategories(bag, &why)
 	if (bag.cats.Has("?"))
 		qOut.gearMax := V1Add(qOut.gearMax, bag.cats["?"].n), qOut.petMax := V1Add(qOut.petMax, bag.cats["?"].n)  ; (v1: a blank count made them blank)
 	if (qOut.skipped != "")
-		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group (bank Crown-shop items to have their group sold): " qOut.skipped)
+		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group, or a pet to keep (bank Crown-shop items to have their group sold): " qOut.skipped)
 	if (qOut.crownShop != "")
 		QsLog("Crown-shop gear in the groups without the game's Crowns flag (not counted as plain gear - kept out if the game takes them for Crowns items or they're locked; if the confirmation's equipment goes over the plain gear, nothing's sold): " qOut.crownShop)
 	return qOut
+	}
+
+;Pets to keep out of the sale (goal 6, perfect pets - vision\petplan.py keepers): "" none (the Pet group sold as before),
+;else which and why - QsCategories leaves the whole Pet group out for it. Asked only when pets.txt names wanted talents
+;(QsPetWant - no file, no want: line: "" at once, nothing asked). Then the helper's /pets (NavPets): a pet in the backpack
+;it keeps - one with every wanted talent (you're told: lock it), or one whose talents aren't read (not confirmed in the
+;game yet - every pet, for now) - keeps the group out; so do the pets not read, or not read whole (a pet could be missed),
+;fewer pets read in the backpack than bag (NavBag's reading) counts in its Pet group, and a pets.txt that's there but
+;can't be read (fails safe).
+;TODO (goal 6 steps 9-11 - they need the game's pet windows first): the pet program's own switches (training, hatching)
+;plug in here - hatching on keeps the group out whole too (its parents and babies) and is passed on: NavPets(want, 1)
+QsPetGuard(bag)
+	{
+	qpgWant := QsPetWant(&qpgBad)
+	if (qpgBad != "")
+		return "pets.txt can't be read (" qpgBad ") - every pet"
+	if (qpgWant = "")
+		return ""
+	qpgPets := NavPets(qpgWant, 0)
+	if (!IsObject(qpgPets))
+		return "the pets can't be read from the game's memory (" NavPetsWhy ") - every pet"
+	if (!qpgPets.whole)
+		return "the pets not all read (" (qpgPets.why != "" ? qpgPets.why : "the backpack read in part") ") - every pet"
+	;(the backpack's pets /pets read checked against its Pet group's count in bag - NavBag's own reading, from the items'
+	;"Pet" adjective: fewer read - a pet whose behaviour petmem doesn't know, or one missed as the backpack changed - and
+	;the one not read could be sold with the group: every pet kept. More read is fine: an item whose kind bag couldn't
+	;read ("?") may be a pet)
+	qpgBagPets := bag.cats.Has("pet") ? bag.cats["pet"].n : 0
+	qpgRead := 0
+	for qpgI, qpgP in qpgPets.pets
+		if (qpgP.where = "backpack")
+			qpgRead += 1
+	if (qpgBagPets = "" || qpgRead < qpgBagPets)
+		return "the pets not all read (" (qpgBagPets = "" ? "the backpack's pet count not read" : qpgBagPets " in the backpack, " qpgRead " read") ") - every pet"
+	qpgNames := V1Obj()
+	for qpgI, qpgP in qpgPets.pets
+		qpgNames[qpgP.gid] := qpgP.display != "" ? qpgP.display : qpgP.name != "" ? qpgP.name : "pet " qpgP.gid
+	qpgOut := "", qpgDone := ""
+	for qpgGid, qpgWhy in qpgPets.keep
+		{
+		if (V1At(qpgPets.keepWhere, qpgGid) != "backpack")
+			continue
+		qpgName := V1At(qpgNames, qpgGid) != "" ? qpgNames[qpgGid] : "pet " qpgGid
+		if (InStr(qpgWhy, "every wanted talent"))
+			qpgDone .= (qpgDone = "" ? "" : ", ") qpgName
+		if (StrLen(qpgOut) < 300)
+			qpgOut .= (qpgOut = "" ? "" : ", ") qpgName " (" qpgWhy ")"
+		}
+	;(a perfect pet in the backpack: lock it - quick sell sells no pet till it's locked or worn; once in 10 minutes)
+	if (qpgDone != "" && QsSay("petdone", "a pet with every wanted talent is in the backpack: " qpgDone " - lock it in the game"))
+		AlertSend("pets", "a perfect pet is in the backpack", qpgDone " has every talent pets.txt wants. Lock it in the game (or wear it) - till then quick sell sells no pets.")
+	return qpgOut
+	}
+
+;pets.txt's wanted talents (goal 6, perfect pets): the file next to PlayerStats.txt, written by you - a line "want:
+;Spell-Proof, Spell-Defying, Mighty, Pain-Giver, Pain-Bringer" (; starts a comment; more want: lines add to it) - as one
+;text for /pets ("" none: no file, no want: line). bad: why the file is there but can't be read ("" it could)
+QsPetWant(&bad)
+	{
+	bad := ""
+	qpwPath := A_WorkingDir "\pets.txt"
+	if (!FileExist(qpwPath))
+		return ""
+	qpwText := V1FileRead(qpwPath)
+	if (ErrorLevel)
+		{
+		bad := "FileRead failed"
+		return ""
+		}
+	qpwOut := ""
+	Loop Parse, qpwText, "`n", "`r"
+		{
+		if (RegExMatch(RegExReplace(A_LoopField, ";.*"), "i)^\s*want\s*:\s*(.*\S)", &qpwM))
+			qpwOut .= (qpwOut = "" ? "" : ", ") qpwM[1]
+		}
+	return qpwOut
 	}
 
 ;One group: its button, then ALL (the "include Crowns Items?" box answered No), the shown rows checked - every row
