@@ -1292,6 +1292,7 @@ DashRefresh()
 		. "Threat       " DashCut(see.threat != "" ? see.threat : "-") "`n"
 		. "Plan         " DashCut(see.plan != "" ? see.plan : "-") "`n"
 		. "Deck         " DashCut(see.deck != "" ? see.deck : "-") "`n"
+		. ((V1IsFunc("TrainStatus") && TrainStatus.Call() != "") ? "Spells       " DashCut(TrainStatus.Call()) "`n" : "")
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"
 		. "Walker       " DashCut(StatusText != "" ? StatusText : "-") "`n"

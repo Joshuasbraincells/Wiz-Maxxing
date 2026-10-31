@@ -12,6 +12,8 @@ vision\\battlerec.py, and /deck), navmem / handmem / bagmem's way.
     sig = dm.signature()              # (worn items, the worn deck's gid, its card list's size, the set on, a checksum
                                       # of its cards) - ~2 ms
     print("\n".join(deck_lines(r)))   # one line a deck, one a card
+    r = dm.read(books=True)           # the spellbook and the treasure book too (each spell's name, school, type, pips;
+    print("\n".join(book_lines(r)))   # kinds=True: its kind and value as well) - one line a spell (/book)
 
     python deckmem.py [--json] [--book] [--hand] [-n 1] [-i 2]     readings from the command line
 
@@ -117,6 +119,7 @@ SET_IDS_CAP = 64
 CARDS_CAP = 200          # distinct spells in a deck at most (a deck holds 60 + 25 cards)
 EXCL_CAP = 64
 BOOK_CAP = 3000          # spellbook / treasure book entries at most
+BOOK_KEYS = ("name", "display", "school", "type", "pips", "x_pips")   # what a book entry gets from its template (brief)
 EFFECTS_CAP = 50
 NAME_WALK_S = 3.0        # s of reading at most a read for the template map's names (an item card that isn't left out,
                          # once a game): the paced waits off navmem's lock not counted; a walk stopped goes on next read
@@ -632,10 +635,15 @@ class DeckMem:
 
     # ------------------------------------------------------------------ the read
     def read(self, books=False, kinds=True, only_equipped=False, pace=None):
-        """{decks, equipped, equipped_set, why, ms, sets, spellbook_n, treasure_book_n[, spellbook, treasure_book]} -
-        never raises. only_equipped: the backpack's decks left out (the battle recorder's); pace: a callable invoked
-        between decks, between cards and every 500 names (navmem releases its lock there; it raises to stop the read -
-        why says so).
+        """{decks, equipped, equipped_set, why, ms, sets, spellbook_n, treasure_book_n, player_gid[, spellbook,
+        treasure_book]} - never raises. only_equipped: the backpack's decks left out (the battle recorder's); pace: a
+        callable invoked between decks, between cards and every 500 names (navmem releases its lock there; it raises to
+        stop the read - why says so).
+          books     the spellbook [{template_id, retired, tier_group, name, display, school, type, pips, x_pips}] and
+                    the treasure book [{template_id, count, the same}] (None: not read) - with kinds each entry's kind
+                    and value_text too (handmem's reading of its effects, as a deck card's: slower the first time)
+          player_gid  the wizard's own global id (CoreObject.m_globalID of the camera's object - bagmem's player gid:
+                    whose spellbook it is), None not read
           decks     [{gid, where ('equipped' / 'backpack'), equipped, sets [n...], template_id, object_name, display,
                     school, limits {max_spells, max_treasure, generic_max_copies, school_max_copies, generic_max_rank,
                     school_max_rank, max_archmastery}, cards [{template_id, name, display, school, type, pips, x_pips,
@@ -650,7 +658,7 @@ class DeckMem:
                     deck's why says so; read again later - the walk goes on)"""
         t0 = time.perf_counter()
         out = {"decks": [], "equipped": None, "equipped_set": None, "why": "", "ms": 0.0, "sets": [],
-               "spellbook_n": None, "treasure_book_n": None}
+               "spellbook_n": None, "treasure_book_n": None, "player_gid": None}
         self._walk_left = NAME_WALK_S
         self._pace = pace
         try:
@@ -716,6 +724,8 @@ class DeckMem:
         if not co:
             out["why"] = why
             return
+        # (whose books these are: the wizard's own global id - a per-character record's key, /book's books| line)
+        out["player_gid"] = self.u64(co + self.P["CoreObject"]["m_globalID.m_full"]) or None
         bs = self.behaviors(co)
         eq = next((b for n, b in bs.items() if n.endswith("WizEquipmentBehavior")), 0)
         inv = next((b for n, b in bs.items() if n.endswith("WizInventoryBehavior")), 0)
@@ -732,11 +742,15 @@ class DeckMem:
         out["spellbook_n"] = len(book) if book is not None else None
         out["treasure_book_n"] = len(tbook) if tbook is not None else None
         if books:
-            out["spellbook"] = [dict(e, **{k: self.brief(e["template_id"]).get(k) for k in ("name", "display", "school")})
-                                for e in book] if book is not None else None
-            out["treasure_book"] = [dict(e, **{k: self.brief(e["template_id"]).get(k) for k in ("name", "display",
-                                                                                                "school")})
-                                    for e in tbook] if tbook is not None else None
+            # (each entry's name, school, type and pips from its template - brief, kept: templates don't change; kinds:
+            # its kind and value too - card, handmem's reading of its effects, as a deck card's)
+            look, keys = (self.card, BOOK_KEYS + ("kind", "value_text")) if kinds else (self.brief, BOOK_KEYS)
+
+            def entry(e):
+                b = look(e["template_id"]) if e.get("template_id") is not None else {}
+                return dict(e, **{k: b.get(k) for k in keys})
+            out["spellbook"] = [entry(e) for e in book] if book is not None else None
+            out["treasure_book"] = [entry(e) for e in tbook] if tbook is not None else None
         if book is None:
             notes.append("the spellbook can't be read (a card's side then by its template only)")
         # the Equipment Sets
@@ -942,6 +956,37 @@ def deck_lines(r):
     return out
 
 
+def book_lines(r):
+    """the books of a read(books=True) - /book's answer, one line a spell, in the game's own order:
+    book|template id|name|display|school|type|pips|x pip (1/0)|retired (1/0)|tier group|kind|value
+    tcbook|template id|count|name|display|school|type|pips|kind|value
+    books|spellbook n|treasure book n|wizard gid hex|ms|why
+    (a field not read: empty; kind and value only in a read with kinds). none|why when the books weren't read at all -
+    a read without books, or the wizard not found"""
+    if "spellbook" not in r:
+        return ["none|" + _f(r.get("why") or "the books weren't read (read(books=True))")]
+    out = []
+    flag = lambda v: "" if v is None else ("1" if v else "0")   # noqa: E731
+    for e in r.get("spellbook") or []:
+        out.append("|".join(["book", _f(e.get("template_id")), _f(e.get("name")), _f(e.get("display")), _f(e.get("school")),
+                             _f(e.get("type")), _f(e.get("pips")), flag(e.get("x_pips")), flag(e.get("retired")),
+                             _f(e.get("tier_group")), _f(e.get("kind")), _f(e.get("value_text"))]))
+    for e in r.get("treasure_book") or []:
+        out.append("|".join(["tcbook", _f(e.get("template_id")), _f(e.get("count")), _f(e.get("name")),
+                             _f(e.get("display")), _f(e.get("school")), _f(e.get("type")), _f(e.get("pips")),
+                             _f(e.get("kind")), _f(e.get("value_text"))]))
+    notes = [r["why"]] if r.get("why") else []
+    if r.get("treasure_book") is None:
+        notes.insert(0, "the treasure book couldn't be read")
+    if r.get("spellbook") is None:
+        notes.insert(0, "the spellbook couldn't be read")
+    gid = r.get("player_gid")
+    out.append("|".join(["books", _f(len(r["spellbook"]) if r.get("spellbook") is not None else None),
+                         _f(len(r["treasure_book"]) if r.get("treasure_book") is not None else None),
+                         "%x" % gid if gid else "", _f(r.get("ms")), _f("; ".join(notes))]))
+    return out
+
+
 def hand_check(r, hand):
     """(ok, [lines]) - every settled hand card (the pet's left out) in the EQUIPPED deck: a plain card on its main side, a
     treasure card on its treasure side, an item card among its item cards (by template id; an item card by name too).
@@ -1000,12 +1045,7 @@ def _main():
         print(time.strftime("%H:%M:%S"))
         print("\n".join(deck_lines(r)))
         if a.book:
-            for e in r.get("spellbook") or []:
-                print("book|%s|%s|%s|%s|retired %s|tier %s" % (e["template_id"], _f(e.get("name")), _f(e.get("display")),
-                                                               _f(e.get("school")), e.get("retired"), e.get("tier_group")))
-            for e in r.get("treasure_book") or []:
-                print("tcbook|%s|%s|%s|%s|%s" % (e["template_id"], e.get("count"), _f(e.get("name")), _f(e.get("display")),
-                                                 _f(e.get("school"))))
+            print("\n".join(book_lines(r)))
         if a.json:
             print(json.dumps(r, default=str))
         if a.hand:

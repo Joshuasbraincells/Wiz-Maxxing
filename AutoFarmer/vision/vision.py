@@ -395,6 +395,12 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
                                              game can't be read: not running, being attached to (its code is looked through
                                              once per game process, under a second), or a signature isn't in this build
+  /quests                                 -> EVERY quest in the game's quest manager (read-only, vision\questmem.py - the
+                                             tracked one is /goal's): questmem.quest_lines - quest|id|title|tracked|goals|
+                                             complete|title key|props (WizQuestData's other properties, name=value,... -
+                                             all of them: what marks a spell quest isn't known yet), goal|quest id|goal
+                                             id|kind|status|count|total|text|mob|item|npc|place|name key, then
+                                             quests|n|tracked id|ms|why; or none|<why> (as /goal's)
   /navmap?w=&h=&out=<png path in the AutoFarmer folder>[&span=6000]
                                           -> "ok|<out>": a w x h top-down picture of the zone round the wizard, span game
                                              units across its shorter side (+X right, +Y up): the walkable floor, obstacles
@@ -426,6 +432,16 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              Equipment Set would make (vision\battlesim.py learn_decks):
                                              deckmem.deck_lines + learn|gid|name|school|eqset|when|k=v,...|why lines +
                                              deckage|<s>, or none|<why>
+  /book[?fresh=1[&ob=1][&kinds=1]]        -> the spellbook (the spells the wizard knows) and the treasure-card book from
+                                             the game's memory (deckmem, read-only - Training.ahk's new spells):
+                                             deckmem.book_lines - book|template id|name|display|school|type|pips|xpip|
+                                             retired|tier|kind|value, tcbook|template id|count|name|display|school|type|
+                                             pips|kind|value, books|spellbook n|treasure n|wizard gid hex|ms|why - +
+                                             bookage|<s>, or none|<why>. The last book reading; fresh=1 reads now (as
+                                             /decks, refused in a battle; ob=1 the bot says it's out of battle; never
+                                             answered by the worn deck's signature - a spell learned doesn't change it);
+                                             kinds=1 each spell's kind and value too (slower the first time). Its own
+                                             reading: /deck's, /decks' and /sim's stay theirs
   /sim?foes=name~health~school~boss|...&deck=<gid hex>&school=&hp=&damage=&pierce=&crit=&block=&level=&acc=&resist=
        &team=&pp=&vals=k:v,...&boss=1&n=300[&fresh=1]
                                           -> "can this deck beat it": the battle simulator (vision\battlesim.py) - the
@@ -2493,6 +2509,10 @@ class Gate:
 
 GATE = Gate()
 REC = None      # the battle recorder (vision\battlerec.py), started by main(); None: off, the hooks do nothing
+# s a fresh deck read asked by a gated request (/deck, /decks, /sim, /book) waits for another fresh read to end - navmem
+# reads the decks one at a time (NavMem.deck's queue): the one in progress (the recorder's, say) gives way to a gated
+# request within its DECK_IDLE (1 s), its idle() seeing it in flight; not ended by then: none|gave way ... (read again)
+DECK_QUEUE_S = 1.5
 
 
 def _rec_hook(name, *a):
@@ -2513,7 +2533,7 @@ def deck_lines(fresh):
         return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
                                                                    "battle can't be ruled out)")]
     r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
-                               stop=rec.in_duel if fresh else None)
+                               stop=rec.in_duel if fresh else None, queue=DECK_QUEUE_S if fresh else 0.0)
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
     return deckmem.deck_lines(r) + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
@@ -2545,8 +2565,10 @@ def decks_reading(fresh, out=False):
     if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
         return None, ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
                                                              "battle can't be ruled out)")
+    # (the recorder off - out: nothing to stop the read by, rec None - book_answer's way)
     return nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
-                             stop=rec.in_duel if fresh else None, only_equipped=False, kinds=True)
+                             stop=rec.in_duel if fresh and rec is not None else None, only_equipped=False, kinds=True,
+                             queue=DECK_QUEUE_S if fresh else 0.0)
 
 
 def decks_lines(fresh, out=False):
@@ -2564,6 +2586,42 @@ def decks_lines(fresh, out=False):
         learn = ['nolearn|%s' % mob_cell('the deck profiles failed (%r)' % (e,))]
     return (deckmem.deck_lines(r) + learn
             + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))])
+
+
+def book_answer(fresh, out=False, kinds=False):
+    """/book's answer: deckmem.book_lines of the books' reading (navmem's deck(books=True) - its own cache) + bookage, or
+    none|<why>. fresh: read now, only as decks_reading allows it (the battle recorder following the game's log and seeing
+    no duel - or, the recorder off, out: the bot says it's out of battle); the worn deck only (the books are what's
+    asked for)"""
+    import deckmem
+    rec = REC if REC is not None and REC.on and not REC.broken and REC.started and REC.tail is not None else None
+    if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
+        return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
+                                                                   "battle can't be ruled out)")]
+    # (the recorder off - out: nothing to stop the read by, rec None)
+    r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
+                               stop=rec.in_duel if fresh and rec is not None else None, only_equipped=True, kinds=kinds,
+                               books=True, queue=DECK_QUEUE_S if fresh else 0.0)
+    if r is None:
+        return ['none|' + mob_cell(why or 'not read')]
+    return deckmem.book_lines(r) + ['bookage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
+
+
+def quests_answer():
+    """/quests' answer: questmem.quest_lines of every quest in the game's quest manager (navmem's quests()), or none|<why>
+    - never raises"""
+    try:
+        import questmem
+        t0 = time.perf_counter()
+        rows, why = nav_reader().quests(wait=0.3)
+        return questmem.quest_lines(rows, why, (time.perf_counter() - t0) * 1000)
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|' + mob_cell('reading the quests failed (%r)' % (e,))]
+
+
+# (/book and /quests read the game's memory as /deck and /goal do: gated the same way - placements' builds and the battle
+# recorder wait for them, and the book read's own request is the one GATE.idle(own=1) leaves out)
+GATED |= {'/book', '/quests'}
 
 
 def sim_lines_for(q):
@@ -4232,6 +4290,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply('\n'.join(deck_lines(q.get('fresh') == '1')))
             if u.path == '/decks':
                 return self.reply('\n'.join(decks_lines(q.get('fresh') == '1', q.get('ob') == '1')))
+            if u.path == '/book':
+                # (the spellbook and treasure book - vision\deckmem.py, read-only: Training.ahk's new spells)
+                return self.reply('\n'.join(book_answer(q.get('fresh') == '1', q.get('ob') == '1', q.get('kinds') == '1')))
+            if u.path == '/quests':
+                # (every quest in the game's quest manager - vision\questmem.py, read-only)
+                return self.reply('\n'.join(quests_answer()))
             if u.path == '/sim':
                 return self.reply('\n'.join(sim_lines_for(q)))
             if u.path == '/plan':

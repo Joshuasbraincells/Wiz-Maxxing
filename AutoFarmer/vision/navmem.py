@@ -20,11 +20,14 @@
 
     goal, why = nm.goal()           # the quest's active goal: its line as the game shows it under the arrow, its kind,
                                     # count and the mob / item / NPC it names (questmem.py), or None and why
+    quests, why = nm.quests()       # EVERY quest in the game's quest manager, each goal's kind / status / line, the
+                                    # tracked one marked (questmem.py - /quests), or None and why
 
     deck, why = nm.deck(fresh=True) # the worn deck (deckmem.py: its cards, treasure cards, item cards, limits), read
                                     # paced under the lock (12 ms at a time, let go at once for a gated request; it
                                     # gives way - None - when not idle for 1 s or stop() says so) - the battle
-                                    # recorder's, out of battle only;
+                                    # recorder's, out of battle only; nm.deck(fresh=True, books=True): the spellbook
+                                    # and treasure book too (/book - its own cache: the decks' stays theirs)
     sig, why = nm.deck_sig()        # its signature (~2 ms); nm.mob_infos(gids): the mobs' cached infos, no read
 
     gear, why = nm.gear()           # the worn gear and the backpack's with their equip effects and requirements, every
@@ -1139,6 +1142,15 @@ class NavMem:
         # the pets (petmem.py - /pets: Quick Sell's pets to keep): its reader of the attached game, the thread making it,
         # why it couldn't be made (the game it was for, when to try again)
         self._petm, self._petm_thread, self._petm_fail = None, None, (None, 0.0, "")
+        # the books' last reading (deck(books=True) - /book: {st, r, sig, read_at, kinds}) - its own, so a book read never
+        # takes the place of the decks' (with their kinds: /decks, /sim)
+        self._book_cache = None
+        # held while a fresh deck read runs (deck(fresh=True) - the recorder's, /deck, /decks, /book): one at a time,
+        # since the decks' reader keeps a read's pace and its names' walk budget as its own state (DeckMem._pace,
+        # _walk_left) - a second read run in the first one's gap (its lock let go) would leave the rest of the first
+        # unpaced, holding navmem's lock to its end. A second read waits deck()'s queue s for it (a gated request: the
+        # read in progress gives way to it), else gives way at once (the recorder's - read again later)
+        self._deck_busy = threading.Lock()
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1425,6 +1437,49 @@ class NavMem:
             return
         with self.lock:
             self._quest = qm
+
+    QUEST_GAP = 0.002       # s the lock is let go between two quests' reads (quests(): the walker's /nav gets in)
+
+    def quests(self, wait=0.5):
+        """(rows, why): EVERY quest in the game's quest manager (questmem.QuestMem.quest_ids / quest_raw /
+        quests_resolve: [{id, title, title_key, tracked, goals [{gid, text, type, status, count, total, mob, item, npc,
+        place, name_key, ...}], props {WizQuestData property: value}}]) - the tracked one (the HUD's ids, as goal()'s)
+        marked. The map walked under the lock, then each quest read under it on its own (let go QUEST_GAP s in between:
+        /nav waits on it), the names looked up outside it. (None, why) when there are none to give (the game not
+        running, the quest classes being read, no quests - the login screen...). Never raises; read only"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            qm, why = self._quest_reader(st, wait)
+            if qm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st:
+                    return None, "the game changed"
+                r = self._read(st, False)
+                snap = qm.snapshot((r.get("quest"), r.get("goalid")))
+                ids, why = qm.quest_ids()
+            if ids is None:
+                return None, why
+            raws, gone = [], 0
+            for qid, q in ids:
+                time.sleep(self.QUEST_GAP)
+                with self.lock:
+                    if self.st is not st:
+                        return None, "the game changed"
+                    raw = qm.quest_raw(qid, q)
+                if raw is None:
+                    gone += 1                # (done or dropped since the map was walked)
+                else:
+                    raws.append(raw)
+            tracked = (snap.get("ids") or (None, None))[0]
+            rows = qm.quests_resolve(raws, tracked=tracked, block=wait > 0)
+            notes = [w for w in (snap.get("why") if tracked is None else "",
+                                 "%d quest(s) left the map while it was read" % gone if gone else "") if w]
+            return rows, "; ".join(notes)
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the quests failed (%r)" % (e,)
 
     # ------------------------------------------------------------ the mobs' titles and the battle (bossmem.py)
     BOSS_RETRY = 5.0        # s before a mob whose template couldn't be read is tried again
@@ -1842,11 +1897,16 @@ class NavMem:
                     return None, "the game is not running"
                 if dm is None or dm.st is not st or dm.hm is not self._hand:
                     return None, "the decks not read yet"
+                # (a paced read let go in its gap: the reader's pace is that read's - signature() would call it, and it
+                # lets go of the lock held here; not read now)
+                if self._deck_busy.locked():
+                    return None, "a deck read is in progress"
                 return dm.signature(), ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the deck's signature failed (%r)" % (e,)
 
-    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False):
+    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False, books=False,
+             queue=0.0):
         """(r, why): the decks - deckmem.DeckMem.read(kinds=kinds) plus sig (its signature) and read_at (monotonic s).
         fresh False: the last reading (None, "not read yet" when there's none). fresh True: read now unless the worn
         deck's signature is the last reading's - under the lock, PACED: it is let go when it has been held DECK_HOLD s,
@@ -1857,12 +1917,16 @@ class NavMem:
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
         only_equipped: the backpack's decks left out. kinds: each card's kind, value, heads and boosts too (handmem's
         reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first time a card is seen): a
-        reading without them doesn't answer it (read again). Never raises; read only"""
+        reading without them doesn't answer it (read again). books: the spellbook and the treasure book too
+        (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it was - a book read
+        never takes the place of the decks' with their kinds) and is never answered by the worn deck's signature (a spell
+        learned doesn't change the worn deck): fresh True always reads. ONE fresh read at a time (_deck_busy): asked
+        while another runs (the recorder's let go in its gap, say), it waits for it up to queue s - a gated request's
+        (vision.py DECK_QUEUE_S): the read in progress gives way to it within DECK_IDLE s, its idle() seeing it in
+        flight - then gives way itself, (None, "gave way to another deck read in progress - read again later"); queue 0
+        (the recorder's): at once. Never raises; read only"""
         try:
-            with self.lock:
-                c = self._deck_cache
-                cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
-                    (c.get("kinds") or not kinds) else None
+            cached = self._deck_cached(books, kinds, only_equipped)
             if not fresh:
                 if cached is None:
                     return None, "not read yet"
@@ -1870,74 +1934,104 @@ class NavMem:
             st, dm, why = self._deck_readers(wait)
             if dm is None:
                 return None, why
-            held = [0.0]
-            holding = [False]
-            gave = [None]
-            lock = self.lock
-
-            def wait_idle():
-                """off the lock: idle(0.05) waited for - False (gave set) when stop() or not idle within DECK_IDLE s"""
-                t0 = time.monotonic()
-                while True:
-                    if stop is not None and stop():
-                        gave[0] = "gave way (a battle began, or the read ran long) - read again later"
-                        return False
-                    if idle is None or idle(0.05):
-                        return True
-                    if time.monotonic() - t0 >= self.DECK_IDLE:
-                        gave[0] = "gave way to the gated reads (not idle for %.0f s) - read again later" % (
-                            self.DECK_IDLE,)
-                        return False
-                    time.sleep(0.005)
-
-            def pace():
-                if time.perf_counter() - held[0] < self.DECK_HOLD and (idle is None or idle(0)):
-                    return
-                lock.release()
-                holding[0] = False
-                try:
-                    time.sleep(self.DECK_GAP)
-                    ok = wait_idle()
-                except Exception as e:  # noqa: BLE001 - an idle / stop that raises: given way all the same
-                    gave[0] = gave[0] or "gave way (%r) - read again later" % (e,)
-                    ok = False
-                if not ok:
-                    raise _GaveWay(gave[0])
-                lock.acquire()
-                holding[0] = True
-                held[0] = time.perf_counter()
-                if self.st is not st or dm.st is not st:
-                    raise RuntimeError("the game changed while the decks were read")
-
-            if not wait_idle():
-                return None, gave[0]
-            lock.acquire()
-            holding[0] = True
+            # (one fresh read at a time - _deck_busy: a second one run in the first one's gap would leave the rest of
+            # the first unpaced; the second waits queue s for the first to end or give way, else gives way itself - its
+            # caller reads again later as after any giving way)
+            busy = self._deck_busy
+            if not (busy.acquire(timeout=queue) if queue > 0 else busy.acquire(blocking=False)):
+                return None, "gave way to another deck read in progress - read again later"
             try:
-                held[0] = time.perf_counter()
-                if self.st is not st or dm.st is not st or dm.hm is not self._hand:
-                    return None, "the game changed"
-                sig = dm.signature(pace)
-                if cached is not None and sig is not None and sig == cached["sig"]:
-                    return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
-                r = dm.read(books=False, kinds=kinds, only_equipped=only_equipped, pace=pace)
-                if gave[0] is not None or not holding[0]:
-                    return None, gave[0] or "gave way - read again later"
-                sig2 = dm.signature(pace)
-                at = time.monotonic()
-                keep = sig2 if sig2 == sig and not r.get("names_cut") else None
-                if r.get("decks"):
-                    self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
-                                        "kinds": kinds}
+                # (the last reading looked at again: the read waited for may have just been kept)
+                return self._deck_paced(st, dm, self._deck_cached(books, kinds, only_equipped), idle, stop,
+                                        only_equipped, kinds, books)
             finally:
-                if holding[0]:
-                    holding[0] = False
-                    lock.release()
-            return dict(r, sig=keep, read_at=at), ""
+                busy.release()
         except _GaveWay as e:
             return None, str(e)
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the decks failed (%r)" % (e,)
+
+    def _deck_cached(self, books, kinds, only_equipped):
+        """the last reading that answers deck(books, kinds, only_equipped) for the attached game ({st, r, sig, read_at,
+        ...}), or None"""
+        with self.lock:
+            if books:
+                c = self._book_cache
+                return c if c is not None and c["st"] is self.st and (c.get("kinds") or not kinds) else None
+            c = self._deck_cache
+            return c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
+                (c.get("kinds") or not kinds) else None
+
+    def _deck_paced(self, st, dm, cached, idle, stop, only_equipped, kinds, books):
+        """deck(fresh=True)'s read itself, _deck_busy held (deck's docstring) - (r, why); raises _GaveWay when it gives
+        way (deck() answers it)"""
+        lock = self.lock
+        held = [0.0]
+        holding = [False]
+        gave = [None]
+
+        def wait_idle():
+            """off the lock: idle(0.05) waited for - False (gave set) when stop() or not idle within DECK_IDLE s"""
+            t0 = time.monotonic()
+            while True:
+                if stop is not None and stop():
+                    gave[0] = "gave way (a battle began, or the read ran long) - read again later"
+                    return False
+                if idle is None or idle(0.05):
+                    return True
+                if time.monotonic() - t0 >= self.DECK_IDLE:
+                    gave[0] = "gave way to the gated reads (not idle for %.0f s) - read again later" % (
+                        self.DECK_IDLE,)
+                    return False
+                time.sleep(0.005)
+
+        def pace():
+            if time.perf_counter() - held[0] < self.DECK_HOLD and (idle is None or idle(0)):
+                return
+            lock.release()
+            holding[0] = False
+            try:
+                time.sleep(self.DECK_GAP)
+                ok = wait_idle()
+            except Exception as e:  # noqa: BLE001 - an idle / stop that raises: given way all the same
+                gave[0] = gave[0] or "gave way (%r) - read again later" % (e,)
+                ok = False
+            if not ok:
+                raise _GaveWay(gave[0])
+            lock.acquire()
+            holding[0] = True
+            held[0] = time.perf_counter()
+            if self.st is not st or dm.st is not st:
+                raise RuntimeError("the game changed while the decks were read")
+
+        if not wait_idle():
+            return None, gave[0]
+        lock.acquire()
+        holding[0] = True
+        try:
+            held[0] = time.perf_counter()
+            if self.st is not st or dm.st is not st or dm.hm is not self._hand:
+                return None, "the game changed"
+            sig = dm.signature(pace)
+            if not books and cached is not None and sig is not None and sig == cached["sig"]:
+                return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
+            r = dm.read(books=books, kinds=kinds, only_equipped=only_equipped, pace=pace)
+            if gave[0] is not None or not holding[0]:
+                return None, gave[0] or "gave way - read again later"
+            sig2 = dm.signature(pace)
+            at = time.monotonic()
+            keep = sig2 if sig2 == sig and not r.get("names_cut") else None
+            if books:
+                if r.get("spellbook") is not None:
+                    self._book_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "kinds": kinds}
+            elif r.get("decks"):
+                self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
+                                    "kinds": kinds}
+        finally:
+            if holding[0]:
+                holding[0] = False
+                lock.release()
+        return dict(r, sig=keep, read_at=at), ""
 
     # ------------------------------------------------------------ the gear (gearmem.py - the helper's /gear)
     def _gear_reader(self, st, wait=0.0):
