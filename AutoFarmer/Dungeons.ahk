@@ -940,7 +940,8 @@ DgArrive(st)
 ;A run done, back at its start spot outside (DungeonStep, once a run: DgRun.between 1): its drops looked at and the gear pass
 ;(Gear.ahk GearRunEnd - gearswap on: logged, nothing equipped), a full backpack quick sold here (QuickSell.ahk QsLook -
 ;quicksell on: QsDungeonNow lets it while between; the dungeon's hold still holds it unless the gear pass looked through it
-;or "...even with a dungeon's drops in it" is ticked), then "Until its gear is swapped": its gear all swapped - on to its
+;- no deck, pet or item of a kind not read in it: never compared - or "...even with a dungeon's drops in it" is ticked),
+;then "Until its gear is swapped": its gear all swapped - on to its
 ;next run, or stopped (DgGearDone). gearswap off: the quick sell's look only - as a battle's end looks
 DgBetweenRuns()
 	{

@@ -16,6 +16,9 @@ tab (below); the messages then name your keys.
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+New in v0.8.0 and v0.9.0 and not tried in the game yet: LIVE_CHECKS.txt
+(next to this file) says what to try, in what order, and what to send back.
+
 Discord alerts (tray menu "Discord alerts..."): when the wizard needs you, a
 message goes to your Discord channel - stuck (walking stopped), a teleport that
 doesn't work, no quest arrow, waiting at the quest goal, a collect quest that
@@ -53,8 +56,9 @@ Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
 vision helper and the game's memory, like walking by the map.
 Between runs (a run that ends back where it starts, till its first X): with
 quick sell on, a full backpack may be sold there, outside the dungeon (the
-dungeon's hold still holds it unless the gear pass looked through it or
-"...even with a dungeon's drops in it" is ticked); with the gear pass on
+dungeon's hold still holds it unless the gear pass looked through it - no
+deck, pet or item of a kind not read in it, never compared - or "...even
+with a dungeon's drops in it" is ticked); with the gear pass on
 (Settings: gearswap - see "Gear" below) the run's new pieces are logged in
 learned\drops\<run>.txt and the plan is logged. "Until its gear is swapped"
 (the Dungeons tab's box, needs the gear pass): once every slot the dungeon
@@ -1539,13 +1543,16 @@ read-only, never a picture):
 	  the bot in it. With the gear pass on (gearswap, see "Gear" below) a full
 	  backpack is sold only when every gear piece in it was compared with
 	  what you wear and none is better (then the dungeon's hold below is
-	  dropped too); a better one - or one it couldn't judge - holds the sale
-	  and you're told. After a dungeon the next full backpack is held - you're
-	  told, so you can look through the good gear first - until 10 items have
-	  gone from it, you ask from the tray, or you tick "...even with a dungeon's
-	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
-	  is left out, and set items are checked after: one gone turns it off.
-	  Lock what you want to keep - the game never quick sells locked items.
+	  dropped too - unless a deck, a pet or an item of a kind not read is in
+	  it: the pass never compares those, so the hold stays; pets.txt's wanted
+	  talents count as a look at the pets); a better one - or one it couldn't
+	  judge - holds the sale and you're told. After a dungeon the next full
+	  backpack is held - you're told, so you can look through the good gear
+	  first - until 10 items have gone from it, you ask from the tray, or you
+	  tick "...even with a dungeon's drops in it". A group an Equipment Set's
+	  item is in (the boss deck's deck) is left out, and set items are checked
+	  after: one gone turns it off. Lock what you want to keep - the game never
+	  quick sells locked items.
 	  The Pet group is left out too while pets.txt keeps a pet in the
 	  backpack (Perfect pets, below).
 	- Every click is a window the game's memory names, shown, its size as in

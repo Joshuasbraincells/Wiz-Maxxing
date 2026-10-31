@@ -930,6 +930,40 @@ class DeckFor(unittest.TestCase):
             self.V.DECKFOR["cache"].clear()
             self.V.DECKFOR["cache"].update(keep)
 
+    def test_battles_read_again_paced_outside_the_lock(self):
+        # (/deckfor's thread: the battles recorded read again pausing for each while a gated request is in flight, with
+        # SIM_LOCK free - a gated /decks or /sim waiting on it is in flight itself)
+        V = self.V
+        busy, seen, slept = [3], [], []
+
+        def battles(base, days):
+            for k in range(2):
+                seen.append((V.SIM_LOCK.locked(), busy[0]))
+                yield {"zone": "Z/Graveyard", "me": {"sc": 4, "school": "storm"}, "rounds": [],
+                       "parts": [{"sc": 0, "side": "enemy", "name": "Rat", "max": 600}, {"sc": 4, "side": "me"}]}
+
+        def is_busy():
+            busy[0] = max(0, busy[0] - 1)
+            return busy[0] > 0
+        keep = dict(V.SIM)
+        try:
+            V.SIM.update(book=None, facts=None, at=0.0)
+            with mock.patch.object(S.FoeBook, "_read", staticmethod(battles)), \
+                    mock.patch.object(V.GATE, "busy", is_busy), mock.patch.object(V.time, "sleep", slept.append):
+                book, facts = V.sim_book(paced=True)
+            # (the lock free while read; the first battle held till the gated requests ended - 2 waits)
+            self.assertEqual(seen, [(False, 3), (False, 0)])
+            self.assertEqual(slept, [0.05, 0.05])
+            self.assertEqual(dict(book.groups["Z/Graveyard"]), {("Rat",): 2})
+            self.assertIs(V.SIM["book"], book)
+            # (kept: asked again within SIM_BOOK_S, nothing read)
+            with mock.patch.object(S.FoeBook, "_read", staticmethod(lambda base, days: 1 / 0)):
+                self.assertIs(V.sim_book(paced=True)[0], book)
+                self.assertIs(V.sim_book()[0], book)
+        finally:
+            V.SIM.clear()
+            V.SIM.update(keep)
+
     def test_route(self):
         """/deckfor on a local server: the decks' last reading, the battles recorded and the wiki stood in for"""
         import tempfile
@@ -940,7 +974,7 @@ class DeckFor(unittest.TestCase):
         keep_cache, keep_log = dict(V.DECKFOR["cache"]), V.LOG
         with tempfile.TemporaryDirectory() as d, \
                 mock.patch.object(V, "decks_reading", lambda fresh, out=False: (c["decks"], "")), \
-                mock.patch.object(V, "sim_book", lambda: (c["book"], c["facts"])), \
+                mock.patch.object(V, "sim_book", lambda paced=False: (c["book"], c["facts"])), \
                 mock.patch.object(V, "enemy_state", lambda: (None, None)):
             V.LOG = os.path.join(d, "vision.log")
             V.DECKFOR["cache"].clear()

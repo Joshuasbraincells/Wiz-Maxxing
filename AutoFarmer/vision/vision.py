@@ -2569,16 +2569,39 @@ SIM_LOCK = threading.Lock()
 SIM_BOOK_S = 600        # the battles recorded read again this often
 
 
-def sim_book():
+def gate_wait():
+    """(a background thread's pure-Python work) wait while a gated request is in flight - the bot's and the walker's
+    reads go first: a thread holding the GIL pushed a live /nav read past its 150 ms (placements.py) - up to 10 s"""
+    waited = 0
+    while GATE.busy() and waited < 200:
+        time.sleep(0.05)
+        waited += 1
+
+
+def sim_book(paced=False):
     """(FoeBook, facts): the battles recorded by enemy and cards.jsonl's card facts (AutoFarmer\\learned\\battles) -
-    read again every SIM_BOOK_S"""
+    read again every SIM_BOOK_S. paced (a background thread's - /deckfor's): read again pausing for each battle while a
+    gated request is in flight (gate_wait), OUTSIDE SIM_LOCK - a gated /decks or /sim waiting on that lock is in flight
+    itself, so a pause under it would only wait it out"""
     import battlesim
+    base = os.path.join(ROOT, 'learned', 'battles')
     with SIM_LOCK:
-        if SIM['book'] is None or time.monotonic() - SIM['at'] > SIM_BOOK_S:
-            base = os.path.join(ROOT, 'learned', 'battles')
+        if SIM['book'] is not None and time.monotonic() - SIM['at'] <= SIM_BOOK_S:
+            return SIM['book'], SIM['facts']
+        if not paced:
             SIM['book'], SIM['facts'] = battlesim.FoeBook(base), battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
             SIM['at'] = time.monotonic()
-        return SIM['book'], SIM['facts']
+            return SIM['book'], SIM['facts']
+
+    def feed():
+        for b in battlesim.FoeBook._read(base, 120):
+            gate_wait()
+            yield b
+    book = battlesim.FoeBook(battles=feed())
+    facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+    with SIM_LOCK:
+        SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+    return book, facts
 
 
 def decks_reading(fresh, out=False):
@@ -2761,7 +2784,9 @@ def deckfor_lines_for(q, ctx=None, wait=False):
                     book, facts = ctx.get('book') or B.FoeBook(battles=[]), ctx.get('facts') or {}
                     wiki, casts = ctx.get('wiki'), ctx.get('casts')
                 else:
-                    book, facts = sim_book()
+                    # (the battles recorded read again, and each deck simulated, pausing for the gated reads: this
+                    # thread runs while the bot walks the zone it was asked at - the walker's /nav goes first)
+                    book, facts = sim_book(paced=True)
                     wiki, casts = enemy_state()
                 if foes_q:
                     groups = [[x.strip() for x in g.split('~') if x.strip()] for g in foes_q.split('|')]
@@ -2787,7 +2812,7 @@ def deckfor_lines_for(q, ctx=None, wait=False):
                 me = B.Me(sch, fl('hp', 3000), damage=fl('damage'), pierce=fl('pierce'), crit=fl('crit'),
                           block=fl('block'), accuracy=fl('acc'), resist=fl('resist'), power_pip=fl('pp', 0.4))
                 res = B.best_decks(specs, groups, lambda names: [book.foe(nm, wiki, casts) for nm in names], me,
-                                   n=int(min(300, max(10, fl('n', B.DECKFOR_N)))), budget_ms=20000)
+                                   n=int(min(300, max(10, fl('n', B.DECKFOR_N)))), budget_ms=20000, pause=gate_wait)
                 lines = B.deckfor_lines(res, zone)
             except Exception as e:  # noqa: BLE001 - said, not kept
                 lines = ['none|the decks couldn\'t be simulated (%r)' % (e,)]
@@ -2823,10 +2848,7 @@ def _plan_load():
     try:
         def feed():
             for b in battlelearn.read(base, days=120):
-                waited = 0
-                while GATE.busy() and waited < 200:
-                    time.sleep(0.05)
-                    waited += 1
+                gate_wait()
                 plays.add(b)
                 yield b
         book = battlesim.FoeBook(battles=feed())

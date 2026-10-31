@@ -316,7 +316,10 @@ QsLook(why)
 		}
 	;(Settings: gearswap on - the gear pass first (Gear.ahk GearSellOk): a backpack piece better than what's worn, or one it
 	;couldn't judge, holds the sale (a rehearsal equips nothing: you're told to put it on); every gear piece judged and none
-	;better - it looked through the drops: a dungeon's hold dropped, sold. Off: as before)
+	;better - it looked through the drops: a dungeon's hold dropped, sold. But the pass judges the seven gear slots only,
+	;never decks or pets (vision\gearrank.py): with a deck, a pet (pets.txt's wanted talents not judging them - QsPetGuard)
+	;or an item of a kind not read in the backpack, the hold stays - held below, as without the pass. Off: as before)
+	qUnj := ""
 	if (V1IsFunc("GearMode") && GearMode.Call() && V1IsFunc("GearSellOk"))
 		{
 		qGear := GearSellOk.Call(d.why)
@@ -327,13 +330,23 @@ QsLook(why)
 			QsSay("gear", d.why " - not sold: " qGear)
 			return
 			}
-		QsMarkClear("the gear pass compared every gear piece in it - none better than what's worn")
+		if (QsHeld())
+			{
+			if (bag.cats.Has("deck") && V1Gt(bag.cats["deck"].n, 0))
+				qUnj := "decks"
+			if (QsPets() && bag.cats.Has("pet") && V1Gt(bag.cats["pet"].n, 0) && QsPetWant(&qPwBad) = "" && qPwBad = "")
+				qUnj .= (qUnj = "" ? "" : ", ") "pets"
+			if (bag.cats.Has("?") && V1Gt(bag.cats["?"].n, 0))
+				qUnj .= (qUnj = "" ? "" : ", ") "items of a kind not read"
+			}
+		if (qUnj = "")
+			QsMarkClear("the gear pass compared every gear piece in it - none better than what's worn")
 		}
 	if (QsHeld())
 		{
 		if (d.full)
 			QsStill := 1
-		if (QsSay("held", d.why " - held: it holds a dungeon's drops (not quick sold - look through it, sell it yourself, or tick '...even with a dungeon's drops in it')"))
+		if (QsSay("held", d.why " - held: it holds a dungeon's drops" (qUnj != "" ? " (the gear pass compared its gear, never its " qUnj ")" : "") " (not quick sold - look through it, sell it yourself, or tick '...even with a dungeon's drops in it')"))
 			AlertSend("inventory", "backpack full", "The backpack is full and holds a dungeon's drops - not quick sold. Look through it, then sell it yourself, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
 		return
 		}

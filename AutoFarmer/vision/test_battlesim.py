@@ -771,6 +771,24 @@ class BestDecks(unittest.TestCase):
         # (asked again - the helper every 10 minutes: the same answer, not a new roll)
         self.assertEqual(run([("a", "A", a, S.Opts())]), run([("b", "B", b, S.Opts())]))
 
+    def test_pause_before_each_simulation_not_counted(self):
+        # (vision.py's gate_wait: the gated reads go first - its time never cuts a deck off the budget)
+        import time
+        cards = S.deck_cards({"cards": [hit("Storm Lord", 3, 1500, count=20)]})
+        groups = {("Rat",): 2, ("Ogre",): 1}
+        made = {"Rat": 900, "Ogre": 4000}
+        calls = []
+
+        def pause():
+            calls.append(1)
+            time.sleep(0.03)
+        decks = [("a", "A", cards, S.Opts()), ("b", "B", cards, S.Opts())]
+        res = S.best_decks(decks, groups, lambda names: [biter(nm, made[nm]) for nm in names], S.Me("storm", 3000),
+                           n=5, seed=1, budget_ms=60, pause=pause)
+        self.assertEqual(len(calls), 4)                             # (2 decks x 2 groups)
+        self.assertEqual([d["key"] for d in res["decks"]], ["a", "b"])
+        self.assertFalse(any("not simulated in the time given" in w for w in res["why"]), res["why"])
+
     def test_no_groups_and_junk(self):
         res = S.best_decks([("a", "A", [], S.Opts())], {}, lambda names: [], S.Me())
         self.assertEqual(res["decks"], [])

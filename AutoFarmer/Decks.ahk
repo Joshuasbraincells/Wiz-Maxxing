@@ -1663,8 +1663,9 @@ DeckForZone(p, inBattle := false)
 		;(the zone's last rows kept till an answer with rows replaces them: the helper still working it out
 		;("none|working...") or no answer (a time-out while its thread works) keeps them - asked again 10 s on - so a
 		;refresh never drops the zone's deck for a moment (DeckEquip would press DeckPick's set, then this one's again a
-		;minute later); another zone, or the helper's own none| (nothing to simulate there), replaces them)
-		dfzWait := (Trim(dfzNew) = "" || SubStr(dfzNew, 1, 12) = "none|working") ? 1 : 0
+		;minute later); so does "none|not read yet" (the helper's decks not read since the game was started again - the
+		;next /decks read answers); another zone, or the helper's own none| (nothing to simulate there), replaces them)
+		dfzWait := (Trim(dfzNew) = "" || SubStr(dfzNew, 1, 12) = "none|working" || SubStr(dfzNew, 1, 17) = "none|not read yet") ? 1 : 0
 		if (dfzZ != dfzZone || !dfzWait || !InStr("`n" dfzAns, "`ndeckfor|"))
 			dfzAns := dfzNew
 		dfzZone := dfzZ

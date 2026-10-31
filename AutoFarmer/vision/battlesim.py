@@ -2162,7 +2162,7 @@ def _card_order(c):
     return (str(c.name), str(c.kind), str(c.school), str(c.tid), c.pips, c.value, c.tc, c.item)
 
 
-def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, seed=None, budget_ms=None):
+def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, seed=None, budget_ms=None, pause=None):
     """which deck fits a zone's enemies best (TODO goal 3 - decks matched to each enemy group): every deck ([(key, name,
     [Card], Opts)] - deck_cards and its settings) simulated against each of the zone's enemy groups (groups: {(name,
     ...): battles} - FoeBook.groups[zone] - the top most fought; or a list of name lists, each once), make_foes(names) ->
@@ -2172,7 +2172,8 @@ def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, se
     battles)], why [notes]}. Common random numbers: every deck fights a group on the same seed (seed and the group's
     names - seed None: DECKFOR_SEED), its cards in one order (the game shuffles them anyway) - so two decks with the same
     cards (one deck in two Equipment Sets) score the same, number for number, and a gap between two decks is theirs, not
-    the dice's (Decks.ahk DeckForZone swaps on a 5-point gap). Never raises"""
+    the dice's (Decks.ahk DeckForZone swaps on a 5-point gap). pause: called before each simulation (vision.py's
+    gate_wait: the gated reads go first) - its time not counted in budget_ms. Never raises"""
     t0 = time.perf_counter()
     out = {"decks": [], "groups": [], "why": []}
     try:
@@ -2201,6 +2202,10 @@ def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, se
             for g, c, fs in foes:
                 if not fs:
                     continue
+                if pause is not None:
+                    p0 = time.perf_counter()
+                    pause()
+                    t0 += time.perf_counter() - p0
                 o = opts or Opts(boss=any(f.boss for f in fs))
                 # (the group's own seed, the same for every deck - random.Random takes a str as it is: the same numbers
                 # in every run, unlike hash())

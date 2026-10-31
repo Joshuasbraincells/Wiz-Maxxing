@@ -1134,7 +1134,7 @@ class NavMem:
         # thread making it (about half a second), why it couldn't be made (the game it was for, when to try again)
         self._bagm, self._bagm_thread, self._bagm_fail = None, None, (None, 0.0, "")
         # the decks (deckmem.py - the battle recorder's and /deck): its reader of the attached game, the thread making it,
-        # why it couldn't be made, the last reading {st, r, sig, read_at, only_equipped}
+        # why it couldn't be made, the last reading {st, r, sig, read_at, all, kinds}
         self._deckm, self._deckm_thread, self._deckm_fail, self._deck_cache = None, None, (None, 0.0, ""), None
         # the gear (gearmem.py - the helper's /gear): its reader of the attached game, the thread making it, why it couldn't
         # be made (the game it was for, when to try again)
@@ -1145,6 +1145,10 @@ class NavMem:
         # the books' last reading (deck(books=True) - /book: {st, r, sig, read_at, kinds}) - its own, so a book read never
         # takes the place of the decks' (with their kinds: /decks, /sim)
         self._book_cache = None
+        # every deck's last reading with their kinds (as _deck_cache's entry) - kept by itself, so a worn-deck reading
+        # after it (the recorder's, once an Equipment Set is put on) never takes its place: /deckfor, /sim and /plan
+        # answer from it (_deck_cached)
+        self._deck_all = None
         # held while a fresh deck read runs (deck(fresh=True) - the recorder's, /deck, /decks, /book): one at a time,
         # since the decks' reader keeps a read's pace and its names' walk budget as its own state (DeckMem._pace,
         # _walk_left) - a second read run in the first one's gap (its lock let go) would leave the rest of the first
@@ -1170,6 +1174,7 @@ class NavMem:
             self._bagm = None
             self._deckm = None
             self._deck_cache = None
+            self._deck_all = None
             self._gearm = None
             self._petm = None
 
@@ -1915,12 +1920,14 @@ class NavMem:
         idle within DECK_IDLE s, or stop() true (the battle recorder's: a battle began, the read ran long): the read
         GIVES WAY - (None, "gave way ..."), the lock not taken again; read again later (the spell names' walk goes on
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
-        only_equipped: the backpack's decks left out. kinds: each card's kind, value, heads and boosts too (handmem's
-        reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first time a card is seen): a
-        reading without them doesn't answer it (read again). books: the spellbook and the treasure book too
-        (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it was - a book read
-        never takes the place of the decks' with their kinds) and is never answered by the worn deck's signature (a spell
-        learned doesn't change the worn deck): fresh True always reads. ONE fresh read at a time (_deck_busy): asked
+        only_equipped: the backpack's decks left out - such a reading never takes the place of every deck's with their
+        kinds (_deck_all): asked for every deck after one (fresh False), that last reading of them answers, the decks worn
+        marked as the newer one has them, its sig None (fresh True: read again). kinds: each card's kind, value, heads
+        and boosts too (handmem's reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first
+        time a card is seen): a reading without them doesn't answer it (read again). books: the spellbook and the
+        treasure book too (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it
+        was - a book read never takes the place of the decks' with their kinds) and is never answered by the worn deck's
+        signature (a spell learned doesn't change the worn deck): fresh True always reads. ONE fresh read at a time (_deck_busy): asked
         while another runs (the recorder's let go in its gap, say), it waits for it up to queue s - a gated request's
         (vision.py DECK_QUEUE_S): the read in progress gives way to it within DECK_IDLE s, its idle() seeing it in
         flight - then gives way itself, (None, "gave way to another deck read in progress - read again later"); queue 0
@@ -1959,8 +1966,23 @@ class NavMem:
                 c = self._book_cache
                 return c if c is not None and c["st"] is self.st and (c.get("kinds") or not kinds) else None
             c = self._deck_cache
-            return c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and \
-                (c.get("kinds") or not kinds) else None
+            if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and (c.get("kinds") or not kinds):
+                return c
+            # (every deck's reading with their kinds, a narrower reading since - the worn deck's: the decks worn marked
+            # as that newer one has them, its signature dropped - a fresh read of every deck reads again)
+            a = self._deck_all
+            if a is None or a["st"] is not self.st or (kinds and not a.get("kinds")):
+                return None
+            if c is None or c is a or c["st"] is not self.st:
+                return a
+            wr = c["r"]
+            worn = {d.get("gid") for d in wr.get("decks") or [] if d.get("equipped")}
+            decks = [dict(d, equipped=d.get("gid") in worn, where="equipped" if d.get("gid") in worn else "backpack")
+                     for d in a["r"].get("decks") or []]
+            on = [d["gid"] for d in decks if d["equipped"]]
+            r = dict(a["r"], decks=decks, equipped=on[0] if len(on) == 1 else None,
+                     equipped_set=wr.get("equipped_set"), sets=wr.get("sets") or a["r"].get("sets"))
+            return dict(a, r=r, sig=None)
 
     def _deck_paced(self, st, dm, cached, idle, stop, only_equipped, kinds, books):
         """deck(fresh=True)'s read itself, _deck_busy held (deck's docstring) - (r, why); raises _GaveWay when it gives
@@ -2027,6 +2049,8 @@ class NavMem:
             elif r.get("decks"):
                 self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
                                     "kinds": kinds}
+                if not only_equipped and kinds:
+                    self._deck_all = self._deck_cache
         finally:
             if holding[0]:
                 holding[0] = False

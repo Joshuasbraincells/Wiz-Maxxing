@@ -1,7 +1,7 @@
 """test_book.py - the spellbook's reading for /book (deckmem.py book_lines and read(books=True), navmem.py deck(books=True)
-and its own cache, one fresh deck read at a time, vision.py book_answer and decks_reading with the battle recorder off)
-on made-up readings - navmem / deckmem stood in for or imported with their
-Windows parts stood in for (put back afterwards: no other test file meets them):
+and its own cache, a worn-deck reading never taking every deck's place, one fresh deck read at a time, vision.py
+book_answer and decks_reading with the battle recorder off) on made-up readings - navmem / deckmem stood in for or
+imported with their Windows parts stood in for (put back afterwards: no other test file meets them):
     python -m unittest test_book   (from AutoFarmer\\vision)"""
 import os
 import sys
@@ -207,6 +207,91 @@ class NavDeckBooks(unittest.TestCase):
         self.assertIsNone(nm._book_cache)
         self.assertEqual(nm.deck(books=True), (None, "not read yet"))
         self.assertIsNone(nm._deck_cache)                           # (a book read never fills the decks' cache)
+
+
+class WornReadKeepsEveryDeck(unittest.TestCase):
+    """navmem.NavMem.deck: the recorder's worn-deck reading (only_equipped, no kinds - after an Equipment Set is put on)
+    never takes the place of every deck's with their kinds (_deck_all): /deckfor, /sim and /plan still answered from it,
+    the decks worn marked as the newer reading has them - deckzone put its zone's deck on, the recorder read it, /deckfor
+    answered "not read yet" and DeckPick's set went back on (the real navmem, test_navroute's import)"""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_navroute import import_navmem
+        cls.N = import_navmem()
+
+    def nav(self):
+        nm = self.N.NavMem(log=lambda m: None)
+        st = types.SimpleNamespace(close=lambda: None)
+        worn = [0xA1]
+        reads = []
+
+        class DM:
+            def signature(self_, pace=None):
+                return ("worn", worn[0])
+
+            def read(self_, books=False, kinds=True, only_equipped=False, pace=None):
+                reads.append((kinds, only_equipped))
+                decks = [{"gid": g, "where": "equipped" if g == worn[0] else "backpack", "equipped": g == worn[0],
+                          "sets": [n], "kinds": kinds} for n, g in ((1, 0xA1), (2, 0xB2))]
+                if only_equipped:
+                    decks = [d for d in decks if d["equipped"]]
+                return {"decks": decks, "equipped": worn[0], "equipped_set": 1 if worn[0] == 0xA1 else 2,
+                        "sets": [{"n": 1, "equipped": worn[0] == 0xA1}, {"n": 2, "equipped": worn[0] == 0xB2}],
+                        "why": ""}
+        dm = DM()
+        dm.st, dm.hm = st, nm._hand
+        nm.st = st
+        nm._deck_readers = lambda wait: (st, dm, "")
+        return nm, worn, reads
+
+    def test_every_deck_kept_through_a_worn_read(self):
+        nm, worn, reads = self.nav()
+        # (DeckLearnGame's /decks?fresh=1: every deck with their kinds)
+        r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
+        self.assertEqual((len(r["decks"]), why), (2, ""))
+        everyd = nm._deck_all
+        self.assertIs(everyd, nm._deck_cache)
+        # (deckzone's set 2 put on: the recorder's worn-deck read)
+        worn[0] = 0xB2
+        r, why = nm.deck(fresh=True)
+        self.assertEqual([d["gid"] for d in r["decks"]], [0xB2])
+        self.assertFalse(nm._deck_cache["all"])
+        self.assertIs(nm._deck_all, everyd)
+        # (/deckfor's, /plan's, /sim's ask: every deck still - B worn now, A in the backpack; no signature)
+        r, why = nm.deck(only_equipped=False, kinds=True)
+        self.assertEqual(why, "")
+        self.assertEqual([(d["gid"], d["equipped"], d["where"], d["kinds"]) for d in r["decks"]],
+                         [(0xA1, False, "backpack", True), (0xB2, True, "equipped", True)])
+        self.assertEqual((r["equipped"], r["equipped_set"], r["sig"]), (0xB2, 2, None))
+        self.assertTrue(everyd["r"]["decks"][0]["equipped"])                # (the kept reading itself untouched)
+        # (the recorder's next look: its own reading's signature - not read again)
+        n = len(reads)
+        nm.deck(fresh=True)
+        self.assertEqual(len(reads), n)
+        # (a fresh read of every deck reads again - never answered by the kept reading's old signature)
+        r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
+        self.assertEqual(reads[-1], (True, False))
+        self.assertIs(nm._deck_all, nm._deck_cache)
+        self.assertEqual([d["gid"] for d in r["decks"] if d["equipped"]], [0xB2])
+        nm.close()
+        self.assertIsNone(nm._deck_all)
+
+    def test_no_every_deck_reading_still_not_read(self):
+        nm, worn, reads = self.nav()
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+        self.assertIsNone(nm._deck_all)
+        # (every deck read without their kinds: not kept as every deck's with them)
+        nm.deck(fresh=True, only_equipped=False)
+        self.assertIsNone(nm._deck_all)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+
+    def test_another_game_not_answered(self):
+        nm, worn, reads = self.nav()
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        nm.st = object()
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
 
 
 class OneDeckReadAtATime(unittest.TestCase):
