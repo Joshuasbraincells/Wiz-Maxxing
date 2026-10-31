@@ -284,14 +284,15 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
     def test_a_worn_deck_edited_since_isnt_answered(self):
         nm, worn, reads, cards = self.nav()
         nm.deck(fresh=True, only_equipped=False, kinds=True)
-        # (a treasure card used up in a battle: the worn deck's signature changes, its main cards don't - still answered)
+        # (treasure cards used up in a battle - a known spell's too, read "main" - the signature changes: still answered)
         cards[0xA1][1]["count"] = 1
+        cards[0xA1][0]["count"] = 2
         nm.deck(fresh=True)
         r, why = nm.deck(only_equipped=False, kinds=True)
         self.assertEqual(why, "")
         self.assertEqual(r["decks"][0]["cards"][1]["count"], 2)              # (every deck's reading as it was read)
-        # (its main cards edited: not answered - every deck read again)
-        cards[0xA1][0]["count"] = 4
+        # (a spell put in it: edited - not answered, every deck read again)
+        cards[0xA1].append({"template_id": 11, "count": 4, "side": "main"})
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
         self.assertIsNone(nm._deck_all)                                      # (dropped for good)
@@ -300,8 +301,8 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
         r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
-        self.assertEqual(r["decks"][0]["cards"][0]["count"], 4)
-        self.assertEqual(nm.deck(only_equipped=False, kinds=True)[0]["decks"][0]["cards"][0]["count"], 4)
+        self.assertEqual(r["decks"][0]["cards"][-1]["template_id"], 11)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True)[0]["decks"][0]["cards"][-1]["template_id"], 11)
 
     def test_another_character_or_a_new_deck_isnt_answered(self):
         nm, worn, reads, cards = self.nav()
@@ -331,8 +332,8 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         r, why = nm.deck(only_equipped=False, kinds=True)
         self.assertEqual(why, "")
         self.assertIsNotNone(nm._deck_all)
-        # (a real edit of a main card still is one)
-        cards[0xA1][0]["count"] = 1
+        # (a spell put in still is an edit)
+        cards[0xA1].append({"template_id": 12, "count": 1, "side": "treasure"})
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
 

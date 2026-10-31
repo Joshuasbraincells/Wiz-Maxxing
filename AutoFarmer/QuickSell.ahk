@@ -515,6 +515,14 @@ QsRun(d, bag, manual := false, rehearse := false)
 	QsLog((rehearse ? "REHEARSAL (nothing is sold) - " : "") (manual ? "asked for from the tray" : d.why) " - opening the backpack")
 	qRes := QsSteps(bag, manual, rehearse)
 	qRes := QsFinish(qRes)
+	;(a failed run under a dungeon's hold: the backpack read again while QsBusy - the count QsConfirmSell noted after SELL
+	;set to what it is, sold or not, so your sort after it is measured from there - QsNoteBag)
+	if (IsObject(qRes) && qRes.res = "failed" && QsIni("dungeon") != "")
+		{
+		qNow := NavBag()
+		if (IsObject(qNow))
+			QsNoteBag(qNow)
+		}
 	QsBusy := 0, QsManual := 0
 	SetStatus("")
 	if (qOwn)
@@ -645,10 +653,11 @@ QsAfter(r, manual)
 			}
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
-		;(a dungeon's hold, the gear pass's sale: the Deck and Pet groups kept - said once an hour, with how to free them;
-		;the still-full alert above says it already)
+		;(a dungeon's hold, the gear pass's sale: the Deck and Pet groups kept - said once an hour, with how to free them -
+		;its own alert kind: an in-dungeon "backpack full" minutes before mustn't swallow it; the still-full alert above says
+		;it already)
 		else if (qDgKeep && QsSay("dgkeep", "the gear sold, the Deck and Pet groups kept: a dungeon's hold (the gear pass never compares decks or pets) - look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it'", 3600000) && !(QsStill && QsBefore.items - qAfter.items < 5))
-			AlertSend("inventory", "decks and pets held", "The full backpack was quick sold without its Deck and Pet groups: a dungeon's hold keeps them (the gear pass never compares decks or pets). Look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
+			AlertSend("dgkeep", "decks and pets held", "The full backpack was quick sold without its Deck and Pet groups: a dungeon's hold keeps them (the gear pass never compares decks or pets). Look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
 		}
 	;(not full by the game's own N/M: Zeke's alert not looked at again for 10 minutes (QsLookAt); a full count waits 10
 	;minutes only when the look's /bag (QsLastBag) still counts full with the calibration QsSteps just made - it didn't stick)
@@ -1181,7 +1190,7 @@ QsConfirmSell(nums)
 		return qr
 	;(under a dungeon's hold, SELL clicked: the count it should come to noted - a sale that goes through unconfirmed (the
 	;2 s here or QsVerify giving up) isn't taken for your sort at the next look (QsNoteBag); put back where it surely
-	;didn't sell (a box answered other than Yes, or stopped))
+	;didn't sell (a box answered other than Yes, or stopped); a failed run reads the backpack again after (QsRun))
 	qMarkWas := QsIni("markitems")
 	if (QsIni("dungeon") != "" && QsBefore.items != "")
 		QsIniSet("markitems", V1Sub(QsBefore.items, nums.Total.n))

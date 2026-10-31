@@ -1080,20 +1080,14 @@ class _Attached:
         return pts if len(pts) == cnt else None
 
 
-def _main_cards(deck, skip=()):
-    """a deck reading's main cards as Counter({(template id, count): n}), the template ids in skip left out -
-    _worn_misfit's check that a worn deck wasn't edited since every deck was read"""
-    return Counter((c.get("template_id"), c.get("count")) for c in deck.get("cards") or []
-                   if c.get("side") == "main" and c.get("template_id") not in skip)
-
-
 def _worn_misfit(every, worn):
     """why every deck's kept reading (NavMem._deck_all's r) no longer answers beside a newer worn-deck reading (worn's r),
     "" when it does: another character logged in on the same game (player_gid), a deck worn that it hasn't (new, or
-    another character's), or one whose main cards aren't the same (edited since - a treasure card used up isn't a
-    change: /deckfor's key leaves treasure out too). A card on the treasure side in either reading is left out: deckmem
-    works a card's side out again each read from that read's spellbook (one not read, or an entry's template not read,
-    moves a card between main and treasure). A deck whose cards weren't read (ok False) in either isn't judged"""
+    another character's), or one holding a card its copy there hasn't (a spell put in since - edited). Counts and cards
+    gone aren't judged: a battle uses treasure cards up, and deckmem can't always tell a known spell's treasure card
+    from the spell (the same template, side "main"), so they'd read as edits after every battle; an edit that only takes
+    cards out stays unseen till every deck is read again (DeckLearnTick, 30 min). A deck whose cards weren't read (ok
+    False) in either isn't judged"""
     pe, pw = every.get("player_gid"), worn.get("player_gid")
     if pe is not None and pw is not None and pe != pw:
         return "another character"
@@ -1104,10 +1098,9 @@ def _worn_misfit(every, worn):
         k = have.get(d.get("gid"))
         if k is None:
             return "a deck worn it hasn't"
-        if k.get("ok") is not False:
-            tc = {c.get("template_id") for x in (k, d) for c in x.get("cards") or [] if c.get("side") == "treasure"}
-            if _main_cards(k, tc) != _main_cards(d, tc):
-                return "a deck worn edited since"
+        if k.get("ok") is not False and {c.get("template_id") for c in d.get("cards") or []} - \
+                {c.get("template_id") for c in k.get("cards") or []}:
+            return "a deck worn edited since"
     return ""
 
 
@@ -1954,8 +1947,8 @@ class NavMem:
         only_equipped: the backpack's decks left out - such a reading never takes the place of every deck's with their
         kinds (_deck_all): asked for every deck after one (fresh False), that last reading of them answers, the decks worn
         marked as the newer one has them, its sig None (fresh True: read again) - unless the newer one doesn't fit it
-        (_worn_misfit: another character, a deck worn it hasn't or one edited since): that reading dropped, "not read
-        yet" till every deck is read again. kinds: each card's kind, value, heads
+        (_worn_misfit: another character, a deck worn it hasn't or one with a card put in since): that reading dropped,
+        "not read yet" till every deck is read again. kinds: each card's kind, value, heads
         and boosts too (handmem's reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first
         time a card is seen): a reading without them doesn't answer it (read again). books: the spellbook and the
         treasure book too (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it
