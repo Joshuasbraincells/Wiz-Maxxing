@@ -515,13 +515,15 @@ QsRun(d, bag, manual := false, rehearse := false)
 	QsLog((rehearse ? "REHEARSAL (nothing is sold) - " : "") (manual ? "asked for from the tray" : d.why) " - opening the backpack")
 	qRes := QsSteps(bag, manual, rehearse)
 	qRes := QsFinish(qRes)
-	;(a failed run under a dungeon's hold: the backpack read again while QsBusy - the count QsConfirmSell noted after SELL
-	;set to what it is, sold or not, so your sort after it is measured from there - QsNoteBag)
-	if (IsObject(qRes) && qRes.res = "failed" && QsIni("dungeon") != "")
+	;(a run that failed after SELL under a dungeon's hold - QsConfirmSell's note standing - with every window closed
+	;(QsBackKind "": the sale no longer pending): the backpack read again - down by the sale, it went through: that count
+	;noted; not down, it didn't: the count before SELL put back, so your sort is measured from it. A window still up (a
+	;sale pending) or no read: the note kept)
+	if (IsObject(qRes) && qRes.res = "failed" && QsIni("dungeon") != "" && IsObject(QsBefore) && QsBefore.marked && QsBackKind = "")
 		{
 		qNow := NavBag()
-		if (IsObject(qNow))
-			QsNoteBag(qNow)
+		if (IsObject(qNow) && V1IsNum(qNow.items) && V1IsNum(QsBefore.soldN))
+			QsIniSet("markitems", qNow.items <= QsBefore.items - QsBefore.soldN + 1 ? qNow.items : V1IsNum(QsBefore.markWas) ? Max(QsBefore.markWas, qNow.items) : qNow.items)
 		}
 	QsBusy := 0, QsManual := 0
 	SetStatus("")
@@ -649,14 +651,14 @@ QsAfter(r, manual)
 			{
 			QsTryAt := now + 3600000
 			QsLog("still full after the sale (it freed " QsBefore.items - qAfter.items " slots) - not tried again for 60 minutes")
-			AlertSend("inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes." qLeft)
+			AlertSend(qDgKeep ? "dgkeep" : "inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes." qLeft)
 			}
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
 		;(a dungeon's hold, the gear pass's sale: the Deck and Pet groups kept - said once an hour, with how to free them -
 		;its own alert kind: an in-dungeon "backpack full" minutes before mustn't swallow it; the still-full alert above says
-		;it already)
-		else if (qDgKeep && QsSay("dgkeep", "the gear sold, the Deck and Pet groups kept: a dungeon's hold (the gear pass never compares decks or pets) - look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it'", 3600000) && !(QsStill && QsBefore.items - qAfter.items < 5))
+		;it already, on the same kind)
+		else if (qDgKeep && !(QsStill && QsBefore.items - qAfter.items < 5) && QsSay("dgkeep", "the gear sold, the Deck and Pet groups kept: a dungeon's hold (the gear pass never compares decks or pets) - look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it'", 3600000))
 			AlertSend("dgkeep", "decks and pets held", "The full backpack was quick sold without its Deck and Pet groups: a dungeon's hold keeps them (the gear pass never compares decks or pets). Look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
 		}
 	;(not full by the game's own N/M: Zeke's alert not looked at again for 10 minutes (QsLookAt); a full count waits 10
@@ -1190,10 +1192,11 @@ QsConfirmSell(nums)
 		return qr
 	;(under a dungeon's hold, SELL clicked: the count it should come to noted - a sale that goes through unconfirmed (the
 	;2 s here or QsVerify giving up) isn't taken for your sort at the next look (QsNoteBag); put back where it surely
-	;didn't sell (a box answered other than Yes, or stopped); a failed run reads the backpack again after (QsRun))
+	;didn't sell (a box answered other than Yes, or stopped); a failed run with every window closed reads the backpack
+	;again after (QsRun))
 	qMarkWas := QsIni("markitems")
 	if (QsIni("dungeon") != "" && QsBefore.items != "")
-		QsIniSet("markitems", V1Sub(QsBefore.items, nums.Total.n))
+		QsIniSet("markitems", V1Sub(QsBefore.items, nums.Total.n)), QsBefore.marked := 1, QsBefore.markWas := qMarkWas, QsBefore.soldN := nums.Total.n
 	qt := A_TickCount
 	while (A_TickCount - qt < 2000)
 		{
@@ -1211,7 +1214,7 @@ QsConfirmSell(nums)
 			qr := QsAnswerBox(g, "sell", qBoxMark, nums.Pet.n, &qSaid)
 			if (IsObject(qr) || qSaid != "Yes")
 				if (QsIni("dungeon") != "")
-					QsIniSet("markitems", qMarkWas)
+					QsIniSet("markitems", qMarkWas), QsBefore.marked := 0
 			if (IsObject(qr))
 				return qr
 			if (qSaid != "Yes")
