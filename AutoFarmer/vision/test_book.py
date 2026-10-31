@@ -227,21 +227,22 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         reads = []
         cards = {0xA1: [{"template_id": 7, "count": 3, "side": "main"}, {"template_id": 9, "count": 2, "side": "treasure"}],
                  0xB2: [{"template_id": 8, "count": 4, "side": "main"}]}
+        self.who, self.unread = [0x77], set()           # (the wizard's gid; decks whose card list won't read)
 
         class DM:
             def signature(self_, pace=None):
-                return ("worn", worn[0], repr(cards[worn[0]]))
+                return ("worn", self.who[0], worn[0], repr(cards[worn[0]]), worn[0] in self.unread)
 
             def read(self_, books=False, kinds=True, only_equipped=False, pace=None):
                 reads.append((kinds, only_equipped))
                 decks = [{"gid": g, "where": "equipped" if g == worn[0] else "backpack", "equipped": g == worn[0],
-                          "sets": [n], "kinds": kinds, "cards": [dict(c) for c in cards[g]]}
-                         for n, g in ((1, 0xA1), (2, 0xB2))]
+                          "sets": [n], "kinds": kinds, "cards": [] if g in self.unread else [dict(c) for c in cards[g]],
+                          "ok": g not in self.unread} for n, g in enumerate(sorted(cards), 1)]
                 if only_equipped:
                     decks = [d for d in decks if d["equipped"]]
                 return {"decks": decks, "equipped": worn[0], "equipped_set": 1 if worn[0] == 0xA1 else 2,
                         "sets": [{"n": 1, "equipped": worn[0] == 0xA1}, {"n": 2, "equipped": worn[0] == 0xB2}],
-                        "why": ""}
+                        "player_gid": self.who[0], "why": ""}
         dm = DM()
         dm.st, dm.hm = st, nm._hand
         nm.st = st
@@ -293,9 +294,41 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         cards[0xA1][0]["count"] = 4
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+        self.assertIsNone(nm._deck_all)                                      # (dropped for good)
+        # (another deck worn then - its cards as they were: the edited one's old cards never come back)
+        worn[0] = 0xB2
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
         r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
         self.assertEqual(r["decks"][0]["cards"][0]["count"], 4)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True)[0]["decks"][0]["cards"][0]["count"], 4)
+
+    def test_another_character_or_a_new_deck_isnt_answered(self):
+        nm, worn, reads, cards = self.nav()
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        # (another character logged in on the same game: its worn deck read - the first one's decks never answered)
+        self.who[0], worn[0] = 0x88, 0xB2
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+        self.assertIsNone(nm._deck_all)
+        # (the same character, a deck worn that every deck's reading hasn't - made since)
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        cards[0xC3] = [{"template_id": 5, "count": 1, "side": "main"}]
+        nm._deck_all["r"]["decks"] = [d for d in nm._deck_all["r"]["decks"] if d["gid"] != 0xC3]
+        worn[0] = 0xC3
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+
+    def test_a_worn_deck_not_read_isnt_judged(self):
+        # (its card list not read in the worn reading - ok False: no "edit" made of it, every deck's reading answers)
+        nm, worn, reads, cards = self.nav()
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        worn[0] = 0xB2
+        self.unread.add(0xB2)
+        nm.deck(fresh=True)
+        r, why = nm.deck(only_equipped=False, kinds=True)
+        self.assertEqual((why, r["equipped"]), ("", 0xB2))
+        self.assertEqual(r["decks"][1]["cards"], [{"template_id": 8, "count": 4, "side": "main"}])
 
     def test_no_every_deck_reading_still_not_read(self):
         nm, worn, reads, cards = self.nav()

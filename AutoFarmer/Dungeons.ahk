@@ -21,11 +21,12 @@
 ; Between runs (v0.9.0, TODO goal 5): a run that ends back where it starts is "between runs" from its end to its first X
 ; (or another zone) - its drops looked at and the gear pass (Gear.ahk - Settings: gearswap, a rehearsal: the plan logged,
 ; nothing equipped), and a full backpack quick sold there (QuickSell.ahk - quicksell on; the dungeon's hold still holds it
-; unless the gear pass looked through it or "...even with a dungeon's drops in it" is ticked). "Until its gear is swapped"
-; (the tab's box - untilgear| in the run's file): once every slot it drops (slots|, else resources\dungeons_known.txt's) is
-; worn with its own drop, or stopafter| runs (30) brought no upgrade, it goes on to its "then" run (next|) when that starts
-; where the wizard stands - else it stops and says where to take the wizard (Discord). A boss's own deck: boss|<name>|<deck
-; id> lines (Decks.ahk DeckPick). Older versions skip these lines. python vision\dglint.py checks a run's file.
+; - with the gear pass on, its decks and pets only - unless "...even with a dungeon's drops in it" is ticked). "Until its
+; gear is swapped" (the tab's box - untilgear| in the run's file): once every slot it drops (slots|, else
+; resources\dungeons_known.txt's) is worn with its own drop, or stopafter| runs (30) brought no upgrade, it goes on to its
+; "then" run (next|) when that starts where the wizard stands - else it stops and says where to take the wizard
+; (Discord). A boss's own deck: boss|<name>|<deck id> lines (Decks.ahk DeckPick). Older versions skip these lines.
+; python vision\dglint.py checks a run's file.
 
 ;The run being walked: {name, file, steps [{kind, zone, x, y, z}], i (the step walked to), runs (done), want (0
 ;till stopped), the step's progress (best, bestLeft, bestAt, unstuck), fightUntil / fightBattles (waiting at a
@@ -939,8 +940,8 @@ DgArrive(st)
 
 ;A run done, back at its start spot outside (DungeonStep, once a run: DgRun.between 1): its drops looked at and the gear pass
 ;(Gear.ahk GearRunEnd - gearswap on: logged, nothing equipped), a full backpack quick sold here (QuickSell.ahk QsLook -
-;quicksell on: QsDungeonNow lets it while between; the dungeon's hold still holds it - with the gear pass on, only its
-;decks and pets: the gear groups sold, the Deck and Pet groups kept - unless "...even with a dungeon's drops in it" is
+;quicksell on: QsDungeonNow lets it while between; the dungeon's hold still holds it - with the gear pass on, only a deck
+;or pet in it: the gear groups sold, the Deck and Pet groups kept - unless "...even with a dungeon's drops in it" is
 ;ticked), then "Until its gear is swapped": its gear all swapped - on to its
 ;next run, or stopped (DgGearDone). gearswap off: the quick sell's look only - as a battle's end looks
 DgBetweenRuns()

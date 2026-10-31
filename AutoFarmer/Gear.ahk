@@ -249,8 +249,8 @@ GearSetGuard(g)
 ;---- Quick sell (QuickSell.ahk QsLook) ----
 
 ;gearswap on, a full backpack about to be quick sold: "" it may be sold (every gear piece in the backpack judged, none better
-;than what's worn - QsLook sells it then; under a dungeon's hold without its Deck and Pet groups, the hold kept: decks and
-;pets are never judged here), else why not: a better
+;than what's worn - QsLook sells it then; under a dungeon's hold, with a deck or pet in it (never judged here), without its
+;Deck and Pet groups, the hold kept - else the hold dropped), else why not: a better
 ;piece (put it on yourself - a rehearsal equips nothing), pieces not judged, the gear not read. The pass at most once a
 ;minute while the backpack's count is the same (QsLook looks three times after every battle)
 GearSellOk(why)

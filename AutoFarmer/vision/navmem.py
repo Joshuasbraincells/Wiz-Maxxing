@@ -1081,9 +1081,29 @@ class _Attached:
 
 
 def _main_cards(deck):
-    """a deck reading's main cards as Counter({(template id, count): n}) - NavMem._deck_cached's check that a worn deck
-    wasn't edited since every deck was read"""
+    """a deck reading's main cards as Counter({(template id, count): n}) - _worn_misfit's check that a worn deck wasn't
+    edited since every deck was read"""
     return Counter((c.get("template_id"), c.get("count")) for c in deck.get("cards") or [] if c.get("side") == "main")
+
+
+def _worn_misfit(every, worn):
+    """why every deck's kept reading (NavMem._deck_all's r) no longer answers beside a newer worn-deck reading (worn's r),
+    "" when it does: another character logged in on the same game (player_gid), a deck worn that it hasn't (new, or
+    another character's), or one whose main cards aren't the same (edited since - a treasure card used up isn't a
+    change: /deckfor's key leaves treasure out too). A deck whose cards weren't read (ok False) in either isn't judged"""
+    pe, pw = every.get("player_gid"), worn.get("player_gid")
+    if pe is not None and pw is not None and pe != pw:
+        return "another character"
+    have = {d.get("gid"): d for d in every.get("decks") or []}
+    for d in worn.get("decks") or []:
+        if not d.get("equipped") or d.get("ok") is False:
+            continue
+        k = have.get(d.get("gid"))
+        if k is None:
+            return "a deck worn it hasn't"
+        if k.get("ok") is not False and _main_cards(k) != _main_cards(d):
+            return "a deck worn edited since"
+    return ""
 
 
 # ============================================================================ the reader
@@ -1928,8 +1948,9 @@ class NavMem:
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
         only_equipped: the backpack's decks left out - such a reading never takes the place of every deck's with their
         kinds (_deck_all): asked for every deck after one (fresh False), that last reading of them answers, the decks worn
-        marked as the newer one has them, its sig None (fresh True: read again) - unless a deck worn has other main cards
-        in the newer one (edited since: "not read yet"). kinds: each card's kind, value, heads
+        marked as the newer one has them, its sig None (fresh True: read again) - unless the newer one doesn't fit it
+        (_worn_misfit: another character, a deck worn it hasn't or one edited since): that reading dropped, "not read
+        yet" till every deck is read again. kinds: each card's kind, value, heads
         and boosts too (handmem's reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first
         time a card is seen): a reading without them doesn't answer it (read again). books: the spellbook and the
         treasure book too (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it
@@ -1983,12 +2004,11 @@ class NavMem:
             if c is None or c is a or c["st"] is not self.st:
                 return a
             wr = c["r"]
-            worn = {d.get("gid") for d in wr.get("decks") or [] if d.get("equipped")}
-            # (a deck worn whose main cards aren't that reading's - edited since: not answered, every deck read again;
-            # its treasure cards used up in a battle aren't a change here - /deckfor's key leaves them out too)
-            now = {d.get("gid"): _main_cards(d) for d in wr.get("decks") or [] if d.get("equipped")}
-            if any(d.get("gid") in now and _main_cards(d) != now[d.get("gid")] for d in a["r"].get("decks") or []):
+            # (another character, a deck worn it hasn't or one edited since: not answered - _deck_paced drops it then,
+            # this the guard - every deck read again)
+            if _worn_misfit(a["r"], wr):
                 return None
+            worn = {d.get("gid") for d in wr.get("decks") or [] if d.get("equipped")}
             decks = [dict(d, equipped=d.get("gid") in worn, where="equipped" if d.get("gid") in worn else "backpack")
                      for d in a["r"].get("decks") or []]
             on = [d["gid"] for d in decks if d["equipped"]]
@@ -2063,6 +2083,10 @@ class NavMem:
                                     "kinds": kinds}
                 if not only_equipped and kinds:
                     self._deck_all = self._deck_cache
+                elif self._deck_all is not None and self._deck_all["st"] is st and _worn_misfit(self._deck_all["r"], r):
+                    # (the kept reading no longer fits the decks worn: dropped for good - wearing another deck later
+                    # mustn't bring an edited one's old cards back; only a fresh read of every deck answers again)
+                    self._deck_all = None
         finally:
             if holding[0]:
                 holding[0] = False

@@ -972,7 +972,8 @@ class DeckFor(unittest.TestCase):
         old = S.FoeBook(battles=[])
         keep = dict(V.SIM)
         try:
-            V.SIM.update(book=old, facts={"f": 1}, at=0.0, refreshing=1)
+            # (stale by the clock - at 0.0 isn't stale on a machine up under SIM_BOOK_S)
+            V.SIM.update(book=old, facts={"f": 1}, at=time.monotonic() - V.SIM_BOOK_S - 1, refreshing=1)
             with mock.patch.object(S, "FoeBook", lambda *a, **kw: 1 / 0):
                 self.assertEqual(V.sim_book(), (old, {"f": 1}))
                 self.assertEqual(V.sim_book(paced=True), (old, {"f": 1}))
@@ -989,6 +990,35 @@ class DeckFor(unittest.TestCase):
         finally:
             V.SIM.clear()
             V.SIM.update(keep)
+
+    def test_plan_load_counts_its_read(self):
+        # (the planner's thread: SIM refreshing up while it reads the battles, put back after - and after a failure)
+        import tempfile
+        import battlelearn
+        V = self.V
+        seen = []
+
+        def read(base, days=120):
+            seen.append(V.SIM["refreshing"])
+            return iter([])
+        keep_sim, keep_plan, keep_log = dict(V.SIM), dict(V.PLAN), V.log
+        try:
+            V.log = lambda *a, **kw: None
+            V.SIM["refreshing"] = 0
+            with tempfile.TemporaryDirectory() as root, mock.patch.object(V, "ROOT", root), \
+                    mock.patch.object(battlelearn, "read", read):
+                os.makedirs(os.path.join(root, "learned", "battles"))
+                V._plan_load()
+                self.assertEqual((seen, V.SIM["refreshing"]), ([1], 0))
+                with mock.patch.object(S, "load_facts", lambda path: 1 / 0):
+                    V._plan_load()
+                self.assertEqual((seen, V.SIM["refreshing"]), ([1, 1], 0))
+        finally:
+            V.log = keep_log
+            V.SIM.clear()
+            V.SIM.update(keep_sim)
+            V.PLAN.clear()
+            V.PLAN.update(keep_plan)
 
     def test_thread_reads_paced_and_pauses(self):
         # (the deckfor thread's own wiring: sim_book(paced=True) and best_decks(pause=gate_wait))

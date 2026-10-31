@@ -119,8 +119,10 @@ Before you start
 	    to re-save that set. Then a recorded dungeon, Run it 2 times: "Gear:
 	    the run ... started", "run 1: N new pieces" and learned\drops\<run>.txt;
 	    with quick sell on and a full backpack, a sale tried between runs
-	    outside, never inside - the gear groups only: "left out ... Deck (a
-	    dungeon's drops ...), Pet (...)". Then "Until its gear is swapped"
+	    outside, never inside; with a deck or pet the dungeon dropped in the
+	    backpack, the gear groups only ("Backpack: ... the gear sold, the Deck
+	    and Pet groups kept: a dungeon's hold", one Discord alert an hour).
+	    Then "Until its gear is swapped"
 	    with stopafter|2 in the run file: it starts its "then" run or stops
 	    with a Discord alert.
 	3.3 deckzone (presses Equipment Set keys - deck, gear, pet and mount
