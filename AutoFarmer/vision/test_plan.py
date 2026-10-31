@@ -662,6 +662,8 @@ class PlannerRule(unittest.TestCase):
     def test_rule_and_settings_key(self):
         import battlerec
         self.assertIn("planner", battlerec.SETTINGS_KEYS)
+        for k in ("memclicks", "deckzone", "partyhitround"):       # (the battle settings v0.9.0 added)
+            self.assertIn(k, battlerec.SETTINGS_KEYS)
         self.assertGreaterEqual(battlerec.RULE_V, 2)
         # (advice only - planner:1 - never decides a round: the round is the bot's own rule's)
         advice = [[0, "  Plan: would play Storm Lord at Bonestriker (won 92% in 3 rounds, 100 tries) - advice only"],

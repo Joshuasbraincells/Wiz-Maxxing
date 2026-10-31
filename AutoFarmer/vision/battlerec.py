@@ -165,8 +165,8 @@ A battle (rec "battle"):
                   crit_rating, level, target_levels, final_crit} - my first StatRebalance as caster / as target and
                   GetCritParams}; mem (Phase B)
   settings        {k: v} the effective Stat(k) of a whitelist (the deck keys + enemyspells, defendat, healat,
-                  learnedhits, roundwait, partybattle, navmem, handsoff, handsoffon, planner, memclicks; null: not set) - never
-                  anything typed
+                  learnedhits, roundwait, partybattle, navmem, handsoff, handsoffon, planner, memclicks, deckzone,
+                  partyhitround; null: not set) - never anything typed
   who             {bot: [n..], user: [..], none: [..], unknown: [..]}
   src             {log, mem, ahk, hands "k/n", deck, phase_b [groups on]} what fed the record
   partial         {from_round, why}: rounds before from_round lack memory or bot data (a helper restart, the log
@@ -235,7 +235,7 @@ SETTINGS_KEYS = ("cardlogic", "boostmax", "useblades", "usetraps", "usebubble", 
                  "usereshuffle", "reboost", "solotraps", "healthocr", "killmargin", "drawenchant", "pipsave",
                  "discardunused", "discardmax", "discardunaffordable", "healat", "defendat", "fleeon", "usehit1",
                  "usehit2", "usehit3", "usehit4", "useheal", "enemyspells", "learnedhits", "roundwait", "partybattle",
-                 "navmem", "handsoff", "handsoffon", "planner", "memclicks")
+                 "navmem", "handsoff", "handsoffon", "planner", "memclicks", "deckzone", "partyhitround")
 STAT_KEYS = ("school", "damage", "pierce", "critical", "accuracy", "block", "maxhealth", "charid_ok")
 PIP_KINDS = ("generic", "power", "balance", "death", "fire", "ice", "life", "myth", "storm", "shadow")
 BAD_WORDS = re.compile(r"http|webhook|token|password|login", re.I)
