@@ -1,9 +1,10 @@
 ; QuickSell.ahk - the backpack quick sold for gold when it's full (asked 2026-10-25: "when your backpack is full a circular
 ; alert icon with prospector zeke shows up on the right hand side of the screen ... we should have the bot look for that
 ; after a battle and if its there i'd like to to quick sell our entire inventory" - "of course this should be a setting
-; to be turned on and off because dungeons would cause good gear to be sold"). AutoHotkey v1.1, functions only; #Included
-; by Autofarmer.ahk. Needs the vision helper and the game's memory (vision\bagmem.py - /bag and /gui, READ-ONLY): without
-; them it does nothing (no picture is ever trusted for this - Zeke's portrait also means "the gold bag is nearly full").
+; to be turned on and off because dungeons would cause good gear to be sold"). AutoHotkey v2 (ported from v1.1), functions
+; only; #Included by Autofarmer.ahk. Needs the vision helper and the game's memory (vision\bagmem.py - /bag and /gui,
+; READ-ONLY): without them it does nothing (no picture is ever trusted for this - Zeke's portrait also means "the gold bag
+; is nearly full").
 ;
 ; Settings > THE BACKPACK: quicksell (off by default), quicksellpets (pets too - on), quicksellafterdungeon (off). Hidden
 ; (PlayerStats.txt): quicksellfree:N - sell with N slots or fewer left (0); quicksell:2 - a REHEARSAL: everything up to the
@@ -15,7 +16,8 @@
 ; icon in the HUD's right-hand column. Full - or Zeke's icon with the gold bag not near full - is a look: B, the game's
 ; own N/M read; full by it: the sale. Never in a dungeon run, a dungeon being recorded, a zone the walker entered through a
 ; sigil or a zone that one leads on to (QsZoneChange); after a dungeon the next full backpack is held (you're told) until
-; you've sorted it, unless quicksellafterdungeon. A dungeon you walked into yourself isn't known as one.
+; you've sorted it, unless quicksellafterdungeon - with the gear pass on (Gear.ahk, gearswap) its gear groups are sold once
+; compared, only the Deck and Pet groups held (QsLook). A dungeon you walked into yourself isn't known as one.
 ;
 ; The sale - every click target from the game's memory (name and ancestors, shown, its rect, its size against the .gui
 ; file's, its label), on an allow-list, turned into pixels: B (the backpack page), Quick Sell, each gear group (Hat,
@@ -137,7 +139,7 @@ QsDungeonMark(zone := "")
 	;(the mark's kept with quick sell off too - said only with it on)
 	if (qWas = "" && QsMode())
 		QsLog("a dungeon (" (IsObject(DgRun) ? "the run '" DgRun.name "'" : DgRecording ? "being recorded" : "entered through its sigil" (zone != "" ? ": " zone : "")) ")"
-			. (QsAfterDungeon() ? " - its drops sold like any others ('...even with a dungeon's drops in it' is ticked)" : " - the next full backpack is held (its drops are the good gear): you're told, nothing's sold"))
+			. (QsAfterDungeon() ? " - its drops sold like any others ('...even with a dungeon's drops in it' is ticked)" : (V1IsFunc("GearMode") && GearMode.Call()) ? " - the next full backpack is held (its drops are the good gear): its gear sold once the gear pass compared it, its decks and pets kept - you're told" : " - the next full backpack is held (its drops are the good gear): you're told, nothing's sold"))
 	}
 
 QsMarkClear(why)
@@ -183,7 +185,11 @@ QsNoteBag(bag)
 	qMost := QsIni("markitems")
 	if (bag.items = "")
 		return
-	if (qMost = "" || V1Gt(bag.items, qMost))  ; (v1: quicksell.ini's value compared as text when it isn't a number)
+	;(the bot's own sale - QsBusy: under a dungeon's hold only with the gear pass on, its Deck and Pet groups kept (QsLook) -
+	;isn't a sort: the hold stays, the count noted from here)
+	if (QsBusy)
+		QsIniSet("markitems", bag.items)
+	else if (qMost = "" || V1Gt(bag.items, qMost))  ; (v1: quicksell.ini's value compared as text when it isn't a number)
 		QsIniSet("markitems", bag.items)
 	else if (V1Le(bag.items, V1Sub(qMost, 10)))
 		QsMarkClear("the backpack went from " qMost " down to " bag.items " items (sorted)")
@@ -313,7 +319,26 @@ QsLook(why)
 			AlertSend("inventory", "backpack full", "The backpack is full in a dungeon - not sold (good gear). Drops go to the bank until it's full.")
 		return
 		}
-	if (QsHeld())
+	;(Settings: gearswap on - the gear pass first (Gear.ahk GearSellOk): a backpack piece better than what's worn, or one it
+	;couldn't judge, holds the sale (a rehearsal equips nothing: you're told to put it on); every gear piece judged and none
+	;better - it looked through the gear: sold. Under a dungeon's hold the pass never compares decks or pets
+	;(vision\gearrank.py): sold without the Deck and Pet groups (bag.dgKeep - QsCategories), the hold kept - it ends as
+	;without the pass (10 items gone - the bot's own sales not counted, QsNoteBag -, the tray, the tick box) - and said
+	;after the sale (QsAfter). Off: as before)
+	if (V1IsFunc("GearMode") && GearMode.Call() && V1IsFunc("GearSellOk"))
+		{
+		qGear := GearSellOk.Call(d.why)
+		if (qGear != "")
+			{
+			if (d.full)
+				QsStill := 1
+			QsSay("gear", d.why " - not sold: " qGear)
+			return
+			}
+		if (QsHeld())
+			bag.dgKeep := "a dungeon's drops - the gear pass compares gear only, never decks or pets"
+		}
+	if (QsHeld() && bag.dgKeep = "")
 		{
 		if (d.full)
 			QsStill := 1
@@ -380,12 +405,16 @@ QsZekeUp(tips)
 	}
 
 ;In a dungeon: a dungeon run, one being recorded, a zone the walker entered through a sigil or one entered from such a zone
-;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one
+;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one. A dungeon run between two runs -
+;back at its start spot outside (Dungeons.ahk's DgRun.between, set when a run that ends where it starts is done, gone at
+;its first X or another zone) - isn't in the dungeon: a full backpack may be sold there (v0.9.0 - it used to read "in the
+;dungeon run" for the whole of it, so with "Run it 0 times" a full backpack was never sold); the zone's own checks below
+;still hold, and so does the dungeon's hold (QsHeld)
 QsDungeonNow()
 	{
 	if (DgRecording)
 		return "a dungeon being recorded"
-	if (IsObject(DgRun))
+	if (IsObject(DgRun) && !DgRun.between)
 		return "the dungeon run '" DgRun.name "'"
 	qZone := WalkZone()
 	if (qZone != "" && IsObject(WkSigilZones) && WkSigilZones.Has(qZone))
@@ -480,12 +509,23 @@ QsRun(d, bag, manual := false, rehearse := false)
 	SetStatus("Quick selling the backpack")
 	ReleaseKeys()
 	QsLogOpen()
-	QsBefore := V1Obj({items: bag.items, gold: bag.gold, pouch: bag.goldMax, sets: V1Obj()})
+	QsBefore := V1Obj({items: bag.items, gold: bag.gold, pouch: bag.goldMax, sets: V1Obj(), dgKeep: bag.dgKeep})
 	for qi, qs in bag.setItems
 		QsBefore.sets[qs.gid] := qs
 	QsLog((rehearse ? "REHEARSAL (nothing is sold) - " : "") (manual ? "asked for from the tray" : d.why) " - opening the backpack")
 	qRes := QsSteps(bag, manual, rehearse)
 	qRes := QsFinish(qRes)
+	;(a run that failed after SELL under a dungeon's hold - QsConfirmSell's note standing - with every window closed
+	;(QsBackKind "": the sale no longer pending): the backpack read again - down by the sale, it went through: that count
+	;noted; not down, it didn't: the count before SELL put back, so your sort is measured from it. A window still up or
+	;the back-out stopped (you, a battle - a box or the confirmation left up, so a sale may still land) or no read: the
+	;note kept - the safe side: at worst 10 more items to sort, never the bot's own late sale taken for your sort)
+	if (IsObject(qRes) && qRes.res = "failed" && QsIni("dungeon") != "" && IsObject(QsBefore) && QsBefore.marked && QsBackKind = "")
+		{
+		qNow := NavBag()
+		if (IsObject(qNow) && V1IsNum(qNow.items) && V1IsNum(QsBefore.soldN))
+			QsIniSet("markitems", qNow.items <= QsBefore.items - QsBefore.soldN + 1 && qNow.items < QsBefore.items ? qNow.items : V1IsNum(QsBefore.markWas) ? Max(QsBefore.markWas, qNow.items) : qNow.items)
+		}
 	QsBusy := 0, QsManual := 0
 	SetStatus("")
 	if (qOwn)
@@ -599,6 +639,10 @@ QsAfter(r, manual)
 	now := A_TickCount
 	;(groups left out for a Crown-shop item in them: said in the alerts - banking those items has the groups sold)
 	qLeft := (IsObject(QsBefore) && QsBefore.shopLeft != "") ? " Not quick sold at all: the groups " QsBefore.shopLeft " - a Crown-shop item is in each (never sold, nor its group). Bank those items to have the rest of those groups sold." : ""
+	;(a dungeon's hold, the gear pass's sale (QsLook - dgKeep): the Deck and Pet groups weren't tried - said, and how to free them)
+	qDgKeep := IsObject(QsBefore) && QsBefore.dgKeep != ""
+	if (qDgKeep)
+		qLeft .= " The Deck and Pet groups were kept for a dungeon's drops (the gear pass never compares decks or pets) - look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK)."
 	if (r.res = "sold")
 		{
 		QsFails := 0, QsTryAt := now + 600000
@@ -608,10 +652,15 @@ QsAfter(r, manual)
 			{
 			QsTryAt := now + 3600000
 			QsLog("still full after the sale (it freed " QsBefore.items - qAfter.items " slots) - not tried again for 60 minutes")
-			AlertSend("inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes." qLeft)
+			AlertSend(qDgKeep ? "dgkeep" : "inventory", "backpack still full", "Quick sell freed only " QsBefore.items - qAfter.items " slots - the rest can't be quick sold (emotes, mounts, Crowns items, locked or set items). Drops go to the bank; tried again in 60 minutes." qLeft)
 			}
 		if (QsAfterDungeon())
 			QsMarkClear("sold with '...even with a dungeon's drops in it' ticked")
+		;(a dungeon's hold, the gear pass's sale: the Deck and Pet groups kept - said once an hour, with how to free them -
+		;its own alert kind: an in-dungeon "backpack full" minutes before mustn't swallow it; the still-full alert above says
+		;it already, on the same kind)
+		else if (qDgKeep && !(QsStill && QsBefore.items - qAfter.items < 5) && QsSay("dgkeep", "the gear sold, the Deck and Pet groups kept: a dungeon's hold (the gear pass never compares decks or pets) - look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it'", 3600000))
+			AlertSend("dgkeep", "decks and pets held", "The full backpack was quick sold without its Deck and Pet groups: a dungeon's hold keeps them (the gear pass never compares decks or pets). Look through them, then remove 10 items, quick sell from the tray, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
 		}
 	;(not full by the game's own N/M: Zeke's alert not looked at again for 10 minutes (QsLookAt); a full count waits 10
 	;minutes only when the look's /bag (QsLastBag) still counts full with the calibration QsSteps just made - it didn't stick)
@@ -631,7 +680,7 @@ QsAfter(r, manual)
 	else if (r.res = "nothing")
 		{
 		QsTryAt := now + 3600000, QsStill := 1
-		AlertSend("inventory", "backpack full", "The backpack is full, but Quick Sell finds nothing it may sell in the gear" (QsPets() ? " and pet" : "") " groups. Drops go to the bank; tried again in 60 minutes." qLeft)
+		AlertSend("inventory", "backpack full", "The backpack is full, but Quick Sell finds nothing it may sell in the gear" (QsPets() && !qDgKeep ? " and pet" : "") " groups. Drops go to the bank; tried again in 60 minutes." qLeft)
 		}
 	else if (r.res = "stopped")
 		QsTryAt := now + 600000, QsStill := 1
@@ -738,7 +787,8 @@ QsOpenQuickSell()
 	}
 
 ;The groups sold - the gear's eight and the pets' (quicksellpets), never the All group - less any group an Equipment
-;Set's item or a Crown-shop item in the backpack is in: {list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
+;Set's item or a Crown-shop item in the backpack is in, and the pets' while a pet to keep is (pets.txt - QsPetGuard):
+;{list: [{name, kind, path, memPlain, memCrowns}], skipped, gearMax,
 ;petMax (the most each can sell - the backpack's plain items of those kinds: not Crowns items, Crown-shop ones or
 ;unsellable, by the game's memory), crownShop (the Crown-shop gear in them the game's memory doesn't flag as Crowns items),
 ;shopLeft (the groups left out for a Crown-shop item, with those items - for the alerts)};
@@ -786,6 +836,20 @@ QsCategories(bag, &why)
 			qGuard[qx.kind] := (qGuard.Has(qx.kind) ? qGuard[qx.kind] ", " : "") qx.name " (Crown shop)"
 			qShop[qx.kind] := (qShop.Has(qx.kind) ? qShop[qx.kind] ", " : "") qx.name
 			}
+	;(pets to keep - goal 6, perfect pets: pets.txt's wanted talents, QsPetGuard. A pet to keep in the backpack - or the
+	;pets not read whole, or fewer read in the backpack than its Pet count here - leaves the Pet group out whole: the bot
+	;can't read locks, so it can't sell round one pet. No pets.txt, or no pet in the backpack: nothing asked, sold as before)
+	if (QsPets() && (bag.cats.Has("pet") || bag.cats.Has("?")))
+		{
+		qPetKeep := QsPetGuard(bag)
+		if (qPetKeep != "")
+			qGuard["pet"] := (qGuard.Has("pet") ? qGuard["pet"] ", " : "") "kept: " qPetKeep
+		}
+	;(a dungeon's hold with the gear pass's sale (QsLook - bag.dgKeep): its decks and pets never compared - the Deck and Pet
+	;groups left out, the gear groups sold)
+	if (bag.dgKeep != "")
+		for qi, qk in ["deck", "pet"]
+			qGuard[qk] := (qGuard.Has(qk) ? qGuard[qk] ", " : "") bag.dgKeep
 	;(shopLeft: the groups left out for a Crown-shop item - for the alerts)
 	qOut := V1Obj({list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""})
 	for qi, qc in qAll
@@ -815,10 +879,86 @@ QsCategories(bag, &why)
 	if (bag.cats.Has("?"))
 		qOut.gearMax := V1Add(qOut.gearMax, bag.cats["?"].n), qOut.petMax := V1Add(qOut.petMax, bag.cats["?"].n)  ; (v1: a blank count made them blank)
 	if (qOut.skipped != "")
-		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group (bank Crown-shop items to have their group sold): " qOut.skipped)
+		QsLog("left out - an Equipment Set's or a Crown-shop item is in the group, or a pet to keep (bank Crown-shop items to have their group sold): " qOut.skipped)
 	if (qOut.crownShop != "")
 		QsLog("Crown-shop gear in the groups without the game's Crowns flag (not counted as plain gear - kept out if the game takes them for Crowns items or they're locked; if the confirmation's equipment goes over the plain gear, nothing's sold): " qOut.crownShop)
 	return qOut
+	}
+
+;Pets to keep out of the sale (goal 6, perfect pets - vision\petplan.py keepers): "" none (the Pet group sold as before),
+;else which and why - QsCategories leaves the whole Pet group out for it. Asked only when pets.txt names wanted talents
+;(QsPetWant - no file, no want: line: "" at once, nothing asked). Then the helper's /pets (NavPets): a pet in the backpack
+;it keeps - one with every wanted talent (you're told: lock it), or one whose talents aren't read (not confirmed in the
+;game yet - every pet, for now) - keeps the group out; so do the pets not read, or not read whole (a pet could be missed),
+;fewer pets read in the backpack than bag (NavBag's reading) counts in its Pet group, and a pets.txt that's there but
+;can't be read (fails safe).
+;TODO (goal 6 steps 9-11 - they need the game's pet windows first): the pet program's own switches (training, hatching)
+;plug in here - hatching on keeps the group out whole too (its parents and babies) and is passed on: NavPets(want, 1)
+QsPetGuard(bag)
+	{
+	qpgWant := QsPetWant(&qpgBad)
+	if (qpgBad != "")
+		return "pets.txt can't be read (" qpgBad ") - every pet"
+	if (qpgWant = "")
+		return ""
+	qpgPets := NavPets(qpgWant, 0)
+	if (!IsObject(qpgPets))
+		return "the pets can't be read from the game's memory (" NavPetsWhy ") - every pet"
+	if (!qpgPets.whole)
+		return "the pets not all read (" (qpgPets.why != "" ? qpgPets.why : "the backpack read in part") ") - every pet"
+	;(the backpack's pets /pets read checked against its Pet group's count in bag - NavBag's own reading, from the items'
+	;"Pet" adjective: fewer read - a pet whose behaviour petmem doesn't know, or one missed as the backpack changed - and
+	;the one not read could be sold with the group: every pet kept. More read is fine: an item whose kind bag couldn't
+	;read ("?") may be a pet)
+	qpgBagPets := bag.cats.Has("pet") ? bag.cats["pet"].n : 0
+	qpgRead := 0
+	for qpgI, qpgP in qpgPets.pets
+		if (qpgP.where = "backpack")
+			qpgRead += 1
+	if (qpgBagPets = "" || qpgRead < qpgBagPets)
+		return "the pets not all read (" (qpgBagPets = "" ? "the backpack's pet count not read" : qpgBagPets " in the backpack, " qpgRead " read") ") - every pet"
+	qpgNames := V1Obj()
+	for qpgI, qpgP in qpgPets.pets
+		qpgNames[qpgP.gid] := qpgP.display != "" ? qpgP.display : qpgP.name != "" ? qpgP.name : "pet " qpgP.gid
+	qpgOut := "", qpgDone := ""
+	for qpgGid, qpgWhy in qpgPets.keep
+		{
+		if (V1At(qpgPets.keepWhere, qpgGid) != "backpack")
+			continue
+		qpgName := V1At(qpgNames, qpgGid) != "" ? qpgNames[qpgGid] : "pet " qpgGid
+		if (InStr(qpgWhy, "every wanted talent"))
+			qpgDone .= (qpgDone = "" ? "" : ", ") qpgName
+		if (StrLen(qpgOut) < 300)
+			qpgOut .= (qpgOut = "" ? "" : ", ") qpgName " (" qpgWhy ")"
+		}
+	;(a perfect pet in the backpack: lock it - quick sell sells no pet till it's locked or worn; once in 10 minutes)
+	if (qpgDone != "" && QsSay("petdone", "a pet with every wanted talent is in the backpack: " qpgDone " - lock it in the game"))
+		AlertSend("pets", "a perfect pet is in the backpack", qpgDone " has every talent pets.txt wants. Lock it in the game (or wear it) - till then quick sell sells no pets.")
+	return qpgOut
+	}
+
+;pets.txt's wanted talents (goal 6, perfect pets): the file next to PlayerStats.txt, written by you - a line "want:
+;Spell-Proof, Spell-Defying, Mighty, Pain-Giver, Pain-Bringer" (; starts a comment; more want: lines add to it) - as one
+;text for /pets ("" none: no file, no want: line). bad: why the file is there but can't be read ("" it could)
+QsPetWant(&bad)
+	{
+	bad := ""
+	qpwPath := A_WorkingDir "\pets.txt"
+	if (!FileExist(qpwPath))
+		return ""
+	qpwText := V1FileRead(qpwPath)
+	if (ErrorLevel)
+		{
+		bad := "FileRead failed"
+		return ""
+		}
+	qpwOut := ""
+	Loop Parse, qpwText, "`n", "`r"
+		{
+		if (RegExMatch(RegExReplace(A_LoopField, ";.*"), "i)^\s*want\s*:\s*(.*\S)", &qpwM))
+			qpwOut .= (qpwOut = "" ? "" : ", ") qpwM[1]
+		}
+	return qpwOut
 	}
 
 ;One group: its button, then ALL (the "include Crowns Items?" box answered No), the shown rows checked - every row
@@ -1051,6 +1191,13 @@ QsConfirmSell(nums)
 	qr := QsClickTarget("QuickSellConfirmationWindow/SellButton", "SELL", qRad)
 	if (IsObject(qr))
 		return qr
+	;(under a dungeon's hold, SELL clicked: the count it should come to noted - a sale that goes through unconfirmed (the
+	;2 s here or QsVerify giving up) isn't taken for your sort at the next look (QsNoteBag); put back where it surely
+	;didn't sell (a box answered other than Yes, or stopped); a failed run with every window closed reads the backpack
+	;again after (QsRun))
+	qMarkWas := QsIni("markitems")
+	if (QsIni("dungeon") != "" && QsBefore.items != "")
+		QsIniSet("markitems", V1Sub(QsBefore.items, nums.Total.n)), QsBefore.marked := 1, QsBefore.markWas := qMarkWas, QsBefore.soldN := nums.Total.n
 	qt := A_TickCount
 	while (A_TickCount - qt < 2000)
 		{
@@ -1066,6 +1213,9 @@ QsConfirmSell(nums)
 		if (g.box.shown)
 			{
 			qr := QsAnswerBox(g, "sell", qBoxMark, nums.Pet.n, &qSaid)
+			if (IsObject(qr) || qSaid != "Yes")
+				if (QsIni("dungeon") != "")
+					QsIniSet("markitems", qMarkWas), QsBefore.marked := 0
 			if (IsObject(qr))
 				return qr
 			if (qSaid != "Yes")

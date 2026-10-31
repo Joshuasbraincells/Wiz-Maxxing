@@ -9,7 +9,9 @@
                                     # while not known)
 
     doors, why = nm.blockers()      # the zone's doors, gates and collision walls (no name key, a blocker's template
-                                    # name - puzzlefile.is_blocker): [{name, pos, yaw, gid, template}], or None and why
+                                    # name - puzzlefile.is_blocker): [{name, pos, yaw, gid, template, state}], or None and
+                                    # why (state: its ObjectStateBehavior's - statemem.py, NOT CONFIRMED in the game yet -
+                                    # None while not known)
 
     hand, why = nm.cards()          # the cards in the wizard's hand in a battle and its pips (handmem.py), or None and why
 
@@ -18,14 +20,22 @@
 
     goal, why = nm.goal()           # the quest's active goal: its line as the game shows it under the arrow, its kind,
                                     # count and the mob / item / NPC it names (questmem.py), or None and why
+    quests, why = nm.quests()       # EVERY quest in the game's quest manager, each goal's kind / status / line, the
+                                    # tracked one marked (questmem.py - /quests), or None and why
 
     deck, why = nm.deck(fresh=True) # the worn deck (deckmem.py: its cards, treasure cards, item cards, limits), read
                                     # paced under the lock (12 ms at a time, let go at once for a gated request; it
                                     # gives way - None - when not idle for 1 s or stop() says so) - the battle
-                                    # recorder's, out of battle only;
+                                    # recorder's, out of battle only; nm.deck(fresh=True, books=True): the spellbook
+                                    # and treasure book too (/book - its own cache: the decks' stays theirs)
     sig, why = nm.deck_sig()        # its signature (~2 ms); nm.mob_infos(gids): the mobs' cached infos, no read
 
-    python navmem.py [-n 5] [-i 1] [--path] [--mobs] [--goal]   readings from the command line (and how long each took)
+    gear, why = nm.gear()           # the worn gear and the backpack's with their equip effects and requirements, every
+                                    # backpack item's id, the Equipment Sets, the level (gearmem.py - NOT CONFIRMED in
+                                    # the game yet) - the helper's /gear (gearrank.py's swap plan, a run's drop log)
+
+    python navmem.py [-n 5] [-i 1] [--path] [--mobs [--motion SECONDS]] [--goal]   readings from the command line (and how
+                                    # long each took); --motion: the mobs watched walking (navroute.MobMotion)
 
 SAFETY. The game is opened with PROCESS_VM_READ | PROCESS_QUERY_INFORMATION (falling back to
 PROCESS_VM_READ | PROCESS_QUERY_LIMITED_INFORMATION) and nothing else. The only process APIs used are
@@ -90,7 +100,12 @@ by a signature in its code, or checked by a type name / window name it carries):
              its worker, kept). An object with no name key whose template's name is a door, a gate, a collision wall
              (puzzlefile.is_blocker: DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate) is a blocker (blockers()):
              the walker held in front of one may have a puzzle to open it - and it going from memory is the way
-             opening (the same template name and position reads as the mobs': no other offset). An object is re-checked
+             opening (the same template name and position reads as the mobs': no other offset) - each one's state read
+             at every blockers() (statemem.py: its ObjectStateBehavior's current state, by reflected names - not
+             confirmed in the game yet; None while not known; its reader made once per game in a thread like the
+             titles'). An object with no name key whose template is one the zone's triggers' use events may be fired by
+             (puzzlefile.use_templates - a lever the game names nowhere, matched by the event's words: "PedestalUsed",
+             CL-Pedestal-01) is a thing of kind "use" (items(): name and key ""). An object is re-checked
              at each read
              - the same vtable (a destroyed one's is changed by its destructor), global id and zone - before its
              position is used.
@@ -873,6 +888,18 @@ class _Attached:
         yaw = (yaw + math.pi) % (2 * math.pi) - math.pi
         return {"pos": (x, y, z), "yaw": yaw, "source": src}, ""
 
+    def player_gid(self, gc):
+        """the wizard's own global id - the object the camera follows (player()'s), its +0x48 - or None (a duel circle's
+        participant whose owner it is: his own battle)"""
+        is_cam = lambda n: n == "ElasticCamController"
+        cam = self._member("gc_elastic_cam", gc,
+                           lambda obj, size: self._scan_typed(obj, size, is_cam), 0x30000,
+                           lambda obj, off: self._typed(obj, off, is_cam))
+        if not cam:
+            return None
+        co = self._member("cam_attached_object", cam, self._scan_objects, 0x400, self._object_at)
+        return (self.p.u64(co + DATA["co_gid"]) or None) if co else None
+
     def zone_ptr(self, gc):
         """the ClientZone the game is in (every object of the zone holds it at +0x130), or 0"""
         if self.o.get("gc_zone") is None:
@@ -1053,6 +1080,30 @@ class _Attached:
         return pts if len(pts) == cnt else None
 
 
+def _worn_misfit(every, worn):
+    """why every deck's kept reading (NavMem._deck_all's r) no longer answers beside a newer worn-deck reading (worn's r),
+    "" when it does: another character logged in on the same game (player_gid), a deck worn that it hasn't (new, or
+    another character's), or one holding a card its copy there hasn't (a spell put in since - edited). Counts and cards
+    gone aren't judged: a battle uses treasure cards up, and deckmem can't always tell a known spell's treasure card
+    from the spell (the same template, side "main"), so they'd read as edits after every battle; an edit that only takes
+    cards out stays unseen till every deck is read again (DeckLearnTick, 30 min). A deck whose cards weren't read (ok
+    False) in either isn't judged"""
+    pe, pw = every.get("player_gid"), worn.get("player_gid")
+    if pe is not None and pw is not None and pe != pw:
+        return "another character"
+    have = {d.get("gid"): d for d in every.get("decks") or []}
+    for d in worn.get("decks") or []:
+        if not d.get("equipped") or d.get("ok") is False:
+            continue
+        k = have.get(d.get("gid"))
+        if k is None:
+            return "a deck worn it hasn't"
+        if k.get("ok") is not False and {c.get("template_id") for c in d.get("cards") or []} - \
+                {c.get("template_id") for c in k.get("cards") or []}:
+            return "a deck worn edited since"
+    return ""
+
+
 # ============================================================================ the reader
 class NavMem:
     """Attaches to the game (the foreground client if there are several), re-attaching when it is
@@ -1079,6 +1130,10 @@ class NavMem:
         # (the zone's doors, gates and collision walls - no name key, a blocker's template name: {object address: (gid,
         # template name, template name, vtable)})
         self._blockers = {}
+        # (the zone's duel circles - no name key, a duel behaviour (bossmem.is_duel_object): {object address: (gid, template
+        # name, template name, vtable)}; each object looked at once {(object, gid, vtable): duel or not}; when duels() was
+        # last asked for - only then are objects looked at for them: the duelavoid setting)
+        self._duels, self._duel_seen, self._duel_asked = {}, {}, 0.0
         self._obj_thread, self._mob_names, self._names_retry, self.obj_stats = None, None, 0.0, {}
         self._names_said = 0.0           # (when a failure to ask for the things' name tables may be logged again)
         self._obj_state = (None, 0.0, None, 0.0, {})   # the objects thread's: regions, last full scan, zone, since, cache
@@ -1095,12 +1150,35 @@ class NavMem:
         # {(object, gid): (info or None, why, when to try again)} - kept while the object lives
         self._boss, self._boss_thread, self._boss_fail, self._boss_seen = None, None, (None, 0.0, ""), {}
         self._boss_said = 0.0            # (when a failure to read them may be logged again)
+        # the doors' states (statemem.py - their ObjectStateBehavior): its reader of the attached game, the thread making it,
+        # why it couldn't be made (the game it was for, when to try again); read again at every blockers() (a state
+        # changes: nothing kept), when a failure to read them may be logged again
+        self._state, self._state_thread, self._state_fail, self._state_said = None, None, (None, 0.0, ""), 0.0
         # the backpack, the HUD's tips and the game's windows by name (bagmem.py): its reader of the attached game, the
         # thread making it (about half a second), why it couldn't be made (the game it was for, when to try again)
         self._bagm, self._bagm_thread, self._bagm_fail = None, None, (None, 0.0, "")
         # the decks (deckmem.py - the battle recorder's and /deck): its reader of the attached game, the thread making it,
-        # why it couldn't be made, the last reading {st, r, sig, read_at, only_equipped}
+        # why it couldn't be made, the last reading {st, r, sig, read_at, all, kinds}
         self._deckm, self._deckm_thread, self._deckm_fail, self._deck_cache = None, None, (None, 0.0, ""), None
+        # the gear (gearmem.py - the helper's /gear): its reader of the attached game, the thread making it, why it couldn't
+        # be made (the game it was for, when to try again)
+        self._gearm, self._gearm_thread, self._gearm_fail = None, None, (None, 0.0, "")
+        # the pets (petmem.py - /pets: Quick Sell's pets to keep): its reader of the attached game, the thread making it,
+        # why it couldn't be made (the game it was for, when to try again)
+        self._petm, self._petm_thread, self._petm_fail = None, None, (None, 0.0, "")
+        # the books' last reading (deck(books=True) - /book: {st, r, sig, read_at, kinds}) - its own, so a book read never
+        # takes the place of the decks' (with their kinds: /decks, /sim)
+        self._book_cache = None
+        # every deck's last reading with their kinds (as _deck_cache's entry) - kept by itself, so a worn-deck reading
+        # after it (the recorder's, once an Equipment Set is put on) never takes its place: /deckfor, /sim and /plan
+        # answer from it (_deck_cached)
+        self._deck_all = None
+        # held while a fresh deck read runs (deck(fresh=True) - the recorder's, /deck, /decks, /book): one at a time,
+        # since the decks' reader keeps a read's pace and its names' walk budget as its own state (DeckMem._pace,
+        # _walk_left) - a second read run in the first one's gap (its lock let go) would leave the rest of the first
+        # unpaced, holding navmem's lock to its end. A second read waits deck()'s queue s for it (a gated request: the
+        # read in progress gives way to it), else gives way at once (the recorder's - read again later)
+        self._deck_busy = threading.Lock()
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1116,9 +1194,13 @@ class NavMem:
             self._quest = None
             self._boss = None
             self._boss_seen = {}
+            self._state = None
             self._bagm = None
             self._deckm = None
             self._deck_cache = None
+            self._deck_all = None
+            self._gearm = None
+            self._petm = None
 
     def _attach(self, pid):
         try:
@@ -1385,6 +1467,49 @@ class NavMem:
         with self.lock:
             self._quest = qm
 
+    QUEST_GAP = 0.002       # s the lock is let go between two quests' reads (quests(): the walker's /nav gets in)
+
+    def quests(self, wait=0.5):
+        """(rows, why): EVERY quest in the game's quest manager (questmem.QuestMem.quest_ids / quest_raw /
+        quests_resolve: [{id, title, title_key, tracked, goals [{gid, text, type, status, count, total, mob, item, npc,
+        place, name_key, ...}], props {WizQuestData property: value}}]) - the tracked one (the HUD's ids, as goal()'s)
+        marked. The map walked under the lock, then each quest read under it on its own (let go QUEST_GAP s in between:
+        /nav waits on it), the names looked up outside it. (None, why) when there are none to give (the game not
+        running, the quest classes being read, no quests - the login screen...). Never raises; read only"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            qm, why = self._quest_reader(st, wait)
+            if qm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st:
+                    return None, "the game changed"
+                r = self._read(st, False)
+                snap = qm.snapshot((r.get("quest"), r.get("goalid")))
+                ids, why = qm.quest_ids()
+            if ids is None:
+                return None, why
+            raws, gone = [], 0
+            for qid, q in ids:
+                time.sleep(self.QUEST_GAP)
+                with self.lock:
+                    if self.st is not st:
+                        return None, "the game changed"
+                    raw = qm.quest_raw(qid, q)
+                if raw is None:
+                    gone += 1                # (done or dropped since the map was walked)
+                else:
+                    raws.append(raw)
+            tracked = (snap.get("ids") or (None, None))[0]
+            rows = qm.quests_resolve(raws, tracked=tracked, block=wait > 0)
+            notes = [w for w in (snap.get("why") if tracked is None else "",
+                                 "%d quest(s) left the map while it was read" % gone if gone else "") if w]
+            return rows, "; ".join(notes)
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the quests failed (%r)" % (e,)
+
     # ------------------------------------------------------------ the mobs' titles and the battle (bossmem.py)
     BOSS_RETRY = 5.0        # s before a mob whose template couldn't be read is tried again
 
@@ -1452,6 +1577,64 @@ class NavMem:
                 info = hit[0] if hit else None
                 for k in bossmem.FIELDS:
                     m[k] = info.get(k) if info else None
+
+    # ------------------------------------------------------------ the doors' states (statemem.py)
+    def _state_reader(self, st, wait=0.0):
+        """(the states' reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later: _state_fail)"""
+        with self.lock:
+            sm = self._state
+            if sm is not None and sm.st is st:
+                return sm, ""
+            fst, again, fwhy = self._state_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._state_thread
+            if th is None or not th.is_alive():
+                self._state = None
+                th = self._state_thread = threading.Thread(target=self._state_make, args=(st,), name="state", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            sm = self._state
+            if sm is not None and sm.st is st:
+                return sm, ""
+            fst, again, fwhy = self._state_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's state classes (once, about half a second)"
+
+    def _state_make(self, st):
+        """the states' reader for game st (its code looked through once - outside the lock, then kept under it)"""
+        try:
+            import statemem
+            sm = statemem.StateMem(st, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            self._state_failed(st, e)
+            return
+        with self.lock:
+            self._state = sm
+
+    def _state_failed(self, st, e):
+        """_state_make's failure: kept (tried again after RETRY_SIG s - a class or property not in this build -, else 30 s)"""
+        sig = isinstance(e, LookupError)
+        why = ("the doors' states can't be read in this build: %s" % e) if sig else \
+            "the state classes couldn't be read (%r)" % (e,)
+        self.log("statemem: " + why)
+        with self.lock:
+            self._state_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else 30.0), why)
+
+    def _state_fill(self, st, live):
+        """each live door's state (statemem.StateMem.state - its ObjectStateBehavior's: read every time, a state changes),
+        None while it isn't known (the reader being made, this build unreadable, no state behaviour on it). live:
+        [(object, gid, its dict)] - checked live just now"""
+        sm, _ = self._state_reader(st)
+        with self.lock:
+            if sm is not None and (self.st is not st or sm.st is not st):
+                sm = None
+            for obj, _gid, d in live:
+                d["state"] = sm.state(obj)[0] if sm is not None else None
 
     def _hand_reader(self, st, wait):
         """(the hand's reader for game st, "") - made in a thread the first time, as cards() makes it; (None, why)
@@ -1743,12 +1926,17 @@ class NavMem:
                     return None, "the game is not running"
                 if dm is None or dm.st is not st or dm.hm is not self._hand:
                     return None, "the decks not read yet"
+                # (a paced read let go in its gap: the reader's pace is that read's - signature() would call it, and it
+                # lets go of the lock held here; not read now)
+                if self._deck_busy.locked():
+                    return None, "a deck read is in progress"
                 return dm.signature(), ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the deck's signature failed (%r)" % (e,)
 
-    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None):
-        """(r, why): the decks - deckmem.DeckMem.read(kinds=False) plus sig (its signature) and read_at (monotonic s).
+    def deck(self, fresh=False, wait=0.0, idle=None, only_equipped=True, stop=None, kinds=False, books=False,
+             queue=0.0):
+        """(r, why): the decks - deckmem.DeckMem.read(kinds=kinds) plus sig (its signature) and read_at (monotonic s).
         fresh False: the last reading (None, "not read yet" when there's none). fresh True: read now unless the worn
         deck's signature is the last reading's - under the lock, PACED: it is let go when it has been held DECK_HOLD s,
         or at once when idle(0) says a gated request (the bot's or the walker's reads; vision.GATE.idle) is in flight;
@@ -1756,11 +1944,22 @@ class NavMem:
         idle within DECK_IDLE s, or stop() true (the battle recorder's: a battle began, the read ran long): the read
         GIVES WAY - (None, "gave way ..."), the lock not taken again; read again later (the spell names' walk goes on
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
-        only_equipped: the backpack's decks left out. Never raises; read only"""
+        only_equipped: the backpack's decks left out - such a reading never takes the place of every deck's with their
+        kinds (_deck_all): asked for every deck after one (fresh False), that last reading of them answers, the decks worn
+        marked as the newer one has them, its sig None (fresh True: read again) - unless the newer one doesn't fit it
+        (_worn_misfit: another character, a deck worn it hasn't or one with a card put in since): that reading dropped,
+        "not read yet" till every deck is read again. kinds: each card's kind, value, heads
+        and boosts too (handmem's reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first
+        time a card is seen): a reading without them doesn't answer it (read again). books: the spellbook and the
+        treasure book too (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it
+        was - a book read never takes the place of the decks' with their kinds) and is never answered by the worn deck's
+        signature (a spell learned doesn't change the worn deck): fresh True always reads. ONE fresh read at a time (_deck_busy): asked
+        while another runs (the recorder's let go in its gap, say), it waits for it up to queue s - a gated request's
+        (vision.py DECK_QUEUE_S): the read in progress gives way to it within DECK_IDLE s, its idle() seeing it in
+        flight - then gives way itself, (None, "gave way to another deck read in progress - read again later"); queue 0
+        (the recorder's): at once. Never raises; read only"""
         try:
-            with self.lock:
-                c = self._deck_cache
-                cached = c if c is not None and c["st"] is self.st and (c["all"] or only_equipped) else None
+            cached = self._deck_cached(books, kinds, only_equipped)
             if not fresh:
                 if cached is None:
                     return None, "not read yet"
@@ -1768,73 +1967,284 @@ class NavMem:
             st, dm, why = self._deck_readers(wait)
             if dm is None:
                 return None, why
-            held = [0.0]
-            holding = [False]
-            gave = [None]
-            lock = self.lock
-
-            def wait_idle():
-                """off the lock: idle(0.05) waited for - False (gave set) when stop() or not idle within DECK_IDLE s"""
-                t0 = time.monotonic()
-                while True:
-                    if stop is not None and stop():
-                        gave[0] = "gave way (a battle began, or the read ran long) - read again later"
-                        return False
-                    if idle is None or idle(0.05):
-                        return True
-                    if time.monotonic() - t0 >= self.DECK_IDLE:
-                        gave[0] = "gave way to the gated reads (not idle for %.0f s) - read again later" % (
-                            self.DECK_IDLE,)
-                        return False
-                    time.sleep(0.005)
-
-            def pace():
-                if time.perf_counter() - held[0] < self.DECK_HOLD and (idle is None or idle(0)):
-                    return
-                lock.release()
-                holding[0] = False
-                try:
-                    time.sleep(self.DECK_GAP)
-                    ok = wait_idle()
-                except Exception as e:  # noqa: BLE001 - an idle / stop that raises: given way all the same
-                    gave[0] = gave[0] or "gave way (%r) - read again later" % (e,)
-                    ok = False
-                if not ok:
-                    raise _GaveWay(gave[0])
-                lock.acquire()
-                holding[0] = True
-                held[0] = time.perf_counter()
-                if self.st is not st or dm.st is not st:
-                    raise RuntimeError("the game changed while the decks were read")
-
-            if not wait_idle():
-                return None, gave[0]
-            lock.acquire()
-            holding[0] = True
+            # (one fresh read at a time - _deck_busy: a second one run in the first one's gap would leave the rest of
+            # the first unpaced; the second waits queue s for the first to end or give way, else gives way itself - its
+            # caller reads again later as after any giving way)
+            busy = self._deck_busy
+            if not (busy.acquire(timeout=queue) if queue > 0 else busy.acquire(blocking=False)):
+                return None, "gave way to another deck read in progress - read again later"
             try:
-                held[0] = time.perf_counter()
-                if self.st is not st or dm.st is not st or dm.hm is not self._hand:
-                    return None, "the game changed"
-                sig = dm.signature(pace)
-                if cached is not None and sig is not None and sig == cached["sig"]:
-                    return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
-                r = dm.read(books=False, kinds=False, only_equipped=only_equipped, pace=pace)
-                if gave[0] is not None or not holding[0]:
-                    return None, gave[0] or "gave way - read again later"
-                sig2 = dm.signature(pace)
-                at = time.monotonic()
-                keep = sig2 if sig2 == sig and not r.get("names_cut") else None
-                if r.get("decks"):
-                    self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped}
+                # (the last reading looked at again: the read waited for may have just been kept)
+                return self._deck_paced(st, dm, self._deck_cached(books, kinds, only_equipped), idle, stop,
+                                        only_equipped, kinds, books)
             finally:
-                if holding[0]:
-                    holding[0] = False
-                    lock.release()
-            return dict(r, sig=keep, read_at=at), ""
+                busy.release()
         except _GaveWay as e:
             return None, str(e)
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the decks failed (%r)" % (e,)
+
+    def _deck_cached(self, books, kinds, only_equipped):
+        """the last reading that answers deck(books, kinds, only_equipped) for the attached game ({st, r, sig, read_at,
+        ...}), or None"""
+        with self.lock:
+            if books:
+                c = self._book_cache
+                return c if c is not None and c["st"] is self.st and (c.get("kinds") or not kinds) else None
+            c = self._deck_cache
+            if c is not None and c["st"] is self.st and (c["all"] or only_equipped) and (c.get("kinds") or not kinds):
+                return c
+            # (every deck's reading with their kinds, a narrower reading since - the worn deck's: the decks worn marked
+            # as that newer one has them, its signature dropped - a fresh read of every deck reads again)
+            a = self._deck_all
+            if a is None or a["st"] is not self.st or (kinds and not a.get("kinds")):
+                return None
+            if c is None or c is a or c["st"] is not self.st:
+                return a
+            wr = c["r"]
+            # (another character, a deck worn it hasn't or one edited since: not answered - _deck_paced drops it then,
+            # this the guard - every deck read again)
+            if _worn_misfit(a["r"], wr):
+                return None
+            worn = {d.get("gid") for d in wr.get("decks") or [] if d.get("equipped")}
+            decks = [dict(d, equipped=d.get("gid") in worn, where="equipped" if d.get("gid") in worn else "backpack")
+                     for d in a["r"].get("decks") or []]
+            on = [d["gid"] for d in decks if d["equipped"]]
+            r = dict(a["r"], decks=decks, equipped=on[0] if len(on) == 1 else None,
+                     equipped_set=wr.get("equipped_set"), sets=wr.get("sets") or a["r"].get("sets"))
+            return dict(a, r=r, sig=None)
+
+    def _deck_paced(self, st, dm, cached, idle, stop, only_equipped, kinds, books):
+        """deck(fresh=True)'s read itself, _deck_busy held (deck's docstring) - (r, why); raises _GaveWay when it gives
+        way (deck() answers it)"""
+        lock = self.lock
+        held = [0.0]
+        holding = [False]
+        gave = [None]
+
+        def wait_idle():
+            """off the lock: idle(0.05) waited for - False (gave set) when stop() or not idle within DECK_IDLE s"""
+            t0 = time.monotonic()
+            while True:
+                if stop is not None and stop():
+                    gave[0] = "gave way (a battle began, or the read ran long) - read again later"
+                    return False
+                if idle is None or idle(0.05):
+                    return True
+                if time.monotonic() - t0 >= self.DECK_IDLE:
+                    gave[0] = "gave way to the gated reads (not idle for %.0f s) - read again later" % (
+                        self.DECK_IDLE,)
+                    return False
+                time.sleep(0.005)
+
+        def pace():
+            if time.perf_counter() - held[0] < self.DECK_HOLD and (idle is None or idle(0)):
+                return
+            lock.release()
+            holding[0] = False
+            try:
+                time.sleep(self.DECK_GAP)
+                ok = wait_idle()
+            except Exception as e:  # noqa: BLE001 - an idle / stop that raises: given way all the same
+                gave[0] = gave[0] or "gave way (%r) - read again later" % (e,)
+                ok = False
+            if not ok:
+                raise _GaveWay(gave[0])
+            lock.acquire()
+            holding[0] = True
+            held[0] = time.perf_counter()
+            if self.st is not st or dm.st is not st:
+                raise RuntimeError("the game changed while the decks were read")
+
+        if not wait_idle():
+            return None, gave[0]
+        lock.acquire()
+        holding[0] = True
+        try:
+            held[0] = time.perf_counter()
+            if self.st is not st or dm.st is not st or dm.hm is not self._hand:
+                return None, "the game changed"
+            sig = dm.signature(pace)
+            if not books and cached is not None and sig is not None and sig == cached["sig"]:
+                return dict(cached["r"], sig=cached["sig"], read_at=cached["read_at"]), ""
+            r = dm.read(books=books, kinds=kinds, only_equipped=only_equipped, pace=pace)
+            if gave[0] is not None or not holding[0]:
+                return None, gave[0] or "gave way - read again later"
+            sig2 = dm.signature(pace)
+            at = time.monotonic()
+            keep = sig2 if sig2 == sig and not r.get("names_cut") else None
+            if books:
+                if r.get("spellbook") is not None:
+                    self._book_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "kinds": kinds}
+            elif r.get("decks"):
+                self._deck_cache = {"st": st, "r": r, "sig": keep, "read_at": at, "all": not only_equipped,
+                                    "kinds": kinds}
+                if not only_equipped and kinds:
+                    self._deck_all = self._deck_cache
+                elif self._deck_all is not None and self._deck_all["st"] is st and _worn_misfit(self._deck_all["r"], r):
+                    # (the kept reading no longer fits the decks worn: dropped for good - wearing another deck later
+                    # mustn't bring an edited one's old cards back; only a fresh read of every deck answers again)
+                    self._deck_all = None
+        finally:
+            if holding[0]:
+                holding[0] = False
+                lock.release()
+        return dict(r, sig=keep, read_at=at), ""
+
+    # ------------------------------------------------------------ the gear (gearmem.py - the helper's /gear)
+    def _gear_reader(self, st, wait=0.0):
+        """(the gear's reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None, why)
+        meanwhile, or when it can't be made (tried again later) - _bag_reader's way"""
+        with self.lock:
+            gm = self._gearm
+            if gm is not None and gm.st is st:
+                return gm, ""
+            fst, again, fwhy = self._gearm_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._gearm_thread
+            if th is None or not th.is_alive():
+                self._gearm = None
+                th = self._gearm_thread = threading.Thread(target=self._gear_make, args=(st,), name="gear", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            gm = self._gearm
+            if gm is not None and gm.st is st:
+                return gm, ""
+            fst, again, fwhy = self._gearm_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's gear classes (once, about a second)"
+
+    def _gear_make(self, st):
+        """the gear's reader for game st (its code looked through once - outside the lock, then kept under it); the hand's
+        reader gives it the template map and the names (_deck_make's way)"""
+        try:
+            import gearmem
+            hm, why = self._hand_reader(st, 2.0)
+            if hm is None:
+                raise RuntimeError("the hand's reader isn't made yet (%s)" % why)
+            gm = gearmem.GearMem(st, hm, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the gear can't be read in this build: %s" % e) if sig else "the gear classes couldn't be read (%r)" % (e,)
+            self.log("gearmem: " + why)
+            with self.lock:
+                self._gearm_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else
+                                                            5.0 if isinstance(e, RuntimeError) else 30.0), why)
+            return
+        with self.lock:
+            self._gearm = gm
+
+    def gear(self, wait=0.3):
+        """(r, why): the wizard's gear, read now - gearmem.GearMem.read (worn, bag - the planned slots' gear with their
+        equip effects and requirements -, bag_gids - every backpack item -, bag_size, sets, sets_ok, level, player_gid) -
+        through the same read-only handle on the game as everything here, under the same lock (a template's effects and
+        requirements are read once, then kept); each item's display name from the name tables outside it (gearmem.finish).
+        Its reader made in a thread once per game (waited for up to wait s). None and why when the game can't be read.
+        Never raises"""
+        try:
+            import gearmem
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            gm, why = self._gear_reader(st, wait)
+            if gm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or gm.st is not st:
+                    return None, "the game changed"
+                r, why = gm.read()
+            return (gearmem.finish(r, gm.hm.lang_text) if r is not None else None), why
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the gear failed (%r)" % (e,)
+
+    # ------------------------------------------------------------ the pets (petmem.py - /pets)
+    PET_HOLD, PET_GAP = 0.012, 0.004        # s: the lock held at most during a read, then let go this long
+
+    def _pet_reader(self, st, wait=0.0):
+        """(the pets' reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None,
+        why) meanwhile, or when it can't be made (tried again later) - the backpack's way"""
+        with self.lock:
+            pm = self._petm
+            if pm is not None and pm.st is st:
+                return pm, ""
+            fst, again, fwhy = self._petm_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._petm_thread
+            if th is None or not th.is_alive():
+                self._petm = None
+                th = self._petm_thread = threading.Thread(target=self._pet_make, args=(st,), name="pets", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            pm = self._petm
+            if pm is not None and pm.st is st:
+                return pm, ""
+            fst, again, fwhy = self._petm_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's pet classes (once, about half a second)"
+
+    def _pet_make(self, st):
+        """the pets' reader for game st (its code looked through once - outside the lock, then kept under it); the
+        hand's reader gives it the template map and the names (deckmem's way)"""
+        try:
+            import petmem
+            hm, why = self._hand_reader(st, 2.0)
+            if hm is None:
+                raise RuntimeError("the hand's reader isn't made yet (%s)" % why)
+            pm = petmem.PetMem(st, hm, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the pets can't be read in this build: %s" % e) if sig else "the pet classes couldn't be read (%r)" % (e,)
+            self.log("petmem: " + why)
+            with self.lock:
+                self._petm_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else
+                                                           5.0 if isinstance(e, RuntimeError) else 30.0), why)
+            return
+        with self.lock:
+            self._petm = pm
+
+    def pets(self, wait=0.3):
+        """(r, why): the wizard's pets, read now - petmem.PetMem.read (pets [{gid, where, level, level_name, template_id,
+        object_name, display, cards, and the values not confirmed yet: xp, talents...}], energy, whole) - through the same
+        read-only handle on the game as everything here, under the same lock, PACED: let go for PET_GAP s whenever it
+        has been held PET_HOLD s (the walker's /nav waits on it - a backpack of 150 items is a few hundred reads); its
+        reader made in a thread once per game (waited for up to wait s). None and why when the game can't be read.
+        Never raises"""
+        try:
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            pm, why = self._pet_reader(st, wait)
+            if pm is None:
+                return None, why
+            lock, held = self.lock, [0.0]
+
+            def pace():
+                if time.perf_counter() - held[0] < self.PET_HOLD:
+                    return
+                lock.release()
+                try:
+                    time.sleep(self.PET_GAP)
+                finally:
+                    lock.acquire()
+                    held[0] = time.perf_counter()
+                if self.st is not st or pm.st is not st:
+                    raise RuntimeError("the game changed while the pets were read")
+
+            with lock:
+                held[0] = time.perf_counter()
+                if self.st is not st or pm.st is not st or pm.hm is not self._hand:
+                    return None, "the game changed"
+                return pm.read(pace=pace), ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the pets failed (%r)" % (e,)
 
     def mob_infos(self, gids):
         """{gid: mob info} of the zone's mobs read before by the objects thread (bossmem's - _boss_seen: title, rank,
@@ -1864,16 +2274,55 @@ class NavMem:
         aren't mobs and have a name key (template_kind), read now: kind "item" (the items table: Piece Of Coral - one
         picked up is gone), "object" (Inactive Protector, Celestian Monolith, a chest), "npc", "ambient"; key its display
         key (WizQst371C7_00000008 - the one a quest's goal names it by), src "mem"; name "" while its name table isn't
-        read (placements.py reads it, kept). None and why as mobs(). Never raises."""
+        read (placements.py reads it, kept). Also kind "use" (name and key ""): an object with no name key whose template
+        a use event of the zone's triggers may be fired by (puzzlefile.use_templates - a lever). None and why as mobs().
+        Never raises."""
         return self._live("items")
 
     def blockers(self):
-        """(doors, why): doors = [{name, pos (x, y, z), yaw, gid, template}] - the zone's objects with no name key whose
-        template's name is a door, a gate, a portcullis, a collision wall... (puzzlefile.is_blocker:
+        """(doors, why): doors = [{name, pos (x, y, z), yaw, gid, template, state}] - the zone's objects with no name key
+        whose template's name is a door, a gate, a portcullis, a collision wall... (puzzlefile.is_blocker:
         DynaTrigger_KT_DoorCollision, CL-StormLordTempleGate), read now (name: the template's name). One gone from
-        memory has been taken away (a door collision a trigger removes when the way opens). None and why as mobs() -
-        never "none" then: not read isn't gone. Never raises."""
+        memory has been taken away (a door collision a trigger removes when the way opens). state: its ObjectStateBehavior's
+        current state read now (_state_fill - statemem.py, not confirmed in the game yet), None while not known. None and
+        why as mobs() - never "none" then: not read isn't gone. Never raises."""
         return self._live("blockers")
+
+    def duels(self):
+        """(duels, why): duels = [{name, pos (x, y, z), yaw, gid, template, duel, behavior, phase, phase_name, round, parts,
+        players, teams, mine, pvp, active}] - the zone's duel circles (objects with no name key holding a duel behaviour:
+        bossmem.is_duel_object - looked for only while duels are asked for, the duelavoid setting), read now, and each
+        one's battle (bossmem.duel_of - None each when it can't be read; mine: the wizard's own). None and why as mobs().
+        NOT CONFIRMED in the game yet (bossmem.py --duels is the check). Never raises."""
+        try:
+            with self.lock:
+                self._duel_asked = time.monotonic()
+            got, why = self._live("duels")
+            if got is None:
+                return None, why
+            if not got:
+                return got, ""
+            import bossmem
+            st = self.st
+            bm, _ = self._boss_reader(st) if st is not None else (None, "")
+            with self.lock:
+                ok = bm is not None and self.st is st and bm.st is st
+                me = None
+                if ok:
+                    try:
+                        gc = st.gameclient()
+                        me = st.player_gid(gc) if ptr_ok(gc) else None
+                    except ReadError:
+                        me = None
+                by_gid = {v[0]: obj for obj, v in self._duels.items()}
+                for d in got:
+                    obj = by_gid.get(d["gid"])
+                    info = bm.duel_of(obj, me) if ok and obj else None
+                    for k in bossmem.DUEL_FIELDS:
+                        d[k] = info.get(k) if info else None
+            return got, ""
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the duels failed (%r)" % (e,)
 
     def _live(self, which):
         """mobs() / items() / blockers(): the objects thread's of that kind still the same live objects, their places read
@@ -1885,7 +2334,8 @@ class NavMem:
                     self._obj_thread = threading.Thread(target=self._objects_run, name="objects", daemon=True)
                     self._obj_thread.start()
                 st, cz, why = self.st, self._obj_cz, self._obj_why
-                objs = list({"mobs": self._objs, "items": self._items, "blockers": self._blockers}[which].items())
+                objs = list({"mobs": self._objs, "items": self._items, "blockers": self._blockers,
+                             "duels": self._duels}[which].items())
             if st is None or not cz or why:
                 return None, why or "not attached"
             out, gids, live = [], set(), []
@@ -1923,6 +2373,17 @@ class NavMem:
                     if time.monotonic() >= self._boss_said:
                         self._boss_said = time.monotonic() + 60.0
                         self.log("bossmem: the mobs' titles couldn't be read (%r)" % (e,))
+            # (each door's state - its ObjectStateBehavior: statemem.py, read now; None while not known - the reader not
+            # made yet, a build it can't read: the doors as before)
+            if which == "blockers" and live:
+                try:
+                    self._state_fill(st, live)
+                except Exception as e:  # noqa: BLE001 - the doors without it (said once a minute)
+                    for _obj, _gid, d in live:
+                        d["state"] = None
+                    if time.monotonic() >= self._state_said:
+                        self._state_said = time.monotonic() + 60.0
+                        self.log("statemem: the doors' states couldn't be read (%r)" % (e,))
             return out, ""
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the %s failed (%r)" % (which, e)
@@ -1993,10 +2454,35 @@ class NavMem:
             want.append(key)
         return t or ""
 
-    def _set_objs(self, cz, objs, why, items=None, blockers=None):
+    def _set_objs(self, cz, objs, why, items=None, blockers=None, duels=None):
         with self.lock:
             self._obj_cz, self._objs, self._obj_why, self._items = cz, objs, why, items or {}
             self._blockers = blockers or {}
+            self._duels = duels or {}
+
+    def _duel_look(self, st, cands):
+        """(the objects thread) which of cands [(object, gid, template name, vtable)] - objects with no name key that aren't
+        mobs, things or blockers - are duel circles: {object: (gid, template name, template name, vtable)}. Only while
+        duels() is asked for (OBJ_IDLE); each object looked at once (bossmem.is_duel_object, under the lock), kept per
+        (object, gid, vtable); {} while the boss reader isn't made"""
+        with self.lock:
+            if time.monotonic() - self._duel_asked > OBJ_IDLE:
+                return {}
+        bm, _ = self._boss_reader(st)
+        out = {}
+        with self.lock:
+            if bm is None or bm.st is not st or self.st is not st:
+                return {}
+            seen = self._duel_seen
+            if len(seen) > 20000:
+                seen.clear()
+            for obj, gid, tname, vt in cands:
+                key = (obj, gid, vt)
+                if key not in seen:
+                    seen[key] = bool(bm.is_duel_object(obj))
+                if seen[key]:
+                    out[obj] = (gid, tname, tname, vt)
+        return out
 
     def _objects_run(self):
         """the objects thread: the zone's mobs looked for every OBJ_QUICK s (see the top) while anyone asks"""
@@ -2032,7 +2518,14 @@ class NavMem:
                     found, where = st.scan_objects(cz, None if full else regions)
                     if full:
                         regions, last_full = where, t0
-                    objs, items, doors, want = {}, {}, {}, []
+                    objs, items, doors, want, cands = {}, {}, {}, [], []
+                    # (the templates the zone's triggers' use events may be fired by - puzzlefile's, as kept: none till
+                    # built; no file read but a stat)
+                    try:
+                        import puzzlefile
+                        uses = puzzlefile.use_templates(zone[1], self.game_dir)
+                    except Exception:  # noqa: BLE001 - none: as before
+                        uses = frozenset()
                     for obj in found:
                         raw = st.p.try_read(obj, OBJ_SPAN)
                         if raw is None:
@@ -2053,6 +2546,14 @@ class NavMem:
                         elif k and not k[3] and k[1] and k[4] != "mob" and _is_blocker(k[1]):
                             # (no name key, a door's or a gate's template name: a blocker - its name its template's)
                             doors[obj] = (gid, k[1], k[1], vt)
+                        elif k and not k[3] and k[1] and k[4] != "mob" and k[1] in uses:
+                            # (no name key, a template a use event of the zone's triggers may be fired by - a lever the
+                            # game names nowhere: a thing of kind "use", no name, no key - /items' - its live place stands
+                            # for its placement's)
+                            items[obj] = (gid, "", k[1], vt, "", "use")
+                        elif k and not k[3] and k[4] != "mob":
+                            # (no name key, nothing else: maybe a duel circle - looked at below, only while asked for)
+                            cands.append((obj, gid, k[1], vt))
                     if want:
                         try:
                             import placements
@@ -2061,8 +2562,14 @@ class NavMem:
                             if time.monotonic() >= self._names_said:
                                 self._names_said = time.monotonic() + 60.0
                                 self.log("navmem: the things' name tables couldn't be asked for (%r)" % (e,))
-                    self._set_objs(cz, objs, "", items, doors)
+                    # (the duel circles - other players' battles: only while duels() is asked for - duelavoid)
+                    try:
+                        duels = self._duel_look(st, cands) if cands else {}
+                    except Exception:  # noqa: BLE001 - none: as before
+                        duels = {}
+                    self._set_objs(cz, objs, "", items, doors, duels)
                     self.obj_stats = {"objects": len(found), "mobs": len(objs), "items": len(items), "doors": len(doors),
+                                      "duels": len(duels), "uses": sum(1 for v in items.values() if v[5] == "use"),
                                       "full": full,
                                       "ms": round((time.monotonic() - t0) * 1000), "regions": len(regions or ())}
             except Exception as e:  # noqa: BLE001 - tried again next time
@@ -2071,6 +2578,71 @@ class NavMem:
 
 
 # ============================================================================ command line
+def _motion_cli(nm, seconds, every=0.15):
+    """--mobs --motion SECONDS: the zone's mobs read every `every` s through a navroute.MobMotion (as the vision helper
+    feeds it), a line a mob every 2 s (the nearest 12) and a summary at the end - what tunes MOVE_MIN, MOTION_AHEAD_S,
+    MOTION_FIT and PASS_GAP and confirms a walking mob's body yaw is its way (agree near 1): its speed (units / s),
+    walking or standing and for how long, its way against its facing, its walks and stops, its jumps (respawns,
+    teleports), and how often its position changes between readings (every frame, or in steps)"""
+    import navroute
+    mm = navroute.MobMotion()
+    stats = {}                  # gid -> {name, n, changed, last, speeds, agrees, gaps}
+    t_end, said = time.time() + seconds, 0.0
+    reads, me = 0, None
+    while time.time() < t_end:
+        t0 = time.time()
+        r, _ = nm.read(path=False, wait=5)
+        mobs, why = nm.mobs()
+        now = time.time()
+        if r is not None and r.get("pos"):
+            me = r["pos"]
+        if mobs:
+            reads += 1
+            mm.update(now, mobs, me)
+            for m in mobs:
+                s = stats.setdefault(m["gid"], {"name": m["name"], "n": 0, "changed": 0, "last": None, "speeds": [],
+                                                "agrees": [], "gaps": []})
+                s["n"] += 1
+                p = (round(m["pos"][0], 2), round(m["pos"][1], 2))
+                if s["last"] is not None and p != s["last"][1]:
+                    s["changed"] += 1
+                    s["gaps"].append(now - s["last"][0])
+                if s["last"] is None or p != s["last"][1]:
+                    s["last"] = (now, p)
+                i = mm.info(m["gid"])
+                if i.get("moving") and i.get("speed") is not None:
+                    s["speeds"].append(i["speed"])
+                if i.get("agree") is not None:
+                    s["agrees"].append(i["agree"])
+        if now - said >= 2.0:
+            said = now
+            print("-- %s  %s mobs (%s)  the wizard's speed %s" % (
+                time.strftime("%H:%M:%S"), len(mobs) if mobs else 0, why or "ok",
+                "%.0f" % mm.my_speed() if mm.my_speed() else "not known"))
+            near = sorted(mobs or [], key=lambda q: math.hypot(q["pos"][0] - me[0], q["pos"][1] - me[1]) if me else 0)[:12]
+            for m in near:
+                i = mm.info(m["gid"])
+                state = ("walking %.1f s" % i["walk_s"] if i.get("moving") else "standing %.1f s" % i["still_s"]
+                         if i.get("moving") is False else "not known")
+                print("   %-26s %-9s %s  speed %s  way vs facing %s  jumps %s  legs %s" % (
+                    m["name"], "%#x" % m["gid"], state, "%.0f" % i["speed"] if i.get("speed") is not None else "-",
+                    i.get("agree"), i.get("jumps"), i.get("legs", [])[-4:]))
+        time.sleep(max(0.0, every - (time.time() - t0)))
+    print("== %d readings in %.0f s" % (reads, seconds))
+    for gid, s in sorted(stats.items(), key=lambda kv: -len(kv[1]["speeds"])):
+        i = mm.info(gid)
+        sp = sorted(s["speeds"])
+        gaps = sorted(s["gaps"])
+        walks = [d for w, d in i.get("legs", []) if w]
+        stops = [d for w, d in i.get("legs", []) if not w]
+        print("   %-26s %-9s readings %d, position changed %d (median %.2f s apart)  speed walking: median %s max %s  "
+              "way vs facing: mean %s  walks %s  stops %s  jumps %s" % (
+                  s["name"], "%#x" % gid, s["n"], s["changed"], gaps[len(gaps) // 2] if gaps else 0.0,
+                  "%.0f" % sp[len(sp) // 2] if sp else "-", "%.0f" % sp[-1] if sp else "-",
+                  "%.2f" % (sum(s["agrees"]) / len(s["agrees"])) if s["agrees"] else "-",
+                  [round(d, 1) for d in walks[-6:]], [round(d, 1) for d in stops[-6:]], i.get("jumps", 0)))
+
+
 def _main():
     import argparse
     ap = argparse.ArgumentParser(description="read-only: the wizard's position and the quest goal")
@@ -2079,8 +2651,15 @@ def _main():
     ap.add_argument("--path", action="store_true")
     ap.add_argument("--mobs", action="store_true", help="the zone's mobs too")
     ap.add_argument("--goal", action="store_true", help="the quest's goal line too (questmem.py)")
+    ap.add_argument("--motion", type=float, default=0, metavar="SECONDS",
+                    help="with --mobs: watch the mobs walk for this long (read every 150 ms) - each one's speed, its way "
+                         "against its facing, its walks and stops, its jumps (navroute.MobMotion's numbers to tune)")
     a = ap.parse_args()
     nm = NavMem(log=print)
+    if a.mobs and a.motion > 0:
+        _motion_cli(nm, a.motion)
+        print(nm.describe())
+        return
     for k in range(a.n):
         t0 = time.perf_counter()
         r, why = nm.read(path=a.path, wait=30)

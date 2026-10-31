@@ -6,7 +6,9 @@ PotionsBlank(), FleeBlank(), DrawBlank(), EnemySpellsBlank(), PartyBlank() ; (v2
 SettingsBlank(), AlertsBlank(), DashboardBlank(), BugReportBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 DungeonsBlank(), CollectBlank(), NetworkBlank(), DecksBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
 QuickSellBlank(), HotkeysBlank(), SpellsBlank(), WalkerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
-MouseSteerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+MouseSteerBlank(), PlannerBlank() ; (v2 port: v1 started every variable blank - CONVENTIONS.md "Blank start")
+GearBlank() ; (v2-only: Gear.ahk's globals blank at start too - CONVENTIONS.md "Blank start")
+TrainingBlank() ; (Training.ahk - v2-only globals, blank at start too)
 UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
@@ -1039,6 +1041,21 @@ Find(title, &card, &X, &Y, &dir)
 	{
 	global
 	local _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
+	local fdEnch := 0
+	;(v0.9.0, memclicks:1: where the game's memory has the card, first - only once its boxes have been seen lining up with
+	;the screen's at this window size, KillCalc.ahk MemCardFind; noted in FoundByMem, so the re-finds by its picture are
+	;skipped - and "dir\title|ench" 1 when that copy carries an enchantment already (a plain copy's taken first: UseBlade /
+	;UseTrap don't Sharpen / Potent it again, UseHit puts no enchant on it - the game takes no second one). memclicks:0, or
+	;the memory can't tell: by its picture as ever)
+	if (IsObject(FoundByMem))
+		FoundByMem.Delete(dir "\" title), FoundByMem.Delete(dir "\" title "|ench")
+	if (MemCardFind(dir, title, &X, &Y, &fdEnch))
+		{
+		card := 1
+		if (IsObject(FoundByMem))
+			FoundByMem[dir "\" title] := 1, FoundByMem[dir "\" title "|ench"] := fdEnch ? 1 : 0
+		return
+		}
 	;(the vision helper, if it's running: 1 found, 0 not in hand)
 	visionHit := VisionFind(dir, title, &X, &Y)
 	if (visionHit >= 0)
@@ -1131,6 +1148,10 @@ ClickBubble()
 	return true
 	}
 
+;TODO (TODO.md goal 3, needs the game): Pass, Flee (Flee.ahk FleeWord, FleeConfirm), Draw (Draw.ahk DrawWord, DrawLit)
+;through the game's windows (Vision.ahk NavGui - QuickSell.ahk QsPx / QsTargetOk's checks: shown, once, inside the root,
+;not greyed; the flee box by NavGui's message box) once their window names are known - python bagmem.py --tree --under
+;CombatPlanningPhaseWindow in a battle; the pictures and OCR stay as the fallback
 ;Pass: its picture in the hand's area (resources\pass.png - Click), else the round's Pass button where the round start
 ;finds it (PassButtonAt: resources\roundstart.png, or drawn hovered with the mouse on it) - clicked in its middle. A made
 ;pass.png can miss when roundstart.png matches (2026-10-25 at UI 1.130: made from the 1.265 cut, it missed 9 times running,
@@ -1160,6 +1181,13 @@ UseOnSelf(&title, &card, &dir)
 	;(no picture found it, the game's hand has it - Tower Shield: at its card box - UseMemAt)
 	UseMemAt(title, dir, &card, &foundX, &foundY)
 
+	;(v0.9.0: your plate not found this round - playerX, playerY blank: its target click would land wherever the mouse is,
+	;on the card just clicked - not cast)
+	if (card == 1 && (playerX = "" || playerY = ""))
+		{
+		DebugLog("  " title ": your name plate wasn't found this round - not cast (nowhere to click it onto)")
+		return false
+		}
 	if (card == 1)
 		{
 		ClickAt(foundX, foundY, 150)
@@ -1178,6 +1206,13 @@ UseOnHammer(&title, &card, &dir, tx := "", ty := "")
 	;(no picture found it, the game's hand has it: at its card box - UseMemAt)
 	UseMemAt(title, dir, &card, &foundX, &foundY)
 
+	;(v0.9.0 review: the hitter's plate not found this round - hammerX, hammerY blank (RoundStart: your school known from the
+	;game's memory or characters.txt, your plate not found): not cast - its click would land wherever the mouse is)
+	if (card == 1 && tx = "" && (hammerX = "" || hammerY = ""))
+		{
+		DebugLog("  " title ": the hitter's name plate wasn't found this round - not cast (nowhere to click it onto)")
+		return false
+		}
 	if (card == 1)
 		{
 		ClickAt(foundX, foundY, 150)
@@ -1270,9 +1305,19 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 	{
 	global
 	local _dir, _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
-	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved, ubMem, ubAt, ubEnch
+	local ubKey, ubCp, ubSrc, ubItem, ubGo1, ubGo2, ubMoved, ubMem, ubAt, ubEnch, ubFm
 	Find(title, &blade, &foundX, &foundY, &dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" blade " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
+	;(found where the game's memory has it - memclicks, Find: no picture re-find, its slide after a Sharpen by the memory)
+	ubFm := V1At(FoundByMem, dir "\" title) = 1
+	;(v0.9.0 review: the hitter's plate not found this round - hammerX, hammerY blank (RoundStart: your school known from the
+	;game's memory or characters.txt, your plate not found): not cast - its click onto the hitter would land wherever the
+	;mouse is, and it'd be counted on the hitter. blade4 is clicked onto no plate)
+	if (title != "blade4" && (hammerX = "" || hammerY = ""))
+		{
+		DebugLog("  " title ": the hitter's name plate wasn't found this round - not cast (nowhere to click it onto)")
+		return false
+		}
 
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
 	Find("sharpen", &sharpen, &SharpX, &SharpY, &_dir := "resources")
@@ -1280,6 +1325,11 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 	;card - is never sharpened: it can't be enchanted. A treasure or item card's copy stacks with the deck's - the user,
 	;2026-10-24 - so it goes once a battle besides the deck's casts; a copy that can't go swapped for one that can)
 	ubKey := BoostKey(title, dir), ubSrc := "", ubItem := 0, ubMoved := 0, ubMem := 0, ubEnch := 0
+	;(v0.9.0 review: found where the game's memory has it on a copy that carries an enchantment already - Find's MemCardFor
+	;takes a plain copy first, this one only when there's none: never sharpened again - the game takes no second one, and
+	;the blade was logged sharpened on the hitter -, cast as it is, counted with the Sharpen it carries, as BoostMemBox's)
+	if (ubFm && V1At(FoundByMem, dir "\" title "|ench") = 1)
+		ubEnch := 1
 	;(no picture found it but the game's hand has it - BoostSearch's BoostMemOnly: cast at its card box, a fresh look at the
 	;hand's boxes laid on the game's cards - only while they line up for sure; that copy's own kind - KillCalc.ahk BoostMemBox)
 	if (blade != 1 && IsObject(BoostMemOnly) && BoostMemOnly.Has(ubKey))
@@ -1296,7 +1346,7 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 		}
 	else if (blade == 1 && IsObject(BoostHand) && BoostHand.Has(ubKey))
 		{
-		ubCp := BoostCopyPick(ubKey, &foundX, &foundY, sharpen == 1, Use1, Use2)
+		ubCp := BoostCopyPick(ubKey, &foundX, &foundY, sharpen == 1 || ubEnch, Use1, Use2)
 		if (!IsObject(ubCp))
 			{
 			DebugLog("  " ubKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Sharpen it can't get)")
@@ -1306,6 +1356,9 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 			return UseHeldBack("blade", title)
 			}
 		ubSrc := ubCp.src, ubItem := ubCp.item, ubMoved := ubCp.moved
+		;(another copy moved to: cast plain, as ever)
+		if (ubMoved)
+			ubEnch := 0
 		}
 	ubGo1 := (ubSrc = "") ? (Use1 != 1) : !BoostSrcUsed.Has(ubKey "@" ubSrc)
 	ubGo2 := (ubSrc = "") ? (Use2 != 1) : ubGo1
@@ -1319,9 +1372,11 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 		CenterMouse()
 		n := PicPath(dir "\" title ".png")
 		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has (one cast by the game's
-		;hand: where the game's hand has it then - no picture finds it)
+		;hand: where the game's hand has it then - no picture finds it; one found where the memory has it: there again)
 		if (ubMem)
 			BoostSettleMem(ubKey, &foundX, &foundY, boostX)
+		else if (ubFm)
+			MemSettle(dir, title, &foundX, &foundY, boostX)
 		else
 			BoostSettle(n, &foundX, &foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
@@ -1353,9 +1408,9 @@ UseBlade(&title, &blade, &Use1, &Use2, &dir)
 			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick; nor one
 			;cast by the game's hand - its box: no picture finds it, and one that doesn't fit might match elsewhere)
 			keepX := foundX, keepY := foundY
-			if (!ubMoved && !ubMem)
+			if (!ubMoved && !ubMem && !ubFm)
 				V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
-			if (ErrorLevel || ubMoved || ubMem)
+			if (ErrorLevel || ubMoved || ubMem || ubFm)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -1392,15 +1447,21 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 	{
 	global
 	local _dir, _funcn ; (v1 passed these literals as temporaries: locals here, not globals)
-	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved, utMem, utAt, utEnch
+	local utKey, utCp, utSrc, utItem, utGo1, utGo2, utMoved, utMem, utAt, utEnch, utFm
 	Find(title, &trap, &foundX, &foundY, &dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" trap " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
+	;(found where the game's memory has it - memclicks, Find: as UseBlade's)
+	utFm := V1At(FoundByMem, dir "\" title) = 1
 
 	;The hand may have re-centred since FindCards (a discard or a used enchant)
 	Find("potent", &potent, &PotentX, &PotentY, &_dir := "resources")
 	;(which copy of the card this is, as UseBlade: an item card's never made potent; a treasure or item card's goes once a
 	;battle besides the deck's)
 	utKey := BoostKey(title, dir), utSrc := "", utItem := 0, utMoved := 0, utMem := 0, utEnch := 0
+	;(v0.9.0 review: found where the game's memory has it on a copy already potent - as UseBlade's: cast as it is, counted
+	;potent, never made potent again)
+	if (utFm && V1At(FoundByMem, dir "\" title "|ench") = 1)
+		utEnch := 1
 	;(no picture found it but the game's hand has it: cast at its card box, as UseBlade's)
 	if (TrapOn == 1 && trap != 1 && IsObject(BoostMemOnly) && BoostMemOnly.Has(utKey))
 		{
@@ -1420,7 +1481,7 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 		}
 	else if (TrapOn == 1 && trap == 1 && IsObject(BoostHand) && BoostHand.Has(utKey))
 		{
-		utCp := BoostCopyPick(utKey, &foundX, &foundY, potent == 1, Use1, Use2)
+		utCp := BoostCopyPick(utKey, &foundX, &foundY, potent == 1 || utEnch, Use1, Use2)
 		if (!IsObject(utCp))
 			{
 			DebugLog("  " utKey ": no copy in hand can be cast now (each one's casts used this battle, or one would need a Potent it can't get)")
@@ -1435,6 +1496,9 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 			return false
 			}
 		utSrc := utCp.src, utItem := utCp.item, utMoved := utCp.moved
+		;(another copy moved to: cast plain, as ever)
+		if (utMoved)
+			utEnch := 0
 		}
 	utGo1 := (utSrc = "") ? (Use1 != 1) : !BoostSrcUsed.Has(utKey "@" utSrc)
 	utGo2 := (utSrc = "") ? (Use2 != 1) : utGo1
@@ -1450,6 +1514,8 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 		;one cast so)
 		if (utMem)
 			BoostSettleMem(utKey, &foundX, &foundY, boostX)
+		else if (utFm)
+			MemSettle(dir, title, &foundX, &foundY, boostX)
 		else
 			BoostSettle(n, &foundX, &foundY, boostX)
 		if ((Errorlevel == 2) && (devmode == 1))
@@ -1474,9 +1540,9 @@ UseTrap(&title, &trap, &Use1, &Use2, &dir)
 			;If the card can't be found again, click where it was (not when it's another copy's box: BoostCopyPick, nor one
 			;cast by the game's hand)
 			keepX := foundX, keepY := foundY
-			if (!utMoved && !utMem)
+			if (!utMoved && !utMem && !utFm)
 				V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
-			if (ErrorLevel || utMoved || utMem)
+			if (ErrorLevel || utMoved || utMem || utFm)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -1564,6 +1630,13 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 		useEnchant := 0
 	Find(title, &hit, &foundX, &foundY, &dir)
 	DebugLog("  " A_ThisFunc " " title ": found=" hit " at " V1Sub(foundX, GameLeft) "," V1Sub(foundY, GameTop))
+	;(v0.9.0 review: found where the game's memory has it on a copy that carries an enchantment already - memclicks, Find
+	;takes a plain copy first: no enchant clicked onto it, the game takes no second one; cast as it is)
+	if (useEnchant && V1At(FoundByMem, dir "\" title "|ench") = 1)
+		{
+		useEnchant := 0
+		DebugLog("  " title ": the game's memory has an enchantment on it already - cast as it is, no enchant put on it")
+		}
 
 	;Can you pay for it yet? If not, keep it for a later round (no click, no enchant used on it)
 	if (hit == 1) && !Affordable(title)
@@ -1583,8 +1656,12 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 		ClickAt(foundX, foundY, 150)
 		CenterMouse()	
 		n := PicPath(dir "\" title ".png")
-		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has
-		BoostSettle(n, &foundX, &foundY, boostX)
+		;The boost card left the hand and the hand re-centres, so the card moves: go as soon as it has (found where the
+		;game's memory has it - memclicks, Find: there again)
+		if (V1At(FoundByMem, dir "\" title) = 1)
+			MemSettle(dir, title, &foundX, &foundY, boostX)
+		else
+			BoostSettle(n, &foundX, &foundY, boostX)
 		;The enchant card is used up and the hand has shifted
 		FindEnchant()
 		if ((Errorlevel == 2) && (devmode == 1))
@@ -1597,10 +1674,12 @@ UseHit(&title, &hit, &dir, useEnchant := 1)
 		} else if (hit == 1)
 			{
 			n := PicPath(dir "\" title ".png")
-			;If the card can't be found again, click where it was
+			;If the card can't be found again, click where it was (found where the game's memory has it - memclicks: not
+			;looked for by its picture)
 			keepX := foundX, keepY := foundY
-			V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
-			if (ErrorLevel)
+			if (V1At(FoundByMem, dir "\" title) != 1)
+				V1ImageSearch(&foundX, &foundY, GameLeft, GameTop, GameRight, GameBottom, PicOptFile(n, CardTol))
+			if (ErrorLevel || V1At(FoundByMem, dir "\" title) = 1)
 				foundX := keepX, foundY := keepY
 			if ((Errorlevel == 2) && (devmode == 1))
 				{
@@ -1658,25 +1737,28 @@ PlateHealth(nx, ny)
 
 ;Your own health off your name plate (the red cur/max under your name), read by OCR at two sizes that
 ;must agree. True if it's under healat % (PlayerStats.txt, default 40). Logged each round it's read
+;v0.9.0: the game's memory's first (OwnMemHealth - read for sure: counted as 3 reads); not read there, the plate as before
 ;quiet: only read (and logged) - not a heal's question (EnemySpells.ahk's look). Read once a round: a second ask in the same
 ;round (within 15 s) uses that reading (OwnHpCur, OwnHpMax, OwnHpVotes)
 OwnHealthLow(quiet := false)
 	{
 	global
-	local pct, limit, bestN, cur, most, r
+	local pct, limit, bestN, cur, most, r, ohlSrc := ""
 	limit := StatOr("healat", 40)
 	if (OwnHpCur != "" && OwnHpRound = roundnumber && V1Lt(V1Ago(OwnHpAt), 15000) && OwnHpWin = WinExist("A"))
 		{
 		cur := OwnHpCur, most := OwnHpMax, bestN := OwnHpVotes
 		Goto("OwnHealthLowRead")
 		}
-	r := PlateHealth(playerX, playerY)
+	r := OwnMemHealth()
+	if (!IsObject(r))
+		r := PlateHealth(playerX, playerY)
 	if (!IsObject(r))
 		{
 		DebugLog("  own health: couldn't read it for sure" (VisionPlateWhy != "" ? " (by shape: " SubStr(VisionPlateWhy, 1, 80) ")" : ""))
 		return false
 		}
-	cur := r.cur, most := r.max, bestN := r.votes
+	cur := r.cur, most := r.max, bestN := r.votes, ohlSrc := (V1At(r, "src") != "") ? " - " r.src : ""
 	;(your most health, for the potions out of battle)
 	PotionNoteMax(most)
 	OwnHpCur := cur, OwnHpMax := most, OwnHpAt := A_TickCount, OwnHpVotes := bestN, OwnHpWin := WinExist("A")
@@ -1687,7 +1769,7 @@ OwnHealthLowRead:
 	OwnHpPct := pct, OwnHpRound := roundnumber
 	if (quiet)
 		{
-		DebugLog("  own health: " cur "/" most " (" pct "%)")
+		DebugLog("  own health: " cur "/" most " (" pct "%)" ohlSrc)
 		return pct < limit
 		}
 	;(healing on a misread wastes the card - e.g. 775 read as 75 by two sizes - so a low reading needs
@@ -1697,8 +1779,26 @@ OwnHealthLowRead:
 		DebugLog("  own health: read " cur "/" most " only " bestN " times out of 4 - not sure enough to heal")
 		return false
 		}
-	DebugLog("  own health: " cur "/" most " (" pct "%)" (pct < limit ? " - under " limit "%: healing" : ""))
+	DebugLog("  own health: " cur "/" most " (" pct "%)" ohlSrc (pct < limit ? " - under " limit "%: healing" : ""))
 	return pct < limit
+	}
+
+;Your health from the game's memory (OwnHealthLow's first try): VisionCards' me - the hand read this look (within 5 s: no
+;new read; the round's first look reads it afresh - FindCards' VisionForget) - {cur, max, votes: 3 (read, not guessed: sure
+;enough to heal on), src}; "" not read (navmem:0, the helper not running, not the planning phase...) or not plausible
+OwnMemHealth()
+	{
+	;(only while one game window runs - Vision.ahk VisionMemOneClient: with two or more navmem can be on another client, and
+	;VisionCards refuses its hand only when the badge read by your plate is another school; the plate as before)
+	if (!V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
+		return ""
+	omhHand := V1IsFunc("VisionCards") ? VisionCards.Call(300, 5000) : ""
+	if (!IsObject(omhHand) || !IsObject(omhHand.me))
+		return ""
+	omhCur := omhHand.me.health, omhMax := omhHand.me.max
+	if (omhCur = "" || omhMax = "" || omhMax <= 0 || omhCur < 0 || omhCur > omhMax)
+		return ""
+	return V1Obj({cur: omhCur, max: omhMax, votes: 3, src: "the game's memory"})
 	}
 
 ;A healing card on yourself: the card, then your own name plate (a heal for one wizard asks who; one that
@@ -1717,6 +1817,12 @@ UseHeal(title, &card, dir, tx := "", ty := "")
 	if !Affordable(title)
 		{
 		DebugLog("  " title " costs more pips than you have (" PipsNow ")")
+		return false
+		}
+	;(v0.9.0: on you with your plate not found this round - its click would land wherever the mouse is: not cast)
+	if (tx = "" && (playerX = "" || playerY = ""))
+		{
+		DebugLog("  " title ": your name plate wasn't found this round - not cast (nowhere to click it onto)")
 		return false
 		}
 	ClickAt(foundX, foundY, 300)
@@ -1745,14 +1851,19 @@ UseHeal(title, &card, dir, tx := "", ty := "")
 ;A hit that strikes one enemy (<school>.hitNtarget:1 in PlayerStats.txt, e.g. Scarab) waits for a target
 ;after its card is clicked: click the boss if one was picked (Alt+1), else the enemy with the least
 ;health, else the leftmost one (their nameplates along the top). All-enemy hits need nothing
+;v0.9.0: also when the game's memory says the card in hand is for one enemy (KillCalc.ahk HitHeads' one - its kind damage,
+;not aoe): before, a hit cut by hand with no target key clicked no enemy and the round ran out
 HitTarget(title, dir, force := 0, dmg := "")
 	{
 	global
-	local key, i, e, pick, tx, ty, eff, best, why
+	local key, i, e, pick, tx, ty, eff, best, why, one
 	key := dir "." title "target"
 	;(force: a learned hit in no slot that needs a target - its card says so, not PlayerStats.txt)
-	if (!force && (!Stats.Has(key) || Stats[key] != 1))
+	one := (dir = hitschool) ? HitHeads(title).one : ""
+	if (!force && (!Stats.Has(key) || Stats[key] != 1) && one != 1)
 		return
+	if (!force && one = 1 && (!Stats.Has(key) || Stats[key] != 1))
+		DebugLog("  " title ": the game's memory says it hits one enemy (" key " isn't 1) - a target clicked")
 	;(the plates as they are now - not as they were when last read: the kill check's off for a battle you played a
 	;round in, and an enemy gone since leaves its place behind)
 	if (BossChoosen != 1 && V1Gt(V1Ago(EnemyPlatesAt), 8000))
@@ -1861,6 +1972,9 @@ PassButtonAt(&x, &y)
 
 ;True while the round still waits for us 0.8 s on: its Pass button is still there (a target click that took starts
 ;the cast and the button goes)
+;TODO (TODO.md goal 3, needs the game): ask the game's memory first - Vision.ahk VisionPhase (/phase): what the hand does
+;between a single-target card's click and its target's is NOT SEEN yet (CastPhaseShadow logs it next to the Pass picture's
+;verdict); the Pass picture stays as the fallback
 TargetPending()
 	{
 	t0 := A_TickCount
@@ -2668,6 +2782,10 @@ SchoolGroup(sch)
 
 ;Did the card just clicked go out? The Pass button has to stay gone for 1 s (it can blink out for a moment while
 ;the hand updates) - looked at every 100 ms; still there 0.7 s after the click = the card didn't cast
+;v0.9.0: the game's memory's phase logged beside the verdict (CastPhaseShadow - log only, nothing acts on it yet)
+;TODO (TODO.md goal 3, needs the game): once those lines show how the hand reads right after a cast goes out (state
+;"waiting" or the planning flag dropping, and how fast), the memory's verdict first here, the Pass picture as the fallback;
+;then the same check before UseBlade, UseTrap, ClickBubble, the aura and UseNegAura record a cast (none of them checks now)
 CastWentOut()
 	{
 	global
@@ -2691,7 +2809,30 @@ CastWentOut()
 		else if (A_TickCount - goneFrom >= 1000)
 			break
 		}
+	CastPhaseShadow(!stillThere, A_TickCount - t0)
 	return !stillThere
+	}
+
+;The game's memory's round phase beside a cast check's verdict (v0.9.0 - CastWentOut: went 1 the Pass picture says the card
+;went out, ms since the click): Vision.ahk VisionPhase, LOG ONLY - each verdict with the state it came with, once per
+;pairing a battle, so what the memory says after a cast can be seen in debug.log before anything acts on it ("cast check
+;(memory, log only)"). Nothing when it can't be read
+CastPhaseShadow(went, ms)
+	{
+	static said := V1Obj(), saidDuel := ""
+	if (!V1IsFunc("VisionPhase"))
+		return
+	cpsP := VisionPhase.Call()
+	if (!IsObject(cpsP))
+		return
+	if (saidDuel != BlDuel)
+		said := V1Obj(), saidDuel := BlDuel
+	cpsKey := (went ? 1 : 0) "|" cpsP.state "|" cpsP.planning
+	if (said.Has(cpsKey))
+		return
+	said[cpsKey] := 1
+	DebugLog("  cast check (memory, log only): the Pass picture says the card " (went ? "went out" : "didn't go out") " (" ms " ms) - the game's memory: " cpsP.state
+		. ", planning " cpsP.planning ", " cpsP.shown " card(s) shown of " cpsP.size (cpsP.why != "" ? " (" cpsP.why ")" : "") " (said once a battle)")
 	}
 
 ;A learned hit in no slot cast (CastBestHit, when no hit1-4 went): the strongest in hand you can pay for, by a fresh
@@ -2775,6 +2916,10 @@ FindEnchant()
 	global
 	local each, ench, r, unsure
 	enchant := 0, unsure := []
+	;(v0.9.0, memclicks:1: the best enchant where the game's memory has it, first - only once its boxes have been seen
+	;lining up with the screen's at this window size, KillCalc.ahk MemEnchantFind; else by their pictures as ever)
+	if (MemEnchantFind(&enchant, &enchantX, &enchantY))
+		return
 	for each, ench in EnchantList()
 		{
 		if (ench[1] = 4 && hitter = 0)
@@ -2797,6 +2942,27 @@ FindEnchant()
 			return
 			}
 		}
+	}
+
+;The battle from the game's memory at a round's start (v0.9.0 - RoundStart): sch your school (your participant's,
+;Vision.ahk NavBattle - READ-ONLY, read now; lower case, "" not read or not a school the bot knows) and, with memclicks:1
+;only, x, y your plate's middle in pixels (NavPlatePx - NOT TRIED as a click in the game yet; "" not read). Clicks nothing
+;Only while one game window runs (Vision.ahk VisionMemOneClient - v0.9.0 review): with two or more navmem can be on another
+;client, and its wizard's school written over the badge's (RoundStart) would make the hitter that school, write it to
+;characters.txt for this character and blind VisionCards' "another client's wizard" check (it compares the two) - "" then
+RoundBattleMem(&sch, &x, &y)
+	{
+	sch := "", x := "", y := ""
+	if (!V1IsFunc("VisionMemOneClient") || !VisionMemOneClient.Call())
+		return
+	rbmB := V1IsFunc("NavBattle") ? NavBattle.Call() : ""
+	if (!IsObject(rbmB) || !IsObject(rbmB.me))
+		return
+	rbmS := StrLower(Trim(rbmB.me.school))
+	if (BadgeNumber(rbmS))
+		sch := rbmS
+	if (Stat("memclicks") = 1 && V1IsFunc("NavPlatePx") && NavPlatePx.Call(rbmB.me, &rbmX, &rbmY))
+		x := rbmX, y := rbmY
 	}
 
 ;Checks a hit really got cast: once a spell is chosen the Pass button goes away. If it's still
@@ -2901,11 +3067,27 @@ DiscardSpare()
 	}
 
 ;Right-clicks one card in hand to discard it. Returns 1 if it was found
+;v0.9.0: a blade no picture finds but the game's hand has (KillCalc.ahk BoostSearch's BoostMemOnly - DiscardSpare's spare
+;blades) at its card box, laid on the game's cards as UseBlade casts one (KillCalc.ahk BoostMemDiscard - the deck's copy,
+;never a treasure card): before, one was never discarded and stayed in hand
 DiscardCard(title, dir)
 	{
 	global
-	local card := 0, cardX := 0, cardY := 0
+	local card := 0, cardX := 0, cardY := 0, dcKey, dcAt
 	Find(title, &card, &cardX, &cardY, &dir)
+	dcKey := BoostKey(title, dir)
+	if (card != 1 && IsObject(BoostMemOnly) && BoostMemOnly.Has(dcKey))
+		{
+		dcAt := BoostMemDiscard(dcKey)
+		if (dcAt.x = "")
+			{
+			DebugLog("  " dcKey ": in hand (the game), no picture found it - not discarded: " dcAt.why)
+			return 0
+			}
+		;(as Find's: the right-click goes Px(5) on from it)
+		card := 1, cardX := dcAt.x - Px(5), cardY := dcAt.y - Px(5)
+		DebugLog("  " dcKey ": no picture found it - the game's " dcAt.name " is card " dcAt.n " of " dcAt.of " in hand: discarded at its box")
+		}
 	if (card != 1)
 		return 0
 	;(never a treasure card - discarding one uses it up: one drawn for an enchant (Draw.ahk) looks like the deck's)
@@ -3205,6 +3387,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Draw.ahk"
 #Include "%A_ScriptDir%\EnemySpells.ahk"
 #Include "%A_ScriptDir%\BattleRec.ahk"
+#Include "%A_ScriptDir%\Planner.ahk"
 #Include "%A_ScriptDir%\Party.ahk"
 #Include "%A_ScriptDir%\Settings.ahk"
 #Include "%A_ScriptDir%\Alerts.ahk"
@@ -3215,7 +3398,9 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Puzzle.ahk"
 #Include "%A_ScriptDir%\Network.ahk"
 #Include "%A_ScriptDir%\Decks.ahk"
+#Include "%A_ScriptDir%\Training.ahk"
 #Include "%A_ScriptDir%\QuickSell.ahk"
+#Include "%A_ScriptDir%\Gear.ahk"
 #Include "%A_ScriptDir%\Hotkeys.ahk"
 #Include "%A_ScriptDir%\Spells.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\Walker.ahk"
@@ -3630,6 +3815,10 @@ global PlanHit := "", PlanHeads := "", PlanList := ""
 global BladeDir := "", TrapDir := "", BladeU1 := "", BladeU2 := "", TrapU1 := "", TrapU2 := "", Blade2U1 := "", Blade2U2 := "", Trap2U1 := "", Trap2U2 := ""
 ;(the game's hand's hit the boosts go for while it waits for its pips - KillCalc.ahk BoostPick)
 global PlanWait := ""
+;(v0.9.0, TODO.md goal 3: the cards this look found where the game's memory has them - Find with memclicks, {"dir\title": 1}:
+;their re-finds by picture skipped -, your school as the game's memory has it this round (RoundStart - "" not read), your
+;plate taken from the memory this round (memclicks: no picture found it))
+global FoundByMem := V1Obj(), RoundMemSchool := "", PlateMem := 0
 global SbFound := V1Obj(), GbFound := V1Obj(), BoostHand := V1Obj(), BoostSrcUsed := V1Obj(), BoostExtra := "", HammerPlan := "", BoostMemOk := 0, BoostSaid := V1Obj(), BoostMisfitDone := 0
 global BoostUnrec := [], BoostOneOfOff := V1Obj()
 ;(the boosts this look found by the game's hand alone - no picture found them: cast at their card box - KillCalc.ahk
@@ -3824,6 +4013,10 @@ BattleLoop() {
 global
 local _dir, _title ; (v1 passed these literals as temporaries: locals here, not globals)
 ;Checks if in battle
+;(TODO - TODO.md goal 3, needs the game: the round's start and the battle's end from the game's memory - Vision.ahk
+;VisionPhase's "hand" / "none" with EnemySpells.ahk BattleLogPlanning - once it's been seen that the planning window's flag
+;rises and falls with the Pass button and the participant reads "not in a battle" out of one (python handmem.py --phase);
+;roundstart.png and roundfinish.png stay as the fallback, and for the UI-size measure)
 TestRound:
 Loop
 {
@@ -3975,6 +4168,9 @@ Loop
 		;The backpack full after the battle (Prospector Zeke's alert, the game's memory): quick sold for gold - quicksell,
 		;Settings: THE BACKPACK (QuickSell.ahk). Here, before the walker's step: walking waits while it runs
 		QsTick()
+		;(the spellbook watched for new spells - read only, about every 10 minutes; the spell quest, trainer and deck
+		;settings aren't built: said once - Training.ahk)
+		TrainBookTick()
 		MouseLetGo()
 		;(the log's OneDrive copy, when it's on: a picture of the game every 2 minutes - LogMirrorSnap)
 		LogMirrorSnap(120000)
@@ -4192,7 +4388,14 @@ if (dualmode == 1)
 ;Finds the player
 global playerX := 0
 global playerY := 0
-global player := 1
+;(v0.9.0: 0 till your plate is found - it was 1 from here on even when nothing found it: playerX, playerY blank, and the
+;heal and Tower Shield clicks meant for your plate, and hammerX, hammerY worked out from it, landed wherever the mouse was)
+global player := 0
+global PlateMem := 0
+;(the battle from the game's memory, read once now - your school, and with memclicks:1 your plate: RoundBattleMem)
+global RoundMemSchool := ""
+RoundBattleMem(&rbmSchool, &rbmX, &rbmY)
+RoundMemSchool := rbmSchool
 
 ;(the game's log read now: a battle's first round names its wizards only as the Pass button comes up - the loop's last
 ;read, at most every 500 ms, can be from before; only what's new is read)
@@ -4222,6 +4425,13 @@ else
 				}
 	}
 		
+;(v0.9.0, memclicks:1: neither your name nor player.png found your plate - where the game's memory has it (RoundBattleMem:
+;its box's middle - the click for a heal or Tower Shield on you; NOT TRIED in the game yet). memclicks:0: not found, as before)
+if (player != 1 && rbmX != "")
+	{
+	playerX := rbmX, playerY := rbmY, player := 1, PlateMem := 1
+	DebugLog("  your name plate: no picture found it - where the game's memory has it, " playerX - GameLeft "," playerY - GameTop " (memclicks)")
+	}
 ;(the battle it's this battle's plate for)
 if (player == 1)
 	PlateDuel := BlDuel
@@ -4259,22 +4469,49 @@ else
 	hitter := BadgeNumber(hitschool)
 	}
 
+;(v0.9.0: your school as the game's memory has it, when it's read - the badge by your plate can be a teammate's in a party
+;battle (PlayerPlates2), or read wrong. The hitter - the cards are looked for in its school's pictures, the boosts go to it -
+;found as another school or none: you, at your plate where the memory has it (memclicks) or as found on the screen (as the
+;characters.txt way below has it); neither known: the badge's as before (never a blank spot: the boosts would land wherever
+;the mouse is))
+if (RoundMemSchool != "")
+	{
+	if (school != "" && school != RoundMemSchool)
+		DebugLog("  your school: the game's memory says " RoundMemSchool ", the badge by your plate " school " - the memory's")
+	school := RoundMemSchool
+	if (hitschool != RoundMemSchool && (rbmX != "" || player == 1))
+		{
+		DebugLog("  hitter: " (hitschool = "" ? "no school badge found" : "the " hitschool " badge found") " - the game's memory says you're " RoundMemSchool ": your own plate as the hitter's" (rbmX != "" ? " (where the memory has it - memclicks)" : ""))
+		hitschool := RoundMemSchool, hitter := BadgeNumber(RoundMemSchool)
+		hitterX := (rbmX != "") ? rbmX : V1Add(playerX, Px(25)), hitterY := (rbmX != "") ? rbmY : V1Add(playerY, Px(8))
+		}
+	;(v0.9.0 review: no badge found and your plate not found either - you as the hitter all the same, the memory's school:
+	;the round is played (its hits cast), as it was while player stayed 1 - not left to you as a wizard the bot doesn't know.
+	;No spot for the boosts: hitterX, hitterY blank - UseBlade and UseOnHammer don't cast one onto nothing)
+	else if (hitter = 0)
+		{
+		DebugLog("  hitter: no school badge found, your name plate not found - the game's memory says you're " RoundMemSchool ": you as the hitter, no plate to cast the boosts onto this round")
+		hitschool := RoundMemSchool, hitter := BadgeNumber(RoundMemSchool), hitterX := "", hitterY := ""
+		}
+	}
 hammerX := hitterX
 hammerY := hitterY
 
 ;No school badge found on the name plates - your plate in another slot can show none (seen with a 1280x1024
 ;window, the left plate): the school this character was seen fighting with before (resources\characters.txt,
 ;by its CharID in the game's log), and your own plate - found by your name - as the hitter's (a solo battle)
-if (hitter = 0) && (player == 1)
+;(v0.9.0 review: also with your plate not found - as while player stayed 1, so the round's still played, not left to you;
+;hammerX, hammerY blank then - UseBlade and UseOnHammer don't cast a boost onto nothing)
+if (hitter = 0)
 	{
 	knownSchool := StatsSchoolOf(StatsCharID())
 	if (BadgeNumber(knownSchool))
 		{
 		hitschool := knownSchool, hitter := BadgeNumber(knownSchool)
-		hammerX := V1Add(playerX, Px(25)), hammerY := V1Add(playerY, Px(8))
+		hammerX := (player == 1) ? V1Add(playerX, Px(25)) : "", hammerY := (player == 1) ? V1Add(playerY, Px(8)) : ""
 		if (school = "")
 			school := knownSchool
-		DebugLog("  no school badge found on the name plates - this character fought as " knownSchool " before: using that, with your own plate as the hitter's")
+		DebugLog("  no school badge found on the name plates - this character fought as " knownSchool " before: using that, " (player == 1 ? "with your own plate as the hitter's" : "your name plate not found - no plate to cast the boosts onto this round"))
 		}
 	}
 ;(the deck for this battle, once the school's known - the badge's or the one fought as before: a new battle, or your
@@ -4321,9 +4558,10 @@ if (!RoundAgain)
 	Discards := 0
 FindCards:
 
-;Enchants (and a fresh look at the hand for the vision helper; each hit's heads looked at afresh - KillCalc.ahk HitHeads)
+;Enchants (and a fresh look at the hand for the vision helper; each hit's heads looked at afresh - KillCalc.ahk HitHeads;
+;the cards found where the game's memory has them - Find - found afresh)
 VisionForget()
-HeadsMemo := V1Obj()
+HeadsMemo := V1Obj(), FoundByMem := V1Obj()
 FindEnchant()
 
 ;Finds cards avaliable
@@ -4419,14 +4657,14 @@ if (PartySupport())
 ;off the pip row under your name (KillCalc.ahk PipsRead)
 PipsNow := PipsRead()
 DebugLog("  pips=" PipsNow PipsNote)
-DebugLog("  player=" player " at " V1Sub(playerX, GameLeft) "," V1Sub(playerY, GameTop) " school=" school " | hitter=" hitschool " at " V1Sub(hammerX, GameLeft) "," V1Sub(hammerY, GameTop) " | enchant=" enchant
+DebugLog("  player=" player " at " V1Sub(playerX, GameLeft) "," V1Sub(playerY, GameTop) (PlateMem ? " (the game's memory)" : "") " school=" school (RoundMemSchool != "" ? " (the game's memory)" : "") " | hitter=" hitschool " at " V1Sub(hammerX, GameLeft) "," V1Sub(hammerY, GameTop) " | enchant=" enchant
 	. (PartySupport() ? " | " BattleRole ": the boosts to " HammerName " (" (HammerSchool = "" ? "school not known" : HammerSchool) ")" : ""))
 ;The blades and traps of every school the hits need - a Balance Hydra's fire, ice and storm (KillCalc.ahk BoostSearch: the
 ;game's memory, read-only, says what's in hand; without it, your school's as before)
 BoostSearch()
 ;(which school the logged-in character is, for StatsReader: the badge by its own name plate - the
-;hitter can be an ally)
-if (PlateByName || !PlayerPlates2())
+;hitter can be an ally; the game's memory's is this client's own for sure - v0.9.0)
+if (RoundMemSchool != "" || PlateByName || !PlayerPlates2())
 	{
 	StatsNoteSchool(school)
 	;(and the party's told it: Party.ahk)
@@ -4444,6 +4682,9 @@ if (Manual != 1) && (!LearnedThisRound)
 	{
 		Goto("FindCards")
 	}
+	;(v0.9.0: the game's memory's card boxes against the ones that look saw on the screen - logged, clicks nothing; with
+	;memclicks:1, 3 looks in a row lining up let the cards be clicked where the memory has them: KillCalc.ahk MemBoxCheck)
+	MemBoxCheck(LastHandAnswer)
 	}
 
 ;Discard (right-click) cards that can't help this battle, then look at the hand again (not while learning
@@ -4486,6 +4727,8 @@ if (PlayerActing())
 	}
 
 ;Out of mana or cards - it could only pass for the rest of the battle: flee, and try again (Flee.ahk)
+;(TODO - TODO.md goal 3, needs the game: mana from the game's memory - which object holds the wizard's mana isn't known yet
+;(python reflect.py --class X --grep mana); Potions.ahk PotionGlobes' pixels till then)
 if FleeCheck()
 {
 	Goto("EndRound")
@@ -4515,9 +4758,11 @@ if (LearnAll)
 global KillHit := ""
 global KillEnchant := 0
 PipSaveFor := ""
-if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1 && Stat("usewand")))
+;(v0.9.0: the enemies' health from the game's memory first - KillCalc.ahk EnemyMemHealth; healthocr:0 with memclicks:1 - from
+;it alone, no OCR)
+if (hitter != 0) && (DualBattle != 1) && (!PlayerTookRound) && (Stat("healthocr") == 1 || Stat("memclicks") == 1) && ((hit1 == 1) || (hit2 == 1) || (hit3 == 1) || (hit4 == 1) || (wand == 1 && Stat("usewand")))
 	{
-	if (ReadEnemyHealth())
+	if (ReadEnemyHealth(Stat("healthocr") != 1))
 		{
 		;(nothing ends it now: one would with an enchant on it and there's none in hand - drawenchant: treasure cards
 		;drawn for one, then looked at again - Draw.ahk; still nothing: is a hit worth saving pips for? KillCalc.ahk
@@ -4584,6 +4829,16 @@ if (player == 1) && ((heal1 == 1) || (heal2 == 1)) && OwnHealthLow()
 
 ;(the healer: Tower Shield on the ally that's low, else on the hitter - Party.ahk PartyShield)
 if (BattleRole = "healer") && PartyShield()
+{
+	Goto("EndRound")
+}
+
+;The round planner (Planner.ahk - Settings: planner, off unless you switch it on): every card in hand tried in the
+;battle simulator from this round on, its advice logged and recorded - planner 1 never casts, the round goes on below
+;exactly as without it (PlannerRound returns false; planner 2, a cast of its own, isn't built). planner 0: nothing asked.
+;Turned off (F6) already: not asked - no wait for the helper while the mouse is still held (the check below gives it
+;back; one pressed during the ask is caught there too)
+if (BotOn && PlannerMode() && PlannerRound())
 {
 	Goto("EndRound")
 }
@@ -4713,8 +4968,11 @@ if (feint == 1) && (TrapOn == 1) && BoostOk && Stat("usetraps") && UseTrap(&_tit
 																	UseOnSelf(&_title := "reshuffle", &reshuffle, &_dir := "resources")
 																else
 																	{
-																	UseOnHammer(&_title := "reshuffle", &reshuffle, &_dir := "resources")
-																	ResetUsed()
+																	;(the used flags reset only once it's clicked - not when
+																	;its card wasn't found again or there's no plate to
+																	;cast it onto: UseOnHammer)
+																	if (UseOnHammer(&_title := "reshuffle", &reshuffle, &_dir := "resources"))
+																		ResetUsed()
 																	}
 																} else if ClickPass()
 																	{
@@ -5223,4 +5481,5 @@ AutofarmerBlank()
 	global LearnHitFails := "", RcOn := "", Tray := "", LearnAll := "", KeysDown := "", HeldW := "", LastBeat := "", BlPhase := "", BlPhaseAt := ""
 	global BlDuel := "", SeenOut := "", SpeedNow := "", PicError := "", PicMeasuredSize := "", PicMeasureSize := "", PotionResting := "", DgRun := ""
 	global MouseHomeSet := "", MouseHomeX := "", MouseHomeY := "", ManualX := "", ManualY := "", trap4 := ""
+	global FoundByMem := "", RoundMemSchool := "", PlateMem := ""
 	}

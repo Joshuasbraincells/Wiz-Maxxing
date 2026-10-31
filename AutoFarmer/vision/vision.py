@@ -1,4 +1,4 @@
-"""Vision helper for AutoFarmer: finds cards in the hand and school badges on name plates.
+r"""Vision helper for AutoFarmer: finds cards in the hand and school badges on name plates.
 
 AutoFarmer (AutoHotkey) starts this with pythonw and asks it over HTTP on 127.0.0.1. Instead of
 ImageSearch's "found or not at this tolerance", every picture is matched at every position with a
@@ -48,7 +48,13 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   or bubble boosts by school: "ice:35,storm:35,fire:35", "all:25" (every school);
                                                   either "?" when it can't be trusted (not all of the card read, a head
                                                   of an odd kind or school), "" none - handmem.heads_field /
-                                                  boosts_field; an older helper has no fields 24-25)
+                                                  boosts_field; an older helper has no fields 24-25);
+                                                  l|t|r|b (26-29, v0.9.0) the card's box in the GUI's root, GUI units
+                                                  (its m_Window plus every window's left / top on the way down - NOT
+                                                  CHECKED against the screen yet: AutoFarmer's MemBoxCheck logs it
+                                                  against /hand's boxes), "" not read
+                                               root|<w>|<h>                  (v0.9.0: the GUI root's size in the same
+                                                                             units - only when it's read)
                                                hand|<cards>|<ms>
   /badge?x1=&y1=&x2=&y2=&scale=&schools=  -> one line per school whose badge is there: "school|x|y|dist",
                                              best first ("unclear": two schools too close at the best spot)
@@ -117,37 +123,60 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                     |jump|jx|jy     (5-7: right at a teleport on the game's path: the
                                                                      seconds waited there, where it is)
                                                     |mob|mx|my|name (8-11: a mob on the way the route can't go round: the
-                                                                     seconds waited for it to move off, where, its name)
+                                                                     seconds waited for it to move off, where, its name
+                                                                     - or the gap in a line of mobs it would go
+                                                                     through: the nearest of them)
+                                                    |escape|arc     (12: inside a mob's ring or sight - its name; 13:
+                                                                     turning round to the aim clear of the walls 1/0)
+                                                    |duel|dx|dy     (14-16: another player's battle on the way the route
+                                                                     can't go round - duels=1 -: the seconds waited for
+                                                                     it, where; empty none. An older helper's line
+                                                                     stops at 13)
                                              &avoid=1[&mobr=300][&shape=2][&cone=60][&goal=<the quest's goal line>] (with
                                              route=1): the route kept out of what each of the zone's mobs (navmem,
                                              read-only) sees, mobr far: shape 1 a circle all round, 2 a semi-circle in
                                              front, 3 a cone cone degrees wide in front (no shape: mobr all round and a
                                              cone= / sight= cone) - not those the quest's goal names, nor (a fight
                                              goal) one by the goal. The goal: the game's memory's (as /goal), else
-                                             goal= (the line AutoFarmer OCRs off the screen)
+                                             goal= (the line AutoFarmer OCRs off the screen). A walking mob (its last
+                                             second of readings - navroute.MobMotion) is kept out of along its way,
+                                             a line of mobs as one wall (vision\navroute.py's top)
+                                             &duels=1 (with avoid=1 - the duelavoid setting, off by default): out of
+                                             other players' battles too (the zone's duel circles - navmem.duels:
+                                             not confirmed in the game yet)
+                                             &walls=1 (with avoid=1 - the mobwall setting, off by default): a line of
+                                             mobs' wall the route can't go round waited at as a mob on the way
+                                             (fields 8-11); without it walked through its gap, as before
                                                goalline|text|type|status|count|total|shown   (last, always: the quest's
                                                                      goal from the game's memory as /goal's - all
                                                                      empty when it can't be read; an older bot
                                                                      doesn't look at it)
-  /navto?x=&y=&z=[&avoid=1&mobr=300][&spare=700]
+  /navto?x=&y=&z=[&avoid=1&mobr=300][&spare=700][&duels=1]
                                           -> where the wizard is and the route to a spot of the bot's own (the potion
                                              seller, a puzzle's guards): ok|1, zone|, pos|, route|x|y|left (all mobs kept
                                              away from with avoid=1 - but those within spare of the spot: the camp
-                                             walked to, to fight it)
+                                             walked to, to fight it; duels=1 with it: other players' battles too, kept
+                                             off where there's room - no wait)
   /blockers                               -> the doors, gates and collision walls of the wizard's zone, nearest first -
                                              what holds the walker at a blocked way (a dungeon's gate the zone's
                                              triggers open after two kills):
-                                               door|template|x|y|z|distance|gid|src|state
+                                               door|template|x|y|z|distance|gid|src|state|start
                                              src mem: an object in the game's memory now (read-only - navmem.blockers:
                                              no name key, a template named like a door, a gate, a portcullis, a barrier,
                                              a collision - vision\puzzlefile.py's is_blocker:
                                              DynaTrigger_KT_DoorCollision; one gone from memory has been taken away: the
                                              way's open);
-                                             state "" (not read). src file: where the zone's file places one
-                                             (vision\placements.py, as /items?far=1 - built in its thread at each zone
-                                             change: until then the memory's alone), state its starting state (On, Off,
-                                             Open),
+                                             state its state in the game's memory now (its ObjectStateBehavior's -
+                                             vision\statemem.py, NOT CONFIRMED in the game yet: "" not read - a build it
+                                             can't read, its reader being made). src file: where the zone's file places
+                                             one (vision\placements.py, as /items?far=1 - built in its thread at each
+                                             zone change: until then the memory's alone), state its starting state (On,
+                                             Off, Open),
                                              gid "f:<template>:<n>" / "f:<template>@<where>" (the same every time).
+                                             start (10): the zone file's starting state of the door - a memory one's:
+                                             its template's placement nearest it within 400 (puzzlefile.match_start;
+                                             "" none) - so a state that changed since the zone began reads without
+                                             knowing its names. An older helper's lines stop at 9
                                              "none" when there are none; "ERR <why>" when the zone's objects can't be
                                              read now (a new zone being looked at) - never "none" then: not read isn't
                                              gone
@@ -162,8 +191,17 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      walks into the volume, its centre and radius: the
                                                                      game's own hint - NearGateVolume "The gate has
                                                                      defenders. ...")
-                                               use|<event>          (another object event: PedestalUsed, UsedBook - a
-                                                                     hint only)
+                                               use|<event>|<targets>|<states>|<acts>   (another object event:
+                                                                     PedestalUsed, UsedBook - and what its triggers do:
+                                                                     the objects whose state they set, the states, the
+                                                                     activations, each ; apart - empty none. An older
+                                                                     bot reads the event alone)
+                                               useobj|<event>|<template>|x|y|z|<how>   (a placement of the zone's file
+                                                                     that may be what fires the event - no name key, not
+                                                                     a door: a lever the game names nowhere; how "name":
+                                                                     by the event's own words, a guess - puzzlefile.
+                                                                     event_objects; none till placements' things are
+                                                                     built for the zone)
                                              "none" when there's none of these; "ERR <why>" when the file can't be read.
                                              Kept per zone (read in placements' thread at each zone change)
   /navpass?fx=&fy=&fz=&tx=&ty=&tz=&vx=&vy=[&vr=200][&zone=<zone path>]
@@ -187,7 +225,15 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              wizard, looked back to where it set off towards him (noticed him):
                                              caught|name|how far he was then|degrees off its facing then|came (1: it
                                              came for him, 0: he walked into it)|seconds before|quest (1: the helper
-                                             took it as the quest's - not avoided); or "none (<why>)"
+                                             took it as the quest's - not avoided)|walking (1: it was walking the
+                                             second before it noticed him, 0 standing, "" not known - an older
+                                             helper's line stops at 7); or "none (<why>)"
+  /duels                                  -> the zone's duel circles (the game's memory, read-only - navmem.duels,
+                                             bossmem's duel_of: NOT CONFIRMED in the game yet), nearest first:
+                                             duel|template|x|y|z|distance|phase|parts|players|gid|active|mine (phase
+                                             its name when decoded, else its number; parts the participants, players
+                                             the wizards among them; active 1 a battle going on; mine 1 the wizard's
+                                             own), or "none"; "ERR <why>" when they can't be read
   /mobs[?goal=<the quest's goal line>]    -> the zone's mobs (the game's memory, read-only), nearest first:
                                              mob|name|x|y|z|distance|quest (1: the quest's)|degrees from where it
                                              faces to the wizard (0: straight ahead of it)|title|rank|health|school|
@@ -201,8 +247,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              only - quest without the same-family match ("Gobbler King" for "Defeat
                                              Gobblers" is quest 1, named 0. 16, template: its template's name as the
                                              game's memory holds it - CL-DeepOne-GreenHead-R10 for a Water Lurker: the
-                                             same in every instance, as the zone's triggers name it. An older helper's
-                                             lines stop at 8, 14 or 15)
+                                             same in every instance, as the zone's triggers name it. 17-19, how it
+                                             moves - once known (MobMotion, off the mobs read lately): vx|vy its
+                                             speed along x and y (units / s)|moving 1 walking, 0 standing, "" not
+                                             known. An older helper's lines stop at 8, 14, 15 or 16)
   /items[?goal=<the quest's goal line>][&far=1]
                                           -> the zone's things with a name that aren't mobs (the game's memory,
                                              read-only - an item lying about a quest has you collect, Piece Of Coral; an
@@ -211,7 +259,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              src|kind, or "none (<why>)" (none at all: plain "none")
                                              (9-12: key its display key - WizQst371C7_00000008 -, template its
                                              template's name, src mem (in the game's memory now) / file (where the
-                                             zone's file places it - far=1 only), kind item / object / npc / ambient.
+                                             zone's file places it - far=1 only), kind item / object / npc / ambient /
+                                             use (name and key empty: an object with no name key a use event of the
+                                             zone's triggers may be fired by - /zonepuzzle's useobj templates, a
+                                             lever).
                                              An older helper's lines stop at 8. quest: the goal's own key (TALLYTEXT -
                                              /goal's itemkey) when any thing listed has it - then only those -, else (an
                                              exact goal) the goal's item - or a talk goal's NPC - as the thing's whole
@@ -230,7 +281,8 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
   /battle                                 -> the battle's participants, read from the game's memory (read-only, see
                                              vision\bossmem.py) - in a battle's planning phase - one line each, the
                                              wizard's own first:
-                                               part|me|team|name|health|max|boss|title|rank|school|player|gid|x
+                                               part|me|team|name|health|max|boss|title|rank|school|player|gid|x|
+                                                  l|t|r|b|hide
                                                                      (me 1: the wizard's own; team the game's number -
                                                                      the wizard's side vs the enemies'; name the mob's
                                                                      ("" a wizard); health and max its health now and
@@ -238,14 +290,66 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      rank, school its mob's template's (as /mobs');
                                                                      player 1 a wizard; gid its owner's global id; x
                                                                      the middle of its plate across the game's window,
-                                                                     0..1 (its GUI rect over the root's) - "" a field
-                                                                     not read)
+                                                                     0..1 (its GUI rect over the root's); l|t|r|b
+                                                                     (v0.9.0) its plate's box across and down the
+                                                                     game's window, 0..1 each (NOT CHECKED against the
+                                                                     screen yet); hide 1: the game hides its health
+                                                                     (m_HideCurrentHP) - "" a field not read)
                                              or one line "none|<why>" (not in a battle's planning phase, the readers
                                              being made - once per game -, the game not running...)
+  /phase                                  -> the round's phase from the game's memory, cheaply (read-only, no spell read
+                                             - vision\handmem.py HandMem.phase, about a ms):
+                                               phase|state|in battle|planning|shown|own|size|ms|why
+                                                                     (state none: not in a battle; round: in one, out of
+                                                                     the planning phase; waiting: planning, no card
+                                                                     shown but cards in the hand list - one's chosen;
+                                                                     changing: the cards shown not as many as the list;
+                                                                     hand: as many - not checked card by card as /cards
+                                                                     does; shown the card windows shown, own those but
+                                                                     the pet's, size the hand list's; 1/0 flags, "" not
+                                                                     read)
+                                             or "none|<why>" when the game can't be read
   /uiroot                                 -> the game's GUI root's size in GUI units, read from the game's memory
                                              (read-only - navmem.ui_root): "root|<w>|<h>" (1827|1027 at 2560x1440,
                                              UI 1.144 - the window's pixels over it are the GUI's scale; AutoFarmer
                                              cross-checks its picture set's UI scale with it), or "none|<why>"
+  /guitree[?under=Anc/Name][&all=1][&depth=N]
+                                          -> EVERY window under the one named (the GUI root without under; all=1 the
+                                             hidden ones too; depth=N that many levels below it, else 24) from the
+                                             game's memory (read-only - vision\bagmem.py's tree / tree_lines: the
+                                             discovery tool for windows nobody has looked at yet, and a list's rows):
+                                             root|w|h, tree|under|matches|dups|rows|walked|capped|all, then one line a
+                                             window depth|name|type|shown|l|t|r|b|text|key|greyed|checked|texture|kids|
+                                             parent|flags (in the root's units; parent: its parent's line number among
+                                             the window lines); or "none|<why>". The whole tree can take a while: ask
+                                             under a window - only its windows are walked and described (every window
+                                             is still read once to find it, as /gui does - not those in hidden ones
+                                             without all=1); capped 1: cut short (with matches 0: the window may be past
+                                             where finding it stopped - not "no such window")
+  /gear[?school=&level=&role=hitter|healer|blader&weights=off:1,def:0.5,...&margin=2&sets=1&hp=&damage=&pierce=&crit=
+       &block=&acc=&resist=&pp=&heal=&incheal=][&run=<name>&mark=1|&end=1&slots=hat,robe,...&stopafter=30&nomark=1]
+                                          -> the worn gear and the backpack's from the game's memory (read-only -
+                                             vision\gearmem.py: each piece's equip effects and requirements, NOT
+                                             CONFIRMED in the game yet) and the swap plan for the wizard's totals given
+                                             (vision\gearrank.py - advice: AutoFarmer's Gear.ahk equips nothing yet):
+                                             gearrank.gear_lines - gear|..., stats|..., worn|slot|gid|tid|name|display|
+                                             level|stats|sets, item|gid|tid|name|display|slot|verdict|delta|basis|why|
+                                             stats|reqs|crowns|nosell|sets, plan|slot|gid|tid|name|worn gid|worn name|
+                                             delta|basis|held|why, note|...; run= a dungeon run's drop log in
+                                             AutoFarmer\learned\drops (mark=1 at its start: the backpack's ids kept;
+                                             end=1 at its end: drop|tid|name|slot|display|count|first a new piece,
+                                             run|name|runs|dry|stopafter|done|why|new|marked - slots none: the
+                                             dungeon's from resources\dungeons_known.txt; nomark=1: its start wasn't
+                                             noted - not counted, the backpack kept afresh); a piece whose template
+                                             couldn't be read: item|...|<slot blank>|unknown|...; or "none|<why>"
+  /pets[?want=Talent,Talent...][&hatch=1] -> the wizard's pets from the game's memory (read-only - vision\petmem.py: the worn
+                                             one and the backpack's) and which to keep out of Quick Sell (vision\petplan.py -
+                                             want: AutoFarmer\pets.txt's wanted talents; hatch=1: hatching on): petmem.pet_lines
+                                             (pet|gid|where|level|level name|template id|object name|display|cards|xp|
+                                             xp next|talents|derby|stats|max stats|behavior class - the values not
+                                             confirmed in the game yet "" -, energy|cur|max, pets|n|whole|ms|why), then
+                                             want|n|names|hatch and keep|gid|where|why (a pet whose talents aren't read is
+                                             kept); or "none|<why>"
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:
@@ -291,6 +395,12 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              dist while the arrow is behind the goal's hops. One line "ERR <why>" when the
                                              game can't be read: not running, being attached to (its code is looked through
                                              once per game process, under a second), or a signature isn't in this build
+  /quests                                 -> EVERY quest in the game's quest manager (read-only, vision\questmem.py - the
+                                             tracked one is /goal's): questmem.quest_lines - quest|id|title|tracked|goals|
+                                             complete|title key|props (WizQuestData's other properties, name=value,... -
+                                             all of them: what marks a spell quest isn't known yet), goal|quest id|goal
+                                             id|kind|status|count|total|text|mob|item|npc|place|name key, then
+                                             quests|n|tracked id|ms|why; or none|<why> (as /goal's)
   /navmap?w=&h=&out=<png path in the AutoFarmer folder>[&span=6000]
                                           -> "ok|<out>": a w x h top-down picture of the zone round the wizard, span game
                                              units across its shorter side (+X right, +Y up): the walkable floor, obstacles
@@ -316,6 +426,73 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              the last reading + deckage|<s>, or none|<why>; fresh=1 reads it now
                                              (paced, refused "none|in a battle" while a battle is on - and while the
                                              battle recorder isn't following the game's log)
+  /decks[?fresh=1[&ob=1]]                 -> EVERY deck (the backpack's too) with its cards' kinds (deckmem, read-only - as
+                                             /deck, fresh=1 refused in a battle - ob=1: the bot says it's out of
+                                             battle, for when the battle recorder is off) and the bot deck profile each one in an
+                                             Equipment Set would make (vision\battlesim.py learn_decks):
+                                             deckmem.deck_lines + learn|gid|name|school|eqset|when|k=v,...|why lines +
+                                             deckage|<s>, or none|<why>
+  /book[?fresh=1[&ob=1][&kinds=1]]        -> the spellbook (the spells the wizard knows) and the treasure-card book from
+                                             the game's memory (deckmem, read-only - Training.ahk's new spells):
+                                             deckmem.book_lines - book|template id|name|display|school|type|pips|xpip|
+                                             retired|tier|kind|value, tcbook|template id|count|name|display|school|type|
+                                             pips|kind|value, books|spellbook n|treasure n|wizard gid hex|ms|why - +
+                                             bookage|<s>, or none|<why>. The last book reading; fresh=1 reads now (as
+                                             /decks, refused in a battle; ob=1 the bot says it's out of battle; never
+                                             answered by the worn deck's signature - a spell learned doesn't change it);
+                                             kinds=1 each spell's kind and value too (slower the first time). Its own
+                                             reading: /deck's, /decks' and /sim's stay theirs
+  /sim?foes=name~health~school~boss|...&deck=<gid hex>&school=&hp=&damage=&pierce=&crit=&block=&level=&acc=&resist=
+       &team=&pp=&vals=k:v,...&boss=1&n=300[&fresh=1]
+                                          -> "can this deck beat it": the battle simulator (vision\battlesim.py) - the
+                                             deck (gid hex: one of /decks' - else the worn one) from the decks' last
+                                             reading with their kinds (fresh=1: read now, out of battle only), the
+                                             wizard's stats, the deck's settings (vals), each enemy (its health from the
+                                             game's memory when given; resists, block and hits from the battles
+                                             recorded; spells from the wiki) - n battles: battlesim.sim_lines (sim|...,
+                                             verdict|word|text, foe|..., cast|..., note|...), or none|<why>
+  /plan?school=&deck=<gid hex>&round=&blades=key~schools~%|...&traps=key~schools~%|...&trapmax=&aura=schools~%~rounds
+       &boostrun=&first=1|0&vals=k:v,...&damage=&pierce=&crit=&block=&acc=&resist=&pp=&boss=1&budget=300&n=100
+       [&foes=name~max~school~boss~health|...]
+                                          -> the round planner (vision\battlesim.py plan_round, Planner.ahk - advice
+                                             only): every card in hand that can go now (and a pass) tried in the
+                                             simulator from this very round - the hand, pips and health from the game's
+                                             memory (/cards' read), the enemies' health (/battle's; else foes=), the
+                                             blades (the bot's keys named as the hand's or deck's card: another copy of
+                                             one on isn't tried), traps (on the enemy whose most health is trapmax, else
+                                             the one with the most) and aura the bot counts, the worn deck less the hand
+                                             as the draw pile (the decks' last reading - never read in a battle), the
+                                             rest of the battle played the bot's way (vals), learned plays a nudge
+                                             (vision\battlelearn.py) - within budget ms, the reads included:
+                                             battlesim.plan_lines (plan|i|slot|tid|kind|target|won %|rounds|score|why|
+                                             name|target's name|n|hp left %|kill %, alt|... the next ones, chain|... the
+                                             bot's own way, learned|, note|) + foe|index|name|health|max|boss|plate x
+                                             (target: that index; i the card's place in the hand, -1 a pass) +
+                                             planned|rollouts|ms|ms in all, or none|<why> (never an ERR)
+       [&role=hitter|blader|healer&seat=4-7&mates=name~seat~school~hp~max~role~pips~power~hand|...&teamplan=1&charms=log]
+                                             (v0.9.0 batch 3 - none given: as above) the team model: mates the party's
+                                             other wizards on your side (hand: tid:kind:pips:school:value;... - each
+                                             card's kind and value from cards.jsonl's facts when known; empty: not
+                                             known, its role's way), each with its own hand, pips and health in your
+                                             side's cast order (seat), the enemies' single hits on one of you at random;
+                                             role / seat yours. teamplan=1: also a play for each wizard whose hand is
+                                             known (battlesim.plan_team: order|who|seat|name|i|tid|kind|target|won %|
+                                             why|card, teamnote|) - advice. charms=log: the blades, traps, shields,
+                                             weaknesses and absorbs on you and each enemy rebuilt from the game's log
+                                             (battlerec.charms_now - the party's and the enemies' too) instead of the
+                                             bot's own count (the enemies matched by their gid; note| says how many)
+  /deckfor?zone=<zone path>[&foes=name~name|name...]&school=&hp=&damage=&pierce=&crit=&block=&acc=&resist=&vals=&n=60
+                                          -> decks matched to a zone's enemies (battlesim.best_decks): each in-game deck
+                                             in an Equipment Set (the decks' last reading - never read here), its
+                                             settings what its cards call for on top of vals, simulated against the
+                                             enemy groups fought most in that zone (the battles recorded - else foes=,
+                                             one group a |) - deckfor|gid|name|won %|rounds|hp left %|lost %|groups|
+                                             battles|why best first, group|battles|names, zone|, note|; worked out in a
+                                             thread and kept 10 minutes: the first ask answers none|working it out -
+                                             ask again; an ask after the 10 minutes gets the old lines (and a note|)
+                                             while they're worked out again (Decks.ahk DeckForZone, Settings: deckzone,
+                                             off). Every deck rolls the same dice against a group: the same cards
+                                             score the same
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -1829,6 +2006,9 @@ MAP_ITEM_QUEST = (60, 235, 110)     # ...one the goal wants (walked to and picke
 ITEMS_SHOWN = {}                    # the walker's last /items: {'quest': {gids}, 'at': time} - for the map
 QUEST_NEAR = 400.0                  # a mob this near the quest's goal (in this zone) is what the goal is
 MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'quest': {gids}, 'near': mob radius, 'at': time}
+DUELS_SHOWN = {}                    # the last /nav's other players' battles kept out of, for the map: {'list', 'at'}
+MAP_DUEL = (186, 120, 255)          # another player's battle kept out of (duelavoid)
+MAP_WALL = (240, 82, 82)            # a line of mobs' gaps closed (a wall)
 
 
 # ---------------------------------------------------------------- the Network tab (netmon.py)
@@ -1897,7 +2077,9 @@ def cards_answer():
     r, why = nav_reader().cards()
     _rec_hook('saw_hand', r)
     text = handmem.answer(r, why)
-    key = '\n'.join(ln for ln in text.split('\n') if not ln.startswith('hand|'))
+    # (logged when the cards change - not their boxes, fields 26-29, nor the root line: a card zoomed up or the hand
+    # sliding back isn't a new hand)
+    key = '\n'.join('|'.join(ln.split('|')[:25]) for ln in text.split('\n') if not ln.startswith(('hand|', 'root|')))
     if key != CARDS_LOGGED['text']:
         CARDS_LOGGED['text'] = key
         if text.startswith('none|'):
@@ -1925,6 +2107,26 @@ def bag_answer():
         BAG_LOGGED['key'] = key
         log('/bag (memory): ' + ' / '.join(ln for ln in lines if not ln.startswith(('cat|', 'set|', 'setitem|', 'crownshop|')))[:600])
     return lines
+
+
+def gear_lines_for(q):
+    """/gear: the gear from the game's memory (navmem's reader, read-only - vision\\gearmem.py) through gearrank.answer -
+    the swap plan for the totals in q, and with run= the run's drop log in AutoFarmer\\learned\\drops (the catalogue,
+    resources\\dungeons_known.txt, for a run with no slots); its gear|, plan| and run| lines logged. Never raises"""
+    import gearrank
+    try:
+        r, why = nav_reader().gear(wait=2.0)
+        known = ''
+        try:
+            with open(os.path.join(ROOT, 'resources', 'dungeons_known.txt'), encoding='utf-8', errors='replace') as f:
+                known = f.read()
+        except OSError:
+            pass
+        lines = gearrank.answer(r, why, q, os.path.join(ROOT, 'learned', 'drops'), known)
+        log('/gear (memory): ' + ' / '.join(ln for ln in lines if ln.startswith(('gear|', 'plan|', 'run|', 'none|')))[:600])
+        return lines
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ["none|the gear couldn't be read (%r)" % (e,)]
 
 
 def cards_by_school(c):
@@ -2120,9 +2322,12 @@ def mobs_now(r, goal_line='', trail=False, goal=None):
             whose = " - the quest's" if m['quest'] else ''
             log(f"mobs: {m['kind']} {m['name']!r} in the zone - {m.get('title')} rank {m.get('rank')}, {m.get('health')} "
                 f"health, {m.get('school')} (boss flag {m.get('boss')}){whose}")
+    now = time.time()
     if trail and r is not None and r.get('pos') is not None:
-        MOB_TRAIL.append((time.time(), tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
-                                                       for m in mobs}))
+        MOB_TRAIL.append((now, tuple(r['pos']), {m['gid']: (m['name'], m['pos'][0], m['pos'][1], m['pos'][2], m.get('yaw'))
+                                                 for m in mobs}))
+    # (which way and how fast each walks - every reading feeds it: the walker's asks, /navto's, /mobs', the map's)
+    motion_feed(now, mobs, r.get('pos') if r is not None else None)
     return mobs, ''
 
 
@@ -2139,18 +2344,26 @@ def mob_line(m, me):
     """/mobs' line for a mob m (mobs_now's) seen from me (the wizard's x, y, z): mob|name|x|y|z|distance|quest|degrees
     off its facing|title|rank|health|school|boss|gid|named|template - 9-14 what it is (navmem / bossmem: each "" while
     not known), 15 the quest's by its name or its goal only (quest_named: 1/0, "" not known), 16 its template's name
-    (navmem's - "" not read; a mob with no template field at all, an older reader's, ends at 15 as before)"""
+    (navmem's - "" not read; a mob with no template field at all, an older reader's, ends at 15 as before); 17-19 how it
+    moves (motion_feed - only once its motion is known, the template's field then always there): vx|vy (units / s, its
+    straight line over the last second) |moving (1 walking, 0 standing, "" not known)"""
     off = ''
     if m.get('yaw') is not None:
         dx, dy = me[0] - m['pos'][0], me[1] - m['pos'][1]
         d = math.hypot(dx, dy) or 1.0
         c = (dx * -math.sin(m['yaw']) + dy * -math.cos(m['yaw'])) / d
         off = f"{math.degrees(math.acos(max(-1.0, min(1.0, c)))):.0f}"
+    fit, moving = m.get('fit'), m.get('moving')
+    known = fit is not None or moving is not None
+    motion_cells = ''
+    if known:
+        motion_cells = (f"|{fit[0]:.1f}|{fit[1]:.1f}|" if fit is not None else "|||") + mob_cell(moving)
     return (f"mob|{mob_cell(m['name'])}|{m['pos'][0]:.1f}|{m['pos'][1]:.1f}|{m['pos'][2]:.1f}|"
             f"{math.hypot(m['pos'][0] - me[0], m['pos'][1] - me[1]):.0f}|{1 if m.get('quest') else 0}|{off}|"
             + '|'.join(mob_cell(m.get(k)) for k in ('title', 'rank', 'health', 'school', 'boss', 'gid'))
             + '|' + mob_cell(m.get('named'))
-            + ('|' + mob_cell(m.get('template')) if 'template' in m else ''))
+            + ('|' + mob_cell(m.get('template')) if 'template' in m or known else '')
+            + motion_cells)
 
 
 def plate_x(p):
@@ -2164,9 +2377,26 @@ def plate_x(p):
         return ''
 
 
+def plate_box(p):
+    """a participant's plate as fractions of the client: [left, top, right, bottom], each 0..1 (its box - in the root,
+    bossmem's GUI units - over the root's width / height, as plate_x), four '' when it isn't read (the wizard's own when
+    no window holds it: source handmem) or is empty. NOT CHECKED against the screen yet (v0.9.0)"""
+    b, r = p.get('box'), p.get('root')
+    try:
+        w, h = r[2] - r[0], r[3] - r[1]
+        if w > 0 and h > 0 and b[2] > b[0] and b[3] > b[1]:
+            return [f'{b[0] / w:.4f}', f'{b[1] / h:.4f}', f'{b[2] / w:.4f}', f'{b[3] / h:.4f}']
+    except (TypeError, IndexError):
+        pass
+    return ['', '', '', '']
+
+
 def battle_lines(parts, why=''):
-    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x a
-    participant (the wizard's own first), or none|<why> - x (plate_x) last: an older bot reads the first 12"""
+    """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x|
+    l|t|r|b|hide a participant (the wizard's own first), or none|<why> - x (plate_x) the 13th: an older bot reads the
+    first 12; l|t|r|b (plate_box: the plate's box across and down the client, 0..1) and hide (1: the game hides its
+    health - m_HideCurrentHP - its health field may not be what the plate shows; 0 not, '' not read) after it (v0.9.0):
+    a bot before that reads its 13"""
     if not parts:
         return ['none|' + mob_cell(why or 'not in a battle')]
     out = []
@@ -2176,7 +2406,8 @@ def battle_lines(parts, why=''):
                              mob_cell(p.get('health')), mob_cell(p.get('max_health')), mob_cell(p.get('boss')),
                              mob_cell(mob.get('title')), mob_cell(mob.get('rank')),
                              mob_cell(mob.get('school') or (p.get('school') or '').capitalize() or None),
-                             mob_cell(p.get('player')), mob_cell(p.get('owner')), plate_x(p)]))
+                             mob_cell(p.get('player')), mob_cell(p.get('owner')), plate_x(p)]
+                            + plate_box(p) + [mob_cell(p.get('hide_hp'))]))
     return out
 
 
@@ -2230,16 +2461,19 @@ def quest_item(thing, goal_line, goal=None, key_hit=None):
 ITEM_NEAR = 400.0           # a live thing this near a placement of its template stands for it (the file's left out)
 
 
-def merge_things(live, placed):
+def merge_things(live, placed, uses=None):
     """/items?far=1's things: every live one (src mem) and every placement of the zone's file with a name key (src file -
     placements.built_things) that no live thing of the same template stands within ITEM_NEAR of (the game moves few: a
     live one is where it is now; a used or picked-up one is gone from memory but still in the file). A placement's gid:
     "f:<template>:<n>" by its "instance (n)", else - or taken - "f:<template>@<where its record is in the file>": the
-    same every time the file is"""
+    same every time the file is. uses: the templates the zone's triggers' use events may be fired by
+    (puzzlefile.use_templates): a placement of one with no name key is a thing too - kind "use", name and key ""
+    (a lever the game names nowhere); none: as before"""
     out = [dict(t, src=t.get('src') or 'mem') for t in live]
     gids = set()
     for p in placed or ():
-        if not p.get('key'):
+        use = not p.get('key') and bool(uses) and bool(p.get('template')) and p['template'] in uses and not p.get('kind')
+        if not p.get('key') and not use:
             continue
         if any(t.get('template') == p['template'] and math.hypot(t['pos'][0] - p['pos'][0], t['pos'][1] - p['pos'][1])
                <= ITEM_NEAR for t in live):
@@ -2248,6 +2482,10 @@ def merge_things(live, placed):
         if not gid or gid in gids:
             gid = f"f:{p['template']}@{p.get('at')}"
         gids.add(gid)
+        if use:
+            out.append({'name': '', 'pos': tuple(p['pos']), 'yaw': p.get('yaw'), 'gid': gid, 'template': p['template'],
+                        'key': '', 'keys': [], 'kind': 'use', 'src': 'file'})
+            continue
         out.append({'name': p.get('text') or '', 'pos': tuple(p['pos']), 'yaw': p.get('yaw'), 'gid': gid,
                     'template': p['template'], 'key': p['key'], 'keys': list(p.get('keys') or [p['key']]),
                     'kind': p.get('kind') or '', 'src': 'file'})
@@ -2260,7 +2498,8 @@ PUZZLE_WANTED = {}          # (the zone whose triggers were last asked for - pla
 
 # The requests that read the game's memory with the walker waiting (/nav's timeout is 150 ms): placements' builds wait
 # for them (placements.busy), and so does the battle recorder (GATE)
-GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck'}
+GATED = {'/nav', '/mobs', '/goal', '/battle', '/navto', '/items', '/uiroot', '/blockers', '/navpass', '/deck', '/decks',
+         '/sim', '/guitree', '/duels', '/plan'}
 
 
 class Gate:
@@ -2294,6 +2533,10 @@ class Gate:
 
 GATE = Gate()
 REC = None      # the battle recorder (vision\battlerec.py), started by main(); None: off, the hooks do nothing
+# s a fresh deck read asked by a gated request (/deck, /decks, /sim, /book) waits for another fresh read to end - navmem
+# reads the decks one at a time (NavMem.deck's queue): the one in progress (the recorder's, say) gives way to a gated
+# request within its DECK_IDLE (1 s), its idle() seeing it in flight; not ended by then: none|gave way ... (read again)
+DECK_QUEUE_S = 1.5
 
 
 def _rec_hook(name, *a):
@@ -2314,10 +2557,603 @@ def deck_lines(fresh):
         return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
                                                                    "battle can't be ruled out)")]
     r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
-                               stop=rec.in_duel if fresh else None)
+                               stop=rec.in_duel if fresh else None, queue=DECK_QUEUE_S if fresh else 0.0)
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
     return deckmem.deck_lines(r) + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
+
+
+# ---------------------------------------------------------------- the battle simulator (battlesim.py)
+SIM = {'book': None, 'facts': None, 'at': 0.0, 'refreshing': 0}    # refreshing: paced reads of the battles running
+SIM_LOCK = threading.Lock()
+SIM_BOOK_S = 600        # the battles recorded read again this often
+
+
+def gate_wait():
+    """(a background thread's pure-Python work) wait while a gated request is in flight - the bot's and the walker's
+    reads go first: a thread holding the GIL pushed a live /nav read past its 150 ms (placements.py) - up to 10 s"""
+    waited = 0
+    while GATE.busy() and waited < 200:
+        time.sleep(0.05)
+        waited += 1
+
+
+def sim_book(paced=False):
+    """(FoeBook, facts): the battles recorded by enemy and cards.jsonl's card facts (AutoFarmer\\learned\\battles) -
+    read again every SIM_BOOK_S. paced (a background thread's - /deckfor's): read again pausing for each battle while a
+    gated request is in flight (gate_wait), OUTSIDE SIM_LOCK - a gated /decks or /sim waiting on that lock is in flight
+    itself, so a pause under it would only wait it out. While a paced read runs (SIM refreshing - _plan_load's too) the
+    old book answers: a gated /sim or /decks never reads the whole archive again meanwhile (none yet: read here)"""
+    import battlesim
+    base = os.path.join(ROOT, 'learned', 'battles')
+    with SIM_LOCK:
+        if SIM['book'] is not None and (time.monotonic() - SIM['at'] <= SIM_BOOK_S or SIM['refreshing']):
+            return SIM['book'], SIM['facts']
+        if not paced:
+            SIM['book'], SIM['facts'] = battlesim.FoeBook(base), battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+            SIM['at'] = time.monotonic()
+            return SIM['book'], SIM['facts']
+        SIM['refreshing'] += 1
+
+    def feed():
+        for b in battlesim.FoeBook._read(base, 120):
+            gate_wait()
+            yield b
+    try:
+        book = battlesim.FoeBook(battles=feed())
+        facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+        with SIM_LOCK:
+            SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+    finally:
+        with SIM_LOCK:
+            SIM['refreshing'] -= 1
+    return book, facts
+
+
+def decks_reading(fresh, out=False):
+    """(every deck's reading with the cards' kinds, why) - the last one, or (fresh) one read now: only while the battle
+    recorder follows the game's log and sees no duel (deck_lines' rule) - or, the recorder off, when the bot says it's out
+    of battle (out: its own battle check and the game's log)"""
+    rec = REC if REC is not None and REC.on and not REC.broken and REC.started and REC.tail is not None else None
+    if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
+        return None, ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
+                                                             "battle can't be ruled out)")
+    # (the recorder off - out: nothing to stop the read by, rec None - book_answer's way)
+    return nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
+                             stop=rec.in_duel if fresh and rec is not None else None, only_equipped=False, kinds=True,
+                             queue=DECK_QUEUE_S if fresh else 0.0)
+
+
+def decks_lines(fresh, out=False):
+    """/decks' answer: every deck (deckmem.deck_lines) + the profiles they'd make (battlesim.learn_lines) + deckage"""
+    import battlesim
+    import deckmem
+    r, why = decks_reading(fresh, out)
+    if r is None:
+        return ['none|' + mob_cell(why or 'not read')]
+    # (the profiles never cost the decks' own lines: a deck they can't be made of is said, the rest still answered)
+    try:
+        _book, facts = sim_book()
+        learn = battlesim.learn_lines(battlesim.learn_decks(r, facts))
+    except Exception as e:  # noqa: BLE001
+        learn = ['nolearn|%s' % mob_cell('the deck profiles failed (%r)' % (e,))]
+    return (deckmem.deck_lines(r) + learn
+            + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))])
+
+
+def book_answer(fresh, out=False, kinds=False):
+    """/book's answer: deckmem.book_lines of the books' reading (navmem's deck(books=True) - its own cache) + bookage, or
+    none|<why>. fresh: read now, only as decks_reading allows it (the battle recorder following the game's log and seeing
+    no duel - or, the recorder off, out: the bot says it's out of battle); the worn deck only (the books are what's
+    asked for)"""
+    import deckmem
+    rec = REC if REC is not None and REC.on and not REC.broken and REC.started and REC.tail is not None else None
+    if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
+        return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
+                                                                   "battle can't be ruled out)")]
+    # (the recorder off - out: nothing to stop the read by, rec None)
+    r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
+                               stop=rec.in_duel if fresh and rec is not None else None, only_equipped=True, kinds=kinds,
+                               books=True, queue=DECK_QUEUE_S if fresh else 0.0)
+    if r is None:
+        return ['none|' + mob_cell(why or 'not read')]
+    return deckmem.book_lines(r) + ['bookage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
+
+
+def quests_answer():
+    """/quests' answer: questmem.quest_lines of every quest in the game's quest manager (navmem's quests()), or none|<why>
+    - never raises"""
+    try:
+        import questmem
+        t0 = time.perf_counter()
+        rows, why = nav_reader().quests(wait=0.3)
+        return questmem.quest_lines(rows, why, (time.perf_counter() - t0) * 1000)
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|' + mob_cell('reading the quests failed (%r)' % (e,))]
+
+
+# (/book and /quests read the game's memory as /deck and /goal do: gated the same way - placements' builds and the battle
+# recorder wait for them, and the book read's own request is the one GATE.idle(own=1) leaves out)
+GATED |= {'/book', '/quests'}
+
+
+def sim_lines_for(q):
+    """/sim's answer (see the docstring) - never raises"""
+    import battlesim as B
+    try:
+        r, why = decks_reading(q.get('fresh') == '1', q.get('ob') == '1')
+        if r is None:
+            return ['none|' + mob_cell(why or "the decks haven't been read with their cards yet (/decks?fresh=1)")]
+        want = (q.get('deck') or '').strip().lower()
+        decks = r.get('decks') or []
+        if want:
+            deck = next((d for d in decks if '%x' % d['gid'] == want), None)
+        else:
+            deck = next((d for d in decks if d.get('equipped')), None)
+        if deck is None:
+            return ['none|' + ("deck %s isn't among the decks read" % want if want else 'no deck worn')]
+        book, facts = sim_book()
+        notes = []
+        cards = B.deck_cards(deck, facts, notes)
+
+        def fl(k, d=0.0):
+            try:
+                return float(q.get(k) or d)
+            except ValueError:
+                return d
+        me = B.Me(q.get('school') or deck.get('school'), fl('hp', 3000), damage=fl('damage'), pierce=fl('pierce'),
+                  crit=fl('crit'), block=fl('block'), level=fl('level', 100), accuracy=fl('acc'), resist=fl('resist'),
+                  power_pip=fl('pp', 0.4), team=fl('team', 1))
+        vals = {}
+        for kv in (q.get('vals') or '').split(','):
+            k, _, v = kv.partition(':')
+            if k.strip():
+                vals[k.strip().lower()] = v.strip()
+        wiki, casts = enemy_state()
+        foes = []
+        for spec in (q.get('foes') or '').split('|'):
+            bits = (spec.split('~') + ['', '', '', ''])[:4]
+            name = bits[0].strip()
+            if not name:
+                continue
+            hp = int(float(bits[1])) if re.fullmatch(r'\d+(\.\d+)?', bits[1].strip()) else None
+            foes.append(book.foe(name, wiki, casts, hp=hp, school=bits[2].strip() or None,
+                                 boss=True if bits[3].strip() == '1' else None))
+        if not foes:
+            return ['none|no enemies named (foes=)']
+        boss = q.get('boss') == '1' or any(f.boss for f in foes)
+        opts = B.Opts.of(vals, boss=boss)
+        if any(vals.get('usehit%d' % i) == '0' for i in range(1, 5)) and all(
+                vals.get('usehit%d' % i) == '0' for i in range(1, 5)):
+            opts.usehit = False
+        res = B.simulate(cards, me, foes, opts, n=int(fl('n', 300)))
+        res['why'] = notes + res['why']
+        if any(not f.spells and 'pending' not in f.src and wiki.creature(f.name) is None for f in foes):
+            res['why'].append("the wiki is still being asked about an enemy: ask again in a moment")
+        return B.sim_lines(res, B.verdict(res, cards, me, foes, opts), foes) + [
+            'deck|%x|%s' % (deck['gid'], str(deck.get('display') or deck.get('object_name') or '').replace('|', '/'))]
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the simulation failed (%r)' % (e,)]
+
+
+# ---------------------------------------------------------------- decks matched to a zone's enemies (battlesim.best_decks)
+DECKFOR = {'cache': {}, 'thread': None}
+DECKFOR_LOCK = threading.Lock()
+DECKFOR_S = 600         # an answer kept this long (the battles recorded are read again as often - SIM_BOOK_S)
+
+
+def deckfor_lines_for(q, ctx=None, wait=False):
+    """/deckfor's answer (see the docstring) - never raises. Worked out in a thread (each deck against each group: a
+    few seconds), kept DECKFOR_S for the same question: the first ask answers none|working it out, an ask after it the
+    lines; an ask after DECKFOR_S the old lines (a note| saying so) while the thread works them out again. ctx {book,
+    facts, wiki, casts, decks} and wait (work it out here) - a test's"""
+    import battlesim as B
+    try:
+        zone = (q.get('zone') or '').strip()
+        foes_q = (q.get('foes') or '').strip()
+        if ctx is None:
+            # (the decks' last reading now - never read here; the battles recorded and the wiki in the thread below)
+            r, why = decks_reading(False)
+            ctx = {'decks': r, 'why': why}
+        reading = ctx.get('decks') or {}
+        decks = [d for d in reading.get('decks') or [] if d.get('sets') or d.get('equipped')]
+        if not decks:
+            return ['none|' + mob_cell(ctx.get('why') or "the decks haven't been read with their cards yet (the Cards "
+                                       "tab's From game)")]
+        sig = tuple(sorted((d.get('gid'), d.get('main_n'), d.get('item_n')) for d in decks))
+        key = (zone, foes_q, q.get('school') or '', q.get('hp') or '', q.get('damage') or '', q.get('vals') or '',
+               q.get('n') or '', sig)
+        now = time.monotonic()
+        with DECKFOR_LOCK:
+            hit = DECKFOR['cache'].get(key)
+            if hit is not None and now - hit[0] < DECKFOR_S:
+                return hit[1]
+            # (an answer kept past DECKFOR_S: handed back as it was while it's worked out again - the bot re-asks every
+            # 10 minutes too, and a "working it out" then would drop the zone's deck for a moment - Decks.ahk
+            # DeckForZone keeps its rows through one as well)
+            stale = list(hit[1]) + ['note|worked out %d minutes ago - being worked out again' % ((now - hit[0]) // 60)] \
+                if hit is not None else None
+            busy = DECKFOR['thread'] is not None and DECKFOR['thread'].is_alive()
+            if busy and not wait:
+                return stale or ['none|working out another zone\'s decks - ask again in a few seconds']
+
+        def fl(k, d=0.0):
+            try:
+                v = float(q.get(k) or d)
+                return v if math.isfinite(v) else d
+            except (TypeError, ValueError):
+                return d
+
+        def work():
+            try:
+                if 'book' in ctx:
+                    book, facts = ctx.get('book') or B.FoeBook(battles=[]), ctx.get('facts') or {}
+                    wiki, casts = ctx.get('wiki'), ctx.get('casts')
+                else:
+                    # (the battles recorded read again, and each deck simulated, pausing for the gated reads: this
+                    # thread runs while the bot walks the zone it was asked at - the walker's /nav goes first)
+                    book, facts = sim_book(paced=True)
+                    wiki, casts = enemy_state()
+                if foes_q:
+                    groups = [[x.strip() for x in g.split('~') if x.strip()] for g in foes_q.split('|')]
+                else:
+                    groups = (book.groups or {}).get(zone) or {}
+                vals = {}
+                for kv in (q.get('vals') or '').split(','):
+                    k, _, v = kv.partition(':')
+                    if k.strip():
+                        vals[k.strip().lower()] = v.strip()
+                specs = []
+                for d in decks:
+                    cards = B.deck_cards(d, facts)
+                    # (each deck's own settings - the ones its cards call for, learn_deck's - on top of yours)
+                    dv = dict(vals)
+                    try:
+                        dv.update({k: str(v) for k, v in B.learn_deck(d, facts, len(decks))['vals'].items()})
+                    except Exception:  # noqa: BLE001 - your settings alone
+                        pass
+                    specs.append(('%x' % d['gid'] if isinstance(d.get('gid'), int) else str(d.get('gid') or ''),
+                                  str(d.get('display') or d.get('object_name') or 'deck'), cards, B.Opts.of(dv)))
+                sch = (q.get('school') or '').lower()
+                me = B.Me(sch, fl('hp', 3000), damage=fl('damage'), pierce=fl('pierce'), crit=fl('crit'),
+                          block=fl('block'), accuracy=fl('acc'), resist=fl('resist'), power_pip=fl('pp', 0.4))
+                res = B.best_decks(specs, groups, lambda names: [book.foe(nm, wiki, casts) for nm in names], me,
+                                   n=int(min(300, max(10, fl('n', B.DECKFOR_N)))), budget_ms=20000, pause=gate_wait)
+                lines = B.deckfor_lines(res, zone)
+            except Exception as e:  # noqa: BLE001 - said, not kept
+                lines = ['none|the decks couldn\'t be simulated (%r)' % (e,)]
+            with DECKFOR_LOCK:
+                if len(DECKFOR['cache']) > 32:
+                    DECKFOR['cache'].clear()
+                DECKFOR['cache'][key] = (time.monotonic(), lines)
+            return lines
+        if wait:
+            return work()
+        with DECKFOR_LOCK:
+            DECKFOR['thread'] = threading.Thread(target=work, name='deckfor', daemon=True)
+            DECKFOR['thread'].start()
+        return stale or ['none|working it out - ask again in a few seconds']
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the decks couldn\'t be simulated (%r)' % (e,)]
+
+
+# ---------------------------------------------------------------- the round planner (battlesim.plan_round, battlelearn)
+PLAN = {'plays': None, 'at': 0.0, 'thread': None}
+PLAN_LOCK = threading.Lock()
+
+
+def _plan_load():
+    """(the planner's thread) the battles recorded read once - pausing while a gated request is in flight (the bot's and
+    the walker's reads go first) - into the simulator's FoeBook (SIM: as sim_book keeps it) and the learned plays
+    (battlelearn; saved to learned\\battles\\plays.json); cards.jsonl's facts with them. One pass feeds both: an odd
+    record the FoeBook can't take is skipped there (counted in its why), the pass and the learned plays go on"""
+    import battlelearn
+    import battlesim
+    base = os.path.join(ROOT, 'learned', 'battles')
+    plays = battlelearn.Plays()
+    # (a paced read running: sim_book's callers keep the old book meanwhile)
+    with SIM_LOCK:
+        SIM['refreshing'] += 1
+    try:
+        def feed():
+            for b in battlelearn.read(base, days=120):
+                gate_wait()
+                plays.add(b)
+                yield b
+        book = battlesim.FoeBook(battles=feed())
+        facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+        with SIM_LOCK:
+            SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+        plays.made = time.strftime('%Y-%m-%d %H:%M:%S')
+        plays.save(os.path.join(base, battlelearn.PLAYS_FILE))
+        log('/plan: %d battles recorded read (%d rounds learned)%s' % (plays.battles, plays.rounds,
+                                                                      ('; ' + book.why) if book.why else ''))
+    except Exception as e:  # noqa: BLE001 - planned with what there is
+        log('/plan: the battles recorded could not be read (%r)' % (e,))
+    finally:
+        with SIM_LOCK:
+            SIM['refreshing'] -= 1
+    PLAN['plays'], PLAN['at'] = plays, time.monotonic()
+
+
+def plan_book():
+    """{book, facts, plays, why} for /plan without waiting: the simulator's FoeBook and card facts (as sim_book keeps
+    them) and the learned plays as last read - none read yet or SIM_BOOK_S old: read again in a thread (_plan_load), this
+    round planned with what there is (nothing learned yet: why says so)"""
+    import battlesim
+    now = time.monotonic()
+    with PLAN_LOCK:
+        stale = (SIM['book'] is None or now - SIM['at'] > SIM_BOOK_S or PLAN['plays'] is None
+                 or now - PLAN['at'] > SIM_BOOK_S)
+        if stale and (PLAN['thread'] is None or not PLAN['thread'].is_alive()):
+            PLAN['thread'] = threading.Thread(target=_plan_load, name='planbook', daemon=True)
+            PLAN['thread'].start()
+    book, facts = SIM['book'], SIM['facts']
+    if book is None:
+        return {'book': battlesim.FoeBook(battles=[]), 'facts': {}, 'plays': PLAN['plays'],
+                'why': 'the battles recorded are still being read - nothing learned from them this round'}
+    return {'book': book, 'facts': facts or {}, 'plays': PLAN['plays'], 'why': ''}
+
+
+def plan_mates(text, facts):
+    """/plan's mates= (name~seat~school~hp~max~role~pips~power~hand|... - hand: tid:kind:pips:school:value;... each card's
+    kind and value from cards.jsonl's facts when it has none, empty: not known) as [battlesim.Mate] - a field it can't
+    read the default, a card it can't make left out; never raises"""
+    import battlesim as B
+    out = []
+    try:
+        for spec in (text or '').split('|')[:12]:
+            bits = (spec.split('~') + [''] * 9)[:9]
+            if not any(b.strip() for b in bits):
+                continue
+            if len(out) >= 3:
+                break
+
+            def num(v, d=None):
+                v = (v or '').strip()
+                return int(v) if re.fullmatch(r'\d{1,6}', v) else d
+            hand = None
+            if bits[8].strip():
+                hand = []
+                for item in bits[8].split(';')[:9]:
+                    f = (item.split(':') + [''] * 5)[:5]
+                    c = {'template_id': num(f[0]), 'kind': f[1].strip().lower() or None, 'pips': num(f[2]),
+                         'school': f[3].strip().lower(), 'value': f[4].strip() or None,
+                         'value_text': f[4].strip() or None}
+                    card = B.card_of(c, facts)
+                    if card is not None:
+                        hand.append(card)
+            school = bits[2].strip().lower()
+            me = B.Me(school, num(bits[4], 3000), hp=num(bits[3]))
+            out.append(B.Mate(re.sub(r'[^\w .\'-]', '', bits[0])[:24], num(bits[1]), me, bits[5].strip().lower(), hand,
+                              [c for c in hand for _ in range(2)] if hand else [], num(bits[6], 0), num(bits[7], 0),
+                              num(bits[3])))
+    except Exception:  # noqa: BLE001 - the ones read so far
+        pass
+    return out
+
+
+def plan_charms(state, plates, facts, ctx):
+    """(/plan's charms=log) the charms on now from the game's log (battlerec.charms_now on the battle recorder's open
+    duel - ctx['duel'] a test's) put in state (State.charms_from: the enemies matched to the memory's plates by gid) -
+    [notes]; never raises"""
+    try:
+        import battlerec
+        if 'duel' in ctx:
+            d = ctx['duel']
+        else:
+            rec = REC
+            d = rec.parser.duel if rec is not None and rec.on and not rec.broken else None
+        if not isinstance(d, dict):
+            return ["the log's charms not read (the battle recorder isn't following this battle) - the bot's own count"]
+        ch = battlerec.charms_now(d, facts)
+        gids = {str(p.get('gid')): sc for sc, p in list((d.get('parts') or {}).items())
+                if isinstance(p, dict) and p.get('gid')}
+        scs = [gids.get(str(p.get('owner'))) if isinstance(p, dict) and p.get('owner') else None for p in plates]
+        n = state.charms_from(ch, d.get('me_sc'), scs if any(s is not None for s in scs) else None)
+        return ["%d charm%s on from the game's log (%d of %d enemies matched by gid)" % (
+            n, '' if n == 1 else 's', sum(1 for s in scs if s is not None), len(scs))] + list(ch.get('why') or [])
+    except Exception as e:  # noqa: BLE001 - the bot's own count then
+        return ["the log's charms couldn't be read (%r) - the bot's own count" % (e,)]
+
+
+def plan_lines_for(q, cards_reader=None, battle_reader=None, ctx=None):
+    """/plan's answer (see the docstring) - never raises (a 'none|why' line), and within budget (ms, default 300) as far
+    as it can: the game's memory read first (the hand and pips: cards_reader; the enemies: battle_reader - navmem's
+    reads, a test's stand-ins), the rollouts in the time left. ctx: {book, facts, plays, wiki, casts, decks} (a test's -
+    else plan_book, enemy_state and the decks' last reading: decks_reading, never a fresh read in a battle)"""
+    import battlesim as B
+    t0 = time.monotonic()
+
+    def fl(k, d=0.0):
+        try:
+            v = float(q.get(k) or d)
+            return v if math.isfinite(v) else d
+        except (TypeError, ValueError):
+            return d
+    try:
+        budget = int(min(5000, max(50, fl('budget', 300))))
+        cards_reader = cards_reader or (lambda: nav_reader().cards())
+        battle_reader = battle_reader or (lambda: nav_reader().battle(wait=0.3))
+        r, why = cards_reader()
+        # (the game dealing or laying the cards out - the bot's discards just made: asked again for 40 % of the budget)
+        while r is not None and r.get('state') == 'changing' and (time.monotonic() - t0) * 1000 < 0.4 * budget:
+            time.sleep(0.04)
+            r, why = cards_reader()
+        if r is None:
+            return ['none|' + mob_cell(why or "the game can't be read")]
+        if not (r.get('in_battle') and r.get('planning') and r.get('settled')):
+            return ['none|' + mob_cell(r.get('why') or 'not a settled hand in a planning phase')]
+        _rec_hook('saw_hand', r)
+        # (each card with its place in the game's hand - 0 the leftmost, counted over every card read: plan|'s i)
+        raw = [(gi, c) for gi, c in enumerate(r.get('cards') or []) if isinstance(c, dict) and c.get('name')]
+        if not raw:
+            return ['none|no card in hand']
+        mer = r.get('me') or {}
+        ctx = dict(ctx) if ctx is not None else None
+        if ctx is None:
+            ctx = plan_book()
+            ctx['wiki'], ctx['casts'] = enemy_state()
+            try:
+                ctx['decks'] = decks_reading(False)[0]
+            except Exception:  # noqa: BLE001 - no deck then
+                ctx['decks'] = None
+        book, facts, notes = ctx.get('book') or B.FoeBook(battles=[]), ctx.get('facts') or {}, []
+        if ctx.get('why'):
+            notes.append(ctx['why'])
+        wiki, casts = ctx.get('wiki'), ctx.get('casts')
+        # (the enemies: the game's memory - /battle's reading - else foes= name~health~school~boss~health now)
+        parts, pwhy = battle_reader()
+        foes, fhp, plates, team = [], [], [], 1
+        if parts:
+            _rec_hook('saw_battle', parts)
+            mine = next((p for p in parts if p.get('me')), None)
+            myteam = mine.get('team') if mine else None
+            team = max(1, len([p for p in parts if p.get('team') == myteam and p.get('player')])) if mine else 1
+            for k, p in enumerate(p for p in parts if not p.get('me') and (mine is None or p.get('team') != myteam)):
+                mob = p.get('mob') or {}
+                name = p.get('name') or mob.get('title') or 'Enemy %d' % (k + 1)
+                foes.append(book.foe(name, wiki, casts, hp=p.get('max_health') or None,
+                                     school=(mob.get('school') or p.get('school') or '').lower() or None,
+                                     boss=bool(p.get('boss'))))
+                fhp.append(p.get('health'))
+                plates.append(p)
+        else:
+            for spec in (q.get('foes') or '').split('|'):
+                bits = (spec.split('~') + [''] * 5)[:5]
+                if not bits[0].strip():
+                    continue
+                num = [int(float(x)) if re.fullmatch(r'\d+(\.\d+)?', x.strip()) else None for x in (bits[1], bits[4])]
+                foes.append(book.foe(bits[0].strip(), wiki, casts, hp=num[0], school=bits[2].strip() or None,
+                                     boss=True if bits[3].strip() == '1' else None))
+                fhp.append(num[1])
+                plates.append(None)
+            if foes:
+                notes.append("the enemies as the bot named them (the game's memory: %s)" % (pwhy or 'no battle read'))
+        if not foes:
+            return ['none|' + mob_cell('no enemies (%s)' % (pwhy or 'no battle read'))]
+        # (my side: the hand - each card's kind from the memory, else cards.jsonl's facts -, pips, health, the stats)
+        hand, ids = [], []
+        for gi, c in raw:
+            card = B.card_of(dict(c, side='treasure' if c.get('treasure') else 'main', item=bool(c.get('item_card'))),
+                             facts)
+            if card is not None:
+                hand.append(card)
+                ids.append((gi, c.get('slot') or '', c.get('template_id') if c.get('template_id') is not None else ''))
+        if len(hand) < len(raw):
+            notes.append('%d card%s in hand with no kind known left out' % (len(raw) - len(hand),
+                                                                            '' if len(raw) - len(hand) == 1 else 's'))
+        school = (q.get('school') or mer.get('school') or '').lower()
+        me = B.Me(school, mer.get('max_health') or fl('hp', 3000), hp=mer.get('health'), damage=fl('damage'),
+                  pierce=fl('pierce'), crit=fl('crit'), block=fl('block'), level=fl('level', 100), accuracy=fl('acc'),
+                  resist=fl('resist'), power_pip=fl('pp', 0.4), team=fl('team', team))
+        pp = mer.get('pips') or {}
+
+        def pip(k):
+            v = pp.get(k)
+            return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
+        pips = pip('generic') + pip('power') + sum(pip(s) for s in B.SCHOOLS)
+        power = pip('power') + (pip(me.school) if me.school else 0)
+        # (the bot's own bookkeeping: blades on me, traps on one enemy, the aura - key~schools~% |...)
+        def boosts(text):
+            out = []
+            for spec in (text or '').split('|'):
+                bits = (spec.split('~') + ['', '', ''])[:3]
+                try:
+                    pct = float(bits[2])
+                except ValueError:
+                    continue
+                sch = [s.strip().lower() for s in bits[1].split(',') if s.strip().lower() in B.SCHOOLS + ('all',)]
+                if bits[0].strip() and sch and pct > 0:
+                    out.append((bits[0].strip(), {s: pct for s in sch}))
+            return out
+        blades = boosts(q.get('blades'))
+        traps = [[]] * len(foes)
+        tl = [b for _n, b in boosts(q.get('traps'))]
+        if tl:
+            # (the enemy they're on: the one whose most health the bot noted - one only -, else the most health now)
+            want = fl('trapmax', 0)
+            at = [k for k, f in enumerate(foes) if want and f.maxhp == int(want)]
+            k = at[0] if len(at) == 1 else max(range(len(foes)), key=lambda j: fhp[j] if fhp[j] is not None
+                                               else foes[j].maxhp)
+            traps = [tl if j == k else [] for j in range(len(foes))]
+        # (aura=schools~%~rounds left, this one counted)
+        aura = None
+        ab = (q.get('aura') or '').split('~')
+        if len(ab) >= 3 and re.fullmatch(r'\d+', ab[2].strip()) and int(ab[2]) > 0:
+            ar = boosts('aura~%s~%s' % (ab[0], ab[1]))
+            if ar:
+                aura = (ar[0][1], int(ab[2]))
+        first = q.get('first')
+        # (the draw pile: the worn deck - deck= its gid hex - less the hand; not read: more of the hand's cards)
+        reading = ctx.get('decks') or {}
+        want = (q.get('deck') or '').strip().lower()
+        decks = reading.get('decks') or []
+        deck = next((d for d in decks if want and isinstance(d.get('gid'), int) and '%x' % d['gid'] == want), None) \
+            or next((d for d in decks if d.get('equipped')), None)
+        pile = B.deck_cards(deck, facts) if deck else []
+        if not pile:
+            pile = [c for c in hand for _ in range(3)]
+            notes.append("the deck isn't read (the Cards tab's From game, out of battle): the draw pile taken as more "
+                         "of the hand's cards")
+        # (the bot's keys for the blades on - storm/blade, blade3 - named as the hand's or deck's card: a copy in hand
+        # of one on is then 'on already', never cast again or stacked in the rollouts - the bot's used flags hold it)
+        blades = B.bot_blades(blades, hand + pile)
+        state = B.State.of_deck(hand, pile, pips=pips, power=power, hp=mer.get('health'), fhp=fhp, blades=blades,
+                                traps=traps, aura=aura, rnd=int(fl('round', 1)), boosts_run=int(fl('boostrun', 0)),
+                                me_first=None if first not in ('0', '1') else first == '1')
+        vals = {}
+        for kv in (q.get('vals') or '').split(','):
+            k, _, v = kv.partition(':')
+            if k.strip():
+                vals[k.strip().lower()] = v.strip()
+        opts = B.Opts.of(vals, boss=q.get('boss') == '1' or any(f.boss for f in foes))
+        if all(vals.get('usehit%d' % i) == '0' for i in range(1, 5)):
+            opts.usehit = False
+        # (batch 3 - the team model and the log's charms; none asked: as before) my party battle role and seat, the
+        # party's other wizards on my side
+        role = (q.get('role') or '').strip().lower()
+        if role in ('blader', 'healer'):
+            opts.role = role
+        if re.fullmatch(r'[4-7]', (q.get('seat') or '').strip()):
+            state.seat = int(q['seat'])
+        mates = plan_mates(q.get('mates'), facts)
+        if mates:
+            state.mates = mates
+            notes.append('the team model: %d mate%s on your side (%s)' % (len(mates), '' if len(mates) == 1 else 's',
+                                                                          ', '.join('%s %s%s' % (
+                                                                              m.name or 'seat %s' % m.seat, m.role,
+                                                                              '' if m.hand is not None else
+                                                                              ' - its hand not known') for m in mates)))
+        if q.get('charms') == 'log':
+            notes.extend(plan_charms(state, plates, facts, ctx))
+        plays = ctx.get('plays')
+        prior = plays.prior_fn(me.school) if plays is not None and getattr(plays, 'rounds', 0) else None
+        left = budget - int((time.monotonic() - t0) * 1000) - 15
+        if left < 20:
+            return ['none|' + mob_cell('no time left to plan (the game read %d ms of the %d ms)' % (
+                budget - left - 15, budget))]
+        teamplan = q.get('teamplan') == '1'
+        plan = B.plan_round(state, me, foes, opts, n=int(fl('n', B.PLAN_N)),
+                            horizon=int(fl('horizon')) if fl('horizon') > 0 else None,
+                            budget_ms=int(left * 0.6) if teamplan else left,
+                            seed=int(fl('seed')) if q.get('seed') else None, prior=prior)
+        plan['why'] = notes + plan['why']
+        out = B.plan_lines(plan, foes, ids)
+        if out and out[0].startswith('none|'):
+            return out
+        if teamplan:
+            tleft = budget - int((time.monotonic() - t0) * 1000) - 15
+            out += B.team_lines(B.plan_team(state, me, foes, opts, n=int(fl('n', B.PLAN_N)),
+                                            budget_ms=max(20, tleft), seed=int(fl('seed')) if q.get('seed') else None),
+                                foes)
+        for k, f in enumerate(foes):
+            out.append('|'.join(['foe', str(k), mob_cell(f.name), mob_cell(fhp[k]), str(f.maxhp), '1' if f.boss else '0',
+                                 plate_x(plates[k]) if plates[k] else '']))
+        out.append('planned|%d|%d|%d' % (plan.get('n') or 0, plan.get('ms') or 0, int((time.monotonic() - t0) * 1000)))
+        return out
+    except Exception as e:  # noqa: BLE001 - never into the server
+        return ['none|the plan failed (%r)' % (e,)]
 
 
 def places_busy(on):
@@ -2364,8 +3200,14 @@ def items_now(goal_line='', goal=None, r=None, far=False):
                 PLACES_SAID['at'] = time.monotonic() + 60.0
                 log(f"/items: the zone's file couldn't be read ({e!r})")
         if placed is not None:
-            # (the memory's not read - a new zone being looked at -: the file's things all the same)
-            things = merge_things(things, placed)
+            # (the memory's not read - a new zone being looked at -: the file's things all the same; and the things the
+            # zone's triggers' use events may be fired by - puzzlefile's as kept, never built here)
+            try:
+                import puzzlefile
+                uses = puzzlefile.use_templates(r['zone'], nav_reader().game_dir)
+            except Exception:  # noqa: BLE001 - none: as before
+                uses = None
+            things = merge_things(things, placed, uses)
         elif items is None:
             return [], why
         elif not things:
@@ -2467,6 +3309,40 @@ def goal_nav_line(g):
 
 # The mobs read lately: (time, the wizard's x, y, z, {gid: (name, x, y, z, yaw)}) - /caught looks back along it
 MOB_TRAIL = collections.deque(maxlen=400)
+# Which way and how fast each mob walks (navroute.MobMotion - pure, no memory of its own), fed every mobs reading
+MOTION = None
+
+
+def motion():
+    """the mobs' motion (navroute.MobMotion), made on first use"""
+    global MOTION
+    with NAV_LOCK:
+        if MOTION is None:
+            import navroute
+            MOTION = navroute.MobMotion()
+        return MOTION
+
+
+def motion_feed(t, mobs, me):
+    """a mobs reading at t (mobs_now's; me the wizard's x, y, z) into MOTION, and onto each mob: fit - (vx, vy) units /
+    s, its straight line fitted (None not known) -, moving (True walking, False standing, None not known), speed, and vel
+    - fit while it walks, else None: the route sweeps only a walking one (navroute's 'vel' and 'moving'). Never raises"""
+    try:
+        mm = motion()
+        mm.update(t, mobs, me)
+        for m in mobs:
+            i = mm.info(m.get('gid'))
+            m['fit'], m['moving'], m['speed'] = i.get('vel'), i.get('moving'), i.get('speed')
+            m['vel'] = i.get('vel') if i.get('moving') else None
+    except Exception as e:  # noqa: BLE001 - no motion: the mobs as they stand, as before
+        for m in mobs:
+            m.setdefault('fit', None), m.setdefault('moving', None), m.setdefault('vel', None)
+        if time.time() - MOTION_SAID['at'] > 60:
+            MOTION_SAID['at'] = time.time()
+            log(f'mobs: their motion couldn\'t be worked out ({e!r})')
+
+
+MOTION_SAID = {'at': 0.0}
 CAUGHT_FRESH = 20.0     # the last reading at most this old (s) when a battle's first round is up
 CAUGHT_NEAR = 450.0     # the mob that started it: the nearest, at most this far from the wizard in the last reading
 CAUGHT_GAP = 2.0        # readings further apart than this (s) aren't followed back across
@@ -2509,6 +3385,7 @@ def caught_line(now=None):
     t0, me0, mobs0 = trail[k]
     name, x, y, _, yaw = mobs0[gid]
     dist = math.hypot(me0[0] - x, me0[1] - y)
+    walked = caught_walking(trail, k, gid)
     off = ''
     if yaw is not None and dist > 1:
         c = ((me0[0] - x) * -math.sin(yaw) + (me0[1] - y) * -math.cos(yaw)) / dist
@@ -2517,7 +3394,25 @@ def caught_line(now=None):
     # kind, or one by a fight goal - left off the avoid list: the walker went into it for the quest)
     qs = MOBS_SHOWN.get('quest') or set()
     quest = 1 if gid in qs and now - (MOBS_SHOWN.get('at') or 0) <= CAUGHT_FRESH else 0
-    return f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}|{quest}"
+    return (f"caught|{name.replace('|', ' ')}|{dist:.0f}|{off}|{1 if came else 0}|{now - t0:.1f}|{quest}|"
+            + ('' if walked is None else str(int(walked))))
+
+
+def caught_walking(trail, k, gid):
+    """was the mob gid walking (navroute.walking: MOVE_MIN, two squares) over the second of readings up to trail[k] -
+    where it was when it noticed the wizard: True / False, None not known (too few readings)"""
+    try:
+        import navroute
+        track, j = [], k
+        while j >= 0 and gid in trail[j][2] and trail[k][0] - trail[j][0] <= navroute.MOTION_FIT + 0.2:
+            if track and track[0][0] - trail[j][0] > CAUGHT_GAP:
+                break
+            v = trail[j][2][gid]
+            track.insert(0, (trail[j][0], v[1], v[2], v[3]))
+            j -= 1
+        return navroute.walking(track, navroute.fit_velocity(track, navroute.MOTION_FIT + 0.2))
+    except Exception:  # noqa: BLE001 - not known
+        return None
 
 
 ROUTER = None
@@ -2614,10 +3509,11 @@ def zone_volumes(zone, game_dir=''):
     return out
 
 
-def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0.0):
+def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0.0, duels=False):
     """/navto's answer: where the wizard is (the game's memory, read-only) and the route to target - a spot of the
     bot's own - planned by router_to along the zone's nav graph; avoid: kept mob_near away from every mob - but those
-    within spare of target (a puzzle's guard camp walked to, to fight it: its mobs aren't routed round)"""
+    within spare of target (a puzzle's guard camp walked to, to fight it: its mobs aren't routed round); duels (with
+    avoid): out of other players' battles too (duels_now - kept off where there's room; /navto doesn't wait)"""
     nm = nav_reader()
     r, why = nm.read(path=False, wait=3.0)
     if r is None:
@@ -2647,7 +3543,8 @@ def navto_lines(target, game_dir, avoid=False, mob_near=None, cone=None, spare=0
         if avoid:
             MOBS_SHOWN.update(quest=spared, near=mob_near or navroute.MOB_NEAR, avoid=True, at=time.time(), cone=cone or navroute.MOB_CONE)
         res = p.route(dict(r, goal=tuple(target), hops=0, path=path or []), wait=False, mobs=mobs or None,
-                      mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
+                      mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE,
+                      duels=(duels_now()[0] or None) if avoid and duels else None, speed=my_speed())
     except Exception as e:  # noqa: BLE001 - no route: the bot steers straight at the spot
         log(f'/navto: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -2669,16 +3566,18 @@ def blocker_cell(v):
 
 
 def blockers_now(r, nm):
-    """(the doors of reading r's zone [{template, pos, gid, src, state}], why) - the game's memory's (navmem.blockers, src
-    mem) and the zone's file's (placements.built_things, src file: a placement whose template is a blocker's -
-    puzzlefile.is_blocker - not an NPC; as built so far, never built here). None and why when the memory's can't be
-    read (not read isn't gone: the walker takes a door missing from memory for the way opening)"""
+    """(the doors of reading r's zone [{template, pos, gid, src, state, start}], why) - the game's memory's
+    (navmem.blockers, src mem: state its ObjectStateBehavior's now - statemem.py, "" not known) and the zone's file's
+    (placements.built_things, src file: a placement whose template is a blocker's - puzzlefile.is_blocker - not an NPC;
+    as built so far, never built here; state its starting one). start: the file's starting state (a memory door's: its
+    template's placement nearest it - puzzlefile.match_start; "" none). None and why when the memory's can't be read
+    (not read isn't gone: the walker takes a door missing from memory for the way opening)"""
     import puzzlefile
     live, why = nm.blockers()
     if live is None:
         return None, why or "the zone's objects can't be read"
     out = [{'template': b.get('template') or b.get('name') or '', 'pos': tuple(b['pos']), 'gid': b.get('gid'),
-            'src': 'mem', 'state': ''} for b in live]
+            'src': 'mem', 'state': b.get('state') or '', 'start': ''} for b in live]
     placed = None
     try:
         import placements
@@ -2688,6 +3587,7 @@ def blockers_now(r, nm):
             BLOCKERS_SAID['at'] = time.monotonic() + 60.0
             log(f"/blockers: the zone's file couldn't be read ({e!r})")
     gids = set()
+    files = []
     for p in placed or ():
         tpl = p.get('template') or ''
         if not puzzlefile.is_blocker(tpl) or p.get('kind') == 'npc':
@@ -2696,12 +3596,17 @@ def blockers_now(r, nm):
         if not gid or gid in gids:
             gid = f"f:{tpl}@{p.get('at')}"
         gids.add(gid)
-        out.append({'template': tpl, 'pos': tuple(p['pos']), 'gid': gid, 'src': 'file', 'state': p.get('state') or ''})
-    return out, ''
+        files.append({'template': tpl, 'pos': tuple(p['pos']), 'gid': gid, 'src': 'file', 'state': p.get('state') or '',
+                      'start': p.get('state') or ''})
+    # (each memory door's starting state by the file - its template's placement nearest it)
+    for d, start in zip(out, puzzlefile.match_start(out, files, ITEM_NEAR)):
+        d['start'] = start
+    return out + files, ''
 
 
 def blocker_lines(r, nm):
-    """/blockers' answer for reading r: door|template|x|y|z|distance|gid|src|state each, nearest first; none; ERR <why>"""
+    """/blockers' answer for reading r: door|template|x|y|z|distance|gid|src|state|start each, nearest first; none; ERR
+    <why>"""
     doors, why = blockers_now(r, nm)
     if doors is None:
         return ['ERR ' + blocker_cell(why)]
@@ -2709,12 +3614,18 @@ def blocker_lines(r, nm):
     doors.sort(key=lambda d: math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]))
     return [f"door|{blocker_cell(d['template'])}|{d['pos'][0]:.1f}|{d['pos'][1]:.1f}|{d['pos'][2]:.1f}|"
             f"{math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]):.0f}|{blocker_cell(d['gid'])}|{d['src']}|"
-            f"{blocker_cell(d['state'])}" for d in doors] or ['none']
+            f"{blocker_cell(d['state'])}|{blocker_cell(d.get('start'))}" for d in doors] or ['none']
+
+
+def use_cells(vals):
+    """a /zonepuzzle use line's list field: its values ; apart (no |, ; or line breaks in one)"""
+    return ';'.join(blocker_cell(v).replace(';', ',') for v in vals or ())
 
 
 def zonepuzzle_lines(zone, game_dir=''):
     """/zonepuzzle's answer: the zone's triggers (puzzlefile.zone_triggers - files only, kept per zone): kill|template,
-    spawn|object|x|y|z, hint|volume|x|y|z|r|text, use|event; none; ERR <why>"""
+    spawn|object|x|y|z, hint|volume|x|y|z|r|text, use|event|targets|states|acts, useobj|event|template|x|y|z|how; none;
+    ERR <why>"""
     import puzzlefile
     t = puzzlefile.zone_triggers(zone, game_dir, zone_volumes)
     if t['why'] and t['why'] != 'no triggers.xml':
@@ -2724,7 +3635,15 @@ def zonepuzzle_lines(zone, game_dir=''):
         out.append('spawn|' + blocker_cell(name) + '|' + ('||' if pos is None else '|'.join(f'{c:.1f}' for c in pos)))
     for vol, (x, y, z), rad, text in t['hints']:
         out.append(f'hint|{blocker_cell(vol)}|{x:.1f}|{y:.1f}|{z:.1f}|{rad:.0f}|{blocker_cell(text)}')
-    out += ['use|' + blocker_cell(e) for e in t['uses']]
+    # (the event first: an older bot reads it alone; then what its triggers do)
+    did = {u[0]: u[1:] for u in t.get('usedo') or ()}
+    for e in t['uses']:
+        tg, st, ac = did.get(e, ((), (), ()))
+        out.append(f'use|{blocker_cell(e)}|{use_cells(tg)}|{use_cells(st)}|{use_cells(ac)}')
+    for u in t.get('useobjs') or ():
+        x, y, z = u['pos'][:3]
+        out.append(f"useobj|{blocker_cell(u['event'])}|{blocker_cell(u['template'])}|{x:.1f}|{y:.1f}|{z:.1f}|"
+                   f"{blocker_cell(u.get('how'))}")
     return out or ['none']
 
 
@@ -2841,13 +3760,26 @@ def mob_avoid(q):
     return min(1500.0, rng), mob_cone(q)
 
 
-def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
+def my_speed():
+    """the wizard's walking speed (units / s - MobMotion's, off the readings), None not known yet"""
+    try:
+        return motion().my_speed()
+    except Exception:  # noqa: BLE001 - not known: navroute's WIZ_SPEED
+        return None
+
+
+def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0, duels=None, wall_wait=False):
     """/nav's route lines for a reading r (made with path=True); avoid: the mobs to keep away from - mob_near round
-    them, out of their sight cone (degrees wide, long) in front; arc_r: the wizard's turning circle - field 13 says
-    whether turning walking on round to the aim stays clear of the walls"""
+    them, out of their sight cone (degrees wide, long) in front, a walking one's swept along its way; arc_r: the
+    wizard's turning circle - field 13 says whether turning walking on round to the aim stays clear of the walls;
+    duels: other players' battles to keep out of (duels_now - duelavoid) - fields 14-16 the wait for one on the way;
+    wall_wait: a line of mobs' wall with no way round is waited at as a mob on the way (fields 8-11 - the mobwall
+    setting; off: walked through its gap at once, as before)"""
+    speed = my_speed()
     try:
         import navroute
-        res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE)
+        res = router(game_dir).route(r, mobs=avoid or None, mob_near=mob_near or navroute.MOB_NEAR, cone=cone or navroute.MOB_CONE,
+                                     duels=duels or None, speed=speed, wall_wait=wall_wait)
     except Exception as e:  # noqa: BLE001 - no route: the walker steers at the target
         log(f'route: {e!r}')
         res = {'why': f'the planner failed ({e!r})'}
@@ -2857,7 +3789,7 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
     if avoid:
         try:
             import navroute
-            a, b, c = router(game_dir).blind(r, avoid, mob_near or navroute.MOB_NEAR, cone or navroute.MOB_CONE)
+            a, b, c = router(game_dir).blind(r, avoid, mob_near or navroute.MOB_NEAR, cone or navroute.MOB_CONE, speed=speed)
             blind = ['blind|' + '|'.join(s.replace('|', ' ') for s in (a, b, c))]
         except Exception as e:  # noqa: BLE001 - no check: as before
             log(f'blind: {e!r}')
@@ -2878,7 +3810,56 @@ def route_lines(r, game_dir, avoid=None, mob_near=None, cone=None, arc_r=0.0):
         except Exception as e:  # noqa: BLE001 - not known: the walker's own limit
             log(f'arc: {e!r}')
     tail += '|' + ('' if arc is None else str(arc))
+    # (14-16: another player's battle on the way the route can't go round - the seconds waited for it, where it is)
+    duel = res.get('duel')
+    tail += '|||' if duel is None else f"|{duel:.0f}|{res['duel_at'][0]:.0f}|{res['duel_at'][1]:.0f}"
     return [f"route|{res['aim'][0]:.1f}|{res['aim'][1]:.1f}|{res['left']:.0f}|" + tail] + blind
+
+
+def map_route(r, game_dir, avoid, duels):
+    """/navmap's route: the walker's own planner (router) asked as the walker last asked it - its mobs (avoid: the
+    ones kept away from, None not), MOBS_SHOWN's reach and cone, the battles it kept out of (duels: DUELS_SHOWN's,
+    None not known) and the wizard's speed - so the map's asks (every second while the dashboard's Map is open) never
+    hand the walker a field made for other mobs or battles than its own (one with no battle in it: its next ask walked
+    at the battle, or stood waiting for it with a way round - the field flipping each second). Not a wait (wait=False);
+    None when it fails (the map without it)"""
+    try:
+        import navroute
+        return router(game_dir).route(r, wait=False, mobs=avoid, mob_near=MOBS_SHOWN.get('near') or navroute.MOB_NEAR,
+                                      cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE, duels=duels or None,
+                                      speed=my_speed())
+    except Exception:  # noqa: BLE001 - the map without it
+        return None
+
+
+def duels_now():
+    """(the other players' battles to keep out of [{pos, gid, template, phase, players, ...}], why) - navmem's duels():
+    the zone's duel circles that are active, not the wizard's own, with a player in them (or not known); ([], why) when
+    they can't be read (an older reader, the zone being looked at): nothing kept out of, as before. Never raises"""
+    try:
+        nm = nav_reader()
+        if not hasattr(nm, 'duels'):
+            return [], 'the reader has no duels'
+        got, why = nm.duels()
+    except Exception as e:  # noqa: BLE001 - none: as before
+        return [], f'the battles couldn\'t be read ({e!r})'
+    if got is None:
+        return [], why or '?'
+    return [d for d in got if d.get('active', True) and not d.get('mine') and d.get('players') != 0], ''
+
+
+def duel_lines(duels, r):
+    """/duels' answer: duel|template|x|y|z|distance|phase|parts|players|gid|active|mine one a duel circle in the zone
+    (nearest first), or none"""
+    me = (r or {}).get('pos') or (0.0, 0.0, 0.0)
+    out = []
+    for d in sorted(duels or [], key=lambda d: math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1])):
+        out.append('|'.join(['duel', mob_cell(d.get('template')), f"{d['pos'][0]:.1f}", f"{d['pos'][1]:.1f}",
+                             f"{d['pos'][2]:.1f}", f"{math.hypot(d['pos'][0] - me[0], d['pos'][1] - me[1]):.0f}",
+                             mob_cell(d.get('phase_name') or d.get('phase')), mob_cell(d.get('parts')),
+                             mob_cell(d.get('players')), mob_cell(d.get('gid')), mob_cell(d.get('active')),
+                             mob_cell(d.get('mine'))]))
+    return out or ['none']
 
 
 def noplace_line(r):
@@ -3110,12 +4091,17 @@ def height_rgb(level):
     return np.stack([np.interp(lv, MAP_HEIGHT_STOPS, cols[:, c]) for c in range(3)], -1).astype(np.uint8)
 
 
-def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None):
+def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None, duels=None,
+                  walls=None):
     """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
     planned route's answer (navroute) to draw, if any; mobs: the zone's mobs (mobs_now) - red dots, the quest's
-    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across; items:
-    the things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named"""
+    amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across - a walking
+    one (its 'vel') with an arrow the way it walks, as far as it's swept, and its ring's outline there; items: the
+    things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named; duels:
+    other players' battles kept out of (duels_now) - a violet circle each; walls: the walker's planner field
+    (navroute.Field) - its line of mobs' gaps closed (fill), faintly red"""
     from PIL import ImageDraw
+    import navroute
     upp = span / min(w, h)
     ukey = round(upp, 4)
     x0, y0 = r['pos'][0], r['pos'][1]
@@ -3217,10 +4203,49 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
                 face = math.degrees(math.atan2(math.cos(m['yaw']), -math.sin(m['yaw'])))
                 dr.pieslice([q[0] - sight_r, q[1] - sight_r, q[0] + sight_r, q[1] + sight_r], face - cone[0] / 2, face + cone[0] / 2,
                             fill=col + (34,), outline=col + (120,), width=max(1, int(unit * 0.7)))
+        # (walking: an arrow the way it walks, as far as the route sweeps it - and its ring's outline there)
+        vel = m.get('vel') if m.get('moving') else None
+        if vel is not None:
+            ahead, along = navroute.sweep_of(vel)
+            if along > 0:
+                e = at((m['pos'][0] + vel[0] * ahead, m['pos'][1] + vel[1] * ahead))
+                d.line([q, e], fill=col + (200,), width=max(1, int(unit)))
+                ux, uy = (e[0] - q[0]) / (math.hypot(e[0] - q[0], e[1] - q[1]) or 1.0), (e[1] - q[1]) / (math.hypot(e[0] - q[0], e[1] - q[1]) or 1.0)
+                L = 3.5 * unit
+                d.polygon([(e[0], e[1]), (e[0] - ux * L - uy * L * 0.6, e[1] - uy * L + ux * L * 0.6),
+                           (e[0] - ux * L + uy * L * 0.6, e[1] - uy * L - ux * L * 0.6)], fill=col + (220,))
+                if not m.get('quest') and rings_on:
+                    ring_r = sight_r if sector and m.get('yaw') is None else near_r
+                    d.ellipse([e[0] - ring_r, e[1] - ring_r, e[0] + ring_r, e[1] + ring_r], outline=col + (110,),
+                              width=max(1, int(unit * 0.6)))
         s = 2.8 * unit
         d.ellipse([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=col + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.7)))
         if k < 6 and on_pic(q, 4 * unit):
             d.text((q[0] + s * 1.6, q[1]), m['name'], fill=col + (235,), font=fm, anchor='lm', stroke_width=max(1, int(unit * 0.8)), stroke_fill=MAP_BG + (255,))
+    # a line of mobs' wall (the walker's field: the gaps between them closed) - faintly, on the rings' layer
+    fill = getattr(walls, 'fill', None) if walls is not None and rings_on else None
+    if fill is not None and fill.any() and getattr(walls, 'zone', None) == r.get('zone'):
+        if rings is None:
+            rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+            dr = ImageDraw.Draw(rings)
+        sq = navroute.CELL
+        for j, i in np.argwhere(fill)[:20000]:
+            xa, ya = walls.x0 + i * sq, walls.y0 + j * sq
+            a, b = at((xa, ya + sq)), at((xa + sq, ya))
+            if b[0] >= 0 and b[1] >= 0 and a[0] <= w * S and a[1] <= h * S:
+                dr.rectangle([a, b], fill=MAP_WALL + (60,))
+    # other players' battles kept out of: a violet circle each
+    for du in duels or []:
+        q = at(du['pos'])
+        rr = float(du.get('r') or navroute.DUEL_R) / upp * S
+        if not on_pic(q, -rr):
+            continue
+        if rings is None:
+            rings = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
+            dr = ImageDraw.Draw(rings)
+        dr.ellipse([q[0] - rr, q[1] - rr, q[0] + rr, q[1] + rr], fill=MAP_DUEL + (40,), outline=MAP_DUEL + (160,), width=max(1, int(unit)))
+        s = 3.0 * unit
+        d.rectangle([q[0] - s, q[1] - s, q[0] + s, q[1] + s], fill=MAP_DUEL + (255,), outline=MAP_BG + (255,))
     # the quest items: a green diamond each (the goal's brighter, named); the goal's off the picture: a pointer
     for it in sorted(items or [], key=lambda it: bool(it.get('quest'))):
         q = at(it['pos'])
@@ -3316,7 +4341,7 @@ class Handler(BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
         # (a read of the game's memory the walker waits on: placements' builds in their thread wait at their next step
         # meanwhile - the GIL: a cold zone file read in another thread took a /nav past its 150 ms)
-        gated = u.path in GATED or (u.path == '/cards' and 'x1' not in q)
+        gated = u.path in GATED or u.path == '/phase' or (u.path == '/cards' and 'x1' not in q)
         if gated:
             places_busy(True)
             GATE.enter()
@@ -3436,7 +4461,8 @@ class Handler(BaseHTTPRequestHandler):
                     spare = min(5000.0, max(0.0, float(q.get('spare') or 0)))
                 except ValueError:
                     spare = 0.0
-                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone, spare)))
+                return self.reply('\n'.join(navto_lines(target, nav_reader().game_dir, avoid, near, cone, spare,
+                                                        q.get('duels', '0') not in ('', '0'))))
             if u.path == '/blockers':
                 nm = nav_reader()
                 r, why = nm.read(path=False)
@@ -3462,8 +4488,25 @@ class Handler(BaseHTTPRequestHandler):
                     return self.reply('ERR ' + repr(e))
             if u.path == '/caught':
                 return self.reply(caught_line())
+            if u.path == '/duels':
+                nm = nav_reader()
+                r, why = nm.read(path=False)
+                if r is None:
+                    return self.reply('ERR ' + why)
+                if not hasattr(nm, 'duels'):
+                    return self.reply('ERR the reader has no duels')
+                got, why = nm.duels()
+                if got is None:
+                    return self.reply('ERR ' + (why or '?'))
+                return self.reply('\n'.join(duel_lines(got, r)))
             if u.path == '/cards' and 'x1' not in q:
                 return self.reply(cards_answer())
+            if u.path == '/phase':
+                # (the round's phase alone - no spell read, about a ms: vision\handmem.py HandMem.phase, read-only; gated
+                # as memory /cards is)
+                import handmem
+                p, why = handmem.nav_phase(nav_reader(), wait=0.3)
+                return self.reply(handmem.phase_line(p, why))
             if u.path == '/mobs':
                 nm = nav_reader()
                 r, why = nm.read(path=False)
@@ -3488,6 +4531,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self.reply(REC.stat() if REC is not None else "rec|off|0|0||the battle recorder isn't running")
             if u.path == '/deck':
                 return self.reply('\n'.join(deck_lines(q.get('fresh') == '1')))
+            if u.path == '/decks':
+                return self.reply('\n'.join(decks_lines(q.get('fresh') == '1', q.get('ob') == '1')))
+            if u.path == '/book':
+                # (the spellbook and treasure book - vision\deckmem.py, read-only: Training.ahk's new spells)
+                return self.reply('\n'.join(book_answer(q.get('fresh') == '1', q.get('ob') == '1', q.get('kinds') == '1')))
+            if u.path == '/quests':
+                # (every quest in the game's quest manager - vision\questmem.py, read-only)
+                return self.reply('\n'.join(quests_answer()))
+            if u.path == '/sim':
+                return self.reply('\n'.join(sim_lines_for(q)))
+            if u.path == '/plan':
+                return self.reply('\n'.join(plan_lines_for(q)))
+            if u.path == '/deckfor':
+                return self.reply('\n'.join(deckfor_lines_for(q)))
             if u.path == '/uiroot':
                 size, why = nav_reader().ui_root(wait=0.3)
                 return self.reply(f'root|{size[0]}|{size[1]}' if size else 'none|' + mob_cell(why or 'not read'))
@@ -3495,6 +4552,11 @@ class Handler(BaseHTTPRequestHandler):
                 # (the backpack, the HUD's tips, the backpack page's N/M - vision\bagmem.py, read-only: AutoFarmer's
                 # QuickSell.ahk)
                 return self.reply('\n'.join(bag_answer()))
+            if u.path == '/gear':
+                # (the worn gear and the backpack's with their equip effects and requirements - vision\gearmem.py,
+                # read-only - and gearrank.py's swap plan; run=&mark=1 / end=1: a dungeon run's drop log in
+                # learned\drops - AutoFarmer's Gear.ahk)
+                return self.reply('\n'.join(gear_lines_for(q)))
             if u.path == '/gui':
                 # (the game's windows by name - w=Anc/Name,... - and the message box up: where QuickSell.ahk may click)
                 import bagmem
@@ -3504,6 +4566,25 @@ class Handler(BaseHTTPRequestHandler):
                                       400)
                 g, why = nav_reader().gui(paths, wait=0.3)
                 return self.reply('\n'.join(bagmem.gui_lines(g, why, paths)))
+            if u.path == '/guitree':
+                # (every window under one - under=Anc/Name, the GUI root without; all=1 the hidden ones too; depth=N -
+                # one line each: the discovery tool for windows not looked at yet and a list's rows, vision\bagmem.py's
+                # tree - read-only)
+                import bagmem
+                under = bagmem.tree_under(q.get('under', ''))
+                if under is None:
+                    return self.reply('ERR under: one window path (Anc/Name - letters, digits and _)', 400)
+                dep = q.get('depth', '')
+                t, why = bagmem.nav_tree(nav_reader(), under, q.get('all', '0') in ('', '0'),
+                                         int(dep) if dep.isdigit() else None, wait=0.3)
+                return self.reply('\n'.join(bagmem.tree_lines(t, why)))
+            if u.path == '/pets':
+                # (the wizard's pets and the ones to keep - vision\petmem.py / petplan.py, read-only: QuickSell.ahk
+                # QsPetGuard leaves the Pet group out while a pet to keep is in the backpack)
+                import petplan
+                r, why = nav_reader().pets(wait=1.0)     # (its reader made once a game: about half a second)
+                return self.reply('\n'.join(petplan.pets_answer(r, why, q.get('want', ''),
+                                                                 q.get('hatch', '0') not in ('', '0'))))
             if u.path == '/items':
                 nm = nav_reader()
                 r, why = nm.read(path=False)
@@ -3539,20 +4620,28 @@ class Handler(BaseHTTPRequestHandler):
                 goal, _ = goal_now(r)
                 if with_route:
                     # (the mobs kept away from: all but the quest's - asked for with avoid=1)
-                    avoid, near = None, None
+                    avoid, near, cone, duels = None, None, None, None
                     if q.get('avoid', '0') not in ('', '0'):
                         near, cone = mob_avoid(q)
                         mobs, _ = mobs_now(r, q.get('goal', ''), trail=True, goal=goal)
                         avoid = [m for m in mobs if not m['quest']]
                         MOBS_SHOWN.update(quest={m['gid'] for m in mobs if m['quest']}, near=near, avoid=True, at=time.time(),
                                           cone=cone)
+                        # (other players' battles kept out of too - duels=1: the duelavoid setting)
+                        if q.get('duels', '0') not in ('', '0'):
+                            duels, _ = duels_now()
+                        DUELS_SHOWN.update(list=duels or [], at=time.time())
                     else:
                         MOBS_SHOWN.update(quest=set(), avoid=False, at=time.time())
+                        DUELS_SHOWN.update(list=[], at=time.time())
                     try:
                         arc_r = min(1200.0, max(0.0, float(q.get('arcr') or 0)))
                     except ValueError:
                         arc_r = 0.0
-                    lines += route_lines(r, nm.game_dir, avoid, near, MOBS_SHOWN.get('cone'), arc_r)
+                    # (this ask's own cone - not MOBS_SHOWN's, which a /navto running alongside may have changed; a line
+                    # of mobs' wall with no way round waited at only with walls=1 - the mobwall setting)
+                    lines += route_lines(r, nm.game_dir, avoid, near, cone, arc_r, duels,
+                                         bool(avoid) and q.get('walls', '0') not in ('', '0'))
                 lines.append(goal_nav_line(goal))
                 return self.reply('\n'.join(lines))
             if u.path == '/goal':
@@ -3583,13 +4672,11 @@ class Handler(BaseHTTPRequestHandler):
                 fresh = time.time() - (MOBS_SHOWN.get('at') or 0) < 10
                 for m in mobs:
                     m['quest'] = m['gid'] in MOBS_SHOWN.get('quest', ()) if fresh else False
-                try:
-                    import navroute
-                    avoid = [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None
-                    route = router(nm.game_dir).route(r, wait=False, mobs=avoid, mob_near=MOBS_SHOWN.get('near') or navroute.MOB_NEAR,
-                                                      cone=MOBS_SHOWN.get('cone') or navroute.MOB_CONE)
-                except Exception:  # noqa: BLE001 - the map without it
-                    route = None
+                # (other players' battles as the walker's last ask kept out of them - drawn, and in the map's route ask:
+                # the field it may make is the walker's own - map_route)
+                duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
+                route = map_route(r, nm.game_dir, [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None,
+                                  duels)
                 # (the quest items as the walker's last /items split them - the items lying about, and any other
                 # thing it took as the quest's: not every object and NPC of the zone)
                 items, _ = items_now()
@@ -3597,8 +4684,11 @@ class Handler(BaseHTTPRequestHandler):
                 for it in items:
                     it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
                 items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
+                # (the walker's field's line-of-mobs walls)
+                walls = ROUTER.field if ROUTER is not None else None
                 with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items)
+                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items,
+                                        duels, walls)
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
             if u.path == '/quit':

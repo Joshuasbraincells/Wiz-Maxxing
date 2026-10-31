@@ -22,6 +22,8 @@ global VisionDir, VisionPort, VisionErr ;(v1 never ran: VisionDir := "", VisionP
 global VisionPlateWhy
 ;Why the last VisionCards (the hand from the game's memory) got nothing; its last answer kept, its why and when
 global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy
+;Why the last VisionPhase (the round's phase from the game's memory) got nothing; asked again from (after a failure)
+global VisionPhaseWhy, VisionPhaseWaitUntil
 ;How many fresh looks at the hand VisionFind has taken (CardLearn.ahk LearnBoostPicFix: one miss a look) - declared only:
 ;a top-level := never runs here
 global VisionLookN
@@ -240,8 +242,13 @@ VisionForget()
 ;         template id), text (about as the card says it), heads (a damage card's damage by school, every head of it:
 ;         "fire:230,ice:230,storm:230" - KillCalc.ahk HeadsParse), boosts (what a blade, trap or aura boosts by school:
 ;         "ice:35,storm:35,fire:35", "all:25" - BoostsParse; either "?" not to be trusted, "" none or an older helper), nf
-;         (the line's fields: 23 an older helper's, with no heads or boosts)}]
+;         (the line's fields: 23 an older helper's, with no heads or boosts), l, t, r, b (v0.9.0: its box in the game's GUI
+;         root, in the GUI's own units - rootW, rootH below; "" not read or an older helper - VisionCardPx turns it into
+;         pixels. NOT CHECKED against the screen yet: KillCalc.ahk MemBoxCheck logs it against /hand's boxes)}]
 ;  ms     how long the read took in the helper
+;  rootW, rootH  the GUI root's size in its own units (the cards' boxes are in it; "" not read or an older helper)
+;  plateSchool   the school the badge by your plate said when it isn't the memory's (one game running: the badge was
+;         another wizard's - a party battle; "" they agree)
 ;While the game says the hand is changing (dealing, laying the cards out) it's asked again every 100 ms, up to waitMs.
 ;maxAgeMs: the last answer (or its why) if it's no older than that - the hand doesn't change till a card's cast or
 ;discarded (VisionForget forgets it)
@@ -250,6 +257,8 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 	;(when the last wait for a settled hand ran out: for 10 s after, asked once with no retries - the 1.5 s wait was paid
 	;two to six times a round)
 	static vcGaveUp := 0
+	;(the memory's school and the plate's that disagreed, said once a pair)
+	static vcSaid := V1Obj()
 	global VisionCardsWhy, VisionMemLast, VisionMemAt, VisionMemWhy ; (v1 globals it sets)
 	if (maxAgeMs > 0 && VisionMemAt && A_TickCount - VisionMemAt <= maxAgeMs)
 		{
@@ -296,7 +305,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			}
 		Sleep(100)
 		}
-	vcOut := V1Obj({me: "", cards: [], ms: ""})
+	vcOut := V1Obj({me: "", cards: [], ms: "", rootW: "", rootH: "", plateSchool: ""})
 	Loop Parse, vcAns, "`n", "`r"
 		{
 		vcF := StrSplit(A_LoopField, "|")
@@ -317,12 +326,16 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			vcCard := V1Obj({slot: vcF[2], x: NavNum(vcF[3]), name: vcF[4], display: vcF[5], school: Format("{:L}", vcF[6]), type: vcF[7]
 				, pips: NavNum(vcF[8]), xpip: vcF[9] = 1, shadow: NavNum(vcF[10]), castable: vcF[11], tc: vcF[12] = 1, item: vcF[13] = 1
 				, ench: vcF[14], acc: NavNum(vcF[15]), value: vcF[16], kind: vcF[17], dot: NavNum(V1At(vcF, 18)), schoolpips: V1At(vcF, 19)
-				, enchfx: V1At(vcF, 20), valueench: V1At(vcF, 21), tid: V1At(vcF, 22), text: V1At(vcF, 23), heads: V1At(vcF, 24), boosts: V1At(vcF, 25), nf: vcF.Length})
+				, enchfx: V1At(vcF, 20), valueench: V1At(vcF, 21), tid: V1At(vcF, 22), text: V1At(vcF, 23), heads: V1At(vcF, 24), boosts: V1At(vcF, 25), nf: vcF.Length
+				, l: NavNum(V1At(vcF, 26)), t: NavNum(V1At(vcF, 27)), r: NavNum(V1At(vcF, 28)), b: NavNum(V1At(vcF, 29))})
 			vcCard.num := RegExMatch(vcCard.value, "\d+", &vcNum) ? vcNum[0] + 0 : ""
 			vcOut.cards.Push(vcCard)
 			}
 		else if (V1At(vcF, 1) = "hand")
 			vcOut.ms := V1At(vcF, 3)
+		;(v0.9.0: the GUI root's size the cards' boxes are in - an older helper has no such line)
+		else if (V1At(vcF, 1) = "root")
+			vcOut.rootW := NavNum(V1At(vcF, 2)), vcOut.rootH := NavNum(V1At(vcF, 3))
 		}
 	vcGaveUp := 0
 	if (!IsObject(vcOut.me))
@@ -330,13 +343,75 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 		VisionCardsWhy := "an odd answer: " SubStr(RegExReplace(vcAns, "\s+", " "), 1, 60)
 		return VisionCardsKeep("")
 		}
-	;(the wizard on screen another school than the game's memory's: another client's - not used)
+	;(the wizard on screen another school than the game's memory's: another client's - not used. Only while more than one
+	;game runs, though: with one, the memory's can't be another client's, and the badge read by your plate was another
+	;wizard's - a party battle, where player.png can match a teammate's plate (PlayerPlates2) - so the hand is kept, said
+	;once a pair (v0.9.0: before, the whole memory hand was thrown away for the round - every memory cast, false-match drop
+	;and memory pip read lost))
 	if (vcOut.me.school != "" && school != "" && V1IsFunc("BadgeNumber") && BadgeNumber.Call(school) && Format("{:L}", school) != vcOut.me.school)
 		{
-		VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
-		return VisionCardsKeep("")
+		if (VisionGameClients() != 1)
+			{
+			VisionCardsWhy := "another client's wizard (the game's memory: " vcOut.me.school ", the plate: " school ")"
+			return VisionCardsKeep("")
+			}
+		vcOut.plateSchool := Format("{:L}", school)
+		if (!vcSaid.Has(vcOut.me.school "|" vcOut.plateSchool))
+			vcSaid[vcOut.me.school "|" vcOut.plateSchool] := 1, DebugLog("Vision: the game's memory says your school is " vcOut.me.school ", the badge read by your plate " vcOut.plateSchool " - one game running, so that badge was another wizard's (a party battle?): the memory's hand kept (said once)")
 		}
 	return VisionCardsKeep(vcOut)
+	}
+
+;How many game windows there are (VisionCards: not one - the game's memory may be another client's), 0 none found
+VisionGameClients()
+	{
+	try
+		return WinGetCount("ahk_class " GameClass " ahk_exe " GameExe)
+	catch
+		return 0
+	}
+
+;Whether the game's memory can be this client's for sure - one game window (v0.9.0 review): navmem attaches to the
+;foreground client, else the first it finds, and stays on it (vision\navmem.py _ensure), so with two or more running it can
+;be reading another client's battle (dual mode is NavBattle's own refusal). The values the bot acts on that came in with
+;TODO.md goal 3 ask this first: Autofarmer.ahk RoundBattleMem (your school and plate - written over the badge's, they'd also
+;blind VisionCards' "another client's wizard" check, which compares the two) and OwnMemHealth, KillCalc.ahk EnemyMemHealth
+;and MemBoxTrusted (memclicks), Party.ahk PartyMemAlly - not one window: read off the screen, as before. Said in debug.log
+;when the count changes (one again: said again the next time it isn't)
+VisionMemOneClient()
+	{
+	static vmoSaid := ""
+	vmoN := VisionGameClients()
+	if (vmoN = 1)
+		{
+		vmoSaid := 1
+		return true
+		}
+	if (vmoN != vmoSaid)
+		vmoSaid := vmoN, DebugLog("Vision: " vmoN " game window(s) found - the game's memory may be another client's: your school and plate, the battle's health and the memory's card boxes are taken off the screen (said once till that changes)")
+	return false
+	}
+
+;A card of the hand from the game's memory (VisionCards' hand, card one of its cards) in screen pixels: x, y the middle
+;of its box (QuickSell.ahk QsPx's rule: GameLeft + its GUI units over the root's width x GameW). False, x and y "": its
+;box or the root not read (an older helper), the box not inside the root, or the pixel off the game window. It clicks
+;nothing: a click there is KillCalc.ahk's (MemCardFind / MemEnchantFind / HandBoxes - memclicks, off, and only once
+;MemBoxCheck has seen the boxes line up)
+VisionCardPx(hand, card, &x, &y)
+	{
+	x := "", y := ""
+	if (!IsObject(hand) || !IsObject(card) || hand.rootW = "" || hand.rootH = "" || hand.rootW <= 0 || hand.rootH <= 0 || GameW <= 0)
+		return false
+	if (card.l = "" || card.t = "" || card.r = "" || card.b = "" || card.r <= card.l || card.b <= card.t)
+		return false
+	if (card.l < -2 || card.t < -2 || card.r > hand.rootW + 2 || card.b > hand.rootH + 2)
+		return false
+	vcpX := Round(GameLeft + (card.l + card.r) / 2 * GameW / hand.rootW)
+	vcpY := Round(GameTop + (card.t + card.b) / 2 * GameH / hand.rootH)
+	if (vcpX < GameLeft || vcpY < GameTop || vcpX >= GameLeft + GameW || vcpY >= GameTop + GameH)
+		return false
+	x := vcpX, y := vcpY
+	return true
 	}
 
 ;VisionCards' answer kept, with its why, for its maxAgeMs
@@ -406,6 +481,12 @@ global NavGoalWhy, NavGoalWaitUntil
 global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 ;Why the last NavBag / NavGui got nothing; when each may ask again (declared only: a top-level := never runs here)
 global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
+;Why the last NavGuiTree got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavGuiTreeWhy, NavGuiTreeWaitUntil
+;Why the last NavGear got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavGearWhy, NavGearWaitUntil
+;Why the last NavPets got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavPetsWhy, NavPetsWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
 ;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
@@ -425,6 +506,9 @@ global NavUiWhy, NavUiWaitUntil, NavUiRootW
 ;  left      (withRoute only) how far is left to walk along that route and the game's path on from it (game units)
 ;  jump, jx, jy  (withRoute only) right at a teleport on the game's path (the route stops at it): the seconds
 ;            waited there, and where it is; "" otherwise
+;  duel, duelx, duely  (withRoute, avoidMobs and duelavoid only) another player's battle on the way the route can't go
+;            round (a duel circle in the game's memory - not confirmed in the game yet): the seconds waited for it, where
+;            it is; "" otherwise (an older helper sends none)
 ;  goaltext, goaltype, goalstatus, goalcount, goaltotal, goalshown  the quest's goal line from the game's memory and its
 ;            kind, status, count, total, on screen (1/0) - as NavGoal's; "" when it can't be read (or an older helper)
 ;  noplace   1: the game shows no way to the goal - no arrow (its goal reads exactly 0, 0, 0 and the arrow's distance -1:
@@ -475,7 +559,7 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 		}
 	nav := V1Obj({ok: "", zone: "", x: "", y: "", z: "", yaw: "", tx: "", ty: "", tz: "", gx: "", gy: "", gz: ""
 		, hops: "", dist: "", enabled: "", questid: "", goalid: "", ax: "", ay: "", left: "", routewhy: "", jump: "", jx: "", jy: ""
-		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: ""
+		, mob: "", mx: "", my: "", mobname: "", escape: "", blindahead: "", blindback: "", blindin: "", arc: "", duel: "", duelx: "", duely: ""
 		, goaltext: "", goaltype: "", goalstatus: "", goalcount: "", goaltotal: "", goalshown: "", noplace: "", noplaceheld: ""})
 	Loop Parse, answer, "`n", "`r"
 		{
@@ -503,6 +587,10 @@ NavRead(timeoutMs := 150, withPath := false, withRoute := false, avoidMobs := fa
 			;(12: inside a mob's ring or sight - its name: the aim leads out of it; 13: turning walking on round to the
 			;aim - 1 its arc's clear of the walls, 0 not, "" not known)
 			nav.escape := Trim(V1At(f, 12)), nav.arc := f.Length >= 13 ? Trim(V1At(f, 13)) : ""
+			;(14-16: another player's battle on the way the route can't go round - the seconds waited for it, where it is;
+			;an older helper's line stops at 13)
+			if (f.Length >= 16)
+				nav.duel := NavNum(V1At(f, 14)), nav.duelx := NavNum(V1At(f, 15)), nav.duely := NavNum(V1At(f, 16))
 			}
 		;(the mob whose ring or sight the arrow's straight way comes into, and backing up would - moves off the route)
 		else if (V1At(f, 1) = "blind" && withRoute)
@@ -646,7 +734,9 @@ NavGoal(timeoutMs := 800)
 ;where it faces to the wizard, "" not known), title (as the game names it: Boss, Elite, Normal, Easy, Minion), rank (the
 ;one the game shows: "Rank 9 Boss"), health (its starting - max - health), school (Ice...), boss (1: the game's own boss
 ;flag, 0 not), gid, named (1: the quest's by its name or its goal only - quest without a same-family match elsewhere in
-;the zone, 0 not), template (its template's name - "CL-DeepOne-GreenHead-R10": a newer helper's 16th field)} - title...template
+;the zone, 0 not), template (its template's name - "CL-DeepOne-GreenHead-R10": a newer helper's 16th field), vx, vy (how fast
+;it walks along x and y, game units a second - its last second of readings), moving (1 walking, 0 standing: a newer helper's
+;17th-19th fields)} - title...moving
 ;"" while not known (the helper's reader being made, a build it can't read, an older helper). [] when there are none (the helper's plain "none"); "" when they can't be read - navmem:0, the helper not
 ;running, dual mode (one client's memory), "none (<why>)" (not attached, a new zone being looked at...), an ERR or no
 ;answer: NavMobsWhy says why, and after an ERR or no answer it isn't asked again for 5 s
@@ -700,7 +790,7 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		if (V1At(nmF, 1) != "mob" || nmF.Length < 8)   ; (v1: an empty line's first field read blank)
 			continue
 		nmM := V1Obj({name: Trim(nmF[2]), x: NavNum(nmF[3]), y: NavNum(nmF[4]), z: NavNum(nmF[5]), dist: NavNum(nmF[6]), quest: nmF[7] = 1 ? 1 : 0
-			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: "", template: ""})
+			, off: NavNum(nmF[8]), title: "", rank: "", health: "", school: "", boss: "", gid: "", named: "", template: "", vx: "", vy: "", moving: ""})
 		;(9-14: what it is - an older helper's lines have none)
 		if (nmF.Length >= 14)
 			nmM.title := Trim(nmF[9]), nmM.rank := NavNum(nmF[10]), nmM.health := NavNum(nmF[11]), nmM.school := Trim(nmF[12])
@@ -712,6 +802,9 @@ NavMobs(goalLine := "", timeoutMs := 400)
 		;lines stop at 15)
 		if (nmF.Length >= 16)
 			nmM.template := Trim(nmF[16])
+		;(17-19: how it moves - its speed along x and y, walking 1 / standing 0, "" not known; an older helper's lines stop at 16)
+		if (nmF.Length >= 19)
+			nmM.vx := NavNum(nmF[17]), nmM.vy := NavNum(nmF[18]), nmM.moving := (Trim(nmF[19]) = "1" ? 1 : Trim(nmF[19]) = "0" ? 0 : "")
 		nmOut.Push(nmM)
 		}
 	return nmOut
@@ -789,7 +882,10 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 ;planning phase: {me: the wizard's own (or ""), foes: the other side's, parts: all} - each {me (1 the wizard's own), team,
 ;name (the mob's - "" a wizard), health, max, boss (1: the game's own boss flag), title, rank, school (its mob's - "" not
 ;known), player (1 a wizard), gid, x (the middle of its plate across the game's window, 0..1 - "" not read or an older
-;helper)}. "" when it can't be read - navmem:0, the helper not running or older (no /battle), dual
+;helper), l, t, r, b (v0.9.0: its plate's box across and down the game's window, 0..1 each - "" not read or an older
+;helper; NavPlatePx turns it into pixels - NOT CHECKED against the screen yet), hide (1: the game hides its health -
+;m_HideCurrentHP: its health may not be what the plate shows; 0 not, "" not read)}. "" when it can't be read - navmem:0,
+;the helper not running or older (no /battle), dual
 ;mode, not in a battle's planning phase, the readers being made: NavBattleWhy says why (after an ERR or no answer not
 ;asked again for 5 s; an older helper's "unknown request": 60 s)
 NavBattle(timeoutMs := 700)
@@ -838,7 +934,9 @@ NavBattle(timeoutMs := 700)
 			continue
 		nbP := V1Obj({me: nbF[2] = 1 ? 1 : 0, team: NavNum(nbF[3]), name: Trim(nbF[4]), health: NavNum(nbF[5]), max: NavNum(nbF[6])
 			, boss: (nbF[7] = "1" ? 1 : nbF[7] = "0" ? 0 : ""), title: Trim(nbF[8]), rank: NavNum(nbF[9]), school: Trim(nbF[10])
-			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""})
+			, player: nbF[11] = 1 ? 1 : 0, gid: Trim(nbF[12]), x: nbF.Length >= 13 ? NavNum(nbF[13]) : ""
+			, l: NavNum(V1At(nbF, 14)), t: NavNum(V1At(nbF, 15)), r: NavNum(V1At(nbF, 16)), b: NavNum(V1At(nbF, 17))
+			, hide: (V1At(nbF, 18) = "1" ? 1 : V1At(nbF, 18) = "0" ? 0 : "")})
 		nbOut.parts.Push(nbP)
 		if (nbP.me && !IsObject(nbOut.me))
 			nbOut.me := nbP
@@ -853,6 +951,67 @@ NavBattle(timeoutMs := 700)
 		if (!nbP.me && (nbOut.me.team = "" || nbP.team = "" ? !nbP.player : nbP.team != nbOut.me.team))
 			nbOut.foes.Push(nbP)
 	return nbOut
+	}
+
+;A participant's plate (NavBattle's, p one of its parts) in screen pixels: x, y the middle of its box (fractions of the game's
+;window, as /battle gives them). False, x and y "": the box not read (an older helper, the wizard's own read without its
+;window), not inside the window, or empty. It clicks nothing: a click there (memclicks, off) is the caller's
+NavPlatePx(p, &x, &y)
+	{
+	x := "", y := ""
+	if (!IsObject(p) || p.l = "" || p.t = "" || p.r = "" || p.b = "" || p.r <= p.l || p.b <= p.t || GameW <= 0)
+		return false
+	if (p.l < -0.002 || p.t < -0.002 || p.r > 1.002 || p.b > 1.002)
+		return false
+	x := Round(GameLeft + (p.l + p.r) / 2 * GameW), y := Round(GameTop + (p.t + p.b) / 2 * GameH)
+	return true
+	}
+
+;The round's phase from the game's memory, cheaply (the helper's /phase - READ-ONLY, vision\handmem.py HandMem.phase: no
+;spell read, about a ms): {state ("none" not in a battle, "round" in one out of the planning phase, "waiting" planning with
+;no card shown but cards in the hand - one's chosen, "changing" the cards shown not as many as the hand, "hand" as many),
+;inBattle, planning (1/0), shown, own (card windows shown, those but the pet's), size (the hand list's), ms, why}. ""
+;when it can't be read - navmem:0, the helper not running or older (no /phase), dual mode, the game not read: VisionPhaseWhy
+;says why (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s).
+;v0.9.0: read for the log only (Autofarmer.ahk CastPhaseShadow) - nothing acts on it till what the hand does between a
+;card's click and its target's, and after a cast goes out, has been seen in the game (TODO.md goal 3: the cast checks and
+;the round's start from memory - TargetPending, CastWentOut, BattleLoop's TestRound)
+VisionPhase(timeoutMs := 300)
+	{
+	global VisionPhaseWhy, VisionPhaseWaitUntil ; (v1 globals it sets)
+	VisionPhaseWhy := ""
+	if (!Stat("navmem") || !VisionOn || dualmode == 1)
+		{
+		VisionPhaseWhy := !Stat("navmem") ? "navmem:0 in PlayerStats.txt" : !VisionOn ? "the vision helper isn't running" : "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (VisionPhaseWaitUntil && A_TickCount < VisionPhaseWaitUntil)
+		{
+		VisionPhaseWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	vpAns := Trim(VisionGet("/phase", timeoutMs, true), " `t`r`n")
+	if (vpAns = "")
+		{
+		VisionPhaseWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		VisionPhaseWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	VisionPhaseWaitUntil := 0
+	vpF := StrSplit(vpAns, "|")
+	;(v1: a field that isn't there read blank)
+	if (V1At(vpF, 1) = "none")
+		{
+		VisionPhaseWhy := Trim(SubStr(vpAns, 6))
+		return ""
+		}
+	if (V1At(vpF, 1) != "phase" || vpF.Length < 8)
+		{
+		VisionPhaseWhy := "an odd answer: " SubStr(vpAns, 1, 60)
+		return ""
+		}
+	return V1Obj({state: Trim(vpF[2]), inBattle: vpF[3] = "1" ? 1 : 0, planning: vpF[4] = "1" ? 1 : 0, shown: NavNum(vpF[5]), own: NavNum(vpF[6])
+		, size: NavNum(vpF[7]), ms: NavNum(vpF[8]), why: Trim(V1At(vpF, 9))})
 	}
 
 ;The game's UI scale from its memory (the helper's /uiroot - READ-ONLY: the GUI root's size in GUI units, vision\navmem.py
@@ -1057,6 +1216,275 @@ NavGui(paths, timeoutMs := 600)
 	return nguOut
 	}
 
+;Every window under one from the game's memory (the helper's /guitree - READ-ONLY, vision\bagmem.py's tree): the names
+;of a window's buttons, lists and a box's keys nobody has looked at yet, and the rows of a list (a trainer's spells, the
+;quest book's entries). Nothing calls it yet - it's there for the readers still to be written (pets, gear, quests,
+;puzzles: TODO.md); "python vision\bagmem.py --tree --under Anc/Name" is the same reading for a person. under: "Anc/Name"
+;(a window named Name with an ancestor named Anc - more ancestors allowed, in order; the first shown match), "" the GUI
+;root (the whole tree can take a while: ask under a window - only its windows are walked and described, though every
+;window is still read once to find it, as NavGui does); withHidden: hidden windows too (else only those shown - VISIBLE
+;on it and every ancestor - and a hidden window's windows not even read); depth: that many levels below it at most
+;("" 24 - deeper ones left out: capped). An object: rootW, rootH (the GUI in its own units), under, matches (windows
+;under names among those read - 0 none: no rows), dups (its shown matches), walked (windows read), capped (1: cut
+;short - under it: ask under a window lower down; with matches 0 the window may be past where finding it stopped -
+;not "no such window"), all (1: hidden ones listed), rows ([{depth (0 the window
+;asked for), name, type, shown, l, t, r, b (in the root's units), text (its words, the markup out), key (the .gui file's
+;"<string;KEY>" when that's all its text), greyed, checked (1/0, "" not a button / check box), tex (a sprite's or a
+;button's texture file), kids (its children, hidden ones too), parent (its parent's index in rows, 0 the top one), flags
+;(m_Flags in hex, bit 0 VISIBLE)}] in the game's order: an ancestor before its windows). "" when it can't be read - as
+;NavGui: NavGuiTreeWhy (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+NavGuiTree(under := "", withHidden := false, depth := "", timeoutMs := 1500)
+	{
+	global NavGuiTreeWhy, NavGuiTreeWaitUntil ; (v1 globals it sets)
+	NavGuiTreeWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavGuiTreeWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGuiTreeWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavGuiTreeWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavGuiTreeWaitUntil && A_TickCount < NavGuiTreeWaitUntil)
+		{
+		NavGuiTreeWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	ngtAns := VisionGet("/guitree?under=" NavUri(under) (withHidden ? "&all=1" : "") (depth != "" ? "&depth=" depth : ""), timeoutMs, true)
+	if (ngtAns = "")
+		{
+		NavGuiTreeWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGuiTreeWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavGuiTreeWaitUntil := 0
+	ngtOut := V1Obj({rootW: "", rootH: "", under: "", matches: "", dups: "", walked: "", capped: 0, all: 0, rows: []})
+	Loop Parse, ngtAns, "`n", "`r"
+		{
+		ngtF := StrSplit(A_LoopField, "|")
+		if (V1At(ngtF, 1) = "none")
+			{
+			NavGuiTreeWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (V1At(ngtF, 1) = "root")
+			ngtOut.rootW := NavNum(V1At(ngtF, 2)), ngtOut.rootH := NavNum(V1At(ngtF, 3))
+		else if (V1At(ngtF, 1) = "tree" && ngtF.Length >= 8)
+			ngtOut.under := Trim(V1At(ngtF, 2)), ngtOut.matches := NavNum(V1At(ngtF, 3)), ngtOut.dups := NavNum(V1At(ngtF, 4)), ngtOut.walked := NavNum(V1At(ngtF, 6))
+				, ngtOut.capped := V1At(ngtF, 7) = "1" ? 1 : 0, ngtOut.all := V1At(ngtF, 8) = "1" ? 1 : 0
+		else if (RegExMatch(V1At(ngtF, 1), "^\d+$") && ngtF.Length >= 16)   ; (a window's line: its depth first - every other line a word)
+			ngtOut.rows.Push(V1Obj({depth: NavNum(V1At(ngtF, 1)), name: Trim(V1At(ngtF, 2)), type: Trim(V1At(ngtF, 3)), shown: V1At(ngtF, 4) = "1" ? 1 : 0
+				, l: NavNum(V1At(ngtF, 5)), t: NavNum(V1At(ngtF, 6)), r: NavNum(V1At(ngtF, 7)), b: NavNum(V1At(ngtF, 8)), text: Trim(V1At(ngtF, 9)), key: Trim(V1At(ngtF, 10))
+				, greyed: NavNum(V1At(ngtF, 11)), checked: NavNum(V1At(ngtF, 12)), tex: Trim(V1At(ngtF, 13)), kids: NavNum(V1At(ngtF, 14)), parent: NavNum(V1At(ngtF, 15))
+				, flags: Trim(V1At(ngtF, 16))}))
+		}
+	if (ngtOut.rootW = "" || ngtOut.rootW <= 0 || ngtOut.matches = "")
+		{
+		NavGuiTreeWhy := "an odd answer (no root / tree line): " SubStr(RegExReplace(ngtAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return ngtOut
+	}
+
+;The worn gear and the backpack's from the game's memory, with the helper's swap plan (its /gear - READ-ONLY,
+;vision\gearmem.py and gearrank.py: nothing in the game is written, injected or hooked; no key, click or window - the
+;stats are NOT CONFIRMED in the game yet: the plan is advice). query: /gear's arguments without the "?" (Gear.ahk
+;GearQuery: school, level, role, the totals; run=&mark=1 / end=1 (nomark=1) for a dungeon run's drop log). An object:
+;wornN, bagN (gear of the planned slots - and pieces whose template couldn't be read: verdict unknown, slot ""),
+;bagItems (every item), level, school, role, setsOk, why (gear| line), worn ([{slot, gid, tid, name, display, level,
+;stats, sets}]), items ([{gid, tid, name, display, slot, verdict (better, not better, can't wear, in a set, unknown),
+;delta, basis, why, stats, reqs, crowns, nosell, sets}]), plan ([{slot, gid, tid, name, wornGid, wornName, delta (% -
+;basis stats; levels - basis level), basis (stats, level, empty), held (1: the worn piece is in an Equipment Set),
+;why}]), notes ([text]), drops ([{tid, name, slot, display, count, first}]: a run's new pieces - count read as V1At(d,
+;"count"): d.count is the Map's own Count), run ({name, runs, dry, stopafter, done, why, new, marked} - "" without
+;run=), better / unknown / judged (the items' verdicts counted: judged - every verdict but unknown). "" when it can't be
+;read - navmem:0, the helper not running or older (no /gear), dual mode, "none|<why>" (not in the world, the reader
+;being made - once a game, about a second): NavGearWhy says why (after an ERR or no answer not asked again for 5 s; an
+;older helper's "unknown request": 60 s)
+NavGear(query := "", timeoutMs := 5000)
+	{
+	global NavGearWhy, NavGearWaitUntil ; (v1 globals it sets)
+	NavGearWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavGearWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGearWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavGearWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavGearWaitUntil && A_TickCount < NavGearWaitUntil)
+		{
+		NavGearWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	ngrAns := VisionGet("/gear" (query != "" ? "?" query : ""), timeoutMs, true)
+	if (ngrAns = "")
+		{
+		NavGearWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGearWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavGearWaitUntil := 0
+	ngrOut := V1Obj({wornN: "", bagN: "", bagItems: "", level: "", school: "", role: "", setsOk: 0, why: "", worn: [], items: [], plan: []
+		, notes: [], drops: [], run: "", better: 0, unknown: 0, judged: 0})
+	ngrGot := 0
+	Loop Parse, ngrAns, "`n", "`r"
+		{
+		ngrF := StrSplit(A_LoopField, "|")
+		ngrK := V1At(ngrF, 1)
+		if (ngrK = "none")
+			{
+			NavGearWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (ngrK = "gear" && ngrF.Length >= 10)
+			ngrGot := 1, ngrOut.wornN := NavNum(V1At(ngrF, 2)), ngrOut.bagN := NavNum(V1At(ngrF, 3)), ngrOut.bagItems := NavNum(V1At(ngrF, 4)), ngrOut.level := NavNum(V1At(ngrF, 5))
+				, ngrOut.school := Trim(V1At(ngrF, 6)), ngrOut.role := Trim(V1At(ngrF, 7)), ngrOut.setsOk := V1At(ngrF, 8) = "1" ? 1 : 0, ngrOut.why := Trim(V1At(ngrF, 10))
+		else if (ngrK = "worn" && ngrF.Length >= 9)
+			ngrOut.worn.Push(V1Obj({slot: Trim(V1At(ngrF, 2)), gid: Trim(V1At(ngrF, 3)), tid: NavNum(V1At(ngrF, 4)), name: Trim(V1At(ngrF, 5)), display: Trim(V1At(ngrF, 6))
+				, level: NavNum(V1At(ngrF, 7)), stats: Trim(V1At(ngrF, 8)), sets: Trim(V1At(ngrF, 9))}))
+		else if (ngrK = "item" && ngrF.Length >= 15)
+			{
+			ngrV := Trim(V1At(ngrF, 7))
+			ngrOut.items.Push(V1Obj({gid: Trim(V1At(ngrF, 2)), tid: NavNum(V1At(ngrF, 3)), name: Trim(V1At(ngrF, 4)), display: Trim(V1At(ngrF, 5)), slot: Trim(V1At(ngrF, 6))
+				, verdict: ngrV, delta: NavNum(V1At(ngrF, 8)), basis: Trim(V1At(ngrF, 9)), why: Trim(V1At(ngrF, 10)), stats: Trim(V1At(ngrF, 11)), reqs: Trim(V1At(ngrF, 12))
+				, crowns: V1At(ngrF, 13) = "1" ? 1 : 0, nosell: V1At(ngrF, 14) = "1" ? 1 : 0, sets: Trim(V1At(ngrF, 15))}))
+			;(each verdict counted: better ones hold a quick sell, unknown ones too - Gear.ahk GearSellOk)
+			if (ngrV = "better")
+				ngrOut.better += 1
+			if (ngrV = "unknown")
+				ngrOut.unknown += 1
+			else if (ngrV != "")
+				ngrOut.judged += 1
+			}
+		else if (ngrK = "plan" && ngrF.Length >= 11)
+			ngrOut.plan.Push(V1Obj({slot: Trim(V1At(ngrF, 2)), gid: Trim(V1At(ngrF, 3)), tid: NavNum(V1At(ngrF, 4)), name: Trim(V1At(ngrF, 5)), wornGid: Trim(V1At(ngrF, 6))
+				, wornName: Trim(V1At(ngrF, 7)), delta: NavNum(V1At(ngrF, 8)), basis: Trim(V1At(ngrF, 9)), held: V1At(ngrF, 10) = "1" ? 1 : 0, why: Trim(V1At(ngrF, 11))}))
+		else if (ngrK = "note")
+			ngrOut.notes.Push(Trim(SubStr(A_LoopField, 6)))
+		else if (ngrK = "drop" && ngrF.Length >= 7)
+			ngrOut.drops.Push(V1Obj({tid: NavNum(V1At(ngrF, 2)), name: Trim(V1At(ngrF, 3)), slot: Trim(V1At(ngrF, 4)), display: Trim(V1At(ngrF, 5)), count: NavNum(V1At(ngrF, 6))
+				, first: Trim(V1At(ngrF, 7))}))
+		else if (ngrK = "run" && ngrF.Length >= 9)
+			ngrOut.run := V1Obj({name: Trim(V1At(ngrF, 2)), runs: NavNum(V1At(ngrF, 3)), dry: NavNum(V1At(ngrF, 4)), stopafter: NavNum(V1At(ngrF, 5)), done: V1At(ngrF, 6) = "1" ? 1 : 0
+				, why: Trim(V1At(ngrF, 7)), new: NavNum(V1At(ngrF, 8)), marked: V1At(ngrF, 9) = "1" ? 1 : 0})
+		}
+	if (!ngrGot)
+		{
+		NavGearWhy := "an odd answer (no gear line): " SubStr(RegExReplace(ngrAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return ngrOut
+	}
+
+;The wizard's pets from the game's memory (the helper's /pets - READ-ONLY, vision\petmem.py: nothing in the game is
+;written, injected or hooked; no key, click or window) and which of them to keep out of Quick Sell (vision\petplan.py -
+;goal 6, perfect pets: QuickSell.ahk QsPetGuard). want: the wanted talents ("Spell-Proof, Mighty, ..." - pets.txt's
+;want: line, QsPetWant); hatch: 1 hatching on (the pets still in training and the best pair of parents kept too). An
+;object: pets ([{gid (hex), where (equipped / backpack), level (1 Baby ... 7 Ultra), levelName, tid, name (its template's
+;object name: PET_SwordShield_01), display (as the game names it), cards (its level's power cards: "name*copies,..."),
+;xp, xpNext, talents, derby (arrays of names; "" not read), stats, maxStats (as read), cls}] - the worn one first),
+;energy, energyMax (the wizard's pet energy), whole (1: the worn items and the backpack both read whole, every item's id
+;and behaviours too - no pet missed; QsPetGuard also checks the backpack's pets against NavBag's Pet count),
+;n, why (what couldn't be read), want ([names] as the helper read them), hatch, keep ({gid: why} - the pets to keep, a pet
+;whose talents aren't read among them), keepWhere ({gid: where}). The values not confirmed in the game yet (xp, xpNext,
+;talents, derby, stats, maxStats, energy - vision\petmem.py PINS) are "" till they're pinned: nothing acts on them yet.
+;"" when it can't be read - navmem:0, the helper not running or older (no /pets), dual mode, "none|<why>" (not in the
+;world, the reader being made - once a game, the helper waits 1 s for it): NavPetsWhy says why (after an ERR or no
+;answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+NavPets(want := "", hatch := 0, timeoutMs := 1500)
+	{
+	global NavPetsWhy, NavPetsWaitUntil ; (v1 globals it sets)
+	NavPetsWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavPetsWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavPetsWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavPetsWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavPetsWaitUntil && A_TickCount < NavPetsWaitUntil)
+		{
+		NavPetsWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	npsAns := VisionGet("/pets?want=" NavUri(want) (hatch ? "&hatch=1" : ""), timeoutMs, true)
+	if (npsAns = "")
+		{
+		NavPetsWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavPetsWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavPetsWaitUntil := 0
+	npsOut := V1Obj({pets: [], energy: "", energyMax: "", whole: 0, n: "", why: "", want: [], hatch: 0, keep: V1Obj(), keepWhere: V1Obj()})
+	Loop Parse, npsAns, "`n", "`r"
+		{
+		npsF := StrSplit(A_LoopField, "|")
+		if (V1At(npsF, 1) = "none")
+			{
+			NavPetsWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (V1At(npsF, 1) = "pet" && npsF.Length >= 16)
+			npsOut.pets.Push(V1Obj({gid: Trim(V1At(npsF, 2)), where: Trim(V1At(npsF, 3)), level: NavNum(V1At(npsF, 4)), levelName: Trim(V1At(npsF, 5)), tid: NavNum(V1At(npsF, 6))
+				, name: Trim(V1At(npsF, 7)), display: Trim(V1At(npsF, 8)), cards: Trim(V1At(npsF, 9)), xp: NavNum(V1At(npsF, 10)), xpNext: NavNum(V1At(npsF, 11))
+				, talents: NavPetList(V1At(npsF, 12)), derby: NavPetList(V1At(npsF, 13)), stats: Trim(V1At(npsF, 14)), maxStats: Trim(V1At(npsF, 15)), cls: Trim(V1At(npsF, 16))}))
+		else if (V1At(npsF, 1) = "energy")
+			npsOut.energy := NavNum(V1At(npsF, 2)), npsOut.energyMax := NavNum(V1At(npsF, 3))
+		else if (V1At(npsF, 1) = "pets")
+			npsOut.n := NavNum(V1At(npsF, 2)), npsOut.whole := V1At(npsF, 3) = "1" ? 1 : 0, npsOut.why := Trim(V1At(npsF, 5))
+		else if (V1At(npsF, 1) = "want")
+			npsOut.want := NavPetList(V1At(npsF, 3)), npsOut.hatch := V1At(npsF, 4) = "1" ? 1 : 0
+		else if (V1At(npsF, 1) = "keep" && Trim(V1At(npsF, 2)) != "")
+			npsOut.keep[Trim(V1At(npsF, 2))] := Trim(V1At(npsF, 4)), npsOut.keepWhere[Trim(V1At(npsF, 2))] := Trim(V1At(npsF, 3))
+		}
+	if (npsOut.n = "")
+		{
+		NavPetsWhy := "an odd answer (no pets line): " SubStr(RegExReplace(npsAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return npsOut
+	}
+
+;A list field of /pets (talents, derby, want - names joined by commas): its names as an array - [] for "-" (read, none),
+;"" not read (empty)
+NavPetList(v)
+	{
+	v := Trim(v)
+	if (v = "")
+		return ""
+	npl := []
+	if (v = "-")
+		return npl
+	for each, nplName in StrSplit(v, ",")
+		if (Trim(nplName) != "")
+			npl.Push(Trim(nplName))
+	return npl
+	}
+
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
 ;mobs' real sight against the mobshape / mobradius settings
@@ -1075,7 +1503,10 @@ CaughtLog()
 		where := "its facing unknown"
 	else
 		where := ((V1Le(f[4], s.wide / 2) && V1Le(f[3], s.range)) ? "inside" : "outside") " the " s.name " set (" s.wide " degrees wide, " s.range " long)"
-	DebugLog("  Caught by " f[2] ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
+	;(8: it was walking - 1 - or standing - 0 - the second before it noticed you: a walking mob's sight swept ahead of it,
+	;vision\navroute.py; an older helper's line stops at 7)
+	clWalk := V1At(f, 8) = "1" ? ", walking" : V1At(f, 8) = "0" ? ", standing" : ""
+	DebugLog("  Caught by " f[2] clWalk ": " (f[5] = 1 ? "it came for you from " f[3] " away" : "you walked into it (" f[3] " away)")
 		. (f[4] != "" ? ", " f[4] " degrees off where it faced" : "") " (" f[6] " s before) - " where)
 	MobGrow(f, s)
 	}
@@ -1171,13 +1602,18 @@ MobShape()
 		, body: V1Gt(Stat("mobbody"), 0) ? V1Round(Stat("mobbody")) : 120, name: shape = 1 ? "circle" : shape = 2 ? "semi-circle" : "cone"})
 	}
 
-;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off
+;The helper's arguments for keeping a route out of what mobs see: mobavoid (on unless 0) and MobShape - "" when it's off;
+;duelavoid (off unless 1 - the duel circles aren't confirmed in the game yet): out of other players' battles too (&duels=1);
+;mobwall (off unless 1 - the gap's width isn't measured in the game yet): a line of mobs' wall with no way round waited at
+;as a mob on the way (&walls=1 - /nav's; else walked through its gap at once, as before)
 NavMobArgs()
 	{
 	if (Stats.Has("mobavoid") && !Stats["mobavoid"])
 		return ""
 	s := MobShape()
 	return "&avoid=1&mobr=" s.range "&shape=" s.shape (s.shape = 3 ? "&cone=" s.wide : "") (s.shape > 1 ? "&body=" s.body : "")
+		. (Stats.Has("duelavoid") && Stats["duelavoid"] = 1 ? "&duels=1" : "")
+		. (Stats.Has("mobwall") && Stats["mobwall"] = 1 ? "&walls=1" : "")
 	}
 
 ;A number off /nav ("" if it isn't one: empty, nan, inf). Python may write a tiny one as 1.5e-08
@@ -1199,4 +1635,8 @@ VisionBlank()
 	global NavGoalWaitUntil := "", NavMobsWhy := "", NavMobsWaitUntil := "", NavBattleWhy := "", NavBattleWaitUntil := "", NavBagWhy := ""
 	global NavBagWaitUntil := "", NavGuiWhy := "", NavGuiWaitUntil := "", NavItemsWhy := "", NavItemsWaitUntil := "", NavUiWhy := ""
 	global NavUiWaitUntil := "", NavUiRootW := ""
+	global NavGuiTreeWhy := "", NavGuiTreeWaitUntil := ""
+	global NavGearWhy := "", NavGearWaitUntil := ""
+	global NavPetsWhy := "", NavPetsWaitUntil := ""
+	global VisionPhaseWhy := "", VisionPhaseWaitUntil := ""
 	}

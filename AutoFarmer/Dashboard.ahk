@@ -139,14 +139,22 @@ DashInit()
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
 	Dash.Add("DropDownList", "x580 y179 w190 AltSubmit Background111317 vDgDeck", ["(none)"]).OnEvent("Change", DashGLabel.Bind(DgDeckPick, "Normal"))
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
-	Dash.Add("Text", "x12 y208 w760 h52 vDgStatus", "Not running.")
+	;(v0.9.0: "Until its gear is swapped" and the run after it - kept in the picked run's file: Dungeons.ahk DgGearSet; the gear
+	;pass itself is Settings' gearswap - Gear.ahk)
+	Dash.Add("Checkbox", "x12 y209 w300 h18 vDgUntilGear", "Until its gear is swapped (Settings: gearswap)").OnEvent("Click", DashGLabel.Bind(DgGearPick, "Normal"))
+	Dash.Add("Text", "x318 y210 w30 h18 vDgNextT", "then")
+	Dash.SetFont("s9 w400 c000000", "Segoe UI")
+	Dash.Add("DropDownList", "x352 y206 w240 AltSubmit Background111317 vDgNextRun", ["(stop)"]).OnEvent("Change", DashGLabel.Bind(DgGearPick, "Normal"))
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	lv := Dash.Add("ListView", "x12 y262 w760 h526 vDgList AltSubmit -Multi Background111317 cDADADA", ["Run", "Steps", "Zones", "X", "Battles", "Recorded", "File"])
+	Dash.SetFont("s9 w400 cB9E2B9", "Consolas")
+	Dash.Add("Text", "x12 y234 w760 h50 vDgStatus", "Not running.")
+	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
+	;(the Gear column - v0.9.0, after the hidden File one: DgSelected reads the 7th - its gear pass's state, learned\drops)
+	lv := Dash.Add("ListView", "x12 y286 w760 h502 vDgList AltSubmit -Multi Background111317 cDADADA", ["Run", "Steps", "Zones", "X", "Battles", "Recorded", "File", "Gear"])
 	lv.OnEvent("DoubleClick", DashGLabel.Bind(DgListEvent, "DoubleClick"))
 	lv.OnNotify(-101, DashLvItem.Bind(DgListEvent))
-	lv.ModifyCol(1, 300), lv.ModifyCol(2, "60 Integer"), lv.ModifyCol(3, "60 Integer"), lv.ModifyCol(4, "50 Integer"), lv.ModifyCol(5, "70 Integer")
-	lv.ModifyCol(6, 140), lv.ModifyCol(7, 0)
+	lv.ModifyCol(1, 260), lv.ModifyCol(2, "50 Integer"), lv.ModifyCol(3, "50 Integer"), lv.ModifyCol(4, "40 Integer"), lv.ModifyCol(5, "60 Integer")
+	lv.ModifyCol(6, 120), lv.ModifyCol(7, 0), lv.ModifyCol(8, 170)
 	;The Spells tab: the cards the bot learned by itself, and your corrections (Spells.ahk)
 	tabs.UseTab(3)
 	Dash.SetFont("s9 w600 c8AB4F8", "Segoe UI")
@@ -229,8 +237,10 @@ DashInit()
 	Dash.SetFont("s9 w400 cF2F2F2", "Segoe UI")
 	Dash.Add("Edit", "x680 y128 w40 h22 Number Limit3 Hidden Background111317 vDeckFPri")
 	Dash.SetFont("s9 w400 cDADADA", "Segoe UI")
-	Dash.Add("Checkbox", "x12 y160 w380 h20 Hidden vDeckFPin", "Use this deck now, whatever's ahead (pinned)")
+	Dash.Add("Checkbox", "x12 y160 w360 h20 Hidden vDeckFPin", "Use this deck now, whatever's ahead (pinned)")
 	Dash.SetFont("s9 w400 c000000", "Segoe UI")
+	;(your in-game decks read from the game's memory and made into decks here - Decks.ahk DeckLearnGame)
+	Dash.Add("Button", "x380 y157 w94 h24 Hidden vDeckGameBtn", "From game").OnEvent("Click", DashGLabel.Bind(DeckGameClick, "Normal"))
 	Dash.Add("Button", "x480 y157 w90 h24 Hidden vDeckFSave", "Save").OnEvent("Click", DashGLabel.Bind(DeckSaveClick, "Normal"))
 	Dash.Add("Button", "x576 y157 w90 h24 Hidden vDeckFCopy", "Copy").OnEvent("Click", DashGLabel.Bind(DeckCopyClick, "Normal"))
 	Dash.Add("Button", "x672 y157 w90 h24 Hidden vDeckFDel", "Delete").OnEvent("Click", DashGLabel.Bind(DeckDelClick, "Normal"))
@@ -919,6 +929,12 @@ DashParse(line)
 		DashAdd("flees")
 	else if (InStr(msg, "Defeated:") = 1)
 		DashAdd("deaths"), DashDeathsAll(1)
+	;(the walker's badly-stuck count and the time lost to being stuck - Walker.ahk WalkBadlyStuckCount / WalkLostClose; a dungeon run's
+	;stop for being stuck is counted there too: Dungeons.ahk)
+	else if (RegExMatch(msg, "^Walk: badly stuck #\d+"))
+		DashAdd("badstuck"), DashStuckAll(1, 0)
+	else if (RegExMatch(msg, "^Walk: stuck over - (\d+) s lost", &m))
+		DashAdd("stuckLost", m[1] + 0), DashStuckAll(0, m[1] + 0)
 	else if (RegExMatch(msg, "^  kill check: (.*) -> (.*)$", &m))
 		{
 		DashSees.enemies := m[1]
@@ -929,8 +945,9 @@ DashParse(line)
 		DashSees.pips := (m[1] < 0 ? "?" : m[1])
 	;(v1: a max health of 0 - a division by zero - gave a blank, rounded to 0)
 	else if (RegExMatch(msg, "^  own health: (\d+)/(\d+)", &m))
-		DashSees.hp := m[1] "/" m[2] " (" V1Round(V1Div(100 * m[1], m[2])) "%, name plate)"
-	else if (RegExMatch(msg, "school=(\w*) \| hitter=(\w*)", &m))
+		DashSees.hp := m[1] "/" m[2] " (" V1Round(V1Div(100 * m[1], m[2])) "%, " (InStr(msg, "the game's memory") ? "the game's memory" : "name plate") ")"
+	;(the round's line: " school=storm (the game's memory) | hitter=..." when the school came from the memory)
+	else if (RegExMatch(msg, "school=(\w*)(?: \([^)]*\))? \| hitter=(\w*)", &m))
 		DashSees.school := m[1], DashSees.hitter := m[2]
 	else if (RegExMatch(msg, "^  learned a new card: (.*?)( \(picture:|$)", &m))
 		DashAdd("learned"), DashSees.lastLearned := m[1]
@@ -1253,6 +1270,7 @@ DashRefresh()
 	s := "Version          " (BotVersion() = "" ? "?" : BotVersion()) " - " verNote "`n"
 		. "Battles          " DashNum(battles) (V1IsFunc("BrecToday") ? BrecToday.Call() : "") "`n"
 		. "Deaths           " DashNum(n.deaths) "   (all time: " DashDeathsAll() ")`n"
+		. "Badly stuck      " DashNum(n.badstuck) "   (" DashLostSay(n.stuckLost) "; all: " DashStuckAll().n ", " DashLostSay(DashStuckAll().s) ")`n"
 		. "Rounds played    " DashNum(n.rounds) "`n"
 		. "Passed           " DashNum(n.passes) "   (fled: " (n.flees = "" ? 0 : n.flees) ")`n"
 		. "Discarded        " DashNum(n.discards) "`n"
@@ -1274,6 +1292,7 @@ DashRefresh()
 		. "Threat       " DashCut(see.threat != "" ? see.threat : "-") "`n"
 		. "Plan         " DashCut(see.plan != "" ? see.plan : "-") "`n"
 		. "Deck         " DashCut(see.deck != "" ? see.deck : "-") "`n"
+		. ((V1IsFunc("TrainStatus") && TrainStatus.Call() != "") ? "Spells       " DashCut(TrainStatus.Call()) "`n" : "")
 		. "Last cast    " (see.lastCast != "" ? see.lastCast : "-") "`n"
 		. "Zone         " DashCut(zone != "" ? zone : "?") "`n"
 		. "Walker       " DashCut(StatusText != "" ? StatusText : "-") "`n"
@@ -1293,7 +1312,6 @@ DashCut(text)
 	return StrLen(text) > fit ? SubStr(text, 1, fit - 1) "~" : text
 	}
 
-;A count, right-aligned (blank = 0)
 ;Deaths over every run (dashboard.ini [stats] deaths - updates keep it): add one or more, and the total
 DashDeathsAll(add := 0)
 	{
@@ -1311,6 +1329,38 @@ DashDeathsAll(add := 0)
 	return total
 	}
 
+;Badly stuck over every run, and the seconds lost to being stuck (dashboard.ini [stats] badstuck, stucklost - updates keep them; the
+;walker's "badly stuck #N" and "stuck over - N s lost" lines, DashParse): add to them, and the totals {n, s}
+DashStuckAll(addN := 0, addS := 0)
+	{
+	static all := ""
+	if (!IsObject(all))
+		{
+		all := V1Obj({n: IniRead(A_ScriptDir "\dashboard.ini", "stats", "badstuck", 0), s: IniRead(A_ScriptDir "\dashboard.ini", "stats", "stucklost", 0)})
+		all.n := RegExMatch(all.n, "^\d+$") ? all.n + 0 : 0
+		all.s := RegExMatch(all.s, "^\d+$") ? all.s + 0 : 0
+		}
+	if (addN)
+		{
+		all.n += addN
+		V1Do(IniWrite, all.n, A_ScriptDir "\dashboard.ini", "stats", "badstuck")
+		}
+	if (addS)
+		{
+		all.s += addS
+		V1Do(IniWrite, all.s, A_ScriptDir "\dashboard.ini", "stats", "stucklost")
+		}
+	return all
+	}
+
+;Seconds lost to being stuck, said short: "0 min", "12 min", "3.4 h" (blank = 0)
+DashLostSay(s)
+	{
+	s := V1N(s)
+	return s < 3600 ? Round(s / 60) " min" : Round(s / 3600, 1) " h"
+	}
+
+;A count, right-aligned (blank = 0)
 DashNum(v)
 	{
 	return Format("{:6}", v = "" ? 0 : v)
@@ -2138,6 +2188,7 @@ DashGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; (v1: a
 	Dash["DeckFNote"].Move(, DashDeckRowY + 4, Max(120, A_GuiWidth - 454))
 	Dash["DeckAddBtn"].Move(A_GuiWidth - 80 - DashTabOX)
 	Dash["DeckFSave"].Move(A_GuiWidth - 304 - DashTabOX)
+	Dash["DeckGameBtn"].Move(A_GuiWidth - 404 - DashTabOX)
 	Dash["DeckFCopy"].Move(A_GuiWidth - 208 - DashTabOX)
 	Dash["DeckFDel"].Move(A_GuiWidth - 112 - DashTabOX)
 	Dash["DeckFPriT"].Move(A_GuiWidth - 154 - DashTabOX)
@@ -2155,7 +2206,7 @@ DashGuiSize(thisGui:="", MinMax:="", A_GuiWidth:="", A_GuiHeight:="") { ; (v1: a
 	Dash["DashTabs"].Move(, , A_GuiWidth - 12, A_GuiHeight - 42)
 	Dash["DgHelp"].Move(, , A_GuiWidth - 24)
 	Dash["DgStatus"].Move(, , A_GuiWidth - 24)
-	Dash["DgList"].Move(, , A_GuiWidth - 24, A_GuiHeight - 274)
+	Dash["DgList"].Move(, , A_GuiWidth - 24, A_GuiHeight - 298)
 	;(the Keys tab: its list takes what's left)
 	Dash["KeyHelp"].Move(, , A_GuiWidth - 24)
 	Dash["KeyStatus"].Move(, , A_GuiWidth - 24)

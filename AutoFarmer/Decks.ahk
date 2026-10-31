@@ -13,6 +13,15 @@
 ; walked into is found in the battle.
 ; One file per deck: decks\<id>.txt - yours (updates keep them). The dashboard's Cards tab shows and edits them
 ; (Dashboard.ahk). AutoHotkey v2 (ported from v1.1), #Included by Autofarmer.ahk.
+; Decks learned from the game (v0.8.0, TODO goal 3, 2026-10-30): every in-game deck in an Equipment Set read from the
+; game's memory (the helper's /decks - READ-ONLY, vision\deckmem.py) becomes a deck here - linked to it by its id (game|
+; in the file), its Equipment Set, school and the settings its cards call for (no blades in it: blades off...; boost or
+; hit first; for bosses or anything else - vision\battlesim.py learn_decks); a setting you set yourself is never changed
+; (the learned ones are listed: learned| in the file). The Cards tab's "From game" button, and by itself every 30 minutes
+; out of battle (DeckLearnTick). And "can this deck beat it": a boss ahead is fought in the battle simulator (the helper's
+; /sim - vision\battlesim.py: the linked in-game deck's real cards, your stats, the boss's health from the game's memory,
+; its resists from the battles recorded and its spells from the wiki) with each deck for bosses - logged, and the one
+; most likely to win it picked (DeckBetter).
 
 ;The decks ([{id, file, name, school, eqset, when: {default, collect, boss, dungeon, farm}, priority, vals: {key: value}}]),
 ;the one in use ("" none - your Settings as they are) and why, read again soon (an edit on the tab), when an Equipment Set
@@ -27,13 +36,16 @@ global DeckList, DeckNow, DeckWhy, DeckDirty, DeckEqAt, DeckDuel, DeckView
 ;battle's enemies read, walk - the boss ahead}, "" none), the rounds it's been looked for, 1 once the memory answered.
 ;Declared only (a top-level := never runs in an #Included file)
 global DeckBoss, DeckFoe, DeckFoeTries, DeckFoeKnown
+;Decks learned from the game: when they were last read (DeckLearnTick), what the last read said (the Cards tab); the
+;simulator's last verdict for each deck ({deck id: {word, win, lost, rounds, text, boss}} - DeckBeat)
+global DeckLearnAt, DeckLearnSaid, DeckBeats
 ;The deck being edited on the Cards tab (a copy - saved to its file by Save), the hand's pictures wanted (Dashboard.ahk
 ;DashCardShow), and the tab's controls (a control's variable has to be global)
 global DeckEdit, DashCardWant
 global DeckView0, DeckView1, DeckView2, DeckView3, DeckView4, DeckView5, DeckView6, DeckAddBtn
 global DeckFNameT, DeckFName, DeckFSchoolT, DeckFSchool, DeckFSetT, DeckFSet, DeckFSetN, DeckFWhenT, DeckFWDefault, DeckFWCollect
 global DeckFWBoss, DeckFWDungeon, DeckFWFarm, DeckFPriT, DeckFPri, DeckFPin, DeckFSave, DeckFCopy, DeckFDel, DeckFDmg, DeckFList
-global DeckFValT, DeckFVal, DeckFValSet, DeckFValClear, DeckFNote
+global DeckFValT, DeckFVal, DeckFValSet, DeckFValClear, DeckFNote, DeckGameBtn
 
 ;Where the decks are kept
 DeckDir()
@@ -152,7 +164,7 @@ DeckWhenOf(text)
 DeckLoad(file)
 	{
 	SplitPath(file, , , , &id)
-	d := V1Obj({id: id, file: file, name: id, school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj()})
+	d := V1Obj({id: id, file: file, name: id, school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj(), game: "", learned: "", bossname: ""})
 	allowed := V1Obj()
 	for i, k in DeckKeys()
 		allowed[k] := 1
@@ -174,6 +186,15 @@ DeckLoad(file)
 				d.when := DeckWhenOf(m[2])
 			else if (m[1] = "priority")
 				d.priority := RegExMatch(Trim(m[2]), "^-?\d{1,3}$") ? Trim(m[2]) + 0 : 0
+			;(the in-game deck it was learned from - its global id in hex - and the settings that learning set)
+			else if (m[1] = "game")
+				d.game := RegExMatch(Trim(m[2]), "i)^[0-9a-f]{1,16}$") ? StrLower(Trim(m[2])) : ""
+			else if (m[1] = "learned")
+				d.learned := RegExReplace(StrLower(m[2]), "[^a-z0-9,!]")
+			;(v0.9.0: the boss it's for by name - "Kraken", several with a comma between - DeckPick: its deck for that boss, a
+			;cheat-aware profile set with the deck's settings; edited in the file for now - older versions skip the line)
+			else if (m[1] = "bossname")
+				d.bossname := Trim(SubStr(RegExReplace(m[2], "[^\x20-\x7E]|\|", ""), 1, 80))
 			continue
 			}
 		if (RegExMatch(line, "^([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?$", &m))
@@ -212,6 +233,7 @@ DeckSave(d)
 		w .= (w = "" ? "" : ",") k
 	text := "; Wiz-Maxxing deck (the dashboard's Cards tab). A setting not here: your Settings' (your school's, then the plain one)`r`n"
 		. "name|" d.name "`r`nschool|" d.school "`r`neqset|" d.eqset "`r`nwhen|" w "`r`npriority|" d.priority "`r`n"
+		. (d.game != "" ? "game|" d.game "`r`n" : "") (d.learned != "" ? "learned|" d.learned "`r`n" : "") (d.bossname != "" ? "bossname|" d.bossname "`r`n" : "")
 	for i, k in DeckKeys()
 		if (d.vals.Has(k))
 			text .= k ":" d.vals[k] "`r`n"
@@ -249,6 +271,17 @@ DeckPick(inBattle, noBoss := false)
 	if (!IsObject(DeckList) || !DeckList.Length)
 		return V1Obj({deck: "", why: "no decks"})
 	sch := inBattle && hitschool != "" ? hitschool : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	;(v0.9.0: the boss's name - a deck for it by name, a dungeon run's own deck for it: its boss|<name>|<deck id> lines, before
+	;its deck| one - held in a battle it isn't known to be in: while that deck's Equipment Set is the one on)
+	dpHeld := 0
+	dpBoss := DeckBossName(inBattle, noBoss, &dpHeld)
+	if (dpBoss != "" && IsObject(DgRun) && IsObject(DgRun.bosses))
+		for dpI, dpB in DgRun.bosses
+			{
+			d := DeckNameMatch(dpB.name, dpBoss) ? DeckById(dpB.deck) : ""
+			if (IsObject(d) && DeckFits(d, sch) && (!dpHeld || DeckHeldOn(d)))
+				return V1Obj({deck: d, why: "the dungeon run " DgRun.name "'s for " dpBoss, boss: 1})
+			}
 	if (IsObject(DgRun) && DgRun.deck != "")
 		{
 		d := DeckById(DgRun.deck)
@@ -281,10 +314,16 @@ DeckPick(inBattle, noBoss := false)
 		{
 		if (!use[2])
 			continue
-		best := ""
-		for j, d in DeckList
-			if (d.when[use[1]] && DeckFits(d, sch) && (!IsObject(best) || d.priority > best.priority))
-				best := d
+		best := "", dpNamed := 0
+		;(v0.9.0: for a boss, a deck for it by name first - its bossname| line, "bosses" ticked or not)
+		if (use[1] = "boss" && dpBoss != "")
+			for j, d in DeckList
+				if (DeckNamedFor(d, dpBoss) && DeckFits(d, sch) && DeckBetter(d, best, "boss"))
+					best := d, dpNamed := 1
+		if (!IsObject(best))
+			for j, d in DeckList
+				if (d.when[use[1]] && DeckFits(d, sch) && DeckBetter(d, best, use[1]))
+					best := d
 		;(a boss ahead held in a battle it isn't in: its deck's settings only while its in-game deck is on - the set put
 		;on last, DeckEquip's; another set on: the deck for what this battle is)
 		if (use[1] = "boss" && bossHeld && IsObject(best))
@@ -297,9 +336,59 @@ DeckPick(inBattle, noBoss := false)
 				continue
 			}
 		if (IsObject(best))
-			return V1Obj({deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0})
+			return V1Obj({deck: best, why: use[3] (dpNamed ? " - its deck by name" : ""), boss: use[1] = "boss" ? 1 : 0})
 		}
 	return V1Obj({deck: "", why: "no deck for this"})
+	}
+
+;(v0.9.0) The boss's name for DeckPick's by-name match ("" none): a boss in this battle by the game's memory (DeckFoe), else
+;the boss ahead (DeckBoss, the bot on); held 1: in a battle and not known to be in it (DeckPick's bossHeld - its deck's
+;settings only while its Equipment Set is the one on: DeckHeldOn). Your Alt+1 pick alone names nobody
+DeckBossName(inBattle, noBoss, &held)
+	{
+	held := 0
+	if (noBoss)
+		return ""
+	if (inBattle && IsObject(DeckFoe))
+		return DeckFoe.name
+	if (BotOn && IsObject(DeckBoss))
+		{
+		held := inBattle && !BossChoosen ? 1 : 0
+		return DeckBoss.name
+		}
+	return ""
+	}
+
+;(v0.9.0) want (a deck's bossname or a run's boss| name) names the boss called name: its letters all of name's (Governor
+;Nereus - "Governor Nereus"), or among them when it has 4 or more ("Nereus")
+DeckNameMatch(want, name)
+	{
+	dnmW := DeckLetters(want), dnmN := DeckLetters(name)
+	if (dnmW = "" || dnmN = "")
+		return false
+	return dnmW = dnmN || (StrLen(dnmW) >= 4 && InStr(dnmN, dnmW))
+	}
+
+;(v0.9.0) Deck d is for the boss called name by its bossname| line (several with a comma between)
+DeckNamedFor(d, name)
+	{
+	if (d.bossname = "")
+		return false
+	Loop Parse, d.bossname, ","
+		if (DeckNameMatch(A_LoopField, name))
+			return true
+	return false
+	}
+
+;(v0.9.0) A boss deck held in a battle may have its settings only while its in-game deck is the one on: it has an Equipment
+;Set and that's the one put on last (DeckEquip's dashboard.ini [decks] eqset<CharID>), or none was put on yet (v1's blank -
+;DeckPick's rule for a deck for bosses)
+DeckHeldOn(d)
+	{
+	if (!d.eqset)
+		return false
+	dhoSet := Trim(IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""), ""))
+	return dhoSet = "" || dhoSet = d.eqset
 	}
 
 ;A deck is for this wizard: its school, or any (school not known: only an 'any' one)
@@ -342,8 +431,11 @@ DeckTick()
 	lookAt := A_TickCount
 	if (!IsObject(DeckList) || DeckDirty)
 		DeckDirty := 0, DeckLoadAll()
+	DeckLearnTick()
 	DeckBossLook()
 	p := DeckPick(false)
+	;(Settings: deckzone, off - the deck the battle simulator says fits this zone's enemies best: DeckForZone)
+	p := DeckForZone(p)
 	DeckSet(p.deck, p.why)
 	if (IsObject(p.deck))
 		DeckEquip(p.deck, p.boss)
@@ -385,6 +477,8 @@ DeckRound()
 		return
 	DeckDuel := drKey
 	p := DeckPick(true)
+	;(the zone's pick put on before the battle - deckzone: its settings, while its in-game deck is the one on)
+	p := DeckForZone(p, true)
 	DeckSet(p.deck, p.why)
 	}
 
@@ -616,10 +710,11 @@ DeckDamageText(d)
 ;There's a deck for bosses (else there's nothing to look for)
 DeckBossWanted()
 	{
+	;(v0.9.0: a deck for a boss by name, or a dungeon run's boss| lines, want the boss ahead looked for too)
 	for dbwI, dbwD in IsObject(DeckList) ? DeckList : []
-		if (dbwD.when.boss)
+		if (dbwD.when.boss || dbwD.bossname != "")
 			return true
-	return false
+	return IsObject(DgRun) && IsObject(DgRun.bosses) && DgRun.bosses.Length ? true : false
 	}
 
 ;Out of battle (DeckTick, every 2 s): the zone's mobs read (NavMobs) and a boss ahead looked for - DeckBoss set, kept or
@@ -684,6 +779,7 @@ DeckBossLook()
 		DeckBoss := dblHit
 		DebugLog("Deck: a boss ahead - " dblHit.text " (" (dblHit.health != "" ? dblHit.health " health" : "health not known") (dblHit.school != "" ? ", " dblHit.school : "")
 			. (dblHit.dist != "" ? ", " Round(dblHit.dist) " away" : "") "): " dblHit.why " (the game's memory)")
+		DeckBeatBoss(dblHit)
 		return
 		}
 	if (!IsObject(DeckBoss))
@@ -894,7 +990,7 @@ DeckFormCtrls()
 	{
 	return ["DeckFNameT", "DeckFName", "DeckFSchoolT", "DeckFSchool", "DeckFSetT", "DeckFSet", "DeckFSetN", "DeckFWhenT", "DeckFWDefault"
 		, "DeckFWCollect", "DeckFWBoss", "DeckFWDungeon", "DeckFWFarm", "DeckFPriT", "DeckFPri", "DeckFPin", "DeckFSave", "DeckFCopy", "DeckFDel"
-		, "DeckFDmg", "DeckFList", "DeckFValT", "DeckFVal", "DeckFValSet", "DeckFValClear", "DeckFNote"]
+		, "DeckFDmg", "DeckFList", "DeckFValT", "DeckFVal", "DeckFValSet", "DeckFValClear", "DeckFNote", "DeckGameBtn"]
 	}
 
 ;One of the Cards tab's views up: 0 the hand and the enemies, n the n-th deck (its form filled from a copy of it)
@@ -947,7 +1043,7 @@ DeckFormFill(d)
 		Dash[c].Value := d.when[k] ? 1 : 0
 	pin := IniRead(A_ScriptDir "\dashboard.ini", "decks", "pin", A_Space)
 	Dash["DeckFPin"].Value := pin = d.id ? 1 : 0
-	Dash["DeckFDmg"].Text := DeckDamageText(d)
+	Dash["DeckFDmg"].Text := DeckDamageText(d) DeckBeatLine(d)
 	DeckListFill(d)
 	Dash["DeckFNote"].Text := IsObject(DeckNow) && DeckNow.id = d.id ? "In use now (" DeckWhy ")" : ""
 	}
@@ -1089,6 +1185,8 @@ DeckValSetClear(thisLabel)
 		DeckSay("Pick a setting in the list first")
 		return
 		}
+	;(yours from now on: never changed by learning from the game again - DeckUnlearn)
+	DeckUnlearn(DeckEdit, DeckKey, thisLabel = "DeckValClear")
 	if (thisLabel = "DeckValClear")
 		DeckEdit.vals.Delete(DeckKey), DeckSay(DeckKey ": not set by this deck - Save to keep it")
 	else
@@ -1161,7 +1259,7 @@ DeckAddCopy(thisLabel)
 		}
 	DeckId := DeckNewId()
 	if (thisLabel = "DeckCopyClick" && IsObject(DeckEdit))
-		DeckD := DeckCopy(DeckFormRead()), DeckD.name := SubStr(DeckD.name " copy", 1, 30)
+		DeckD := DeckCopy(DeckFormRead()), DeckD.name := SubStr(DeckD.name " copy", 1, 30), DeckD.game := "", DeckD.learned := ""
 	else
 		DeckD := V1Obj({name: "New deck", school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj()})
 	DeckD.id := DeckId, DeckD.file := DeckDir() "\" DeckId ".txt"
@@ -1188,11 +1286,447 @@ DeckDelClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
 	DeckViewShow(0)
 	}
 
+;---- Decks learned from the game (v0.8.0, TODO goal 3) ----
+;
+;The helper's /decks (READ-ONLY - vision\deckmem.py: every deck the wizard owns, the backpack's too, each card's kind
+;from its effects; vision\battlesim.py learn_decks) answers a "learn" line for each in-game deck in an Equipment Set:
+;learn|gid|name|school|eqset|when|k=v,...|why. Each becomes a deck here: the one linked to it (game|<gid> in its file),
+;else one with no link on that Equipment Set (and its school, or any), else a new one (six decks at most on the tab: no
+;room - said, not made). Linked: its Equipment Set follows the game's (the set that puts that deck on), its school is
+;filled in when it's "any", and its learned settings (learned| in the file) follow the cards - a setting you set yourself
+;(one not in learned|) is never changed or cleared; a new deck takes its name and what it's for too. manual: the Cards
+;tab's button (said there; a refusal - in a battle, the helper off - too). Returns the lines it logged ("" none read)
+DeckLearnGame(manual := false)
+	{
+	global DeckLearnAt, DeckLearnSaid ; (v1 globals it sets)
+	DeckLearnAt := A_TickCount
+	if (!IsObject(DeckList))
+		DeckLoadAll()
+	dlgWhy := ""
+	if (!Stat("navmem"))
+		dlgWhy := "navmem:0 in PlayerStats.txt"
+	else if (!VisionOn)
+		dlgWhy := "the vision helper isn't running"
+	else if (dualmode == 1)
+		dlgWhy := "dual mode: the game's memory is one client's"
+	else if (inbattle = 1 || (V1IsFunc("BattleLogInBattle") && BattleLogInBattle.Call()))
+		dlgWhy := "in a battle - out of battle only"
+	if (dlgWhy != "")
+		{
+		DeckLearnSaid := "Decks from the game: not read - " dlgWhy
+		if (manual)
+			DebugLog(DeckLearnSaid)
+		return ""
+		}
+	;(a fresh read - paced by the helper, refused in a battle; the first one reads every card's effects: a few seconds)
+	dlgAns := VisionGet("/decks?fresh=1&ob=1", 9000, true)
+	if (dlgAns = "" || SubStr(dlgAns, 1, 5) = "none|")
+		{
+		DeckLearnSaid := "Decks from the game: not read - " (dlgAns != "" ? SubStr(Trim(dlgAns, " `r`n"), 6) : VisionErr != "" ? VisionErr : "no answer")
+		if (manual)
+			DebugLog(DeckLearnSaid)
+		return ""
+		}
+	dlgOut := "", dlgN := 0, dlgMade := 0, dlgChanged := 0, dlgFull := ""
+	Loop Parse, dlgAns, "`n", "`r"
+		{
+		dlgF := StrSplit(A_LoopField, "|")
+		if (V1At(dlgF, 1) != "learn" || dlgF.Length < 8)
+			continue
+		dlgN += 1
+		dlgL := V1Obj({gid: StrLower(Trim(dlgF[2])), name: Trim(SubStr(RegExReplace(dlgF[3], "[^\x20-\x7E]"), 1, 30)), school: Trim(dlgF[4])
+			, eqset: RegExMatch(Trim(dlgF[5]), "^[1-9]$") ? Trim(dlgF[5]) + 0 : 0, when: Trim(dlgF[6]), vals: V1Obj(), why: Trim(dlgF[8])})
+		if (!RegExMatch(dlgL.gid, "^[0-9a-f]{1,16}$"))
+			continue
+		Loop Parse, dlgF[7], ","
+			if (RegExMatch(A_LoopField, "^(\w+)=(-?\d+(?:\.\d+)?)$", &dlgM))
+				dlgL.vals[StrLower(dlgM[1])] := dlgM[2] + 0
+		dlgNew := false
+		dlgSaid := DeckLearnOne(dlgL, &dlgNew)
+		if (dlgSaid = "full")
+			{
+			dlgFull .= (dlgFull = "" ? "" : ", ") dlgL.name
+			continue
+			}
+		if (dlgNew)
+			dlgMade += 1
+		else if (dlgSaid != "")
+			dlgChanged += 1
+		if (dlgSaid != "")
+			{
+			DebugLog("Decks from the game: " dlgSaid)
+			dlgOut .= dlgSaid "`n"
+			}
+		}
+	if (dlgFull != "")
+		DebugLog("Decks from the game: no room for " dlgFull " (six decks at most on the Cards tab - delete one to make room)")
+	DeckLearnSaid := "Decks from the game: " dlgN " in an Equipment Set read" (dlgMade ? ", " dlgMade " made" : "") (dlgChanged ? ", " dlgChanged " brought up to date" : "")
+		. (!dlgMade && !dlgChanged ? " - nothing new" : "") (dlgFull != "" ? " (no room for " dlgFull ")" : "")
+	if (manual || dlgMade || dlgChanged)
+		DebugLog(DeckLearnSaid)
+	if (dlgMade || dlgChanged)
+		{
+		DeckLoadAll()
+		if (DashHwnd)
+			DeckButtonsShow()
+		}
+	return dlgOut
+	}
+
+;One learned in-game deck L ({gid, name, school, eqset, when, vals, why}) into a deck here (see DeckLearnGame) - what
+;changed in words ("" nothing), or "full" (a new one needed, six there already); isNew: it was made
+DeckLearnOne(L, &isNew := false)
+	{
+	isNew := false
+	dloD := ""
+	for dloI, dloX in DeckList
+		if (dloX.game = L.gid)
+			dloD := dloX
+	if (!IsObject(dloD) && L.eqset)
+		for dloI, dloX in DeckList
+			if (dloX.game = "" && dloX.eqset = L.eqset && (dloX.school = "any" || dloX.school = L.school))
+				{
+				dloD := dloX
+				break
+				}
+	dloSay := []
+	if (!IsObject(dloD))
+		{
+		if (DeckList.Length >= 6)
+			return "full"
+		dloId := DeckNewId()
+		dloD := V1Obj({id: dloId, file: DeckDir() "\" dloId ".txt", name: L.name, school: L.school != "" ? L.school : "any", eqset: L.eqset
+			, when: DeckWhenOf(L.when), priority: 0, vals: V1Obj(), game: L.gid, learned: ""})
+		isNew := true
+		;(on the list now: the six counted with it - DeckLoadAll reads them all again after)
+		DeckList.Push(dloD)
+		dloSay.Push("made " L.name " (Equipment Set " (L.eqset ? L.eqset : "none") ", for " (L.when != "" ? StrReplace(L.when, ",", ", ") : "nothing yet") ")")
+		}
+	else
+		{
+		;(work on a copy: the deck in use is only swapped for it by DeckLoadAll)
+		dloD := DeckCopy(dloD)
+		if (dloD.game != L.gid)
+			dloD.game := L.gid, dloSay.Push(dloD.name " linked to the in-game deck " L.name)
+		if (L.eqset && dloD.eqset != L.eqset)
+			dloSay.Push(dloD.name "'s Equipment Set " dloD.eqset " -> " L.eqset " (the one that puts " L.name " on)"), dloD.eqset := L.eqset
+		if (dloD.school = "any" && L.school != "" && L.school != "any")
+			dloD.school := L.school, dloSay.Push(dloD.name " is for " L.school)
+		}
+	;(its settings: a learned one set or changed; a learned one the cards don't call for now cleared; yours never touched)
+	dloLearned := V1Obj(), dloNo := V1Obj()
+	Loop Parse, dloD.learned, ","
+		if (SubStr(A_LoopField, 1, 1) = "!")
+			dloNo[SubStr(A_LoopField, 2)] := 1
+		else if (A_LoopField != "")
+			dloLearned[A_LoopField] := 1
+	dloKeys := V1Obj()
+	for dloI, dloK in DeckKeys()
+		dloKeys[dloK] := 1
+	dloSet := ""
+	for dloK, dloV in L.vals
+		{
+		if (!dloKeys.Has(dloK) || dloNo.Has(dloK))
+			continue
+		if (!dloD.vals.Has(dloK))
+			dloD.vals[dloK] := dloV, dloLearned[dloK] := 1, dloSet .= (dloSet = "" ? "" : ", ") dloK ":" dloV
+		else if (dloLearned.Has(dloK) && dloD.vals[dloK] != dloV)
+			dloD.vals[dloK] := dloV, dloSet .= (dloSet = "" ? "" : ", ") dloK ":" dloV
+		}
+	dloGone := ""
+	for dloK, dloV in dloLearned.Clone()
+		if (!L.vals.Has(dloK))
+			{
+			dloD.vals.Delete(dloK), dloLearned.Delete(dloK)
+			dloGone .= (dloGone = "" ? "" : ", ") dloK
+			}
+	if (dloSet != "")
+		dloSay.Push(dloD.name ": " dloSet " (" L.why ")")
+	if (dloGone != "")
+		dloSay.Push(dloD.name ": " dloGone " back to your Settings (its cards call for them now)")
+	dloList := ""
+	for dloK, dloV in dloLearned
+		dloList .= (dloList = "" ? "" : ",") dloK
+	for dloK, dloV in dloNo
+		dloList .= (dloList = "" ? "" : ",") "!" dloK
+	dloD.learned := dloList
+	if (!dloSay.Length)
+		return ""
+	DeckSave(dloD)
+	dloText := ""
+	for dloI, dloT in dloSay
+		dloText .= (dloText = "" ? "" : "; ") dloT
+	return dloText
+	}
+
+;A setting you set or cleared on the Cards tab is yours: taken out of deck d's learned list (learned|) - cleared, it's
+;kept there as "!key": never learned again
+DeckUnlearn(d, key, cleared)
+	{
+	duOut := ""
+	Loop Parse, d.learned, ","
+		if (A_LoopField != "" && A_LoopField != key && A_LoopField != "!" key)
+			duOut .= (duOut = "" ? "" : ",") A_LoopField
+	if (cleared && d.game != "")
+		duOut .= (duOut = "" ? "" : ",") "!" key
+	d.learned := duOut
+	}
+
+;Out of battle (DeckTick): the decks learned from the game once a while after the bot starts, then every 30 minutes - the
+;bot on, the helper on, nothing loading, no dungeon run (a fresh read holds the helper a moment)
+DeckLearnTick()
+	{
+	if (!BotOn || inbattle = 1 || WkLoading || IsObject(DgRun) || !VisionOn || !Stat("navmem"))
+		return
+	if (DeckLearnAt && A_TickCount - DeckLearnAt < 1800000)
+		return
+	DeckLearnGame(false)
+	}
+
+;The Cards tab's "From game" button
+DeckGameClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
+	{
+	local v1KeepG := V1Thread()  ; (v1: a g-label - its own thread and ErrorLevel)
+	DeckSay("Reading your decks from the game...")
+	DeckLearnGame(true)
+	DeckSay(DeckLearnSaid)
+	if (DeckView)
+		DeckViewShow(DeckView)
+	}
+
+;---- Can this deck beat it (v0.8.0, TODO goal 3) ----
+
+;Deck d fought against foes ([{name, health, school, boss}]) in the battle simulator (the helper's /sim - vision\
+;battlesim.py: its linked in-game deck's cards, your stats for its school, its settings): {word (yes / likely / risky /
+;no), win, lost (0-1), rounds, text, boss (the first foe's name)} - kept in DeckBeats[d.id] - or "" (not linked to an
+;in-game deck, the helper off, no answer: why says so)
+DeckBeat(d, foes, &why := "")
+	{
+	global DeckBeats ; (v1 globals it sets)
+	why := ""
+	if (d.game = "")
+		{
+		why := "not linked to an in-game deck (the Cards tab's From game button)"
+		return ""
+		}
+	if (!VisionOn || !Stat("navmem") || dualmode == 1)
+		{
+		why := !VisionOn ? "the vision helper isn't running" : dualmode == 1 ? "dual mode" : "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	sch := d.school != "any" ? d.school : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	dbF := ""
+	for dbI, dbE in foes
+		dbF .= (dbF = "" ? "" : "|") StrReplace(StrReplace(dbE.name, "|", " "), "~", " ") "~" dbE.health "~" dbE.school "~" (dbE.boss ? 1 : 0)
+	dbHp := DeckStatFor(d, sch, "maxhealth")
+	if (!dbHp && OwnHpMax)
+		dbHp := OwnHpMax
+	dbVals := ""
+	for dbI, dbK in DeckKeys()
+		{
+		dbV := DeckStatFor(d, sch, dbK)
+		if (dbV != "" && (d.vals.Has(dbK) || Stats.Has(dbK) || (sch != "" && Stats.Has(sch "." dbK))))
+			dbVals .= (dbVals = "" ? "" : ",") dbK ":" dbV
+		}
+	;(fresh=1: the decks read again only when the worn one changed - else the last reading; out of battle: ob=1)
+	dbQ := "/sim?deck=" d.game "&foes=" NavUri(dbF) "&school=" sch "&n=300&vals=" NavUri(dbVals) (inbattle = 1 ? "" : "&fresh=1&ob=1")
+	for dbI, dbK in [["hp", dbHp], ["damage", DeckStatFor(d, sch, "damage")], ["pierce", DeckStatFor(d, sch, "pierce")]
+		, ["crit", DeckStatFor(d, sch, "critical")], ["block", DeckStatFor(d, sch, "block")], ["acc", DeckStatFor(d, sch, "accuracy")]]
+		if (dbK[2] != "" && dbK[2] != 0)
+			dbQ .= "&" dbK[1] "=" NavUri(dbK[2] "")
+	dbAns := VisionGet(dbQ, 5000, true)
+	if (dbAns = "" || SubStr(dbAns, 1, 5) = "none|")
+		{
+		why := dbAns != "" ? SubStr(Trim(dbAns, " `r`n"), 6) : VisionErr != "" ? VisionErr : "no answer"
+		return ""
+		}
+	dbR := V1Obj({word: "", win: "", lost: "", rounds: "", text: "", boss: foes.Length ? foes[1].name : ""})
+	Loop Parse, dbAns, "`n", "`r"
+		{
+		dbL := StrSplit(A_LoopField, "|")
+		if (V1At(dbL, 1) = "sim" && dbL.Length >= 10)
+			dbR.win := dbL[2] != "" ? dbL[2] / 100 : "", dbR.lost := dbL[3] != "" ? dbL[3] / 100 : "", dbR.rounds := dbL[5]
+		else if (V1At(dbL, 1) = "verdict" && dbL.Length >= 3)
+			dbR.word := dbL[2], dbR.text := dbL[3]
+		}
+	if (dbR.word = "" || dbR.win = "")
+		{
+		why := "the simulator's answer couldn't be read"
+		return ""
+		}
+	if (!IsObject(DeckBeats))
+		DeckBeats := V1Obj()
+	DeckBeats[d.id] := dbR
+	return dbR
+	}
+
+;A boss ahead b (DeckBossLook's): each deck for bosses linked to an in-game deck fought against it (DeckBeat) - logged,
+;b.beat {deck id: result}; DeckPick then takes the one most likely to win it (DeckBetter). None likely to: said
+DeckBeatBoss(b)
+	{
+	b.beat := V1Obj()
+	sch := V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	dbbBest := "", dbbN := 0
+	for dbbI, dbbD in IsObject(DeckList) ? DeckList : []
+		{
+		if (!dbbD.when.boss || dbbD.game = "" || !DeckFits(dbbD, sch))
+			continue
+		dbbR := DeckBeat(dbbD, [V1Obj({name: b.name, health: b.health, school: b.school, boss: b.kind = "boss" ? 1 : 0})], &dbbWhy)
+		if (!IsObject(dbbR))
+			{
+			DebugLog("Deck: can " dbbD.name " beat " b.name "? not simulated - " dbbWhy)
+			continue
+			}
+		dbbN += 1
+		b.beat[dbbD.id] := dbbR
+		DebugLog("Deck: can " dbbD.name " beat " b.name "? " dbbR.text)
+		if (!IsObject(dbbBest) || dbbR.win > dbbBest.win)
+			dbbBest := dbbR, dbbBest.deck := dbbD.name
+		}
+	if (dbbN && IsObject(dbbBest) && dbbBest.win < 0.65)
+		DebugLog("Deck: no deck for bosses is likely to beat " b.name " - the best, " dbbBest.deck ", wins " Round(100 * dbbBest.win) "% in the simulator (a stronger deck, potions or a party?)")
+	}
+
+;Deck d's chance (0-1) to win against the boss ahead or in this battle (DeckBeatBoss's) - "" not simulated
+DeckBeatWin(d)
+	{
+	dbwB := IsObject(DeckBoss) ? DeckBoss : ""
+	if (!IsObject(dbwB) || !IsObject(V1At(dbwB, "beat")) || !dbwB.beat.Has(d.id))
+		return ""
+	return dbwB.beat[d.id].win
+	}
+
+;d is a better pick than best for use: a higher priority - for a boss, first a clearly better chance to win it (5 points
+;or more in the simulator, both simulated against it: DeckBeatWin)
+DeckBetter(d, best, use)
+	{
+	if (!IsObject(best))
+		return true
+	if (use = "boss")
+		{
+		dbW1 := DeckBeatWin(d), dbW2 := DeckBeatWin(best)
+		if (dbW1 != "" && dbW2 != "" && Abs(dbW1 - dbW2) >= 0.05)
+			return dbW1 > dbW2
+		}
+	return d.priority > best.priority
+	}
+
+;The Cards tab's line under a deck's damage: the simulator's last verdict for it ("" none), or that it isn't linked
+DeckBeatLine(d)
+	{
+	if (IsObject(DeckBeats) && DeckBeats.Has(d.id))
+		return "`nCan it beat " DeckBeats[d.id].boss ": " SubStr(DeckBeats[d.id].text, 1, 170)
+	if (d.game = "")
+		return "`nNot linked to an in-game deck - From game reads yours (the battle simulator needs its cards)"
+	dblL := RegExReplace(RegExReplace(d.learned, "(^|,)![a-z0-9]+"), "^,+")
+	return "`nLinked to its in-game deck (" d.game ") - learned from its cards: " (dblL != "" ? StrReplace(dblL, ",", ", ") : "nothing to set")
+	}
+
+;---- Decks matched to the zone's enemies (v0.9.0, TODO goal 3 - Settings: deckzone, off; not tried in the game) ----
+
+;The deck DeckPick chose (p - {deck, why, boss}) swapped for the one the battle simulator says does best against the
+;enemy groups fought most in this zone (the helper's /deckfor - vision\battlesim.py best_decks: each in-game deck in an
+;Equipment Set fought against the battles recorded there, each with the settings its cards call for): of your decks
+;linked to an in-game deck (game| - the Cards tab's From game), for this school, for a use the one picked is for too
+;(collect, farming, dungeon, anything else - none picked: any of those; never a boss's), the one that wins most often
+;(1 point at least, else as often in a round fewer) - and only when it wins 5 points more than the one picked, or as
+;often in a round fewer (the one picked not simulated: it's taken). Not: the setting off, the bot off, a boss ahead,
+;the deck pinned on the Cards tab or a dungeon run's, the zone not known, no battle recorded there yet, the helper
+;still working it out (asked again 10 s on - an answer kept for the zone 10 minutes, here and in the helper; a refresh
+;keeps the last rows till new ones come, and the helper hands its old lines back while it works them out again). In a
+;battle (inBattle - DeckRound): the answer kept only - nothing asked - and only while the pick's Equipment Set is the
+;one put on last (its cards are the ones in hand). p as it was, else {deck, why, boss: 0}
+DeckForZone(p, inBattle := false)
+	{
+	static dfzZone := "", dfzAt := 0, dfzAns := "", dfzSaid := "", dfzWait := 0
+	if (!Stat("deckzone") || !BotOn || !IsObject(DeckList) || V1At(p, "boss") || !VisionOn || !Stat("navmem") || dualmode == 1)
+		return p
+	if (InStr(p.why, "pinned") || InStr(p.why, "dungeon run"))
+		return p
+	dfzZ := V1IsFunc("WalkZone") ? WalkZone.Call() : ""
+	if (dfzZ = "")
+		return p
+	dfzSch := V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	;(asked again: another zone, 10 minutes on, or 10 s on while the helper was working it out - out of battle only)
+	if (!inBattle && (dfzZ != dfzZone || A_TickCount - dfzAt > (dfzWait || SubStr(dfzAns, 1, 5) = "none|" || dfzAns = "" ? 10000 : 600000)))
+		{
+		dfzQ := "/deckfor?zone=" NavUri(dfzZ) "&school=" dfzSch "&n=60"
+		for dfzI, dfzK in [["hp", "maxhealth"], ["damage", "damage"], ["pierce", "pierce"], ["crit", "critical"], ["block", "block"], ["acc", "accuracy"]]
+			{
+			dfzV := DeckStatFor("", dfzSch, dfzK[2])
+			if (dfzK[1] = "hp" && !dfzV && OwnHpMax)
+				dfzV := OwnHpMax
+			if (dfzV != "" && dfzV != 0)
+				dfzQ .= "&" dfzK[1] "=" NavUri(dfzV "")
+			}
+		dfzNew := VisionGet(dfzQ, 3000, true), dfzAt := A_TickCount
+		;(the zone's last rows kept till an answer with rows replaces them: the helper still working it out
+		;("none|working...") or no answer (a time-out while its thread works) keeps them - asked again 10 s on - so a
+		;refresh never drops the zone's deck for a moment (DeckEquip would press DeckPick's set, then this one's again a
+		;minute later); so does "none|not read yet" (the helper's decks not read since the game was started again - the
+		;next /decks read answers); another zone, or the helper's own none| (nothing to simulate there), replaces them)
+		dfzWait := (Trim(dfzNew) = "" || SubStr(dfzNew, 1, 12) = "none|working" || SubStr(dfzNew, 1, 17) = "none|not read yet") ? 1 : 0
+		if (dfzZ != dfzZone || !dfzWait || !InStr("`n" dfzAns, "`ndeckfor|"))
+			dfzAns := dfzNew
+		dfzZone := dfzZ
+		}
+	if (dfzZ != dfzZone || dfzAns = "" || SubStr(dfzAns, 1, 5) = "none|")
+		return p
+	;(each in-game deck simulated: {its gid: {won (%), rounds, name}})
+	dfzRes := V1Obj()
+	Loop Parse, dfzAns, "`n", "`r"
+		{
+		dfzL := StrSplit(A_LoopField, "|")
+		if (V1At(dfzL, 1) = "deckfor" && dfzL.Length >= 9 && V1IsNum(dfzL[4]))
+			dfzRes[dfzL[2]] := V1Obj({won: dfzL[4] + 0, rounds: dfzL[5], name: dfzL[3]})
+		}
+	dfzCur := (IsObject(p.deck) && p.deck.game != "" && dfzRes.Has(p.deck.game)) ? dfzRes[p.deck.game] : ""
+	dfzPick := "", dfzPickR := ""
+	for dfzI, dfzD in DeckList
+		{
+		if (dfzD.game = "" || !dfzRes.Has(dfzD.game) || !DeckFits(dfzD, dfzSch))
+			continue
+		dfzSame := false
+		for dfzJ, dfzU in ["collect", "farm", "dungeon", "default"]
+			if (dfzD.when[dfzU] && (!IsObject(p.deck) || p.deck.when[dfzU]))
+				dfzSame := true
+		if (!dfzSame)
+			continue
+		if (!IsObject(dfzPickR) || DeckForBetter(dfzRes[dfzD.game], dfzPickR))
+			dfzPick := dfzD, dfzPickR := dfzRes[dfzD.game]
+		}
+	if (!IsObject(dfzPick) || (IsObject(p.deck) && dfzPick.id = p.deck.id) || (IsObject(dfzCur) && !DeckForBetter(dfzPickR, dfzCur, 5)))
+		return p
+	;(in a battle: only while its in-game deck is the one on - the set put on last, DeckEquip's)
+	if (inBattle)
+		{
+		dfzOn := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""), A_Space)
+		if (!dfzPick.eqset || dfzOn = "" || dfzOn != dfzPick.eqset)
+			return p
+		}
+	dfzWhy := "the simulator's pick for " dfzZ "'s enemies: " dfzPickR.won "% won" (dfzPickR.rounds != "" ? " in " dfzPickR.rounds " rounds" : "")
+		. (IsObject(p.deck) ? " - " p.deck.name " " (IsObject(dfzCur) ? dfzCur.won "%" : "not simulated") : "") " (deckzone)"
+	if (dfzSaid != dfzZ "|" dfzPick.id)
+		dfzSaid := dfzZ "|" dfzPick.id, DebugLog("Deck: " dfzPick.name " - " dfzWhy)
+	return V1Obj({deck: dfzPick, why: dfzWhy, boss: 0})
+	}
+
+;A /deckfor row r1 ({won (%), rounds}) beats r2 (DeckForZone): margin points (1 at least) more won, else about as many
+;won (within that) in a round fewer
+DeckForBetter(r1, r2, margin := 0)
+	{
+	dfbM := Max(margin, 1), dfbD := V1N(r1.won) - V1N(r2.won)
+	if (dfbD >= dfbM)
+		return true
+	return Abs(dfbD) < dfbM && V1IsNum(r1.rounds) && V1IsNum(r2.rounds) && r2.rounds - r1.rounds >= 1
+	}
+
 ;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on
 ;reading it. The entry script calls this first thing: this file's globals start blank, as in v1)
 DecksBlank()
 	{
 	global DeckList := "", DeckNow := "", DeckWhy := "", DeckDirty := "", DeckEqAt := "", DeckDuel := "", DeckView := "", DeckBoss := ""
+	global DeckLearnAt := "", DeckLearnSaid := "", DeckBeats := "", DeckGameBtn := ""
 	global DeckFoe := "", DeckFoeTries := "", DeckFoeKnown := "", DeckEdit := "", DashCardWant := "", DeckView0 := "", DeckView1 := ""
 	global DeckView2 := "", DeckView3 := "", DeckView4 := "", DeckView5 := "", DeckView6 := "", DeckAddBtn := "", DeckFNameT := "", DeckFName := ""
 	global DeckFSchoolT := "", DeckFSchool := "", DeckFSetT := "", DeckFSet := "", DeckFSetN := "", DeckFWhenT := "", DeckFWDefault := ""

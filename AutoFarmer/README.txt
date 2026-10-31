@@ -16,6 +16,9 @@ tab (below); the messages then name your keys.
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
+New in v0.8.0 and v0.9.0 and not tried in the game yet: LIVE_CHECKS.txt
+(next to this file) says what to try, in what order, and what to send back.
+
 Discord alerts (tray menu "Discord alerts..."): when the wizard needs you, a
 message goes to your Discord channel - stuck (walking stopped), a teleport that
 doesn't work, no quest arrow, waiting at the quest goal, a collect quest that
@@ -43,10 +46,36 @@ sigil, to the boss, fighting on the way, back out to where you started), then
 press F9 and name it. Pick it and click Run (so many times, or 0 = until you
 stop it): the bot walks the same way by the zone's map, presses X where you
 did, fights every battle (the bot on, F6), Spaces through dialogues and starts
-over. F8 pauses it. Somewhere the run doesn't go (a potion run, a defeat), or
-stuck for good: it stops and says why (the tab, debug.log "Dungeons: ...",
-Discord). Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
+over. F8 pauses it. A defeat or a potion run that leaves the wizard in an
+earlier zone of the run: on from the nearest step of its first visit there,
+never on to the way back out (3 times a run at most). Somewhere the run doesn't go, or stuck for good: it stops and says why
+(the tab, debug.log "Dungeons: ...", Discord) - counted badly stuck on the
+dashboard. An X at a sigil that didn't load twice: home and back first, once a
+run, if you switch sigilhome on (see "A sigil that won't start").
+Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
 vision helper and the game's memory, like walking by the map.
+Between runs (a run that ends back where it starts, till its first X): with
+quick sell on, a full backpack may be sold there, outside the dungeon (the
+dungeon's hold still holds it - with the gear pass on, only its Deck and Pet
+groups: the gear it compared is sold - unless "...even with a dungeon's
+drops in it" is ticked); with the gear pass on (Settings: gearswap - see
+"Gear" below) the run's new pieces are logged in learned\drops\<run>.txt and
+the plan is logged. "Until its gear is swapped"
+(the Dungeons tab's box, needs the gear pass): once every slot the dungeon
+drops is worn with a piece it dropped - or 30 runs brought no upgrade - it
+goes on to the run picked under "then" when that starts where the wizard
+stands, else it stops and tells you where to take the wizard (Discord). The
+Gear column shows each run's runs, dry runs and "done". In a run's file you
+can also put (older versions skip them): slots|hat,robe,shoes (the slots it
+drops - else resources\dungeons_known.txt's for a run named after one of
+Olympus, Waterworks, Hades, Darkmoor), stopafter|30, boss|<boss name>|<deck
+id> (that deck for that boss). Check a run's file with
+	python vision\dglint.py
+(every run in dungeons\, or name one): the steps it reads, a run that doesn't
+end where it starts, a zone change right after a battle, a walk recorded
+right after a sigil's X (the wizard drifted while it counted down: since
+v0.9.0 the bot neither records such a step nor walks off the sigil for one
+recorded before), and the lines above.
 
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
 Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
@@ -153,6 +182,41 @@ with no route at all it won't walk the arrow's straight way into a mob's reach
 (20 s at most) or back up into one. The walk to the potion seller keeps away from
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
+
+Mobs walking (v0.9.0 work, not tried in the game yet): the helper also works out
+which way and how fast each mob walks from the readings of the last second, and
+a walking one's ring and sight are kept out of along its way - where it will be
+over the next 2.5 s (700 game units at most) - not behind it, so the route
+passes behind a walking mob rather than in front. The wait for a mob on the way
+looks at where each walking one will be by the time the wizard gets there: one
+walking off the route no longer holds him, one walking onto it does. A mob read
+standing still, or not read often enough to say, counts as before. The Map
+draws an arrow from a walking mob along its way, and its ring's outline where
+it will be. "Caught by ..." in debug.log now says whether the mob was walking
+or standing when it noticed you. To tune the numbers (how fast mobs walk, how
+long they stand): vision\navmem.py --mobs --motion 60 in the game.
+
+A line of mobs (v0.9.0 work): a gap narrower than 250 game units between two
+mobs' rings or sight is closed - the line is one wall - and the route goes all
+the way round its end (the planned area is widened to take the whole line in;
+a line too long for it - "too long to go round in one window" in vision.log -
+is routed as before). Still no way but through a gap (a street the line stands
+across), the wizard walks through it at once, out of the mobs' rings and sight,
+as before - or, with mobwall:1 (off by default till the 250 is measured in the
+game - Settings: "...wait at a line of mobs with no way round"), waits as for a
+mob on the way (25 s at most), then walks on through the gap, still out of the
+mobs' rings and sight. The Map shades the closed gaps.
+
+Other players' battles (duelavoid:0, off by default - Settings: "...and other
+players' battles", with "Keep away from mobs" on): the route also goes round
+the zone's duel circles that have a battle going on - read from the game's
+memory, read-only - so the wizard doesn't walk into one and join it; with no way
+round it waits for the battle to end (4 minutes at most), then walks on past it
+round its edge ("waiting - another player's battle on the way"). The Map shows
+them as violet circles. Off till how the game keeps those circles in memory is
+checked in the game: vision\bossmem.py --duels 30 next to someone else's
+battle, at a dungeon's sigil and in your own battle (the helper's /duels lists
+them too).
 
 Mobs that catch you anyway (mobgrow:1): each battle a mob the quest doesn't
 need starts (not collecting, not one named in the goal line, not right after X
@@ -274,10 +338,82 @@ clicks on things aren't seen - press X. A restart keeps a recording under way
 (learned\puzzle_recording.txt), a fight under way, and the wait at a blocked
 way with the hour's tries (generated\puzzle_journal.txt, puzzle_hold.txt).
 debug.log: "Puzzle: ...".
+Puzzles, new in v0.9.0 (not tried in the game yet): a gate's model can stay
+in the game's memory once it's open - its collision wall is what goes - so a
+gate still there with no collision wall by it no longer counts as shut: the
+bot walks through to see; any of the doors by the block going from memory
+counts too. A lever or pedestal the game names nowhere is found through the
+zone's own triggers: an object with no name whose template's name has the
+words of one of their use events ("PedestalUsed": CL-Pedestal-01 - a guess
+by the name; only the placements the zone's file ranks best, at most 2 of
+the things tried), named in debug.log's plan line ("levers (zone's
+triggers): ..."). With puzzlelevers (Settings > WALKING, off - not tried
+yet) it's X'd with the things with a prompt (any press prompt within 150 -
+never with Crowns, never a teleporter, lock or shop), one whose trigger
+opens the gate at the block first. Off: named only, the tries as before.
+A thing or NPC named Block, Clock or Warlock is no longer taken for a lock.
+A gate's state (open / shut) is read from the game's memory and written in
+debug.log ("now Closed" by each door); puzzlestate (Settings > WALKING, off)
+goes by it: a state changed since a try began counts as the way maybe open,
+one still the same as shut, and a gate already in an open state (Open,
+Unlocked...) that isn't the zone file's starting one isn't the block (a gate
+shut as the zone begins still is). Turn it on once vision\statemem.py
+--watch (the discovery tools below) shows the gate's state change as it
+opens. Leaving a dungeon and coming back (a new instance: every object's id
+new) no longer counts as the doors by the block gone - they're found by
+their name and place too.
 The quest's page: every "needs you" notice about the quest (stuck, collect,
 waiting, no arrow, a blocked way) has a link to the quest on Wizard101 Central
 (and its search) - in the notice, in debug.log and in the Discord alert. A
 click is yours: the bot never opens it.
+Badly stuck, counted (TODO goal 2 "Measure it"): each time the walker gives up
+- couldn't get round an obstacle in 5 tries, no closer to the goal in 3 minutes
+of walking, the teleport to the Commons or "stuck at the same place again", a
+teleport that doesn't take, a sigil that won't start, a "Stuck" notice - is
+one badly-stuck episode (its first give-up names it; the Commons and the
+notice after it don't count it again), and so is a dungeon run's stop for
+being stuck. Each stuck episode's time lost - from when the wizard last got
+closer to when it's clearly closer again (10 nearer the goal, or 30 on along
+the route), in another zone, at the goal or at the Commons; the gaps between
+the walker's steps only (a battle, a loading screen, the bot off: left out),
+and the wait for you after a "Stuck" notice too - is logged when it ends. The
+dashboard's STATISTICS: "Badly stuck N (12 min; all: M, 3.4 h)" - the time
+lost this run, then all time (kept in dashboard.ini [stats] badstuck /
+stucklost). debug.log:
+"Walk: badly stuck #N (kind): why", "Walk: stuck over - N s lost (kind, T
+tries, how)". No closer for 3 minutes with the Commons used in the last 10
+(it goes on trying, the Commons once it may) was silent: now said once - the
+log ("badly stuck, nothing takes over"), a tray tip and Discord (its own kind
+of alert: the "Stuck" one when walking goes off still comes).
+Past runs (and older logs - their figures estimated, said so):
+	python vision\stuckreport.py              (debug.previous.log, debug.log)
+	python vision\stuckreport.py "<OneDrive>\Wiz-Maxxing logs\<PC>\debug.log" --episodes
+per run: badly stuck, time lost, unstick tries, give-ups, the Commons, notices,
+dungeon back-ups, sigils X'd / started / didn't start (and which within 30
+minutes of a relog), relogs; --json for all of it. Read only.
+A sigil that won't start (2026-10-26 21:44: one never started after a relog
+and was X'd again and again): after each X at a sigil the bot looks whether
+it started - 30 s on, still in the same zone with no loading screen by the
+game's log is "didn't start" (debug.log "Walk: sigil: didn't start - ... (N
+in a row here; a relog M min ago)"; its 30 s counted as time lost); a sigil
+that loads goes on as soon as its loading screen is over, not after the whole
+30 s ("Walk: sigil: in <zone> N s after X"). 3 in a row at the same spot (2
+within 30 minutes of a relog - yours or the bot's reconnect) at the quest's
+own sigil (the arrow led to it): walking off and the notice "The sigil won't
+start" - F8 tries it again. A sigil only walked past (the bot X's every sigil
+it walks over) is never given up on: said, and walked on from as before.
+Leave it and come back (sigilhome - Settings > WALKING, off unless you switch
+it on: new, not tried in the game yet): before that notice, once in 30
+minutes at a sigil, it leaves and comes back - a Mark there (Page Down),
+Home, the Recall (Page Up) back, X again. Your Mark is never moved when it's
+the potion seller's (potionmark on, buying recorded at your Mark): then the
+Commons (End) and the walk back, as when badly stuck (not within 10 minutes
+of the last). The Mark way needs the mana globe read at 20 or more (a Mark
+and a Recall take up to 10 each; a globe that can't be read: not the Mark
+way - a Mark that didn't take couldn't be told). Still not starting after it:
+the notice. No X at a sigil 3 times in 10 minutes at its spot, whatever path
+pressed it (the one at the goal used to go round that). Written without the
+game - to be tried in it.
 A collect goal keeps them off too (all but the mobs its goal line names).
 The quest's goal line from the game's memory (navmem:1, read-only - the
 helper's /goal, vision\questmem.py): the line under the quest arrow ("Defeat
@@ -328,7 +464,12 @@ doesn't publish one). Save keeps it (decks\<name>.txt - updates keep them);
 dungeon run's (its Deck box on the Dungeons tab), a pinned one, the boss's,
 collect's, farming's, anything else's - and logs "Deck: <name> (why)" (the
 dashboard's Deck line shows it too). No deck set up, or one that sets
-nothing: it plays exactly as without.
+nothing: it plays exactly as without. A deck for one boss by name (v0.9.0 -
+a boss's cheats: no traps, one school, hit first... as that deck's own
+settings): a bossname|<name> line in its file (decks\<id>.txt; several with a
+comma between) - that deck for that boss, ahead or in the battle, before the
+other decks for bosses ("Deck: ... - its deck by name"); a dungeon run's
+boss|<name>|<deck id> line comes before even its own Deck box's deck.
 Bosses before the fight, by the game's memory (navmem:1, read-only - vision\
 bossmem.py, the helper's /mobs and /battle): each of the zone's mobs' title as
 the game has it (Boss, Elite, Normal...), rank, max health and the game's own
@@ -351,6 +492,148 @@ read: the boss ahead it was walked into); a fight on the way to the boss keeps
 the boss deck's settings while its Equipment Set is the one on ("(its deck is
 on)"). Alt+1 works as before. No memory (navmem:0, no helper, dual mode):
 Alt+1 only.
+Decks from the game (the Cards tab's From game button, and by itself every 30
+minutes out of battle, the bot on): every in-game deck that's in an Equipment
+Set is read from the game's memory (read-only - all your decks, the
+backpack's too, each card's kind from the game's own spell data) and made a
+deck here, linked to it: its Equipment Set, its school, its name and what it's
+for (big single hits and 4+ blades / traps: bosses; else anything else and
+collect goals; your only deck: anything else) and the settings its cards call
+for - no blades in it: blades off (traps, auras, bubbles, heals, Tower Shield,
+Reshuffle the same), boost first with 4+ boosts and a big hit, hit first with
+mostly AoEs. A deck already on that Equipment Set takes the link instead of a
+new one; six decks at most on the tab. Read again later, a linked deck
+follows its in-game deck (a set moved, cards changed) - but a setting you set
+or clear yourself on the tab is yours: never changed again (the file's
+learned| line lists the ones learning set).
+Can this deck beat it (the battle simulator - vision\battlesim.py): when a boss
+is ahead, each deck for bosses linked to an in-game deck is fought against it
+300 times in the simulator - your real cards (shuffled, 7 in hand, pips each
+round, power pips), the bot's way of playing (its card logic, boosts before a
+hit, the kill check, heals under healat), your damage, pierce and critical for
+that school, the boss's max health from the game's memory, its resists and
+block from the battles recorded (learned\battles\), its spells from the wiki
+(else its hits recorded on you). Logged: "Deck: can Large deck beat Governor
+Nereus? likely: 78% won, 2% lost, 20% ran out (about 9 rounds; 300 battles) -
+Governor Nereus 9000 health: Kraken at its best 2153 with Stormblade, Storm
+Trap - 5 hits"; the deck most likely to win it is the one picked (5 points
+better or more; else the priority), and "no deck for bosses is likely to beat
+it" when none wins 65%. The Cards tab shows each deck's last verdict under its
+damage. In the simulator too (v0.9.0): a hit's damage over time - its ticks
+at the start of the next 3 rounds; what each enemy does besides hitting, as
+the battles recorded show it - its heals, its shields and blades on itself,
+its traps, weaknesses and stuns on you, its damage over time's ticks on you
+(an enemy with none recorded does none of it: the verdict says "nothing
+learned yet of what X does besides hitting - optimistic"). Not in it yet:
+your own shields and Tower Shield, enchants, Reshuffle, minions, the stuns
+you cast.
+Try it on the command line:
+    python vision\battlesim.py --deck deck.json --foe "Governor Nereus:9000:ice"
+Decks matched to the zone's enemies (deckzone - Settings, HOW IT PLAYS ITS
+CARDS; off unless you switch it on, new and not tried in the game yet): out
+of battle with no boss ahead, each in-game deck in an Equipment Set is fought
+in the simulator against the enemy groups you've fought most in this zone
+(the battles recorded there), each with the settings its cards call for; of
+your decks for the same use as the one picked (collect, farming, dungeon,
+anything else - never a boss deck, the pinned one or a dungeon run's), the
+one that wins clearly more often (5 points, or as often in a round fewer) is
+put on - "Deck: Small deck - the simulator's pick for WizardCity/WC_Streets's
+enemies: 96% won in 3.1 rounds - Large deck 88%". Worked out by the helper in
+the background (a few seconds), kept 10 minutes; while it's worked out again
+the zone's last pick stays on. Every deck rolls the same dice against a group,
+so two decks with the same cards (one deck in two Equipment Sets) score the
+same and are never swapped for each other. A zone with no battle recorded
+yet: as before.
+The round planner (planner - Settings, HOW IT PLAYS ITS CARDS; off unless you
+switch it on, new and not tried in the game yet): in each round the bot plays
+itself - after the kill check, defending and the heals - every card in your
+hand that can go now (a hit or trap at each enemy, and a pass) is tried in
+the simulator from that very round on: your hand, pips and health and the
+enemies' health from the game's memory (read only), the blades, traps and
+aura the bot counts (another copy of a deck blade it has on isn't tried -
+the bot never casts one), the rest of your deck shuffled (the worn deck as
+every deck was last read out of battle - else more of the hand's cards), the
+rest of the battle played your settings' way; each play up to 100 times, in
+0.3 s. It is advice only: debug.log says "Plan: would play Tempest on all
+(won 92% in 3 rounds, 100 tries; ...) - your settings' way: Stormblade on
+you (won 85%) [tid ...] - advice only" and the bot then plays its own way -
+it never changes a card.
+The battle recorder keeps the advice with what was played; see how often they
+agreed, and how those battles went:
+    python vision\battlelearn.py --advice
+Learned plays: what was played in each kind of round of the battles recorded
+(your pips, enemies left, a boss, a hit you can pay for, your health) and how
+those battles went - per school, all schools' together while yours has few
+(yours weighs half after 20 such rounds) - only tip near-equal plays. The
+helper remakes them every 10 minutes while the planner is on (learned\
+battles\plays.json); look:
+    python vision\battlelearn.py [--school storm]
+In a party battle (v0.9.0) the party's other wizards on your side are in the
+simulator too - each its seat (the cast order), school, health and battle
+role from the party; the enemies' single hits land on one of you at random
+(an enemy known only by its hits recorded on you: each of you takes them at
+that rate), a wizard at 0 health stays down (no hit, no card), a hitter
+whose hand isn't known hits as an unknown enemy does (100 a pip, every other
+round), a blader or healer whose hand isn't known does nothing - and the
+blades, traps and shields on you and on the enemies are read from the game's
+log (the party's and the enemies' too), not only the bot's own count. Not
+asked in dual mode, with two or more game windows open, as a party's blader
+or healer, after you played a round of the battle, while learning every
+card, or with navmem off. Playing the advised card itself (planner 2) isn't
+built: it needs every card cast by the game's memory and each enemy's plate
+matched first; the leader telling each bot its card (the helper can already
+plan the whole team's round from their hands - /plan's teamplan) needs the
+bots' hands sent over the party first.
+New spells, training points and spell quests (Training.ahk - TODO goal 4;
+mostly NOT BUILT yet). What runs now only reads: out of battle, the bot on,
+about every 10 minutes (the first 3 minutes in; not while a zone loads or on
+a dungeon run - the walker stops for the moment it takes) the spells your
+wizard knows are read from the game's memory (read-only, the vision
+helper's /book) and kept in learned\
+spellbook_<wizard>.txt; a spell that wasn't there is written in debug.log once
+- "Spells: new spell Thunder Snake (Storm, 1 pip, Damage) [tid 1001]" - and
+the dashboard's What it sees shows "Spells  142 known - new: Thunder Snake
+(12:04)". The first look at a wizard only writes its file. Nothing is
+clicked, typed or spent. Three settings (Settings > NEW SPELLS AND SPELL
+QUESTS), all off - leave them off for now:
+	- deckadd (put new spells in the deck): on, a new spell is also announced
+	  (a tray tip and the Discord alert - add it to a deck yourself); putting
+	  it in the deck isn't built: it needs the deck page's windows.
+	- trainspells (spend training points at the trainers, by a plan per
+	  school): not built - needs the training points and the trainer's
+	  window read from the game; on, debug.log says so once.
+	- spellquests (take and do spell quests): not built - needs to know what
+	  marks a spell quest and the quest book's windows; on, debug.log says so
+	  once. The walker does the TRACKED quest as ever; NPCs offering a quest
+	  with a '!' aren't talked to (only a '?').
+	The training plan: trainplans.txt (a draft - every spell name, trainer,
+	level and cost in it written from memory of the wikis, none checked in
+	the game yet: each line says checked 0). The names must be the game's own
+	display names. Keep your own copy in learned\trainplans.txt (updates
+	replace trainplans.txt, never learned\). See what it would train next,
+	with the bot (its helper) running:
+	      python vision\spellplan.py --school storm --level 20 --tp 2 --live
+	  (--fresh: the spellbook read now - the helper refuses it unless its
+	  battle recorder rules a battle out; add --ob only when you're sure the
+	  wizard is out of battle. Or --book book.txt --quests quests.txt for
+	  saved answers). It also checks the file and names the plan's spells
+	  your wizard doesn't know yet.
+	The helper's answers, in a browser while the bot runs (read-only):
+	  http://127.0.0.1:47128/book (?fresh=1 read now - refused unless the
+	  battle recorder rules a battle out; &ob=1 too says you're out of
+	  battle: only when you are; &kinds=1 each spell's kind and value) -
+	  every spell known, and the treasure cards;
+	  http://127.0.0.1:47128/quests - every quest you have, the tracked one
+	  marked, each with all the properties the game keeps for it (to find
+	  what marks a spell quest). From the command line:
+	      python vision\deckmem.py --book
+	      python vision\questmem.py --all
+	To help build the rest, send: the /quests answer with a spell quest open
+	(and say which one it is); python vision\reflect.py --class WizQuestData
+	--class WizGameStats --grep "rain|Level" --out spells.txt; and with each
+	window open - the quest book, a trainer's window (X at a professor), the
+	deck page - python vision\bagmem.py --tree --all --out <name>.txt. Never
+	click anything with Crowns on it: training points are never bought.
 The Network tab (Settings > NETWORK - off till you switch it on, on each PC):
 every bot on your home network - its PC, version, wizard, zone, on/off, Play
 for me, what it's doing, health, mana, deaths. Pick one: its last 80 log lines
@@ -398,7 +681,35 @@ its wizard's name, school and hits. Nothing one sends makes another press
 anything: a blader's boosts go to the hitter's plate as its own screen shows it,
 found by the name the game's own log gives for its side. Still to come: teleport
 to friend when the leader is somewhere a door doesn't lead (the follower waits
-and says so).
+and says so - below).
+	- Doors and teleports (v0.9.0): the leader's helper tells a door the leader
+	  walked through from a teleport (End, Home, a sigil, a potion run, a
+	  friend's teleport - it stood still before its zone changed) and keeps its
+	  last 3 doors, so a follower a zone or two behind walks door after door.
+	  That guess isn't checked in the game yet, so a follower still walks to
+	  where the leader teleported from ("Party: the helper says <leader>
+	  teleported from here ... - walking to its spot all the same" in
+	  debug.log) unless Settings' "...a follower trusts the helper's teleport
+	  guess" (partytpdoors, off by default) is on. A door that hasn't taken the
+	  follower in 3 tries is given up till its zone changes, or for 6 minutes
+	  (a try a battle cut short isn't counted; it walked to it and pushed for
+	  good before). Wherever no door leads - the leader teleported (with
+	  partytpdoors on), or its door was given up - the follower
+	  stands where it is and says so: "party: can't follow - <why> - waiting
+	  here" on the dashboard, "Party: can't follow <leader> - <why>" in
+	  debug.log once a wait, a Discord alert after 5 minutes of it. The leader
+	  is told and doesn't wait for it ("Party: <name> can't follow (<why>) -
+	  walking on without them till they're near again"). While the leader is
+	  loading the follower waits ("party: waiting - <leader> is loading"). Five
+	  stuck tries on the way: it waits 30 s, then tries again - at once in a new
+	  zone or with the leader near (it walked 3 s, stopped 1 s, for good
+	  before). The helper's log has a line at each zone change ("party: A -> B:
+	  walked through a door - moved 1234 in the last 1.2 s", or "a teleport (it
+	  stood still)"), and debug.log says when teleporting to the leader would
+	  be the way ("Party: teleporting to <wizard> would be the way now ...") -
+	  the teleport itself isn't in yet: the Friends list's clicks need its
+	  window names from the game. partywaitmax 0: the leader never waits (it
+	  waited for good, though the setting said 0 = no waiting).
 	- Your own plate in a party battle: found by your wizard's name (learned
 	  from a battle with no other wizard on your side - the game's log; one
 	  such battle first), read off the plates along the bottom.
@@ -415,6 +726,14 @@ and says so).
 	  part: <school>.partybattle:2 in PlayerStats.txt. Not sure (the party off,
 	  no hitter on your side heard from in 5 s, its plate not read, dual mode):
 	  it hits, as ever - debug.log says why once a battle.
+	- The party's hit round (Settings > PARTY, "...a blader or healer times
+	  its boosts to the hit" - partyhitround, off; new, not tried in the game
+	  yet): the hitter says which round its planned hit goes out in (the
+	  earliest its pips allow) and each wizard its seat (the cast order of
+	  your side); a blader's or healer's blades and traps wait till the hit is
+	  due - that round when it casts before the hitter, else the round before -
+	  "party hit round: Ned's hit is due in round 6 ... held till round 5". An
+	  older bot says neither: boosts go on as before.
 	- A heal on an ally that went out without asking who: one whose learned
 	  text says it heals all of you is kept as <school>.healNtarget:2 (still
 	  used for an ally); one that heals only you as :0, not tried on an ally
@@ -472,6 +791,7 @@ before starts advanced.
 
 Dashboard (Dashboard.ahk): a window with statistics (battles, deaths - this run
 and all time, from the game's log: taken out of a battle without fleeing -
+badly stuck and the time lost to being stuck - this run and all time -,
 rounds, cards cast per card, passes, discards, kill-check hits, potions, cards
 learned),
 what the bot sees right now (your health/mana/pips, the hand card by card - ?
@@ -508,7 +828,8 @@ restart. Defaults fills in the defaults (Save to use them).
 	  and before looking at the hand again.
 	- Health: heal under %, drink a potion under %, flee when out of cards.
 	- The backpack: quick sell it when it's full, pets too, after a dungeon
-	  too (see Quick sell below).
+	  too (see Quick sell below); compare gear before selling, and pieces of
+	  an Equipment Set too (see Gear below).
 	- Card logic: boost first (traps - on the boss, else on the enemy with
 	  the most health -, blades, bubble, aura, then
 	  the biggest hit it can cast - as always), hit first (the biggest hit it
@@ -943,6 +1264,52 @@ count then (generic 1, power and your school's pips 2, another school's 1),
 the pip row under your name still read each round, for the log and in case the game can't be read (debug.log:
 "pips=N (from the game; the pip row read M)" when they differ). navmem:0 in
 PlayerStats.txt switches it off with the walker's memory reading.
+Cards and plates by the game's memory (v0.9.0 work, not tried in the game
+yet): the helper also gives each card's box in the game's window (/cards)
+and each name plate's box (/battle), read from the memory the same way.
+	- Read and used now, the screen's reading kept for when the memory
+	  can't be read: your school (the badge by your plate can be a
+	  teammate's in a party battle - debug.log "your school: the game's
+	  memory says ..."), your own health ("own health: N/M (P%) - the
+	  game's memory"), the enemies' health on the plates the screen shows
+	  ("enemies' health from the game's memory: ..." - not a boss whose
+	  health the game hides, nor with an Alt+1 boss), your party's
+	  wizards' health and the party hitter's school. Only while one game
+	  window is open: with two or
+	  more the memory read can be the other window's wizard (debug.log
+	  "Vision: N game window(s) found ..."), so all of it - and
+	  memclicks below - is taken off the screen as before.
+	- Clicks where the memory has them: only with memclicks:1 (Settings,
+	  HOW IT PLAYS ITS CARDS - "Click cards and plates where the game's
+	  memory has them", off). Every round the memory's card boxes are
+	  compared with the ones the helper sees on the screen - log only,
+	  whatever the setting: debug.log "Memory card boxes (log only): N
+	  card(s), the largest gap ... they line up / they DON'T line up".
+	  Once they line up 3 looks in a row at a window size, memclicks:1
+	  casts the cards and enchants where the memory has them there (the
+	  pictures the fallback); your plate when no picture finds it and the
+	  enemies' plates are clicked where the memory has them too, and the
+	  kill check then reads no health off the screen (also with its OCR
+	  off - healthocr:0).
+	- Fixed whatever the setting: your plate not found no longer sends a
+	  heal or Tower Shield's click onto the card just clicked (not cast -
+	  said in debug.log); nor a blade's or Reshuffle's onto nowhere when
+	  the hitter's school is known (the memory's, or the one this
+	  character fought as before) but no plate was found - the round's
+	  hits are still cast, the blades aren't ("the hitter's name plate
+	  wasn't found this round"); with memclicks:1 a card that already
+	  carries an enchantment is never sharpened, made potent or enchanted
+	  again (a plain copy is taken first); the memory's hand is no longer
+	  thrown away when the badge by your plate is another school's (one
+	  game running); a spare blade only the memory found is discarded, at
+	  its card box; a hit the game says is for one enemy gets its target
+	  clicked without a hitNtarget:1 key.
+	- Each cast check logs the round's phase from the memory beside the
+	  Pass picture's verdict ("cast check (memory, log only)") - nothing
+	  acts on it yet. To watch it yourself in a battle:
+	      python vision\handmem.py --phase -n 100 -i 0.1
+	  (a line every tenth of a second while you click a card, its target,
+	  and the round plays).
 Every battle spell type of the game's own list (its spells' type: Damage,
 AOE, Steal, Heal, Charm, Curse, Ward, Jinx, Aura, AuraNegative, Global,
 Manipulation, Enchantment, Mutate, Polymorph, Shadow) has a kind on the
@@ -1169,15 +1536,25 @@ read-only, never a picture):
 	  with ALL, No to "include Crowns Items?", SELL, the confirmation's numbers
 	  read (no Crown items, furniture, jewels, reagents or treasure cards), SELL,
 	  then the backpack's count checked. Gold over the pouch is lost (logged).
-	- Never in a dungeon run, a dungeon being recorded, a zone the bot
+	- Never in a dungeon run (between two runs, back at its start outside,
+	  it may be), a dungeon being recorded, a zone the bot
 	  entered through a sigil or a zone it leads on to. A dungeon you walked
 	  into yourself isn't known as one: switch quick sell off before you start
-	  the bot in it. After a dungeon the next full backpack is held - you're
-	  told, so you can look through the good gear first - until 10 items have
-	  gone from it, you ask from the tray, or you tick "...even with a dungeon's
-	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
-	  is left out, and set items are checked after: one gone turns it off.
-	  Lock what you want to keep - the game never quick sells locked items.
+	  the bot in it. With the gear pass on (gearswap, see "Gear" below) a full
+	  backpack is sold only when every gear piece in it was compared with what
+	  you wear and none is better - after a dungeon without its Deck and Pet
+	  groups, the pass never comparing decks or pets: the hold below keeps
+	  those, and you're told after the sale; a better one - or one it couldn't
+	  judge - holds the sale and you're told. After a dungeon the next full
+	  backpack is held - you're told, so you can look through the good gear
+	  first - until 10 items have gone from it (the bot's own sale isn't
+	  counted), you ask from the tray, or you tick "...even with a dungeon's
+	  drops in it". A group an Equipment Set's item is in (the boss deck's
+	  deck) is left out, and set items are checked after: one gone turns it
+	  off. Lock what you want to keep - the game never quick sells locked
+	  items.
+	  The Pet group is left out too while pets.txt keeps a pet in the
+	  backpack (Perfect pets, below).
 	- Every click is a window the game's memory names, shown, its size as in
 	  the game's files, on a short list; no key or mouse of yours since it
 	  began, no battle, no "Crown" read round it. A Crown box other than that
@@ -1195,6 +1572,119 @@ read-only, never a picture):
 	  backpack's alert names those groups and items).
 	  quicksellfree:N sells with N slots or fewer left. debug.log:
 	  "Backpack: ..."; the dashboard: Quick sells.
+
+Gear (Gear.ahk - Settings > THE BACKPACK, gearswap, off till you tick it; new,
+not tried in the game yet; needs the vision helper - the game's memory,
+read-only):
+	- Before a full backpack is quick sold and after each dungeon run, your
+	  worn gear and the backpack's are read from the game's memory (each
+	  piece's stats and what it needs to be worn - level, school) and, slot
+	  by slot (hat, robe, shoes, weapon, athame, amulet, ring - never decks,
+	  pets or mounts), a better piece for you is worked out: your damage,
+	  pierce, critical, block, accuracy (your stats pages - StatsReader) and
+	  health, with the worn piece's stats taken off and the new one's added,
+	  weighed for your role (a hitter; in a party your party battle role).
+	  The gear's own stats aren't confirmed yet: a piece whose stat sizes
+	  aren't read is compared by the level it needs, and every result is
+	  ADVICE - "Gear: ..." in debug.log, a tray tip for a new one.
+	- A REHEARSAL: nothing is equipped and nothing is clicked - put the piece
+	  on yourself (equipping needs the backpack's item windows, which haven't
+	  been looked at in the game yet). Never anything that could spend Crowns.
+	- A slot whose worn piece is in one of your Equipment Sets: the plan says
+	  "held" and you're asked once (Discord) to re-save that set after you
+	  swap - else its Ctrl+N (a deck's Equipment Set) puts the old piece back.
+	  The bot never saves a set. "...plan pieces of an Equipment Set too"
+	  (gearsets) plans them like any other.
+	- PlayerStats.txt: gearmargin:2 (the % a piece must be better by),
+	  gearlevel:N (your level, if the game's memory doesn't give it), and
+	  what counts - one number a line, each left out keeps your role's:
+	  gearweight.off:1, gearweight.def:0.5, gearweight.pip:0.3,
+	  gearweight.heal:0, gearweight.cards:0.002, gearweight.eblock:200 (an
+	  enemy's block rating, for a critical's worth).
+	- A piece whose details couldn't be read from the game's memory is "not
+	  judged": it holds the quick sell like a better one, and a dungeon run
+	  with one among its new pieces isn't counted as a run with no upgrade.
+	  A dungeon run whose start couldn't be noted (gearswap switched on
+	  midway, the backpack not read then) has its drops left out once.
+	- What it reads, from the command line (read-only, nothing sent):
+	      python vision\gearmem.py --effects --out gear.txt
+	  each piece you wear and each gear piece in the backpack, its stats and
+	  requirements as read (send gear.txt back to have them confirmed).
+
+Perfect pets (TODO.md goal 6 - being built: the pet game, snacks and the
+hatchery come once their windows have been seen in the game):
+	- Write the talents you want in pets.txt, next to PlayerStats.txt (the
+	  AutoFarmer folder), in one line:
+	      want: Spell-Proof, Spell-Defying, Mighty, Pain-Giver, Pain-Bringer
+	  (case, spaces and dashes don't count; ; starts a comment).
+	- Quick sell then never sells a pet with every one of them (you're told
+	  - lock it in the game), nor a pet whose talents the bot can't read -
+	  and it can't read them yet (not confirmed in the game), so for now,
+	  with pets.txt there, quick sell sells no pets while any pet is in the
+	  backpack: the bot can't read locks either, so it leaves the whole Pet
+	  group out (debug.log: "Backpack: left out ... Pet (kept: ...)"). The
+	  same when the pets can't all be read (an item in the backpack not read,
+	  or fewer pets read than its Pet count). No pets.txt: pets are sold as
+	  before ("...pets too").
+	- Every pet you own, from the game's memory (read-only - nothing in the
+	  game is written, clicked or typed):
+	      python vision\petmem.py --out petread.txt
+	  one line a pet (worn or in the backpack, its level - Baby ... Ultra -,
+	  its name, its level's power cards). Its XP, talents, derby talents and
+	  stats and your pet energy aren't read yet: their names first -
+	      python vision\reflect.py --class BasePetItemBehavior,ClientPetItemBehavior,PetItemBehaviorTemplate,PetLevelInfo,WizGameStats --grep "XP|Exp|Talent|Stat|Energy|Snack" --out petclass.txt
+	  then try a name with the pet's window open in the game (the number it
+	  shows to compare with), e.g.
+	      python vision\petmem.py --pin xp=BasePetItemBehavior.m_XP:u32 --out petread.txt
+	  (field=Class.property:kind - python vision\petmem.py --help lists the
+	  fields and kinds). Send the .txt files. Don't name one pets.txt.
+	- AutoPetTrainer (Win+1 by the Pet Pavilion's sigil) is still the old
+	  blind trainer, on its own: see its README for what it can't do.
+
+Discovery tools (vision\bagmem.py --tree and vision\reflect.py - read-only):
+to teach the bot pets, gear, card quests and puzzles it first has to know the
+names the game uses for their windows and values. These two print them from
+the game's memory. They only read - nothing in the game is written, clicked or
+typed, and nothing is sent anywhere: you send the file back yourself. Run them
+in a command prompt in the AutoFarmer folder while Wizard101 is running and
+your wizard is in the world (the same Python as the vision helper):
+	- The windows on screen, one a line (depth, name, type, shown, where, its
+	  text): open the window you're asked about first (a battle's planning
+	  phase, a trainer, the pet window, the quest book...) - only what's open
+	  is shown - then
+	      python vision\bagmem.py --tree --out tree.txt
+	  --under <Window> for only that window and those in it (quicker - and
+	  when a list was cut short, a 1 in the 7th field of its tree| line, ask
+	  under the window you want), --all for the hidden ones too, --indent to
+	  read it yourself. For a battle's Pass, Flee and Draw buttons, in a
+	  battle's planning phase:
+	      python vision\bagmem.py --tree --under CombatPlanningPhaseWindow --all --out combat.txt
+	- Every property of one of the game's classes and where it is (--class,
+	  repeated or A,B), and the names that match a word (--grep):
+	      python vision\reflect.py --class WizGameStats --grep "Training|Level" --out stats.txt
+	  --pid <n> picks the client when more than one is running.
+	Send the .txt file. The vision helper gives the bot the same window list
+	(/guitree); nothing the bot does uses it yet.
+	For gear (also read-only): the classes the gear pass reads -
+	    python vision\reflect.py --class StatisticEffectInfo --class GameEffectInfo --class ItemTemplate --class RequirementList --class ReqMagicLevel --class ReqSchoolOfFocus --class WizGameStats --grep "EffectInfo|^Req" --out gearclass.txt
+	  what it reads of your gear (python vision\gearmem.py --effects --out
+	  gear.txt - see "Gear"), and the backpack page's windows (open it with B
+	  first): python vision\bagmem.py --tree --under InventorySpellbookPage --all --out bag.txt
+	For puzzles (two more, also read-only):
+	- A zone's own files (Wizard101 installed - it needn't be running):
+	      python vision\puzzlefile.py --uses --out uses.txt
+	  every zone's use events (a lever pulled, a pedestal used) and what each
+	  one's triggers do; then, for one of them, where the game's files name it
+	  (what ties a lever to its event):
+	      python vision\puzzlefile.py --find <zone> <event> --out find.txt
+	  (<zone> as uses.txt names it, e.g. WizardCity-WC_Ravenwood). --game
+	  <folder> when the game isn't in the usual place.
+	- A gate's state, live: stand by a gate (Storm Lord's Temple's, one a
+	  lever opens) and open it - beat its guards, pull its lever - while
+	      python vision\statemem.py --watch 180 --out state.txt
+	  runs (--all: every object with a state - levers too - not only doors).
+	  Before it, the classes it reads:
+	      python vision\reflect.py --class ObjectStateBehavior --class ClientObjectStateBehavior --grep state --out stateclass.txt
 
 Along side simply playing the game this program has certain modes
 all of which include, command mode, response mode, dual mode and lore mode.

@@ -1,0 +1,156 @@
+Live checks - what to try in the game (v0.8.0's simulator and v0.9.0)
+=====================================================================
+None of v0.8.0 or v0.9.0 has been run against the live game yet: the Python
+side is unit-tested, the AutoHotkey side was only read. This is the order to
+try it in. Each step says what to run or switch on, what to look for and what
+to send back. Nothing here sends anything itself: you send the files and the
+debug.log lines yourself. README.txt says what each one is for (Discovery
+tools, Gear, Perfect pets, Spell quests, Puzzles, Cards and plates by the
+game's memory).
+
+Before you start
+	- Both PCs on this version (one on an older version still links - 2.8).
+	- Back up dashboard.ini, PlayerStats.txt, decks\, dungeons\ and learned\.
+	- One game window open on each PC: the memory reads refuse two or more.
+	- The vision helper running (the Dashboard's What it sees says so).
+	- Every new setting OFF (they are by default): sigilhome, mobwall,
+	  duelavoid, puzzlestate, puzzlelevers (WALKING); gearswap, gearsets (THE
+	  BACKPACK); memclicks, planner, deckzone (HOW IT PLAYS ITS CARDS);
+	  partytpdoors, partyhitround (PARTY); deckadd, trainspells, spellquests
+	  (not built - leave them off).
+	- The commands run in a command prompt in the AutoFarmer folder, with
+	  Wizard101 running and your wizard in the world unless a step says
+	  otherwise. They only read the game's memory or files: nothing in the
+	  game is clicked, typed or written.
+
+1. Read-only tools - send the .txt files (do these first, any order)
+	1.1 Gear - the classes, then your gear (a few pieces in the backpack):
+	      python vision\reflect.py --class StatisticEffectInfo --class GameEffectInfo --class ItemTemplate --class RequirementList --class Requirement --class ReqNumeric --class ReqMagicLevel --class ReqSchoolOfFocus --class WizGameStats --grep "EffectInfo|^Req" --out gearclass.txt
+	      python vision\gearmem.py --effects --out gear.txt
+	    Say whether each piece's stats match its tooltip (numbers) or are
+	    small indexes ("#N"), and whether your level is right.
+	1.2 The backpack page's windows (press B first):
+	      python vision\bagmem.py --tree --under InventorySpellbookPage --all --out bag.txt
+	    Then equip one piece by hand and say what one click does (equips it,
+	    opens a menu, asks first) and whether "Slow down!" shows.
+	1.3 Pets:
+	      python vision\petmem.py --out petread.txt
+	      python vision\reflect.py --class BasePetItemBehavior,ClientPetItemBehavior,PetItemBehaviorTemplate,PetLevelInfo,WizGameStats --grep "XP|Exp|Talent|Stat|Energy|Snack" --out petclass.txt
+	    petread.txt should list the worn pet and every backpack pet with the
+	    right level (Baby to Ultra), name and power cards, its pets| line
+	    ending |1|. With the pet window open, try the names petclass.txt shows
+	    (python vision\petmem.py --help lists --pin) on a Baby and on a Mega
+	    pet, and say which ones match the game (XP, talents, energy).
+	1.4 Spells and quests - the bot running, out of battle, in a browser:
+	      http://127.0.0.1:47128/book?fresh=1&ob=1    (save it as book.txt)
+	      http://127.0.0.1:47128/quests               (save it as quests.txt)
+	      python vision\reflect.py --class WizQuestData --class WizGoalData --class WizGameStats --grep "rain|Level|Spell" --out spells.txt
+	    book.txt against the spellbook (the count and the names; books| field
+	    4 filled in), quests.txt against the quest book (the tracked one has
+	    1 in its 4th field). When a spell quest is open, save /quests again
+	    and say which quest it is.
+	1.5 Windows - open each first, then
+	      python vision\bagmem.py --tree --all --out <name>.txt
+	    the quest book (questbook.txt), a Ravenwood trainer's window
+	    (trainer.txt - never click a "more training points" or Crowns
+	    control), the deck page (deckpage.txt), the Friends list (friends.txt
+	    - the party's teleport needs it), and a battle's planning phase:
+	      python vision\bagmem.py --tree --under CombatPlanningPhaseWindow --all --out combat.txt
+	1.6 Puzzles - the first needs Wizard101 installed, not running:
+	      python vision\puzzlefile.py --uses --out uses.txt
+	      python vision\reflect.py --class ObjectStateBehavior --class ClientObjectStateBehavior --grep state --out stateclass.txt
+	    then at Storm Lord's Temple's gate, running while you beat its two
+	    guards:
+	      python vision\statemem.py --watch 180 --out state.txt
+	1.7 Other players' battles - next to someone else's battle, at a
+	    dungeon's sigil and in your own battle:
+	      python vision\bossmem.py --duels 30 > duels.txt
+	1.8 The round phase from memory, in a battle:
+	      python vision\handmem.py --phase -n 100 -i 0.1 > phase.txt
+	1.9 Dungeons - record Olympus, Waterworks, Hades and Darkmoor with Record
+	    a run (start by the sigil, X, to the boss, back out to where you
+	    started, F9), then:
+	      python vision\dglint.py > dglint.txt
+	    Fill resources\dungeons_known.txt's zones and bosses from it, set each
+	    run's Deck and add a boss|<boss name>|<deck id> line.
+
+2. Play as usual with the new settings off - send the debug.log lines
+   (nothing new acts yet: these only log)
+	2.1 Stuck: after a session, python vision\stuckreport.py (send its
+	    output); the dashboard's STATISTICS shows "Badly stuck N".
+	2.2 Sigils: any "Walk: sigil: didn't start" and "Walk: sigil: in <zone>
+	    N s after X" lines.
+	2.3 Cards by memory: "Memory card boxes (log only): ..." and "cast check
+	    (memory, log only)" lines from a few battles at your usual window
+	    size - whether the memory's card boxes line up with the screen's.
+	2.4 Read from memory first: the Dashboard's school line, your health and
+	    the enemies' ("enemies' health from the game's memory") should match
+	    the screen.
+	2.5 Spells: within 10 minutes of starting, "Spells: N known - the first
+	    look at this wizard"; learn a spell and "Spells: new spell ..." once.
+	2.6 Quick sell (if you use it): with no pets.txt, the "Backpack:" lines
+	    are as before. With pets.txt saying "want: Spell-Proof, Mighty" and a
+	    pet in the backpack, the tray's Quick sell rehearsal leaves the Pet
+	    group out ("left out ... Pet (kept: ...)", 0 pets in the
+	    confirmation).
+	2.7 Party - both PCs on this version: the helper log's "party: A -> B:
+	    walked through a door" / "a teleport" lines at zone changes, and any
+	    "Party: teleporting to <wizard> would be the way now" or "can't
+	    follow" lines. In a party battle's WizardClient.log: a round where a
+	    teammate at a lower seat casts a blade and the hitter hits that same
+	    round (does the blade's AddHangingEffect come before the hit's
+	    ProcessTargets, and did the hit use it?), and one "{IsSim:0}
+	    Participant (id N) missed" line - is N the caster's seat (0-7) or its
+	    "Added participant N" number?
+	2.8 Older bots: one PC on this version and one on the last - the party
+	    still links.
+
+3. The new settings - one at a time, in this order
+   (turn it on, play a while, send the lines named; turn it off again if
+   anything looks wrong)
+	3.1 planner (advice only, never clicks): "Plan: would play X ... (won
+	    N%)" each round, and its milliseconds; in a party battle the "team
+	    model: N mates ..." note. After a day: python vision\battlelearn.py
+	    --advice.
+	3.2 gearswap (a rehearsal: nothing is equipped or clicked - it can only
+	    hold a sale): fill the backpack - "Gear: REHEARSAL ..." and
+	    "Backpack: ... not sold: ..." when a better or unjudged piece holds
+	    it. A slot whose worn piece is in an Equipment Set: one Discord alert
+	    to re-save that set. Then a recorded dungeon, Run it 2 times: "Gear:
+	    the run ... started", "run 1: N new pieces" and learned\drops\<run>.txt;
+	    with quick sell on and a full backpack, a sale tried between runs
+	    outside, never inside - the gear groups only ("Backpack: the gear sold,
+	    the Deck and Pet groups kept: a dungeon's hold" after the sale, one
+	    Discord alert an hour). Then "Until its gear is swapped"
+	    with stopafter|2 in the run file: it starts its "then" run or stops
+	    with a Discord alert.
+	3.3 deckzone (presses Equipment Set keys - deck, gear, pet and mount
+	    change): two or more linked decks for the same use, in a zone with
+	    recorded battles. "Deck: <name> - the simulator's pick for <zone>'s
+	    enemies: X% won ...", the right set pressed, and that deck kept on
+	    (it no longer goes back to the old one ten minutes later).
+	3.4 sigilhome: a sigil that fails 3 times - Mark, Home and Recall, then
+	    the Commons, in place of the notice.
+	3.5 mobwall, then duelavoid (after 1.7): waiting at a line of mobs with
+	    no way round; routing round other players' battles.
+	3.6 puzzlestate (after 1.6), then puzzlelevers: at a gate the log says
+	    "now <state>"; a lever with no name is pressed only at a press prompt
+	    within 150.
+	3.7 partytpdoors (the follower): it trusts the helper's walked-or-
+	    teleport guess.
+	3.8 partyhitround (the blader or healer, both PCs on this version):
+	    "party hit round: <hitter>'s hit is due in round N ... held till
+	    round M", and the boosts landing just before the hit.
+	3.9 memclicks LAST - only once 2.3's lines say the boxes line up (three
+	    looks in a row within 10 pixels: "trusted"). Cards and plates are
+	    then clicked where the game's memory has them.
+
+4. Leave off: deckadd, trainspells, spellquests - not built; on, they only
+   say so (deckadd also tips about a new spell). Nothing is clicked.
+
+To send back, in one place
+	gearclass.txt, gear.txt, bag.txt, petread.txt, petclass.txt, book.txt,
+	quests.txt, spells.txt, questbook.txt, trainer.txt, deckpage.txt,
+	friends.txt, combat.txt, uses.txt, stateclass.txt, state.txt, duels.txt,
+	phase.txt, dglint.txt, stuckreport's output, and the debug.log and
+	WizardClient.log lines steps 2 and 3 name.
