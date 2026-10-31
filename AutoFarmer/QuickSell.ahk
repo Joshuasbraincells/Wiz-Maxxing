@@ -517,13 +517,14 @@ QsRun(d, bag, manual := false, rehearse := false)
 	qRes := QsFinish(qRes)
 	;(a run that failed after SELL under a dungeon's hold - QsConfirmSell's note standing - with every window closed
 	;(QsBackKind "": the sale no longer pending): the backpack read again - down by the sale, it went through: that count
-	;noted; not down, it didn't: the count before SELL put back, so your sort is measured from it. A window still up (a
-	;sale pending) or no read: the note kept)
+	;noted; not down, it didn't: the count before SELL put back, so your sort is measured from it. A window still up or
+	;the back-out stopped (you, a battle - a box or the confirmation left up, so a sale may still land) or no read: the
+	;note kept - the safe side: at worst 10 more items to sort, never the bot's own late sale taken for your sort)
 	if (IsObject(qRes) && qRes.res = "failed" && QsIni("dungeon") != "" && IsObject(QsBefore) && QsBefore.marked && QsBackKind = "")
 		{
 		qNow := NavBag()
 		if (IsObject(qNow) && V1IsNum(qNow.items) && V1IsNum(QsBefore.soldN))
-			QsIniSet("markitems", qNow.items <= QsBefore.items - QsBefore.soldN + 1 ? qNow.items : V1IsNum(QsBefore.markWas) ? Max(QsBefore.markWas, qNow.items) : qNow.items)
+			QsIniSet("markitems", qNow.items <= QsBefore.items - QsBefore.soldN + 1 && qNow.items < QsBefore.items ? qNow.items : V1IsNum(QsBefore.markWas) ? Max(QsBefore.markWas, qNow.items) : qNow.items)
 		}
 	QsBusy := 0, QsManual := 0
 	SetStatus("")
