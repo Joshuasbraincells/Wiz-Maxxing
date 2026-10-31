@@ -1,9 +1,10 @@
 ; QuickSell.ahk - the backpack quick sold for gold when it's full (asked 2026-10-25: "when your backpack is full a circular
 ; alert icon with prospector zeke shows up on the right hand side of the screen ... we should have the bot look for that
 ; after a battle and if its there i'd like to to quick sell our entire inventory" - "of course this should be a setting
-; to be turned on and off because dungeons would cause good gear to be sold"). AutoHotkey v1.1, functions only; #Included
-; by Autofarmer.ahk. Needs the vision helper and the game's memory (vision\bagmem.py - /bag and /gui, READ-ONLY): without
-; them it does nothing (no picture is ever trusted for this - Zeke's portrait also means "the gold bag is nearly full").
+; to be turned on and off because dungeons would cause good gear to be sold"). AutoHotkey v2 (ported from v1.1), functions
+; only; #Included by Autofarmer.ahk. Needs the vision helper and the game's memory (vision\bagmem.py - /bag and /gui,
+; READ-ONLY): without them it does nothing (no picture is ever trusted for this - Zeke's portrait also means "the gold bag
+; is nearly full").
 ;
 ; Settings > THE BACKPACK: quicksell (off by default), quicksellpets (pets too - on), quicksellafterdungeon (off). Hidden
 ; (PlayerStats.txt): quicksellfree:N - sell with N slots or fewer left (0); quicksell:2 - a REHEARSAL: everything up to the
@@ -313,6 +314,21 @@ QsLook(why)
 			AlertSend("inventory", "backpack full", "The backpack is full in a dungeon - not sold (good gear). Drops go to the bank until it's full.")
 		return
 		}
+	;(Settings: gearswap on - the gear pass first (Gear.ahk GearSellOk): a backpack piece better than what's worn, or one it
+	;couldn't judge, holds the sale (a rehearsal equips nothing: you're told to put it on); every gear piece judged and none
+	;better - it looked through the drops: a dungeon's hold dropped, sold. Off: as before)
+	if (V1IsFunc("GearMode") && GearMode.Call() && V1IsFunc("GearSellOk"))
+		{
+		qGear := GearSellOk.Call(d.why)
+		if (qGear != "")
+			{
+			if (d.full)
+				QsStill := 1
+			QsSay("gear", d.why " - not sold: " qGear)
+			return
+			}
+		QsMarkClear("the gear pass compared every gear piece in it - none better than what's worn")
+		}
 	if (QsHeld())
 		{
 		if (d.full)
@@ -380,12 +396,16 @@ QsZekeUp(tips)
 	}
 
 ;In a dungeon: a dungeon run, one being recorded, a zone the walker entered through a sigil or one entered from such a zone
-;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one
+;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one. A dungeon run between two runs -
+;back at its start spot outside (Dungeons.ahk's DgRun.between, set when a run that ends where it starts is done, gone at
+;its first X or another zone) - isn't in the dungeon: a full backpack may be sold there (v0.9.0 - it used to read "in the
+;dungeon run" for the whole of it, so with "Run it 0 times" a full backpack was never sold); the zone's own checks below
+;still hold, and so does the dungeon's hold (QsHeld)
 QsDungeonNow()
 	{
 	if (DgRecording)
 		return "a dungeon being recorded"
-	if (IsObject(DgRun))
+	if (IsObject(DgRun) && !DgRun.between)
 		return "the dungeon run '" DgRun.name "'"
 	qZone := WalkZone()
 	if (qZone != "" && IsObject(WkSigilZones) && WkSigilZones.Has(qZone))

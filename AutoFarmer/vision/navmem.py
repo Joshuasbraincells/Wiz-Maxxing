@@ -27,6 +27,10 @@
                                     # recorder's, out of battle only;
     sig, why = nm.deck_sig()        # its signature (~2 ms); nm.mob_infos(gids): the mobs' cached infos, no read
 
+    gear, why = nm.gear()           # the worn gear and the backpack's with their equip effects and requirements, every
+                                    # backpack item's id, the Equipment Sets, the level (gearmem.py - NOT CONFIRMED in
+                                    # the game yet) - the helper's /gear (gearrank.py's swap plan, a run's drop log)
+
     python navmem.py [-n 5] [-i 1] [--path] [--mobs [--motion SECONDS]] [--goal]   readings from the command line (and how
                                     # long each took); --motion: the mobs watched walking (navroute.MobMotion)
 
@@ -1129,6 +1133,9 @@ class NavMem:
         # the decks (deckmem.py - the battle recorder's and /deck): its reader of the attached game, the thread making it,
         # why it couldn't be made, the last reading {st, r, sig, read_at, only_equipped}
         self._deckm, self._deckm_thread, self._deckm_fail, self._deck_cache = None, None, (None, 0.0, ""), None
+        # the gear (gearmem.py - the helper's /gear): its reader of the attached game, the thread making it, why it couldn't
+        # be made (the game it was for, when to try again)
+        self._gearm, self._gearm_thread, self._gearm_fail = None, None, (None, 0.0, "")
         # how long the quest's goal has read "no place" (noplace 1) for the same quest and goal - every read() times it
         self._np_hold = NoPlaceHold()
 
@@ -1148,6 +1155,7 @@ class NavMem:
             self._bagm = None
             self._deckm = None
             self._deck_cache = None
+            self._gearm = None
 
     def _attach(self, pid):
         try:
@@ -1926,6 +1934,76 @@ class NavMem:
             return None, str(e)
         except Exception as e:  # noqa: BLE001 - never into the server
             return None, "reading the decks failed (%r)" % (e,)
+
+    # ------------------------------------------------------------ the gear (gearmem.py - the helper's /gear)
+    def _gear_reader(self, st, wait=0.0):
+        """(the gear's reader for game st, "") - made in a thread the first time (not waited for with wait 0); (None, why)
+        meanwhile, or when it can't be made (tried again later) - _bag_reader's way"""
+        with self.lock:
+            gm = self._gearm
+            if gm is not None and gm.st is st:
+                return gm, ""
+            fst, again, fwhy = self._gearm_fail
+            if fst is st and time.monotonic() < again:
+                return None, fwhy
+            th = self._gearm_thread
+            if th is None or not th.is_alive():
+                self._gearm = None
+                th = self._gearm_thread = threading.Thread(target=self._gear_make, args=(st,), name="gear", daemon=True)
+                th.start()
+        if wait > 0:
+            th.join(wait)
+        with self.lock:
+            gm = self._gearm
+            if gm is not None and gm.st is st:
+                return gm, ""
+            fst, again, fwhy = self._gearm_fail
+            if fst is st:
+                return None, fwhy
+        return None, "reading the game's gear classes (once, about a second)"
+
+    def _gear_make(self, st):
+        """the gear's reader for game st (its code looked through once - outside the lock, then kept under it); the hand's
+        reader gives it the template map and the names (_deck_make's way)"""
+        try:
+            import gearmem
+            hm, why = self._hand_reader(st, 2.0)
+            if hm is None:
+                raise RuntimeError("the hand's reader isn't made yet (%s)" % why)
+            gm = gearmem.GearMem(st, hm, log=self.log)
+        except Exception as e:  # noqa: BLE001
+            sig = isinstance(e, LookupError)
+            why = ("the gear can't be read in this build: %s" % e) if sig else "the gear classes couldn't be read (%r)" % (e,)
+            self.log("gearmem: " + why)
+            with self.lock:
+                self._gearm_fail = (st, time.monotonic() + (self.RETRY_SIG if sig else
+                                                            5.0 if isinstance(e, RuntimeError) else 30.0), why)
+            return
+        with self.lock:
+            self._gearm = gm
+
+    def gear(self, wait=0.3):
+        """(r, why): the wizard's gear, read now - gearmem.GearMem.read (worn, bag - the planned slots' gear with their
+        equip effects and requirements -, bag_gids - every backpack item -, bag_size, sets, sets_ok, level, player_gid) -
+        through the same read-only handle on the game as everything here, under the same lock (a template's effects and
+        requirements are read once, then kept); each item's display name from the name tables outside it (gearmem.finish).
+        Its reader made in a thread once per game (waited for up to wait s). None and why when the game can't be read.
+        Never raises"""
+        try:
+            import gearmem
+            st, why = self._ensure(wait)
+            if st is None:
+                return None, why
+            gm, why = self._gear_reader(st, wait)
+            if gm is None:
+                return None, why
+            with self.lock:
+                if self.st is not st or gm.st is not st:
+                    return None, "the game changed"
+                r, why = gm.read()
+            return (gearmem.finish(r, gm.hm.lang_text) if r is not None else None), why
+        except Exception as e:  # noqa: BLE001 - never into the server
+            return None, "reading the gear failed (%r)" % (e,)
 
     def mob_infos(self, gids):
         """{gid: mob info} of the zone's mobs read before by the objects thread (bossmem's - _boss_seen: title, rank,

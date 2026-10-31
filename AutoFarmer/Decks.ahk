@@ -164,7 +164,7 @@ DeckWhenOf(text)
 DeckLoad(file)
 	{
 	SplitPath(file, , , , &id)
-	d := V1Obj({id: id, file: file, name: id, school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj(), game: "", learned: ""})
+	d := V1Obj({id: id, file: file, name: id, school: "any", eqset: 0, when: V1Obj(), priority: 0, vals: V1Obj(), game: "", learned: "", bossname: ""})
 	allowed := V1Obj()
 	for i, k in DeckKeys()
 		allowed[k] := 1
@@ -191,6 +191,10 @@ DeckLoad(file)
 				d.game := RegExMatch(Trim(m[2]), "i)^[0-9a-f]{1,16}$") ? StrLower(Trim(m[2])) : ""
 			else if (m[1] = "learned")
 				d.learned := RegExReplace(StrLower(m[2]), "[^a-z0-9,!]")
+			;(v0.9.0: the boss it's for by name - "Kraken", several with a comma between - DeckPick: its deck for that boss, a
+			;cheat-aware profile set with the deck's settings; edited in the file for now - older versions skip the line)
+			else if (m[1] = "bossname")
+				d.bossname := Trim(SubStr(RegExReplace(m[2], "[^\x20-\x7E]|\|", ""), 1, 80))
 			continue
 			}
 		if (RegExMatch(line, "^([\w.]+)\s*:\s*(-?\d+(?:\.\d+)?)\s*\x25?$", &m))
@@ -229,7 +233,7 @@ DeckSave(d)
 		w .= (w = "" ? "" : ",") k
 	text := "; Wiz-Maxxing deck (the dashboard's Cards tab). A setting not here: your Settings' (your school's, then the plain one)`r`n"
 		. "name|" d.name "`r`nschool|" d.school "`r`neqset|" d.eqset "`r`nwhen|" w "`r`npriority|" d.priority "`r`n"
-		. (d.game != "" ? "game|" d.game "`r`n" : "") (d.learned != "" ? "learned|" d.learned "`r`n" : "")
+		. (d.game != "" ? "game|" d.game "`r`n" : "") (d.learned != "" ? "learned|" d.learned "`r`n" : "") (d.bossname != "" ? "bossname|" d.bossname "`r`n" : "")
 	for i, k in DeckKeys()
 		if (d.vals.Has(k))
 			text .= k ":" d.vals[k] "`r`n"
@@ -267,6 +271,17 @@ DeckPick(inBattle, noBoss := false)
 	if (!IsObject(DeckList) || !DeckList.Length)
 		return V1Obj({deck: "", why: "no decks"})
 	sch := inBattle && hitschool != "" ? hitschool : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	;(v0.9.0: the boss's name - a deck for it by name, a dungeon run's own deck for it: its boss|<name>|<deck id> lines, before
+	;its deck| one - held in a battle it isn't known to be in: while that deck's Equipment Set is the one on)
+	dpHeld := 0
+	dpBoss := DeckBossName(inBattle, noBoss, &dpHeld)
+	if (dpBoss != "" && IsObject(DgRun) && IsObject(DgRun.bosses))
+		for dpI, dpB in DgRun.bosses
+			{
+			d := DeckNameMatch(dpB.name, dpBoss) ? DeckById(dpB.deck) : ""
+			if (IsObject(d) && DeckFits(d, sch) && (!dpHeld || DeckHeldOn(d)))
+				return V1Obj({deck: d, why: "the dungeon run " DgRun.name "'s for " dpBoss, boss: 1})
+			}
 	if (IsObject(DgRun) && DgRun.deck != "")
 		{
 		d := DeckById(DgRun.deck)
@@ -299,10 +314,16 @@ DeckPick(inBattle, noBoss := false)
 		{
 		if (!use[2])
 			continue
-		best := ""
-		for j, d in DeckList
-			if (d.when[use[1]] && DeckFits(d, sch) && DeckBetter(d, best, use[1]))
-				best := d
+		best := "", dpNamed := 0
+		;(v0.9.0: for a boss, a deck for it by name first - its bossname| line, "bosses" ticked or not)
+		if (use[1] = "boss" && dpBoss != "")
+			for j, d in DeckList
+				if (DeckNamedFor(d, dpBoss) && DeckFits(d, sch) && DeckBetter(d, best, "boss"))
+					best := d, dpNamed := 1
+		if (!IsObject(best))
+			for j, d in DeckList
+				if (d.when[use[1]] && DeckFits(d, sch) && DeckBetter(d, best, use[1]))
+					best := d
 		;(a boss ahead held in a battle it isn't in: its deck's settings only while its in-game deck is on - the set put
 		;on last, DeckEquip's; another set on: the deck for what this battle is)
 		if (use[1] = "boss" && bossHeld && IsObject(best))
@@ -315,9 +336,59 @@ DeckPick(inBattle, noBoss := false)
 				continue
 			}
 		if (IsObject(best))
-			return V1Obj({deck: best, why: use[3], boss: use[1] = "boss" ? 1 : 0})
+			return V1Obj({deck: best, why: use[3] (dpNamed ? " - its deck by name" : ""), boss: use[1] = "boss" ? 1 : 0})
 		}
 	return V1Obj({deck: "", why: "no deck for this"})
+	}
+
+;(v0.9.0) The boss's name for DeckPick's by-name match ("" none): a boss in this battle by the game's memory (DeckFoe), else
+;the boss ahead (DeckBoss, the bot on); held 1: in a battle and not known to be in it (DeckPick's bossHeld - its deck's
+;settings only while its Equipment Set is the one on: DeckHeldOn). Your Alt+1 pick alone names nobody
+DeckBossName(inBattle, noBoss, &held)
+	{
+	held := 0
+	if (noBoss)
+		return ""
+	if (inBattle && IsObject(DeckFoe))
+		return DeckFoe.name
+	if (BotOn && IsObject(DeckBoss))
+		{
+		held := inBattle && !BossChoosen ? 1 : 0
+		return DeckBoss.name
+		}
+	return ""
+	}
+
+;(v0.9.0) want (a deck's bossname or a run's boss| name) names the boss called name: its letters all of name's (Governor
+;Nereus - "Governor Nereus"), or among them when it has 4 or more ("Nereus")
+DeckNameMatch(want, name)
+	{
+	dnmW := DeckLetters(want), dnmN := DeckLetters(name)
+	if (dnmW = "" || dnmN = "")
+		return false
+	return dnmW = dnmN || (StrLen(dnmW) >= 4 && InStr(dnmN, dnmW))
+	}
+
+;(v0.9.0) Deck d is for the boss called name by its bossname| line (several with a comma between)
+DeckNamedFor(d, name)
+	{
+	if (d.bossname = "")
+		return false
+	Loop Parse, d.bossname, ","
+		if (DeckNameMatch(A_LoopField, name))
+			return true
+	return false
+	}
+
+;(v0.9.0) A boss deck held in a battle may have its settings only while its in-game deck is the one on: it has an Equipment
+;Set and that's the one put on last (DeckEquip's dashboard.ini [decks] eqset<CharID>), or none was put on yet (v1's blank -
+;DeckPick's rule for a deck for bosses)
+DeckHeldOn(d)
+	{
+	if (!d.eqset)
+		return false
+	dhoSet := Trim(IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""), ""))
+	return dhoSet = "" || dhoSet = d.eqset
 	}
 
 ;A deck is for this wizard: its school, or any (school not known: only an 'any' one)
@@ -635,10 +706,11 @@ DeckDamageText(d)
 ;There's a deck for bosses (else there's nothing to look for)
 DeckBossWanted()
 	{
+	;(v0.9.0: a deck for a boss by name, or a dungeon run's boss| lines, want the boss ahead looked for too)
 	for dbwI, dbwD in IsObject(DeckList) ? DeckList : []
-		if (dbwD.when.boss)
+		if (dbwD.when.boss || dbwD.bossname != "")
 			return true
-	return false
+	return IsObject(DgRun) && IsObject(DgRun.bosses) && DgRun.bosses.Length ? true : false
 	}
 
 ;Out of battle (DeckTick, every 2 s): the zone's mobs read (NavMobs) and a boss ahead looked for - DeckBoss set, kept or

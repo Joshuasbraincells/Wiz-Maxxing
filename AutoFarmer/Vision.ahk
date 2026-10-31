@@ -483,6 +483,8 @@ global NavMobsWhy, NavMobsWaitUntil, NavBattleWhy, NavBattleWaitUntil
 global NavBagWhy, NavBagWaitUntil, NavGuiWhy, NavGuiWaitUntil
 ;Why the last NavGuiTree got nothing; when it may ask again (declared only: a top-level := never runs here)
 global NavGuiTreeWhy, NavGuiTreeWaitUntil
+;Why the last NavGear got nothing; when it may ask again (declared only: a top-level := never runs here)
+global NavGearWhy, NavGearWaitUntil
 ;Why the last NavItems got nothing; when it may ask again
 global NavItemsWhy, NavItemsWaitUntil
 ;Why the last NavUiScale got nothing; when it may ask again; the GUI root's width it read (GUI units)
@@ -1289,6 +1291,105 @@ NavGuiTree(under := "", withHidden := false, depth := "", timeoutMs := 1500)
 	return ngtOut
 	}
 
+;The worn gear and the backpack's from the game's memory, with the helper's swap plan (its /gear - READ-ONLY,
+;vision\gearmem.py and gearrank.py: nothing in the game is written, injected or hooked; no key, click or window - the
+;stats are NOT CONFIRMED in the game yet: the plan is advice). query: /gear's arguments without the "?" (Gear.ahk
+;GearQuery: school, level, role, the totals; run=&mark=1 / end=1 (nomark=1) for a dungeon run's drop log). An object:
+;wornN, bagN (gear of the planned slots - and pieces whose template couldn't be read: verdict unknown, slot ""),
+;bagItems (every item), level, school, role, setsOk, why (gear| line), worn ([{slot, gid, tid, name, display, level,
+;stats, sets}]), items ([{gid, tid, name, display, slot, verdict (better, not better, can't wear, in a set, unknown),
+;delta, basis, why, stats, reqs, crowns, nosell, sets}]), plan ([{slot, gid, tid, name, wornGid, wornName, delta (% -
+;basis stats; levels - basis level), basis (stats, level, empty), held (1: the worn piece is in an Equipment Set),
+;why}]), notes ([text]), drops ([{tid, name, slot, display, count, first}]: a run's new pieces - count read as V1At(d,
+;"count"): d.count is the Map's own Count), run ({name, runs, dry, stopafter, done, why, new, marked} - "" without
+;run=), better / unknown / judged (the items' verdicts counted: judged - every verdict but unknown). "" when it can't be
+;read - navmem:0, the helper not running or older (no /gear), dual mode, "none|<why>" (not in the world, the reader
+;being made - once a game, about a second): NavGearWhy says why (after an ERR or no answer not asked again for 5 s; an
+;older helper's "unknown request": 60 s)
+NavGear(query := "", timeoutMs := 5000)
+	{
+	global NavGearWhy, NavGearWaitUntil ; (v1 globals it sets)
+	NavGearWhy := ""
+	if (!Stat("navmem"))
+		{
+		NavGearWhy := "navmem:0 in PlayerStats.txt"
+		return ""
+		}
+	if (!VisionOn)
+		{
+		NavGearWhy := "the vision helper isn't running"
+		return ""
+		}
+	if (dualmode == 1)
+		{
+		NavGearWhy := "dual mode: the game's memory is one client's"
+		return ""
+		}
+	if (NavGearWaitUntil && A_TickCount < NavGearWaitUntil)
+		{
+		NavGearWhy := "asked again in a moment (the last ask failed)"
+		return ""
+		}
+	ngrAns := VisionGet("/gear" (query != "" ? "?" query : ""), timeoutMs, true)
+	if (ngrAns = "")
+		{
+		NavGearWhy := VisionErr = "" ? "no answer" : RegExReplace(VisionErr, "^ERR\s*")
+		NavGearWaitUntil := A_TickCount + (InStr(VisionErr, "unknown request") ? 60000 : 5000)
+		return ""
+		}
+	NavGearWaitUntil := 0
+	ngrOut := V1Obj({wornN: "", bagN: "", bagItems: "", level: "", school: "", role: "", setsOk: 0, why: "", worn: [], items: [], plan: []
+		, notes: [], drops: [], run: "", better: 0, unknown: 0, judged: 0})
+	ngrGot := 0
+	Loop Parse, ngrAns, "`n", "`r"
+		{
+		ngrF := StrSplit(A_LoopField, "|")
+		ngrK := V1At(ngrF, 1)
+		if (ngrK = "none")
+			{
+			NavGearWhy := Trim(SubStr(A_LoopField, 6))
+			return ""
+			}
+		if (ngrK = "gear" && ngrF.Length >= 10)
+			ngrGot := 1, ngrOut.wornN := NavNum(V1At(ngrF, 2)), ngrOut.bagN := NavNum(V1At(ngrF, 3)), ngrOut.bagItems := NavNum(V1At(ngrF, 4)), ngrOut.level := NavNum(V1At(ngrF, 5))
+				, ngrOut.school := Trim(V1At(ngrF, 6)), ngrOut.role := Trim(V1At(ngrF, 7)), ngrOut.setsOk := V1At(ngrF, 8) = "1" ? 1 : 0, ngrOut.why := Trim(V1At(ngrF, 10))
+		else if (ngrK = "worn" && ngrF.Length >= 9)
+			ngrOut.worn.Push(V1Obj({slot: Trim(V1At(ngrF, 2)), gid: Trim(V1At(ngrF, 3)), tid: NavNum(V1At(ngrF, 4)), name: Trim(V1At(ngrF, 5)), display: Trim(V1At(ngrF, 6))
+				, level: NavNum(V1At(ngrF, 7)), stats: Trim(V1At(ngrF, 8)), sets: Trim(V1At(ngrF, 9))}))
+		else if (ngrK = "item" && ngrF.Length >= 15)
+			{
+			ngrV := Trim(V1At(ngrF, 7))
+			ngrOut.items.Push(V1Obj({gid: Trim(V1At(ngrF, 2)), tid: NavNum(V1At(ngrF, 3)), name: Trim(V1At(ngrF, 4)), display: Trim(V1At(ngrF, 5)), slot: Trim(V1At(ngrF, 6))
+				, verdict: ngrV, delta: NavNum(V1At(ngrF, 8)), basis: Trim(V1At(ngrF, 9)), why: Trim(V1At(ngrF, 10)), stats: Trim(V1At(ngrF, 11)), reqs: Trim(V1At(ngrF, 12))
+				, crowns: V1At(ngrF, 13) = "1" ? 1 : 0, nosell: V1At(ngrF, 14) = "1" ? 1 : 0, sets: Trim(V1At(ngrF, 15))}))
+			;(each verdict counted: better ones hold a quick sell, unknown ones too - Gear.ahk GearSellOk)
+			if (ngrV = "better")
+				ngrOut.better += 1
+			if (ngrV = "unknown")
+				ngrOut.unknown += 1
+			else if (ngrV != "")
+				ngrOut.judged += 1
+			}
+		else if (ngrK = "plan" && ngrF.Length >= 11)
+			ngrOut.plan.Push(V1Obj({slot: Trim(V1At(ngrF, 2)), gid: Trim(V1At(ngrF, 3)), tid: NavNum(V1At(ngrF, 4)), name: Trim(V1At(ngrF, 5)), wornGid: Trim(V1At(ngrF, 6))
+				, wornName: Trim(V1At(ngrF, 7)), delta: NavNum(V1At(ngrF, 8)), basis: Trim(V1At(ngrF, 9)), held: V1At(ngrF, 10) = "1" ? 1 : 0, why: Trim(V1At(ngrF, 11))}))
+		else if (ngrK = "note")
+			ngrOut.notes.Push(Trim(SubStr(A_LoopField, 6)))
+		else if (ngrK = "drop" && ngrF.Length >= 7)
+			ngrOut.drops.Push(V1Obj({tid: NavNum(V1At(ngrF, 2)), name: Trim(V1At(ngrF, 3)), slot: Trim(V1At(ngrF, 4)), display: Trim(V1At(ngrF, 5)), count: NavNum(V1At(ngrF, 6))
+				, first: Trim(V1At(ngrF, 7))}))
+		else if (ngrK = "run" && ngrF.Length >= 9)
+			ngrOut.run := V1Obj({name: Trim(V1At(ngrF, 2)), runs: NavNum(V1At(ngrF, 3)), dry: NavNum(V1At(ngrF, 4)), stopafter: NavNum(V1At(ngrF, 5)), done: V1At(ngrF, 6) = "1" ? 1 : 0
+				, why: Trim(V1At(ngrF, 7)), new: NavNum(V1At(ngrF, 8)), marked: V1At(ngrF, 9) = "1" ? 1 : 0})
+		}
+	if (!ngrGot)
+		{
+		NavGearWhy := "an odd answer (no gear line): " SubStr(RegExReplace(ngrAns, "\s+", " "), 1, 60)
+		return ""
+		}
+	return ngrOut
+	}
+
 ;A battle's first round: the mob that started it, off the mobs the helper read lately (while walking with mob
 ;avoidance on) - how far away you were and how far off its facing when it noticed you, into debug.log, to measure the
 ;mobs' real sight against the mobshape / mobradius settings
@@ -1440,5 +1541,6 @@ VisionBlank()
 	global NavBagWaitUntil := "", NavGuiWhy := "", NavGuiWaitUntil := "", NavItemsWhy := "", NavItemsWaitUntil := "", NavUiWhy := ""
 	global NavUiWaitUntil := "", NavUiRootW := ""
 	global NavGuiTreeWhy := "", NavGuiTreeWaitUntil := ""
+	global NavGearWhy := "", NavGearWaitUntil := ""
 	global VisionPhaseWhy := "", VisionPhaseWaitUntil := ""
 	}

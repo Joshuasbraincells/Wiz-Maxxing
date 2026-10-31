@@ -43,13 +43,35 @@ sigil, to the boss, fighting on the way, back out to where you started), then
 press F9 and name it. Pick it and click Run (so many times, or 0 = until you
 stop it): the bot walks the same way by the zone's map, presses X where you
 did, fights every battle (the bot on, F6), Spaces through dialogues and starts
-over. F8 pauses it. Somewhere the run doesn't go (a potion run, a defeat), or
-stuck for good: it stops and says why (the tab, debug.log "Dungeons: ...",
-Discord) - counted badly stuck on the dashboard. An X at a sigil that didn't
-load twice: home and back first, once a run, if you switch sigilhome on (see
-"A sigil that won't start").
+over. F8 pauses it. A defeat or a potion run that leaves the wizard in an
+earlier zone of the run: on from the nearest step of its first visit there,
+never on to the way back out (3 times a run at most). Somewhere the run doesn't go, or stuck for good: it stops and says why
+(the tab, debug.log "Dungeons: ...", Discord) - counted badly stuck on the
+dashboard. An X at a sigil that didn't load twice: home and back first, once a
+run, if you switch sigilhome on (see "A sigil that won't start").
 Runs are kept in dungeons\<name>.txt (updates keep them). Needs the
 vision helper and the game's memory, like walking by the map.
+Between runs (a run that ends back where it starts, till its first X): with
+quick sell on, a full backpack may be sold there, outside the dungeon (the
+dungeon's hold still holds it unless the gear pass looked through it or
+"...even with a dungeon's drops in it" is ticked); with the gear pass on
+(Settings: gearswap - see "Gear" below) the run's new pieces are logged in
+learned\drops\<run>.txt and the plan is logged. "Until its gear is swapped"
+(the Dungeons tab's box, needs the gear pass): once every slot the dungeon
+drops is worn with a piece it dropped - or 30 runs brought no upgrade - it
+goes on to the run picked under "then" when that starts where the wizard
+stands, else it stops and tells you where to take the wizard (Discord). The
+Gear column shows each run's runs, dry runs and "done". In a run's file you
+can also put (older versions skip them): slots|hat,robe,shoes (the slots it
+drops - else resources\dungeons_known.txt's for a run named after one of
+Olympus, Waterworks, Hades, Darkmoor), stopafter|30, boss|<boss name>|<deck
+id> (that deck for that boss). Check a run's file with
+	python vision\dglint.py
+(every run in dungeons\, or name one): the steps it reads, a run that doesn't
+end where it starts, a zone change right after a battle, a walk recorded
+right after a sigil's X (the wizard drifted while it counted down: since
+v0.9.0 the bot neither records such a step nor walks off the sigil for one
+recorded before), and the lines above.
 
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
 Windows (a shortcut in your Startup folder to Wiz-Maxxing.exe /watch - its
@@ -438,7 +460,12 @@ doesn't publish one). Save keeps it (decks\<name>.txt - updates keep them);
 dungeon run's (its Deck box on the Dungeons tab), a pinned one, the boss's,
 collect's, farming's, anything else's - and logs "Deck: <name> (why)" (the
 dashboard's Deck line shows it too). No deck set up, or one that sets
-nothing: it plays exactly as without.
+nothing: it plays exactly as without. A deck for one boss by name (v0.9.0 -
+a boss's cheats: no traps, one school, hit first... as that deck's own
+settings): a bossname|<name> line in its file (decks\<id>.txt; several with a
+comma between) - that deck for that boss, ahead or in the battle, before the
+other decks for bosses ("Deck: ... - its deck by name"); a dungeon run's
+boss|<name>|<deck id> line comes before even its own Deck box's deck.
 Bosses before the fight, by the game's memory (navmem:1, read-only - vision\
 bossmem.py, the helper's /mobs and /battle): each of the zone's mobs' title as
 the game has it (Boss, Elite, Normal...), rank, max health and the game's own
@@ -708,7 +735,8 @@ restart. Defaults fills in the defaults (Save to use them).
 	  and before looking at the hand again.
 	- Health: heal under %, drink a potion under %, flee when out of cards.
 	- The backpack: quick sell it when it's full, pets too, after a dungeon
-	  too (see Quick sell below).
+	  too (see Quick sell below); compare gear before selling, and pieces of
+	  an Equipment Set too (see Gear below).
 	- Card logic: boost first (traps - on the boss, else on the enemy with
 	  the most health -, blades, bubble, aura, then
 	  the biggest hit it can cast - as always), hit first (the biggest hit it
@@ -1415,10 +1443,15 @@ read-only, never a picture):
 	  with ALL, No to "include Crowns Items?", SELL, the confirmation's numbers
 	  read (no Crown items, furniture, jewels, reagents or treasure cards), SELL,
 	  then the backpack's count checked. Gold over the pouch is lost (logged).
-	- Never in a dungeon run, a dungeon being recorded, a zone the bot
+	- Never in a dungeon run (between two runs, back at its start outside,
+	  it may be), a dungeon being recorded, a zone the bot
 	  entered through a sigil or a zone it leads on to. A dungeon you walked
 	  into yourself isn't known as one: switch quick sell off before you start
-	  the bot in it. After a dungeon the next full backpack is held - you're
+	  the bot in it. With the gear pass on (gearswap, see "Gear" below) a full
+	  backpack is sold only when every gear piece in it was compared with
+	  what you wear and none is better (then the dungeon's hold below is
+	  dropped too); a better one - or one it couldn't judge - holds the sale
+	  and you're told. After a dungeon the next full backpack is held - you're
 	  told, so you can look through the good gear first - until 10 items have
 	  gone from it, you ask from the tray, or you tick "...even with a dungeon's
 	  drops in it". A group an Equipment Set's item is in (the boss deck's deck)
@@ -1441,6 +1474,44 @@ read-only, never a picture):
 	  backpack's alert names those groups and items).
 	  quicksellfree:N sells with N slots or fewer left. debug.log:
 	  "Backpack: ..."; the dashboard: Quick sells.
+
+Gear (Gear.ahk - Settings > THE BACKPACK, gearswap, off till you tick it; new,
+not tried in the game yet; needs the vision helper - the game's memory,
+read-only):
+	- Before a full backpack is quick sold and after each dungeon run, your
+	  worn gear and the backpack's are read from the game's memory (each
+	  piece's stats and what it needs to be worn - level, school) and, slot
+	  by slot (hat, robe, shoes, weapon, athame, amulet, ring - never decks,
+	  pets or mounts), a better piece for you is worked out: your damage,
+	  pierce, critical, block, accuracy (your stats pages - StatsReader) and
+	  health, with the worn piece's stats taken off and the new one's added,
+	  weighed for your role (a hitter; in a party your party battle role).
+	  The gear's own stats aren't confirmed yet: a piece whose stat sizes
+	  aren't read is compared by the level it needs, and every result is
+	  ADVICE - "Gear: ..." in debug.log, a tray tip for a new one.
+	- A REHEARSAL: nothing is equipped and nothing is clicked - put the piece
+	  on yourself (equipping needs the backpack's item windows, which haven't
+	  been looked at in the game yet). Never anything that could spend Crowns.
+	- A slot whose worn piece is in one of your Equipment Sets: the plan says
+	  "held" and you're asked once (Discord) to re-save that set after you
+	  swap - else its Ctrl+N (a deck's Equipment Set) puts the old piece back.
+	  The bot never saves a set. "...plan pieces of an Equipment Set too"
+	  (gearsets) plans them like any other.
+	- PlayerStats.txt: gearmargin:2 (the % a piece must be better by),
+	  gearlevel:N (your level, if the game's memory doesn't give it), and
+	  what counts - one number a line, each left out keeps your role's:
+	  gearweight.off:1, gearweight.def:0.5, gearweight.pip:0.3,
+	  gearweight.heal:0, gearweight.cards:0.002, gearweight.eblock:200 (an
+	  enemy's block rating, for a critical's worth).
+	- A piece whose details couldn't be read from the game's memory is "not
+	  judged": it holds the quick sell like a better one, and a dungeon run
+	  with one among its new pieces isn't counted as a run with no upgrade.
+	  A dungeon run whose start couldn't be noted (gearswap switched on
+	  midway, the backpack not read then) has its drops left out once.
+	- What it reads, from the command line (read-only, nothing sent):
+	      python vision\gearmem.py --effects --out gear.txt
+	  each piece you wear and each gear piece in the backpack, its stats and
+	  requirements as read (send gear.txt back to have them confirmed).
 
 Discovery tools (vision\bagmem.py --tree and vision\reflect.py - read-only):
 to teach the bot pets, gear, card quests and puzzles it first has to know the
@@ -1466,6 +1537,11 @@ your wizard is in the world (the same Python as the vision helper):
 	  --pid <n> picks the client when more than one is running.
 	Send the .txt file. The vision helper gives the bot the same window list
 	(/guitree); nothing the bot does uses it yet.
+	For gear (also read-only): the classes the gear pass reads -
+	    python vision\reflect.py --class StatisticEffectInfo --class GameEffectInfo --class ItemTemplate --class RequirementList --class ReqMagicLevel --class ReqSchoolOfFocus --class WizGameStats --grep "EffectInfo|^Req" --out gearclass.txt
+	  what it reads of your gear (python vision\gearmem.py --effects --out
+	  gear.txt - see "Gear"), and the backpack page's windows (open it with B
+	  first): python vision\bagmem.py --tree --under InventorySpellbookPage --all --out bag.txt
 	For puzzles (two more, also read-only):
 	- A zone's own files (Wizard101 installed - it needn't be running):
 	      python vision\puzzlefile.py --uses --out uses.txt
