@@ -515,11 +515,31 @@ Governor Nereus 9000 health: Kraken at its best 2153 with Stormblade, Storm
 Trap - 5 hits"; the deck most likely to win it is the one picked (5 points
 better or more; else the priority), and "no deck for bosses is likely to beat
 it" when none wins 65%. The Cards tab shows each deck's last verdict under its
-damage. Not in the simulator yet: shields on either side, the enemies' blades,
-traps and heals, damage over time after its first part, stuns, the party's
-other wizards - so against a boss that shields or heals it's optimistic.
+damage. In the simulator too (v0.9.0): a hit's damage over time - its ticks
+at the start of the next 3 rounds; what each enemy does besides hitting, as
+the battles recorded show it - its heals, its shields and blades on itself,
+its traps, weaknesses and stuns on you, its damage over time's ticks on you
+(an enemy with none recorded does none of it: the verdict says "nothing
+learned yet of what X does besides hitting - optimistic"). Not in it yet:
+your own shields and Tower Shield, enchants, Reshuffle, minions, the stuns
+you cast.
 Try it on the command line:
     python vision\battlesim.py --deck deck.json --foe "Governor Nereus:9000:ice"
+Decks matched to the zone's enemies (deckzone - Settings, HOW IT PLAYS ITS
+CARDS; off unless you switch it on, new and not tried in the game yet): out
+of battle with no boss ahead, each in-game deck in an Equipment Set is fought
+in the simulator against the enemy groups you've fought most in this zone
+(the battles recorded there), each with the settings its cards call for; of
+your decks for the same use as the one picked (collect, farming, dungeon,
+anything else - never a boss deck, the pinned one or a dungeon run's), the
+one that wins clearly more often (5 points, or as often in a round fewer) is
+put on - "Deck: Small deck - the simulator's pick for WizardCity/WC_Streets's
+enemies: 96% won in 3.1 rounds - Large deck 88%". Worked out by the helper in
+the background (a few seconds), kept 10 minutes; while it's worked out again
+the zone's last pick stays on. Every deck rolls the same dice against a group,
+so two decks with the same cards (one deck in two Equipment Sets) score the
+same and are never swapped for each other. A zone with no battle recorded
+yet: as before.
 The round planner (planner - Settings, HOW IT PLAYS ITS CARDS; off unless you
 switch it on, new and not tried in the game yet): in each round the bot plays
 itself - after the kill check, defending and the heals - every card in your
@@ -544,11 +564,22 @@ those battles went - per school, all schools' together while yours has few
 helper remakes them every 10 minutes while the planner is on (learned\
 battles\plays.json); look:
     python vision\battlelearn.py [--school storm]
-Not asked in dual mode, with two or more game windows open, as a party's
-blader or healer, after you played a round of the battle, while learning
-every card, or with navmem off. Playing
-the advised card itself (planner 2) isn't built: it needs every card cast by
-the game's memory and each enemy's plate matched first.
+In a party battle (v0.9.0) the party's other wizards on your side are in the
+simulator too - each its seat (the cast order), school, health and battle
+role from the party; the enemies' single hits land on one of you at random
+(an enemy known only by its hits recorded on you: each of you takes them at
+that rate), a wizard at 0 health stays down (no hit, no card), a hitter
+whose hand isn't known hits as an unknown enemy does (100 a pip, every other
+round), a blader or healer whose hand isn't known does nothing - and the
+blades, traps and shields on you and on the enemies are read from the game's
+log (the party's and the enemies' too), not only the bot's own count. Not
+asked in dual mode, with two or more game windows open, as a party's blader
+or healer, after you played a round of the battle, while learning every
+card, or with navmem off. Playing the advised card itself (planner 2) isn't
+built: it needs every card cast by the game's memory and each enemy's plate
+matched first; the leader telling each bot its card (the helper can already
+plan the whole team's round from their hands - /plan's teamplan) needs the
+bots' hands sent over the party first.
 New spells, training points and spell quests (Training.ahk - TODO goal 4;
 mostly NOT BUILT yet). What runs now only reads: out of battle, the bot on,
 about every 10 minutes (the first 3 minutes in; not while a zone loads or on
@@ -691,6 +722,14 @@ and says so - below).
 	  part: <school>.partybattle:2 in PlayerStats.txt. Not sure (the party off,
 	  no hitter on your side heard from in 5 s, its plate not read, dual mode):
 	  it hits, as ever - debug.log says why once a battle.
+	- The party's hit round (Settings > PARTY, "...a blader or healer times
+	  its boosts to the hit" - partyhitround, off; new, not tried in the game
+	  yet): the hitter says which round its planned hit goes out in (the
+	  earliest its pips allow) and each wizard its seat (the cast order of
+	  your side); a blader's or healer's blades and traps wait till the hit is
+	  due - that round when it casts before the hitter, else the round before -
+	  "party hit round: Ned's hit is due in round 6 ... held till round 5". An
+	  older bot says neither: boosts go on as before.
 	- A heal on an ally that went out without asking who: one whose learned
 	  text says it heals all of you is kept as <school>.healNtarget:2 (still
 	  used for an ally); one that heals only you as :0, not tried on an ally

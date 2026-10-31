@@ -25,6 +25,10 @@
 ; casts them again after each of the hitter's hits, Tower Shield on it, and hits only for a kill or with nothing else to
 ; do; a Healer heals the one of you lowest under healat %, shields them, else boosts as a blader. Anything not sure (no
 ; party state, the hitter not on your side, its plate not read): this wizard hits, as ever.
+; The party's hit round (v0.9.0, TODO goal 3 - Settings: partyhitround, off; not tried in the game): the hitter says the
+; log round its planned hit goes out in (the earliest it can: KillCalc.ahk BoostPick) and each wizard its seat (its
+; subcircle - our side's cast order); a blader's or healer's blades and traps wait for it - that round when its seat
+; casts before the hitter's, else the round before (PartyHitHold). An older bot sends neither: as ever.
 
 ;The party as last heard: the role, the helper's state (off/serving/following/unreachable/error) and why; this wizard
 ;({zone, x, y, z, yaw} - the zone blank while it isn't read: a loading screen); the leader (a follower's view: {name, zone,
@@ -48,6 +52,11 @@ global PartyTgt, PartyStillAt, PartyStillX, PartyStillY, PartyTries, PartyPushUn
 ;since cut that try short: not counted), the door the helper called a teleport last logged (partytpdoors off)
 global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted, PartyDoorKey, PartyDoorTries
 global PartyDoorGave, PartyMyZone, PartyLdZone, PartyStuckAt, PartyDoorGaveAt, PartyDoorBattles, PartyDwalkSaid
+;The party's hit round (v0.9.0, TODO goal 3 - not tried in the game): the log round this wizard's planned hit is
+;likely to go out in, the earliest it can (KillCalc.ahk BoostPick sets it - the hitter's), and the battle it's for
+;(BlDuel) - PartyTick sends it, with this wizard's seat, so a blader's or healer's blades and traps wait for it
+;(Settings: partyhitround, off - PartyHitHold)
+global PartyHitAt, PartyHitAtDuel
 
 ;The role set in Settings: "off", "leader" or "follower"
 PartyRoleSet()
@@ -103,6 +112,12 @@ PartyTick()
 	;(a follower that can't follow says so, and why - the leader stops waiting for it: PartyHoldWhy. Only the characters the
 	;helper takes - vision\party.py HOLD_RE -, 80 at most)
 	q .= "&tp=" (role = "follower" ? PartyTp : "") "&tpwhy=" (role = "follower" ? NavUri(SubStr(RegExReplace(PartyTpWhy, "[^\w .,'()/-]", " "), 1, 80)) : "")
+	;(the party's hit round - v0.9.0: the log round this wizard's planned hit goes out in, the earliest it can, for this
+	;battle only - KillCalc.ahk BoostPick, a hitter's; a blader's or healer's never -, and its seat: its subcircle in the
+	;game's log, our side's cast order (PartySeat). Its supports time their blades and traps to it - PartyHitHold. Blank:
+	;not known - as an older bot's)
+	q .= "&hitat=" ((inbattle = 1 && PartyHitAtDuel != "" && PartyHitAtDuel = BlDuel && !PartySupport()) ? PartyHitAt : "")
+		. "&seat=" (inbattle = 1 ? PartySeat() : "")
 	ans := VisionGet(q, 600, true)
 	PartyAskAt := A_TickCount
 	if (ans = "")
@@ -118,8 +133,8 @@ PartyTick()
 		f := StrSplit(A_LoopField, "|")
 		;(v1: a field the line doesn't have - blank. 32-37: the leader's loading flag, its door's walked, its time in its zone,
 		;the door's age, the teleport advice and why; a member's 22-23: its tp and why - an older helper's lines haven't
-		;them: blank. 38-39 / 24-25: the battle planner's hit round, later)
-		while (f.Length < 37)
+		;them: blank. 38-39 / 24-25: the party's hit round - hitat and seat, v0.9.0)
+		while (f.Length < 39)
 			f.Push("")
 		if (f[1] = "party")
 			{
@@ -133,11 +148,12 @@ PartyTick()
 			leader := V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], yaw: f[7], battle: f[8], hp: f[9], ready: f[10]
 				, walk: f[11], age: f[12], dist: f[13], dzone: f[14], dx: f[15], dy: f[16], dz: f[17], ddx: f[18], ddy: f[19]
 				, dto: f[20], bx: f[21], by: f[22], bz: f[23], hold: f[24], brole: f[25], wiz: f[26], school: f[27], hits: f[28], hitr: f[29]
-				, plan: f[30], lasthit: f[31], loading: f[32], dwalk: f[33], zage: f[34], dage: f[35], port: f[36], portwhy: f[37]})
+				, plan: f[30], lasthit: f[31], loading: f[32], dwalk: f[33], zage: f[34], dage: f[35], port: f[36], portwhy: f[37]
+				, hitat: f[38], seat: f[39]})
 		else if (f[1] = "member")
 			members.Push(V1Obj({name: f[2], zone: f[3], x: f[4], y: f[5], z: f[6], battle: f[7], hp: f[8], ready: f[9], age: f[10]
 				, dist: f[11], walk: f[12], loading: f[13], hold: f[14], brole: f[15], wiz: f[16], school: f[17], hits: f[18], hitr: f[19]
-				, plan: f[20], lasthit: f[21], tp: f[22], tpwhy: f[23]}))
+				, plan: f[20], lasthit: f[21], tp: f[22], tpwhy: f[23], hitat: f[24], seat: f[25]}))
 		}
 	PartyLeader := leader, PartyMembers := members
 	if (V1IsFunc("DashSee"))
@@ -145,6 +161,53 @@ PartyTick()
 	}
 
 ;---- Battle roles ----
+
+;This wizard's seat in the battle: its subcircle (4-7 - our side's cast order, the lowest first) by its name in the game's
+;log (BlNames - one of our side so named, no two); "" not known
+PartySeat()
+	{
+	pseMe := PartyKey(OwnName()), pseAt := ""
+	if (StrLen(pseMe) < 3 || !IsObject(BlNames))
+		return ""
+	Loop 4
+		{
+		pseS := A_Index + 3
+		if (!BlNames.Has(pseS) || PartyKey(BlNames[pseS]) != pseMe)
+			continue
+		if (pseAt != "")
+			return ""
+		pseAt := pseS
+		}
+	return pseAt
+	}
+
+;The party's hit round (Settings: partyhitround, off - v0.9.0, not tried in the game): a blader's or healer's blades and
+;traps held this round while the party's hitter's hit isn't due - "" (cast as ever) or why they're held, for the log
+;(KillCalc.ahk BoostPick then takes this round's blade and trap flags off). Due: the round the hitter says its planned
+;hit goes out in (its hitat: the earliest it can - its pips -, its log's round), that very round when your seat casts
+;before the hitter's (a lower subcircle: your blade lands before its hit - to check in the game: the log's
+;AddHangingEffect before its ProcessTargets in one round), else the round before. Never held: the setting off, no party
+;hitter on your side (PartyHitter), its hitat blank (an older bot, no hit planned, a learned hit's - not known) or not
+;a number, either seat not known (yours, its - the log's names), or the hit 5 rounds off or more (a guess that far
+;ahead isn't waited on)
+PartyHitHold()
+	{
+	if (!Stat("partyhitround"))
+		return ""
+	phhH := PartyHitter()
+	if (!IsObject(phhH) || !V1IsNum(phhH.hitat) || phhH.hitat < 1)
+		return ""
+	phhSeat := phhH.slot ? phhH.slot : V1IsNum(phhH.seat) ? phhH.seat : 0
+	if (!MySlot || !phhSeat)
+		return ""
+	phhNow := V1N(BlRound) + 1
+	phhDue := (MySlot < phhSeat) ? phhH.hitat : phhH.hitat - 1
+	if (phhNow >= phhDue || phhDue - phhNow >= 5)
+		return ""
+	return "party hit round: " phhH.wiz "'s hit is due in round " phhH.hitat " (its seat " phhSeat ", yours " MySlot
+		. (MySlot < phhSeat ? " - yours casts first: that round" : " - its casts first: the round before")
+		. ") - this round's blades and traps held till round " phhDue " (partyhitround)"
+	}
 
 ;This wizard's part in a party battle (Settings: partybattle - <school>.partybattle for one school's wizard): "hitter",
 ;"blader" or "healer"
@@ -212,7 +275,8 @@ PartyBattleRole()
 ;The party's hitter in this battle, from the party's state - the leader's and the followers' (heard from in the last 5 s,
 ;in battle, its wizard's name one of your side's in the game's log, not yours, no two of your side so named): the one set
 ;to Hitter - the leader first, else the first by name, so every support picks the same -, else the leader.
-;{wiz, school, hits, hitr, slot} or "". MySlot: your slot (by your name in the log)
+;{wiz, school, hits, hitr, slot, plan, lasthit, hitat, seat - as it sent them} or "". MySlot: your slot (by your name in
+;the log)
 PartyHitter()
 	{
 	global MySlot ; (v1 globals it sets)
@@ -242,7 +306,8 @@ PartyHitter()
 		phM := phC.m, phK := PartyKey(phM.wiz)
 		if (phM.age = "" || phM.age > 5000 || phM.battle != 1 || StrLen(phK) < 3 || phK = phMe || !phSlots.Has(phK) || phTwice.Has(phK))
 			continue
-		phW := V1Obj({wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit})
+		phW := V1Obj({wiz: phM.wiz, school: phM.school, hits: phM.hits, hitr: phM.hitr, slot: phSlots[phK], plan: phM.plan, lasthit: phM.lasthit
+			, hitat: phM.hitat, seat: phM.seat})
 		if (phC.lead)
 			phLead := phW
 		;(v1: the names compared alphabetically, as text - v2's < throws on text)
@@ -1228,5 +1293,5 @@ PartyBlank()
 	global BattleRole := "", hammerX := "", hammerY := "", HammerName := ""
 	global PartyTp := "", PartyTpWhy := "", PartyCantAt := "", PartyCantSaid := "", PartyPortSaid := "", PartyCantAlerted := ""
 	global PartyDoorKey := "", PartyDoorTries := "", PartyDoorGave := "", PartyMyZone := "", PartyLdZone := "", PartyStuckAt := ""
-	global PartyDoorGaveAt := "", PartyDoorBattles := "", PartyDwalkSaid := ""
+	global PartyDoorGaveAt := "", PartyDoorBattles := "", PartyDwalkSaid := "", PartyHitAt := "", PartyHitAtDuel := ""
 	}

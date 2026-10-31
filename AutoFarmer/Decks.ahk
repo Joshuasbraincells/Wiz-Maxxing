@@ -434,6 +434,8 @@ DeckTick()
 	DeckLearnTick()
 	DeckBossLook()
 	p := DeckPick(false)
+	;(Settings: deckzone, off - the deck the battle simulator says fits this zone's enemies best: DeckForZone)
+	p := DeckForZone(p)
 	DeckSet(p.deck, p.why)
 	if (IsObject(p.deck))
 		DeckEquip(p.deck, p.boss)
@@ -475,6 +477,8 @@ DeckRound()
 		return
 	DeckDuel := drKey
 	p := DeckPick(true)
+	;(the zone's pick put on before the battle - deckzone: its settings, while its in-game deck is the one on)
+	p := DeckForZone(p, true)
 	DeckSet(p.deck, p.why)
 	}
 
@@ -1616,6 +1620,104 @@ DeckBeatLine(d)
 		return "`nNot linked to an in-game deck - From game reads yours (the battle simulator needs its cards)"
 	dblL := RegExReplace(RegExReplace(d.learned, "(^|,)![a-z0-9]+"), "^,+")
 	return "`nLinked to its in-game deck (" d.game ") - learned from its cards: " (dblL != "" ? StrReplace(dblL, ",", ", ") : "nothing to set")
+	}
+
+;---- Decks matched to the zone's enemies (v0.9.0, TODO goal 3 - Settings: deckzone, off; not tried in the game) ----
+
+;The deck DeckPick chose (p - {deck, why, boss}) swapped for the one the battle simulator says does best against the
+;enemy groups fought most in this zone (the helper's /deckfor - vision\battlesim.py best_decks: each in-game deck in an
+;Equipment Set fought against the battles recorded there, each with the settings its cards call for): of your decks
+;linked to an in-game deck (game| - the Cards tab's From game), for this school, for a use the one picked is for too
+;(collect, farming, dungeon, anything else - none picked: any of those; never a boss's), the one that wins most often
+;(1 point at least, else as often in a round fewer) - and only when it wins 5 points more than the one picked, or as
+;often in a round fewer (the one picked not simulated: it's taken). Not: the setting off, the bot off, a boss ahead,
+;the deck pinned on the Cards tab or a dungeon run's, the zone not known, no battle recorded there yet, the helper
+;still working it out (asked again 10 s on - an answer kept for the zone 10 minutes, here and in the helper; a refresh
+;keeps the last rows till new ones come, and the helper hands its old lines back while it works them out again). In a
+;battle (inBattle - DeckRound): the answer kept only - nothing asked - and only while the pick's Equipment Set is the
+;one put on last (its cards are the ones in hand). p as it was, else {deck, why, boss: 0}
+DeckForZone(p, inBattle := false)
+	{
+	static dfzZone := "", dfzAt := 0, dfzAns := "", dfzSaid := "", dfzWait := 0
+	if (!Stat("deckzone") || !BotOn || !IsObject(DeckList) || V1At(p, "boss") || !VisionOn || !Stat("navmem") || dualmode == 1)
+		return p
+	if (InStr(p.why, "pinned") || InStr(p.why, "dungeon run"))
+		return p
+	dfzZ := V1IsFunc("WalkZone") ? WalkZone.Call() : ""
+	if (dfzZ = "")
+		return p
+	dfzSch := V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
+	;(asked again: another zone, 10 minutes on, or 10 s on while the helper was working it out - out of battle only)
+	if (!inBattle && (dfzZ != dfzZone || A_TickCount - dfzAt > (dfzWait || SubStr(dfzAns, 1, 5) = "none|" || dfzAns = "" ? 10000 : 600000)))
+		{
+		dfzQ := "/deckfor?zone=" NavUri(dfzZ) "&school=" dfzSch "&n=60"
+		for dfzI, dfzK in [["hp", "maxhealth"], ["damage", "damage"], ["pierce", "pierce"], ["crit", "critical"], ["block", "block"], ["acc", "accuracy"]]
+			{
+			dfzV := DeckStatFor("", dfzSch, dfzK[2])
+			if (dfzK[1] = "hp" && !dfzV && OwnHpMax)
+				dfzV := OwnHpMax
+			if (dfzV != "" && dfzV != 0)
+				dfzQ .= "&" dfzK[1] "=" NavUri(dfzV "")
+			}
+		dfzNew := VisionGet(dfzQ, 3000, true), dfzAt := A_TickCount
+		;(the zone's last rows kept till an answer with rows replaces them: the helper still working it out
+		;("none|working...") or no answer (a time-out while its thread works) keeps them - asked again 10 s on - so a
+		;refresh never drops the zone's deck for a moment (DeckEquip would press DeckPick's set, then this one's again a
+		;minute later); another zone, or the helper's own none| (nothing to simulate there), replaces them)
+		dfzWait := (Trim(dfzNew) = "" || SubStr(dfzNew, 1, 12) = "none|working") ? 1 : 0
+		if (dfzZ != dfzZone || !dfzWait || !InStr("`n" dfzAns, "`ndeckfor|"))
+			dfzAns := dfzNew
+		dfzZone := dfzZ
+		}
+	if (dfzZ != dfzZone || dfzAns = "" || SubStr(dfzAns, 1, 5) = "none|")
+		return p
+	;(each in-game deck simulated: {its gid: {won (%), rounds, name}})
+	dfzRes := V1Obj()
+	Loop Parse, dfzAns, "`n", "`r"
+		{
+		dfzL := StrSplit(A_LoopField, "|")
+		if (V1At(dfzL, 1) = "deckfor" && dfzL.Length >= 9 && V1IsNum(dfzL[4]))
+			dfzRes[dfzL[2]] := V1Obj({won: dfzL[4] + 0, rounds: dfzL[5], name: dfzL[3]})
+		}
+	dfzCur := (IsObject(p.deck) && p.deck.game != "" && dfzRes.Has(p.deck.game)) ? dfzRes[p.deck.game] : ""
+	dfzPick := "", dfzPickR := ""
+	for dfzI, dfzD in DeckList
+		{
+		if (dfzD.game = "" || !dfzRes.Has(dfzD.game) || !DeckFits(dfzD, dfzSch))
+			continue
+		dfzSame := false
+		for dfzJ, dfzU in ["collect", "farm", "dungeon", "default"]
+			if (dfzD.when[dfzU] && (!IsObject(p.deck) || p.deck.when[dfzU]))
+				dfzSame := true
+		if (!dfzSame)
+			continue
+		if (!IsObject(dfzPickR) || DeckForBetter(dfzRes[dfzD.game], dfzPickR))
+			dfzPick := dfzD, dfzPickR := dfzRes[dfzD.game]
+		}
+	if (!IsObject(dfzPick) || (IsObject(p.deck) && dfzPick.id = p.deck.id) || (IsObject(dfzCur) && !DeckForBetter(dfzPickR, dfzCur, 5)))
+		return p
+	;(in a battle: only while its in-game deck is the one on - the set put on last, DeckEquip's)
+	if (inBattle)
+		{
+		dfzOn := IniRead(A_ScriptDir "\dashboard.ini", "decks", "eqset" (V1IsFunc("StatsCharID") ? StatsCharID.Call() : ""), A_Space)
+		if (!dfzPick.eqset || dfzOn = "" || dfzOn != dfzPick.eqset)
+			return p
+		}
+	dfzWhy := "the simulator's pick for " dfzZ "'s enemies: " dfzPickR.won "% won" (dfzPickR.rounds != "" ? " in " dfzPickR.rounds " rounds" : "")
+		. (IsObject(p.deck) ? " - " p.deck.name " " (IsObject(dfzCur) ? dfzCur.won "%" : "not simulated") : "") " (deckzone)"
+	if (dfzSaid != dfzZ "|" dfzPick.id)
+		dfzSaid := dfzZ "|" dfzPick.id, DebugLog("Deck: " dfzPick.name " - " dfzWhy)
+	return V1Obj({deck: dfzPick, why: dfzWhy, boss: 0})
+	}
+
+;A /deckfor row r1 ({won (%), rounds}) beats r2 (DeckForZone): margin points (1 at least) more won, else about as many
+;won (within that) in a round fewer
+DeckForBetter(r1, r2, margin := 0)
+	{
+	dfbM := Max(margin, 1), dfbD := V1N(r1.won) - V1N(r2.won)
+	if (dfbD >= dfbM)
+		return true
+	return Abs(dfbD) < dfbM && V1IsNum(r1.rounds) && V1IsNum(r2.rounds) && r2.rounds - r1.rounds >= 1
 	}
 
 ;(v2 port, CONVENTIONS.md "Blank start": v1 started every variable blank; v2 leaves it unset and throws on

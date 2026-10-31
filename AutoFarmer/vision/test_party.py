@@ -37,7 +37,7 @@ class Quiet(P.Party):
         return
 
 
-def ahk_fields(line, n=37):
+def ahk_fields(line, n=39):
     """a line as Party.ahk splits it: f[1] its kind, a field it doesn't have blank (1-based: f[k] is out[k])"""
     f = line.split('|')
     while len(f) < n:
@@ -241,7 +241,7 @@ class Lines(PartyCase):
     def leader_row(self, follower):
         rows = [ln for ln in follower.lines() if ln.startswith('leader|')]
         self.assertEqual(len(rows), 1)
-        self.assertEqual(len(rows[0].split('|')), 37)              # 38-39 left for the battle planner's hit round
+        self.assertEqual(len(rows[0].split('|')), 39)              # (38-39: the party's hit round - hitat, seat)
         return ahk_fields(rows[0])
 
     def test_chain_door_out_of_own_zone(self):
@@ -312,7 +312,7 @@ class Lines(PartyCase):
         self.at(F, 'A', 0, 0)
         self.follow(L, F)
         f = self.leader_row(F)
-        self.assertEqual(len(f) - 1, 37)
+        self.assertEqual(len(f) - 1, 39)
         # (Party.ahk PartyTick's leader fields 2-31, as ever)
         want = {2: 'Ned', 3: 'B', 4: '10', 5: '20', 6: '30', 8: '1', 9: '77', 10: '1', 11: '1', 14: 'A', 15: '1000',
                 16: '0', 17: '0', 18: '1.000', 19: '0.000', 20: 'B', 21: '11', 22: '22', 23: '33', 24: 'Bob is loading',
@@ -383,8 +383,8 @@ class TeleportState(PartyCase):
         rows = [ahk_fields(ln) for ln in L.lines() if ln.startswith('member|')]
         self.assertEqual(len(rows), 1)
         f = rows[0]
-        self.assertEqual(len(f) - 1, 37)                            # padded as Party.ahk pads
-        self.assertEqual(len(L.lines()[-1].split('|')), 23)         # 24-25 left for the battle planner
+        self.assertEqual(len(f) - 1, 39)                            # padded as Party.ahk pads
+        self.assertEqual(len(L.lines()[-1].split("|")), 25)         # (24-25: the hit round - hitat, seat)
         why = 'the leader teleported from here to Home'
         self.assertEqual((f[2], f[3], f[13], f[22], f[23]), ('Bob', 'B', '0', 'wait', why))
         # (another follower sees Bob's the same way - the leader passes it on)
@@ -420,7 +420,8 @@ class TeleportState(PartyCase):
         # server's 1024 - its why and hold left out till it fits, the rest kept)
         F.ahk = P.clean_state({'name': "'" * 24, 'wiz': "'" * 24, 'tp': 'wait', 'tpwhy': "'" * 80,
                                'hold': "'" * 80, 'plan': ','.join(P.SCHOOLS), 'lasthit': ','.join(P.SCHOOLS),
-                               'hits': '999999', 'hitr': '999999', 'hp': '100', 'brole': 'healer', 'school': 'balance'})
+                               'hits': '999999', 'hitr': '999999', 'hp': '100', 'brole': 'healer', 'school': 'balance',
+                               'hitat': '99', 'seat': '7'})
         F.cfg['name'] = "'" * 24
         self.at(F, '\\' * 120, -99999.5, -99999.5, -99999.5)
         self.assertEqual(len(F._me()['zone']), 120)
@@ -432,6 +433,75 @@ class TeleportState(PartyCase):
         got = P.clean_state({k: v[0] for k, v in urllib.parse.parse_qs(path.split('?', 1)[1]).items()})
         self.assertEqual((got['tp'], got['zone'], got['name'], got['wiz']), ('wait', '\\' * 120, "'" * 24, "'" * 24))
         self.assertEqual((got['tpwhy'], got['hold']), ('', ''))
+        # (the hit round kept: its why and hold were enough)
+        self.assertEqual((got['hitat'], got['seat']), (99, 7))
+        # (and were it still over - a smaller server -: the seat, then hitat, go before the rest)
+        keep = P.MAX_PATH
+        try:
+            P.MAX_PATH = len(path) - 1
+            q = F._beat_query()
+            self.assertEqual((q['seat'], q['hitat'], q['zone']), ('', 99, '\\' * 120))
+            P.MAX_PATH = len(path) - 30
+            q = F._beat_query()
+            self.assertEqual((q['seat'], q['hitat']), ('', ''))
+        finally:
+            P.MAX_PATH = keep
+
+
+class HitRound(PartyCase):
+    """the party's hit round (v0.9.0): the hitter's hitat - the log round its planned hit goes out - and each wizard's
+    seat, from AutoFarmer to the party and back (leader| 38-39, member| 24-25)"""
+
+    def test_cleaned(self):
+        s = P.clean_state({'hitat': '7', 'seat': '5'})
+        self.assertEqual((s['hitat'], s['seat']), (7, 5))
+        for bad in ('0', '100', '-3', '7.5', 'nan', 'soon', '', None):
+            with self.subTest(hitat=bad):
+                self.assertIsNone(P.clean_state({'hitat': bad})['hitat'])
+        for bad in ('3', '8', '4.2', 'x', ''):
+            with self.subTest(seat=bad):
+                self.assertIsNone(P.clean_state({'seat': bad})['seat'])
+
+    def test_to_the_followers_and_back(self):
+        L, F, G = self.make('leader'), self.make('follower'), self.make('follower')
+        self.at(L, 'A', 0, 0)
+        self.at(F, 'A', 10, 0)
+        self.at(G, 'A', 20, 0)
+        L.ahk = P.clean_state({'battle': '1', 'brole': 'hitter', 'wiz': 'Ned Stormblade', 'hitat': '6', 'seat': '4'})
+        F.ahk = P.clean_state({'name': 'Bob', 'battle': '1', 'brole': 'blader', 'wiz': 'Bob Fireheart', 'seat': '5'})
+        F.cfg['name'] = 'Bob'
+        self.follow(L, F)
+        f = ahk_fields(next(ln for ln in F.lines() if ln.startswith('leader|')))
+        self.assertEqual((f[25], f[38], f[39]), ('hitter', '6', '4'))
+        # (the leader's own rows: Bob's seat, no hitat)
+        m = ahk_fields(next(ln for ln in L.lines() if ln.startswith('member|')))
+        self.assertEqual((m[2], m[24], m[25]), ('Bob', '', '5'))
+        # (another follower sees Bob's the same way - the leader passes it on)
+        d = self.follow(L, G)
+        others = []
+        for o in d['others']:
+            c = P.clean_state({k: str(v) for k, v in o.items() if isinstance(v, (str, int, float))})
+            c['age'] = int(o['age'])
+            others.append(c)
+        G.leader['others'] = others
+        m = ahk_fields(next(ln for ln in G.lines() if ln.startswith('member|')))
+        self.assertEqual((m[2], m[24], m[25]), ('Bob', '', '5'))
+
+    def test_older_bots(self):
+        # (a bot sending no hitat / seat - an older one: blank fields, its supports cast as ever; an older helper's
+        # answer read the same way)
+        L, F = self.make('leader'), self.make('follower')
+        self.at(L, 'A', 0, 0)
+        self.at(F, 'A', 0, 0)
+        L.ahk = P.clean_state({'battle': '1', 'brole': 'hitter'})
+        self.follow(L, F)
+        f = ahk_fields(next(ln for ln in F.lines() if ln.startswith('leader|')))
+        self.assertEqual((f[38], f[39]), ('', ''))
+        F.leader = dict(P.clean_peer({'name': 'Ned', 'zone': 'A', 'brole': 'hitter'}), at=self.clock.t, others=[])
+        f = ahk_fields(next(ln for ln in F.lines() if ln.startswith('leader|')))
+        self.assertEqual((f[25], f[38], f[39]), ('hitter', '', ''))
+        # (a bot that reads only fields 2-37 / 2-23 - an older Party.ahk - finds them where they were)
+        self.assertEqual(len(next(ln for ln in F.lines() if ln.startswith('leader|')).split('|')[:37]), 37)
 
 
 class Clean(unittest.TestCase):

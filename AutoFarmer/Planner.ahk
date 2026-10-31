@@ -17,10 +17,16 @@
 ; planner never clicks, never changes a play and never sets a global the round reads. 2 play: NOT BUILT (PlannerRound's
 ; TODO) - read as 1, said once.
 ; Not asked (said once a battle): in dual mode, two or more game windows open, the helper not running, navmem off,
-; learning every card, after you took a round of this battle (PlayerTookRound: the bot's count of the blades and traps on
-; isn't sure), a party battle's blader or healer (the simulator has one wizard), no school known (hitter 0). Once a round
-; at most (the log's round and the bot's); the helper keeps to 300 ms (budget=, the game's reads included), the bot waits
-; 1.5 s at most - a slow or missing answer is never counted against the helper (VisionGet's noCount).
+; learning every card, after you took a round of this battle (PlayerTookRound: the bot's count of the blades and traps
+; on isn't sure), a party battle's blader or healer (its advice needs the hitter's hand - the leader's orders, not
+; built), no school known (hitter 0). Once a round at most (the log's round and the bot's); the helper keeps to 300 ms
+; (budget=, the game's reads included), the bot waits 1.5 s at most - a slow or missing answer is never counted against
+; the helper (VisionGet's noCount).
+; A party battle (v0.9.0, the team model - advice only, as the rest): the party's other wizards on your side go with the
+; question (mates=: each one's seat, school, health and battle role from the party's state - PlannerMates; their hands
+; aren't known: a hitter is played as the generic hitter, a blader or healer as doing nothing), your seat, and
+; charms=log: the blades, traps and shields on you and the enemies from the game's log (the party's and the enemies'
+; too - vision\battlerec.py charms_now) instead of the bot's own count.
 
 ;(v2-only globals - declared here with no value: a top-level := in an #Included file never runs - PlannerBlank sets
 ;them blank, the entry script calls it first thing) The round last asked about (duel|log round|bot round); the last
@@ -146,6 +152,17 @@ PlannerQuery()
 		plqQ .= "&aura=" NavUri(BoostSchools("aura") "~" Stat("aura") "~" AuraRounds)
 	if (BossChoosen == 1)
 		plqQ .= "&boss=1"
+	;(a party battle - the team model: the party's other wizards on your side, your seat, the charms from the game's log)
+	if (BattleTeam() >= 2)
+		{
+		plqM := PlannerMates()
+		if (plqM != "")
+			plqQ .= "&mates=" NavUri(plqM)
+		plqS := V1IsFunc("PartySeat") ? PartySeat.Call() : ""
+		if (plqS != "")
+			plqQ .= "&seat=" plqS
+		plqQ .= "&charms=log"
+		}
 	plqVals := ""
 	for plqI, plqK in DeckKeys()
 		{
@@ -161,6 +178,43 @@ PlannerQuery()
 			plqQ .= "&" plqK[1] "=" NavUri(plqV "")
 		}
 	return plqQ
+	}
+
+;The party's other wizards on your side of this battle as /plan's mates= takes them: name~seat~school~hp~max~role~~~|...
+;(up to 3) - each a party member (the leader, the followers: Party.ahk's state, heard from in the last 5 s, in battle)
+;whose wizard's name is one of your side's in the game's log (its seat: that subcircle; not yours, no two so named);
+;its health as the party says it (a %) out of your own most (OwnHpMax - its own most isn't sent), its role its battle
+;part (partybattle). No hand: the helper plays it its role's way. "" none
+PlannerMates()
+	{
+	plmOut := "", plmN := 0
+	if (!IsObject(BlNames) || !V1IsFunc("PartyKey"))
+		return ""
+	plmMe := PartyKey.Call(OwnName())
+	plmAll := []
+	if (IsObject(PartyLeader))
+		plmAll.Push(PartyLeader)
+	if (IsObject(PartyMembers))
+		for plmI, plmP in PartyMembers
+			plmAll.Push(plmP)
+	for plmI, plmP in plmAll
+		{
+		plmK := PartyKey.Call(plmP.wiz)
+		if (plmP.age = "" || plmP.age > 5000 || plmP.battle != 1 || StrLen(plmK) < 3 || plmK = plmMe)
+			continue
+		plmSeat := "", plmTwice := 0
+		Loop 4
+			if (BlNames.Has(A_Index + 3) && PartyKey.Call(BlNames[A_Index + 3]) = plmK)
+				plmTwice += plmSeat != "" ? 1 : 0, plmSeat := A_Index + 3
+		if (plmSeat = "" || plmTwice)
+			continue
+		plmMax := V1N(OwnHpMax) > 0 ? OwnHpMax : 3000
+		plmHp := V1IsNum(plmP.hp) ? Round(plmMax * plmP.hp / 100) : ""
+		plmOut .= (plmOut = "" ? "" : "|") RegExReplace(plmP.wiz, "[~|]", " ") "~" plmSeat "~" plmP.school "~" plmHp "~" plmMax "~" plmP.brole "~~~"
+		if (++plmN >= 3)
+			break
+		}
+	return plmOut
 	}
 
 ;A boost list (AppliedBlades / BossTraps: {key: %}) as /plan takes it: key~schools~%|... - each key's schools as the kill
