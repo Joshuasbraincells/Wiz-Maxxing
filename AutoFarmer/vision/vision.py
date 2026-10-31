@@ -2465,6 +2465,10 @@ class Gate:
 
 GATE = Gate()
 REC = None      # the battle recorder (vision\battlerec.py), started by main(); None: off, the hooks do nothing
+# s a fresh deck read asked by a gated request (/deck, /decks, /sim, /book) waits for another fresh read to end - navmem
+# reads the decks one at a time (NavMem.deck's queue): the one in progress (the recorder's, say) gives way to a gated
+# request within its DECK_IDLE (1 s), its idle() seeing it in flight; not ended by then: none|gave way ... (read again)
+DECK_QUEUE_S = 1.5
 
 
 def _rec_hook(name, *a):
@@ -2485,7 +2489,7 @@ def deck_lines(fresh):
         return ['none|' + ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
                                                                    "battle can't be ruled out)")]
     r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
-                               stop=rec.in_duel if fresh else None)
+                               stop=rec.in_duel if fresh else None, queue=DECK_QUEUE_S if fresh else 0.0)
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
     return deckmem.deck_lines(r) + ['deckage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]
@@ -2517,8 +2521,10 @@ def decks_reading(fresh, out=False):
     if fresh and ((rec is None and not out) or (rec is not None and rec.in_duel())):
         return None, ('in a battle' if rec is not None else "the battle recorder isn't following the game's log (a "
                                                              "battle can't be ruled out)")
+    # (the recorder off - out: nothing to stop the read by, rec None - book_answer's way)
     return nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
-                             stop=rec.in_duel if fresh else None, only_equipped=False, kinds=True)
+                             stop=rec.in_duel if fresh and rec is not None else None, only_equipped=False, kinds=True,
+                             queue=DECK_QUEUE_S if fresh else 0.0)
 
 
 def decks_lines(fresh, out=False):
@@ -2551,7 +2557,7 @@ def book_answer(fresh, out=False, kinds=False):
     # (the recorder off - out: nothing to stop the read by, rec None)
     r, why = nav_reader().deck(fresh=fresh, wait=0.3 if fresh else 0.0, idle=lambda d: GATE.idle(d, own=1),
                                stop=rec.in_duel if fresh and rec is not None else None, only_equipped=True, kinds=kinds,
-                               books=True)
+                               books=True, queue=DECK_QUEUE_S if fresh else 0.0)
     if r is None:
         return ['none|' + mob_cell(why or 'not read')]
     return deckmem.book_lines(r) + ['bookage|%.1f' % max(0.0, time.monotonic() - (r.get('read_at') or time.monotonic()))]

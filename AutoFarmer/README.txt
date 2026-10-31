@@ -523,10 +523,12 @@ the advised card itself (planner 2) isn't built: it needs every card cast by
 the game's memory and each enemy's plate matched first.
 New spells, training points and spell quests (Training.ahk - TODO goal 4;
 mostly NOT BUILT yet). What runs now only reads: out of battle, the bot on,
-about every 10 minutes the spells your wizard knows are read from the game's
-memory (read-only, the vision helper's /book) and kept in learned\
+about every 10 minutes (the first 3 minutes in; not while a zone loads or on
+a dungeon run - the walker stops for the moment it takes) the spells your
+wizard knows are read from the game's memory (read-only, the vision
+helper's /book) and kept in learned\
 spellbook_<wizard>.txt; a spell that wasn't there is written in debug.log once
-- "Spells: new spell Thunder Snake (Storm, 1 pip, damage) [tid 1001]" - and
+- "Spells: new spell Thunder Snake (Storm, 1 pip, Damage) [tid 1001]" - and
 the dashboard's What it sees shows "Spells  142 known - new: Thunder Snake
 (12:04)". The first look at a wizard only writes its file. Nothing is
 clicked, typed or spent. Three settings (Settings > NEW SPELLS AND SPELL
@@ -548,15 +550,19 @@ QUESTS), all off - leave them off for now:
 	replace trainplans.txt, never learned\). See what it would train next,
 	with the bot (its helper) running:
 	      python vision\spellplan.py --school storm --level 20 --tp 2 --live
-	  (--fresh: the spellbook read now - out of battle; or --book book.txt
-	  --quests quests.txt for saved answers). It also checks the file and
-	  names the plan's spells your wizard doesn't know yet.
+	  (--fresh: the spellbook read now - the helper refuses it unless its
+	  battle recorder rules a battle out; add --ob only when you're sure the
+	  wizard is out of battle. Or --book book.txt --quests quests.txt for
+	  saved answers). It also checks the file and names the plan's spells
+	  your wizard doesn't know yet.
 	The helper's answers, in a browser while the bot runs (read-only):
-	  http://127.0.0.1:47128/book (?fresh=1&ob=1 read now, out of battle;
-	  &kinds=1 each spell's kind and value) - every spell known, and the
-	  treasure cards; http://127.0.0.1:47128/quests - every quest you have,
-	  the tracked one marked, each with all the properties the game keeps for
-	  it (to find what marks a spell quest). From the command line:
+	  http://127.0.0.1:47128/book (?fresh=1 read now - refused unless the
+	  battle recorder rules a battle out; &ob=1 too says you're out of
+	  battle: only when you are; &kinds=1 each spell's kind and value) -
+	  every spell known, and the treasure cards;
+	  http://127.0.0.1:47128/quests - every quest you have, the tracked one
+	  marked, each with all the properties the game keeps for it (to find
+	  what marks a spell quest). From the command line:
 	      python vision\deckmem.py --book
 	      python vision\questmem.py --all
 	To help build the rest, send: the /quests answer with a spell quest open

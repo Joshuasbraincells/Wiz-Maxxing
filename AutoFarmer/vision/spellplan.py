@@ -13,9 +13,11 @@ answers (vision\\deckmem.py book_lines, vision\\questmem.py quest_lines), read b
     action, qid, why = pick_quest(quests, tracked_id, main_id, spell_rule(plan["rules"]))   # keep / track / back
 
     python spellplan.py [--plan <file>] [--school storm] [--level 20] [--tp 2] [--main <quest id>]
-                        [--book book.txt | --live [--fresh]] [--quests quests.txt] [--port 47128]
+                        [--book book.txt | --live [--fresh [--ob]]] [--quests quests.txt] [--port 47128]
         the plan file checked (each line it can't take, and why), then - with the spellbook (a saved /book answer, or
-        --live: asked of the running vision helper on 127.0.0.1, its HTTP only; --fresh reads it now: out of battle) -
+        --live: asked of the running vision helper on 127.0.0.1, its HTTP only; --fresh reads it now - /book?fresh=1:
+        the helper refuses it unless its battle recorder rules a battle out; --ob too: YOU say the wizard is out of
+        battle - ob=1, the bot's own claim, the only guard then with the recorder off) -
         what it would train next and why, the plan's spells the book doesn't hold yet (their names are to be checked
         against the game's display names: a spell the wizard knows shows its own in /book), and - with the quests (a
         saved /quests answer, or --live) - the quests the plan's spellquest rules call spell quests and what pick_quest
@@ -545,7 +547,10 @@ def _main(argv=None):
     ap.add_argument("--book", default="", help="a saved /book answer")
     ap.add_argument("--quests", default="", help="a saved /quests answer")
     ap.add_argument("--live", action="store_true", help="ask the running vision helper for /book and /quests")
-    ap.add_argument("--fresh", action="store_true", help="with --live: the spellbook read now (out of battle only)")
+    ap.add_argument("--fresh", action="store_true", help="with --live: the spellbook read now (refused by the helper "
+                    "unless its battle recorder rules a battle out)")
+    ap.add_argument("--ob", action="store_true", help="with --fresh: you say the wizard is out of battle (ob=1 - with "
+                    "the battle recorder off, nothing else keeps the read out of a battle)")
     ap.add_argument("--port", type=int, default=PORT, help="the vision helper's port")
     a = ap.parse_args(argv)
     path = a.plan or plan_path()
@@ -565,8 +570,12 @@ def _main(argv=None):
             quests = parse_quests(f.read())
     if a.live:
         if book is None:
-            text, why = ask_helper("/book?fresh=1&ob=1" if a.fresh else "/book", a.port)
+            # (ob=1 only when you say so - --ob: it's the bot's claim that its own battle check passed, and with the
+            # battle recorder off it's the helper's only guard against a read in a battle)
+            text, why = ask_helper(("/book?fresh=1&ob=1" if a.ob else "/book?fresh=1") if a.fresh else "/book", a.port)
             book = parse_book(text) if text is not None else {"none": why}
+            if a.fresh and not a.ob and "recorder" in (book.get("none") or ""):
+                book["none"] += " - add --ob if the wizard is out of battle"
         if quests is None:
             text, why = ask_helper("/quests", a.port)
             quests = parse_quests(text) if text is not None else {"none": why}

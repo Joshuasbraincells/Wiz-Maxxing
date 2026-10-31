@@ -1,5 +1,6 @@
 """test_book.py - the spellbook's reading for /book (deckmem.py book_lines and read(books=True), navmem.py deck(books=True)
-and its own cache, vision.py book_answer) on made-up readings - navmem / deckmem stood in for or imported with their
+and its own cache, one fresh deck read at a time, vision.py book_answer and decks_reading with the battle recorder off)
+on made-up readings - navmem / deckmem stood in for or imported with their
 Windows parts stood in for (put back afterwards: no other test file meets them):
     python -m unittest test_book   (from AutoFarmer\\vision)"""
 import os
@@ -208,6 +209,125 @@ class NavDeckBooks(unittest.TestCase):
         self.assertIsNone(nm._deck_cache)                           # (a book read never fills the decks' cache)
 
 
+class OneDeckReadAtATime(unittest.TestCase):
+    """navmem.NavMem.deck(fresh=True): one paced read at a time (DeckMem._pace is the read's own state - a second read
+    run in the first one's gap left the rest of the first unpaced): a read asked with no queue (the recorder's) while
+    another runs gives way at once; a gated request's (queue s - vision.py DECK_QUEUE_S) waits while the one in progress
+    gives way to it; every read paced to its end either way; deck_sig waits it out too (the real navmem, test_navroute's
+    import)"""
+
+    @classmethod
+    def setUpClass(cls):
+        from test_navroute import import_navmem
+        cls.N = import_navmem()
+
+    def setup(self):
+        """(nm, log [(thread ident, unpaced, k)], n [gated requests in flight], res, the recorder's thread) - the
+        recorder's read (idle: nothing gated in flight - gate.idle, own 0) started and 5 entries into the spellbook"""
+        import threading
+        import time
+        log = []
+
+        class DM(FakeDeckMem):
+            def spellbook(self_, sb):
+                out = []
+                for k in range(40):
+                    log.append((threading.get_ident(), self_._pace is None, k))
+                    self_.pace()
+                    time.sleep(0.004)
+                    out.append({"template_id": 1000 + k, "retired": False, "tier_group": 0})
+                return out
+        nm = self.N.NavMem(log=lambda m: None)
+        st = types.SimpleNamespace(alive=lambda: True)
+        nm.st = st
+        dm = DM()
+        dm.st, dm.hm = st, nm._hand
+        nm._deck_readers = lambda wait: (st, dm, "")
+        nm._deckm = dm              # (deck_sig's reader)
+        n = [0]
+        res = {}
+
+        def recorder():
+            res["A"] = nm.deck(fresh=True, idle=lambda d: n[0] == 0)
+        ta = threading.Thread(target=recorder, daemon=True)
+        ta.start()
+        t0 = time.monotonic()
+        while not any(k >= 5 for _t, _u, k in log) and time.monotonic() - t0 < 5:
+            time.sleep(0.001)
+        return nm, log, n, res, ta
+
+    def test_no_queue_gives_way_at_once_and_the_first_stays_paced(self):
+        import threading
+        import time
+        nm, log, n, res, ta = self.setup()
+        n[0] = 1                    # (a gated request in flight: the recorder lets go at its next pace point)
+        time.sleep(0.03)
+        try:
+            # (no queue: refused at once - it'd have run in the recorder's gap)
+            self.assertEqual(nm.deck(fresh=True, idle=lambda d: n[0] <= 1, books=True),
+                             (None, "gave way to another deck read in progress - read again later"))
+            self.assertEqual(nm.deck_sig(), (None, "a deck read is in progress"))
+        finally:
+            n[0] = 0
+            ta.join(5)
+        self.assertFalse(ta.is_alive())
+        r, why = res["A"]
+        self.assertEqual(why, "")
+        self.assertEqual(r["spellbook_n"], 40)
+        mine = [u for t, u, _k in log if t == ta.ident]
+        self.assertEqual((len(mine), sum(mine)), (40, 0))            # (paced at every point, to its end)
+        self.assertNotIn(threading.get_ident(), [t for t, _u, _k in log])   # (the second read never touched it)
+        # (let go afterwards: the next read runs, and the signature is read again)
+        r, why = nm.deck(fresh=True, books=True)
+        self.assertEqual((why, len(r["spellbook"])), ("", 40))
+        self.assertIsNotNone(nm.deck_sig()[0])
+
+    def test_a_gated_read_waits_while_the_recorder_gives_way(self):
+        import threading
+        nm, log, n, res, ta = self.setup()
+        nm.DECK_IDLE = 0.2          # (the recorder gives way sooner - the test's own)
+        n[0] = 1                    # (/book's request in flight, waiting: the recorder lets go and gives way)
+        try:
+            r, why = nm.deck(fresh=True, idle=lambda d: n[0] <= 1, books=True, queue=1.0)
+        finally:
+            n[0] = 0
+            ta.join(5)
+        self.assertFalse(ta.is_alive())
+        self.assertEqual((why, len(r["spellbook"])), ("", 40))
+        self.assertIsNone(res["A"][0])
+        self.assertTrue(res["A"][1].startswith("gave way to the gated reads"), res["A"][1])
+        me = threading.get_ident()
+        self.assertEqual(sum(u for _t, u, _k in log), 0)             # (both paced at every point)
+        first_mine = next(i for i, (t, _u, _k) in enumerate(log) if t == me)
+        self.assertNotIn(ta.ident, [t for t, _u, _k in log[first_mine:]])   # (the recorder's read over before it began)
+        # (a queue too short for it: given way, the recorder's read left as it was)
+        nm2, log2, n2, res2, ta2 = self.setup()
+        try:
+            self.assertEqual(nm2.deck(fresh=True, idle=lambda d: True, books=True, queue=0.05),
+                             (None, "gave way to another deck read in progress - read again later"))
+        finally:
+            ta2.join(5)
+        self.assertEqual(res2["A"][1], "")
+        self.assertEqual(sum(u for _t, u, _k in log2), 0)
+
+    def test_let_go_when_the_read_fails(self):
+        nm = self.N.NavMem(log=lambda m: None)
+        st = object()
+        nm.st = st
+
+        class DM:
+            def signature(self_, pace=None):
+                raise ValueError("boom")
+        dm = DM()
+        dm.st, dm.hm = st, nm._hand
+        nm._deck_readers = lambda wait: (st, dm, "")
+        r, why = nm.deck(fresh=True)
+        self.assertIsNone(r)
+        self.assertIn("boom", why)
+        self.assertFalse(nm._deck_busy.locked())
+        self.assertFalse(nm.lock.locked())
+
+
 class BookAnswer(unittest.TestCase):
     """vision.py's /book: refused fresh when a battle can't be ruled out, its lines and its age"""
 
@@ -243,8 +363,10 @@ class BookAnswer(unittest.TestCase):
         self.assertEqual(lines[-1], "bookage|0.0")
         kw = asked[-1]
         self.assertEqual((kw["fresh"], kw["books"], kw["only_equipped"], kw["kinds"]), (True, True, True, False))
+        self.assertEqual(kw["queue"], V.DECK_QUEUE_S)           # (a gated request: waits for another read to give way)
         V.book_answer(False, kinds=True)
-        self.assertEqual((asked[-1]["fresh"], asked[-1]["kinds"], asked[-1]["stop"]), (False, True, None))
+        self.assertEqual((asked[-1]["fresh"], asked[-1]["kinds"], asked[-1]["stop"], asked[-1]["queue"]),
+                         (False, True, None, 0.0))
 
     def test_not_read(self):
         V = self.V
@@ -255,6 +377,27 @@ class BookAnswer(unittest.TestCase):
         V.nav_reader = lambda: Nav()
         V.REC = None
         self.assertEqual(V.book_answer(False), ["none|not read yet"])
+
+    def test_decks_with_the_recorder_off(self):
+        # (/decks?fresh=1&ob=1 - Decks.ahk DeckLearnGame's - with the battle recorder off: read, no stop - it raised
+        # AttributeError on rec None before)
+        V = self.V
+        asked = []
+
+        class Nav:
+            def deck(self, **kw):
+                asked.append(kw)
+                return {"decks": [], "read_at": None}, ""
+        V.nav_reader = lambda: Nav()
+        V.REC = None
+        self.assertEqual(V.decks_reading(True), (None, "the battle recorder isn't following the game's log (a battle "
+                                                       "can't be ruled out)"))
+        self.assertEqual(asked, [])
+        r, why = V.decks_reading(True, out=True)
+        self.assertEqual((r["decks"], why), ([], ""))
+        kw = asked[-1]
+        self.assertEqual((kw["fresh"], kw["stop"], kw["only_equipped"], kw["kinds"], kw["queue"]),
+                         (True, None, False, True, V.DECK_QUEUE_S))
 
     def test_gated(self):
         self.assertTrue({"/book", "/quests", "/deck", "/goal"} <= self.V.GATED)

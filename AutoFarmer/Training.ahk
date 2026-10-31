@@ -4,13 +4,16 @@
 ; AutoHotkey v2, written for v2 (v1 never had this: nothing here is ported); #Included by Autofarmer.ahk only.
 ;
 ; BUILT - READ ONLY (nothing is clicked, typed or sent to the game; nothing is spent): out of battle, the bot on, about
-; every 10 minutes (Autofarmer.ahk's main loop, next to QsTick: TrainBookTick) the vision helper is asked for the
+; every 10 minutes (Autofarmer.ahk's main loop, next to QsTick: TrainBookTick - the first ask 3 minutes in, none while a
+; zone loads or a dungeon run is on, the walker's keys let go for it) the vision helper is asked for the
 ; spellbook - /book?fresh=1&ob=1, vision\deckmem.py book_lines: every spell the wizard knows, from the game's memory - and
 ; it's compared with learned\spellbook_<wizard>.txt (the wizard: its global id from the game's memory, /book's books|
 ; line - QuickSell.ahk's character key -, else the game's log's CharID). A spell that wasn't there is a NEW SPELL:
-;   "Spells: new spell Thunder Snake (Storm, 1 pip, damage) [tid 1001]"
-; in debug.log, once, and it's added to the file. The first look at a wizard only writes its file (nothing is new then);
-; more than TrainBurst new at once are taken as known, quietly (one line: a misread, or another wizard's file).
+;   "Spells: new spell Thunder Snake (Storm, 1 pip, Damage) [tid 1001]"
+; in debug.log, once, and it's added to the file (Damage: the spell's type as its template names it - /book is asked
+; without kinds=1, which would look up every spell's effects the first time; a kind, handmem's, shown when there is one).
+; The first look at a wizard only writes its file (nothing is new then); more than TrainBurst new at once are taken as
+; known, quietly (one line: a misread, or another wizard's file).
 ;
 ; Settings (PlayerStats.txt, the Settings window's NEW SPELLS AND SPELL QUESTS - all three off by default, and none of
 ; their flows is built: each needs window names nobody has seen yet):
@@ -28,8 +31,9 @@
 ;(v2-only globals - declared here with no value: a top-level := in an #Included file never runs - TrainingBlank sets
 ;them blank, the entry script calls it first thing) When the spellbook was last asked for (A_TickCount) and how long till
 ;the next ask (ms); the dashboard's line; the wizard whose file was used last; the new spells last seen ("Thunder Snake
-;(12:04)"); the new spells waiting for the deck step ([{tid, name, display, school, kind, at}] - deckadd); what was said
-;once a run ({key: 1}); the reason the book wasn't read last logged (said again only when it changes)
+;(12:04)"); the new spells waiting for the deck step ([{tid, name, display, school, type, at}] - deckadd: their kinds
+;asked for then, /book?kinds=1 - TrainDeckAdd's TODO; the wizard's own: emptied when another wizard is looked at); what
+;was said once a run ({key: 1}); the reason the book wasn't read last logged (said again only when it changes)
 global TrainBookAt, TrainBookWait, TrainBookSaid, TrainBookWho, TrainLastNew, TrainNewQueue, TrainSaidOnce, TrainBookWhy
 
 ;(v2 port, CONVENTIONS.md "Blank start": this file's globals start blank)
@@ -40,9 +44,12 @@ TrainingBlank()
 	}
 
 ;(how often the spellbook is asked for: every 10 minutes; again in 2 when it couldn't be read; an older helper with no
-;/book: in an hour - and the most new spells at once that are said, more taken as known)
+;/book: in an hour; the first ask 3 minutes after the bot's first look out of battle - not on top of the start's other
+;fresh reads, DeckLearnTick's /decks and the battle recorder's deck - and the most new spells at once that are said, more
+;taken as known)
 TrainEvery() => 600000
 TrainRetry() => 120000
+TrainFirst() => 180000
 TrainBurst() => 8
 
 ;A setting of this file's on (1) - never throws
@@ -67,7 +74,17 @@ TrainBookTick()
 	try
 		{
 		TrainNotBuilt()
-		if (TrainBookAt != "" && A_TickCount - TrainBookAt < V1N(TrainBookWait))
+		;(the first ask staggered - TrainFirst)
+		if (TrainBookAt = "")
+			{
+			TrainBookAt := A_TickCount, TrainBookWait := TrainFirst()
+			return
+			}
+		if (A_TickCount - TrainBookAt < V1N(TrainBookWait))
+			return
+		;(nothing loading, no dungeon run - DeckLearnTick's rule: a fresh read holds the main loop a moment; asked when
+		;they're over, its time not moved)
+		if (WkLoading || IsObject(DgRun))
 			return
 		TrainBookAt := A_TickCount, TrainBookWait := TrainRetry()
 		tbtWhy := ""
@@ -79,7 +96,15 @@ TrainBookTick()
 			tbtWhy := "dual mode: the game's memory is one client's"
 		else if (inbattle = 1 || (V1IsFunc("BattleLogInBattle") && BattleLogInBattle.Call()))
 			tbtWhy := "in a battle - out of battle only"
-		tbtBook := tbtWhy = "" ? TrainBookRead(&tbtWhy) : ""
+		tbtBook := ""
+		if (tbtWhy = "")
+			{
+			;(the walker's keys let go first - StatsAuto's and QsRun's way: W held through a read of a second or more is a
+			;run nobody steers; the walker holds it again at its next step)
+			if (KeysDown || HeldW)
+				ReleaseKeys()
+			tbtBook := TrainBookRead(&tbtWhy)
+			}
 		if (!IsObject(tbtBook))
 			{
 			;(an older helper - no /book: asked again in an hour; the reason logged only when it changes)
@@ -101,6 +126,10 @@ TrainBookTick()
 			TrainBookSaid := tbtN " known (whose isn't known - not kept)"
 			return
 			}
+		;(another wizard than the last one looked at - its first look too: the last one's new spells and deck queue aren't
+		;this one's)
+		if (tbtWho != TrainBookWho)
+			TrainBookWho := tbtWho, TrainLastNew := "", TrainNewQueue := ""
 		tbtPath := A_ScriptDir "\learned\spellbook_" tbtWho ".txt"
 		tbtKnown := TrainBookLoad(tbtPath)
 		if (!IsObject(tbtKnown))
@@ -108,11 +137,9 @@ TrainBookTick()
 			;(the first look at this wizard: its file written, nothing new)
 			tbtOk := TrainBookSave(tbtPath, tbtBook.spells, true)
 			DebugLog("Spells: " tbtN " known - the first look at this wizard (" (tbtOk ? "learned\spellbook_" tbtWho ".txt written" : "learned\spellbook_" tbtWho ".txt couldn't be written") "); a new one is said from now on")
-			TrainBookWho := tbtWho, TrainBookSaid := tbtN " known"
+			TrainBookSaid := tbtN " known"
 			return
 			}
-		if (tbtWho != TrainBookWho)
-			TrainBookWho := tbtWho, TrainLastNew := ""
 		tbtNew := []
 		for tbtI, tbtS in tbtBook.spells
 			if (!tbtKnown.Has(tbtS.tid))
@@ -151,7 +178,7 @@ TrainNewSpells(spells, path)
 		DebugLog("Spells: new spell " tnsName " (" (tnsS.school != "" ? tnsS.school : "?") ", " (tnsS.pips != "" ? tnsS.pips " pip" (tnsS.pips = 1 ? "" : "s") : "? pips") (tnsS.kind != "" ? ", " tnsS.kind : tnsS.type != "" ? ", " tnsS.type : "") ") [tid " tnsS.tid "]" (tnsAdd ? " - queued for the deck (deckadd: putting it in isn't built yet)" : ""))
 		if (tnsAdd)
 			{
-			TrainNewQueue.Push(V1Obj({tid: tnsS.tid, name: tnsS.name, display: tnsS.display, school: tnsS.school, kind: tnsS.kind, at: A_Now}))
+			TrainNewQueue.Push(V1Obj({tid: tnsS.tid, name: tnsS.name, display: tnsS.display, school: tnsS.school, type: tnsS.type, at: A_Now}))
 			while (TrainNewQueue.Length > 20)
 				TrainNewQueue.RemoveAt(1)
 			}
@@ -166,8 +193,9 @@ TrainNewSpells(spells, path)
 	}
 
 ;The spellbook from the helper (/book?fresh=1&ob=1 - read now, out of battle: the bot's own check said so, ob=1): {spells
-;[{tid, name, display, school, type, pips, kind}] in the game's order, n, gid (the wizard's global id, hex - "" not read),
-;why}, or "" and why. A book of no spells is taken as not read (a wizard always knows some)
+;[{tid, name, display, school, type, pips, kind}] in the game's order (kind blank: asked without kinds=1, which would look
+;up every spell's effects the first time), n, gid (the wizard's global id, hex - "" not read), why}, or "" and why. A book
+;of no spells is taken as not read (a wizard always knows some)
 TrainBookRead(&why := "")
 	{
 	why := ""
@@ -270,7 +298,7 @@ TrainNotBuilt()
 ;each click after Potions.ahk NoCrownsNear), check /goal's quest id changed, close it; the walker does the quest as any
 ;other (AutoQuester\Walker.ahk follows the tracked quest). Its quest gone from /quests (done): back to the main one the
 ;same way.
-;  The '!' markers: AutoQuester\Walker.ahk WalkQuestMarker (around l.3014) presses X only at an NPC wearing a gold '?' -
+;  The '!' markers: AutoQuester\Walker.ahk WalkQuestMarker presses X only at an NPC wearing a gold '?' -
 ;vision.py find_qmarks reports '!' (a new quest on offer) too, but the walker skips those on purpose. If the professors
 ;offer spell quests with a '!' (to see in the game: python vision\questmem.py --all before and after one shows up),
 ;TrainQuestTick is where a walk to that NPC and an X would go - the walker itself isn't changed for it.

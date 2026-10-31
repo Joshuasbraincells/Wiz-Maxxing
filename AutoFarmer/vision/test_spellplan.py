@@ -310,7 +310,8 @@ class CommandLine(unittest.TestCase):
         self.assertIn("spell quests by the plan's rules: Spell: Storm Shark [102]", out)
         self.assertIn("pick_quest: track 102", out)
 
-    def test_live_asks_the_helper_only(self):
+    def live(self, *args, book=BOOK):
+        """(rc, out, urls asked) of the command line --live against a made-up helper answering book / QUESTS"""
         asked = []
 
         class Resp(io.BytesIO):
@@ -323,7 +324,7 @@ class CommandLine(unittest.TestCase):
         class Opener:
             def open(self, url, timeout=None):
                 asked.append(url)
-                return Resp((BOOK if "/book" in url else QUESTS).encode())
+                return Resp((book if "/book" in url else QUESTS).encode())
         keep = S.ask_helper
         S.ask_helper = lambda path, port=S.PORT, timeout=15.0, opener=None: keep(path, port, timeout, Opener())
         try:
@@ -331,13 +332,31 @@ class CommandLine(unittest.TestCase):
                 plan = os.path.join(d, "plan.txt")
                 with open(plan, "w", encoding="utf-8") as f:
                     f.write(PLAN)
-                rc, out = self.run_cli("--plan", plan, "--school", "life", "--live", "--fresh")
+                rc, out = self.run_cli("--plan", plan, "--school", "life", "--live", *args)
         finally:
             S.ask_helper = keep
+        return rc, out, asked
+
+    def test_live_asks_the_helper_only(self):
+        rc, out, asked = self.live("--fresh")
         self.assertEqual(rc, 0)
-        self.assertEqual(asked, ["http://127.0.0.1:47128/book?fresh=1&ob=1", "http://127.0.0.1:47128/quests"])
+        # (--fresh alone: no ob=1 - the helper reads only when its battle recorder rules a battle out)
+        self.assertEqual(asked, ["http://127.0.0.1:47128/book?fresh=1", "http://127.0.0.1:47128/quests"])
         self.assertIn("next to train: Feint", out)             # (Tower Shield known; life's own left out)
         self.assertIn("pick_quest: keep 101", out)
+        self.assertEqual(self.live()[2][0], "http://127.0.0.1:47128/book")
+
+    def test_live_ob_only_when_you_say_so(self):
+        rc, out, asked = self.live("--fresh", "--ob")
+        self.assertEqual(asked[0], "http://127.0.0.1:47128/book?fresh=1&ob=1")
+        # (refused for the recorder: said, with the way round)
+        refused = "none|the battle recorder isn't following the game's log (a battle can't be ruled out)\n"
+        rc, out, asked = self.live("--fresh", book=refused)
+        self.assertEqual(rc, 0)
+        self.assertIn("book: not read - the battle recorder isn't following the game's log (a battle can't be ruled "
+                      "out) - add --ob if the wizard is out of battle", out)
+        rc, out, asked = self.live("--fresh", book="none|in a battle\n")
+        self.assertIn("book: not read - in a battle\n", out + "\n")
 
     def test_helper_not_running(self):
         class Opener:
