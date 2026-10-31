@@ -319,6 +319,23 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
 
+    def test_a_side_moved_by_one_reads_spellbook_isnt_an_edit(self):
+        # (deckmem works each card's side out from that read's spellbook: one not read moves a treasure card the
+        # wizard doesn't know to main, an entry not read moves a known spell to treasure - no edit, every deck kept)
+        nm, worn, reads, cards = self.nav()
+        cards[0xA1].append({"template_id": 6, "count": 1, "side": "main"})
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        cards[0xA1][1]["side"] = "main"                 # (the treasure card 9: main in this read)
+        cards[0xA1][2]["side"] = "treasure"             # (the main card 6: treasure in this read)
+        nm.deck(fresh=True)
+        r, why = nm.deck(only_equipped=False, kinds=True)
+        self.assertEqual(why, "")
+        self.assertIsNotNone(nm._deck_all)
+        # (a real edit of a main card still is one)
+        cards[0xA1][0]["count"] = 1
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+
     def test_a_worn_deck_not_read_isnt_judged(self):
         # (its card list not read in the worn reading - ok False: no "edit" made of it, every deck's reading answers)
         nm, worn, reads, cards = self.nav()

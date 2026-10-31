@@ -1080,17 +1080,20 @@ class _Attached:
         return pts if len(pts) == cnt else None
 
 
-def _main_cards(deck):
-    """a deck reading's main cards as Counter({(template id, count): n}) - _worn_misfit's check that a worn deck wasn't
-    edited since every deck was read"""
-    return Counter((c.get("template_id"), c.get("count")) for c in deck.get("cards") or [] if c.get("side") == "main")
+def _main_cards(deck, skip=()):
+    """a deck reading's main cards as Counter({(template id, count): n}), the template ids in skip left out -
+    _worn_misfit's check that a worn deck wasn't edited since every deck was read"""
+    return Counter((c.get("template_id"), c.get("count")) for c in deck.get("cards") or []
+                   if c.get("side") == "main" and c.get("template_id") not in skip)
 
 
 def _worn_misfit(every, worn):
     """why every deck's kept reading (NavMem._deck_all's r) no longer answers beside a newer worn-deck reading (worn's r),
     "" when it does: another character logged in on the same game (player_gid), a deck worn that it hasn't (new, or
     another character's), or one whose main cards aren't the same (edited since - a treasure card used up isn't a
-    change: /deckfor's key leaves treasure out too). A deck whose cards weren't read (ok False) in either isn't judged"""
+    change: /deckfor's key leaves treasure out too). A card on the treasure side in either reading is left out: deckmem
+    works a card's side out again each read from that read's spellbook (one not read, or an entry's template not read,
+    moves a card between main and treasure). A deck whose cards weren't read (ok False) in either isn't judged"""
     pe, pw = every.get("player_gid"), worn.get("player_gid")
     if pe is not None and pw is not None and pe != pw:
         return "another character"
@@ -1101,8 +1104,10 @@ def _worn_misfit(every, worn):
         k = have.get(d.get("gid"))
         if k is None:
             return "a deck worn it hasn't"
-        if k.get("ok") is not False and _main_cards(k) != _main_cards(d):
-            return "a deck worn edited since"
+        if k.get("ok") is not False:
+            tc = {c.get("template_id") for x in (k, d) for c in x.get("cards") or [] if c.get("side") == "treasure"}
+            if _main_cards(k, tc) != _main_cards(d, tc):
+                return "a deck worn edited since"
     return ""
 
 
