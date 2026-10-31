@@ -792,6 +792,9 @@ class PlanTeam(unittest.TestCase):
         self.assertEqual((bob.seat, bob.me.maxhp, bob.hp), (6, 2800, None))
         self.assertTrue(any("the team model: 3 mates" in ln and "Bob hitter - its hand not known" in ln for ln in out),
                         out)
+        # (a mate down - the party's 0 %, PlannerMates' "~0~": 0, not full health; blank: not known)
+        down = self.V.plan_mates("Ann~5~storm~0~3000~hitter~~~|Bob~6~fire~~2800~hitter~~~", {})
+        self.assertEqual([m.hp for m in down], [0, None])
 
     def test_teamplan_orders(self):
         q = {"seed": "1", "budget": "3000", "n": "20", "teamplan": "1", "acc": "30",
@@ -901,6 +904,26 @@ class DeckFor(unittest.TestCase):
             self.assertEqual(out, ["none|not read"])
             out = self.V.deckfor_lines_for({"n": "abc", "hp": "inf"}, dict(self.ctx(), book=None), wait=True)
             self.assertTrue(out[0].startswith("none|"), out)
+        finally:
+            self.V.DECKFOR["cache"].clear()
+            self.V.DECKFOR["cache"].update(keep)
+
+    def test_old_lines_while_worked_out_again(self):
+        # (an answer kept past DECKFOR_S: handed back with a note| while the thread works it out again - the bot's
+        # 10-minute re-ask never gets a "working it out" that would drop the zone's deck for a moment)
+        keep = dict(self.V.DECKFOR["cache"])
+        try:
+            self.V.DECKFOR["cache"].clear()
+            q = {"zone": "Z/Graveyard", "school": "storm", "n": "10"}
+            out = self.V.deckfor_lines_for(q, self.ctx(), wait=True)
+            (key, (at, lines)), = self.V.DECKFOR["cache"].items()
+            self.V.DECKFOR["cache"][key] = (at - self.V.DECKFOR_S - 120, lines)
+            old = self.V.deckfor_lines_for(q, self.ctx())
+            self.assertEqual(old[:len(out)], out)
+            self.assertTrue(old[-1].startswith("note|worked out 12 minutes ago"), old)
+            self.V.DECKFOR["thread"].join(30)
+            self.assertGreater(self.V.DECKFOR["cache"][key][0], at)    # (worked out again, kept anew)
+            self.assertEqual(self.V.deckfor_lines_for(q, self.ctx()), out)
         finally:
             self.V.DECKFOR["cache"].clear()
             self.V.DECKFOR["cache"].update(keep)

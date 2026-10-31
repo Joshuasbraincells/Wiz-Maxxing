@@ -449,7 +449,10 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              one group a |) - deckfor|gid|name|won %|rounds|hp left %|lost %|groups|
                                              battles|why best first, group|battles|names, zone|, note|; worked out in a
                                              thread and kept 10 minutes: the first ask answers none|working it out -
-                                             ask again (Decks.ahk DeckForZone, Settings: deckzone, off)
+                                             ask again; an ask after the 10 minutes gets the old lines (and a note|)
+                                             while they're worked out again (Decks.ahk DeckForZone, Settings: deckzone,
+                                             off). Every deck rolls the same dice against a group: the same cards
+                                             score the same
   /quit                                   -> stops
 Add &file=<path> to /cards, /badge, /hand, /cut or /plate to look at a saved screenshot instead of the screen (for
 tests; the rectangle is then in that picture's pixels).
@@ -2611,7 +2614,8 @@ DECKFOR_S = 600         # an answer kept this long (the battles recorded are rea
 def deckfor_lines_for(q, ctx=None, wait=False):
     """/deckfor's answer (see the docstring) - never raises. Worked out in a thread (each deck against each group: a
     few seconds), kept DECKFOR_S for the same question: the first ask answers none|working it out, an ask after it the
-    lines. ctx {book, facts, wiki, casts, decks} and wait (work it out here) - a test's"""
+    lines; an ask after DECKFOR_S the old lines (a note| saying so) while the thread works them out again. ctx {book,
+    facts, wiki, casts, decks} and wait (work it out here) - a test's"""
     import battlesim as B
     try:
         zone = (q.get('zone') or '').strip()
@@ -2633,9 +2637,14 @@ def deckfor_lines_for(q, ctx=None, wait=False):
             hit = DECKFOR['cache'].get(key)
             if hit is not None and now - hit[0] < DECKFOR_S:
                 return hit[1]
+            # (an answer kept past DECKFOR_S: handed back as it was while it's worked out again - the bot re-asks every
+            # 10 minutes too, and a "working it out" then would drop the zone's deck for a moment - Decks.ahk
+            # DeckForZone keeps its rows through one as well)
+            stale = list(hit[1]) + ['note|worked out %d minutes ago - being worked out again' % ((now - hit[0]) // 60)] \
+                if hit is not None else None
             busy = DECKFOR['thread'] is not None and DECKFOR['thread'].is_alive()
             if busy and not wait:
-                return ['none|working out another zone\'s decks - ask again in a few seconds']
+                return stale or ['none|working out another zone\'s decks - ask again in a few seconds']
 
         def fl(k, d=0.0):
             try:
@@ -2690,7 +2699,7 @@ def deckfor_lines_for(q, ctx=None, wait=False):
         with DECKFOR_LOCK:
             DECKFOR['thread'] = threading.Thread(target=work, name='deckfor', daemon=True)
             DECKFOR['thread'].start()
-        return ['none|working it out - ask again in a few seconds']
+        return stale or ['none|working it out - ask again in a few seconds']
     except Exception as e:  # noqa: BLE001 - never into the server
         return ['none|the decks couldn\'t be simulated (%r)' % (e,)]
 

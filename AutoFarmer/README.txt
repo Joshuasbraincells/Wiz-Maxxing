@@ -508,8 +508,11 @@ anything else - never a boss deck, the pinned one or a dungeon run's), the
 one that wins clearly more often (5 points, or as often in a round fewer) is
 put on - "Deck: Small deck - the simulator's pick for WizardCity/WC_Streets's
 enemies: 96% won in 3.1 rounds - Large deck 88%". Worked out by the helper in
-the background (a few seconds), kept 10 minutes. A zone with no battle
-recorded yet: as before.
+the background (a few seconds), kept 10 minutes; while it's worked out again
+the zone's last pick stays on. Every deck rolls the same dice against a group,
+so two decks with the same cards (one deck in two Equipment Sets) score the
+same and are never swapped for each other. A zone with no battle recorded
+yet: as before.
 The round planner (planner - Settings, HOW IT PLAYS ITS CARDS; off unless you
 switch it on, new and not tried in the game yet): in each round the bot plays
 itself - after the kill check, defending and the heals - every card in your
@@ -536,7 +539,9 @@ battles\plays.json); look:
     python vision\battlelearn.py [--school storm]
 In a party battle (v0.9.0) the party's other wizards on your side are in the
 simulator too - each its seat (the cast order), school, health and battle
-role from the party; the enemies' single hits land on one of you at random,
+role from the party; the enemies' single hits land on one of you at random
+(an enemy known only by its hits recorded on you: each of you takes them at
+that rate), a wizard at 0 health stays down (no hit, no card),
 a hitter whose hand isn't known hits as an unknown enemy does (100 a pip,
 every other round), a blader or healer whose hand isn't known does nothing -
 and the blades, traps and shields on you and on the enemies are read from

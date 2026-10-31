@@ -44,8 +44,9 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
   What it does besides hitting (v0.9.0, batch 3 - Foe.acts, learned by FoeBook from the battles recorded: the hanging
   effects, health changes and stuns of its casts): a round it didn't hit, a heal on the weakest of its side, a shield or
   blade on itself, a trap or weakness on one of you, a stun (your next cast skipped) - each at the rate it did it in the
-  rounds it didn't hit; a round it hit, its damage over time on you (the ticks recorded on you after it) at the rate its
-  hits put one on. Nothing recorded of it: none of that (and no random number drawn for it - the battle as before).
+  rounds it didn't hit any of your side (a single hit on a wizard of the team not modelled is still a hit); a round it
+  hit, its damage over time on the one it hit (the ticks recorded on you after it) at the rate its hits put one on.
+  Nothing recorded of it: none of that (and no random number drawn for it - the battle as before).
   A hit's damage over time (Card.dot - handmem's): DOT_TICKS ticks on the target at the next rounds' start (the damage
   curve and its resist; no boosts, no critical). Shields, traps, weaknesses and absorbs on either side (State - the bot's
   count or the game's log: State.charms_from) used up by the next hit that fits, as the game does.
@@ -59,14 +60,16 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
 THE TEAM MODEL (v0.9.0, batch 3 - TODO goal 3 step 15: the leader plans the team's round)
   State.mates: the party's other wizards on my side (Mate), each its own hand, draw pile, pips, health and blades, my
   side's casts in cast order (seat: the subcircle, lowest first); the enemies' single hits on one of us at random, an AoE
-  on each; lost only when every one of us is down. A hitter plays the bot's chain on its own hand; a blader or healer the
-  support's (choose_support: a healer's heal on the one of us lowest under healat %, a kill, a blade for the hitter's
-  planned hit on the hitter - a trap on the enemy it goes for -, else a hit). A mate whose hand isn't known: its role's
-  way (a hitter the generic hitter, a support nothing). plan_team: a play for each wizard whose hand is known by
-  coordinate descent over plan_round's candidates (team_lines: /plan's order| lines).
+  on each - an enemy known only by its hits recorded on me: each of us takes them at that rate (hit_p a wizard); a mate
+  at 0 health is down (no cast, no hit); lost only when every one of us is down. A hitter plays the bot's chain on its
+  own hand; a blader or healer the support's (choose_support: a healer's heal on the one of us lowest under healat %, a
+  kill, a blade for the hitter's planned hit on the hitter - a trap on the enemy it goes for -, else a hit). A mate
+  whose hand isn't known: its role's way (a hitter the generic hitter, a support nothing). plan_team: a play for each
+  wizard whose hand is known by coordinate descent over plan_round's candidates (team_lines: /plan's order| lines).
 
 DECKS FOR A ZONE (best_decks - vision.py /deckfor, Decks.ahk DeckForZone): each deck simulated against the enemy groups
-  fought most in a zone (FoeBook.groups), weighted by how often each was fought - the best first.
+  fought most in a zone (FoeBook.groups), weighted by how often each was fought - the best first; every deck on the same
+  dice against a group (common random numbers: the same cards score the same).
 
 THE PLANNER (TODO goal 3, step 3 - vision.py /plan, Planner.ahk: advice only)
   State: a battle in the middle - the hand as dealt, the draw pile (the deck less the hand), pips, my health and each
@@ -696,10 +699,12 @@ class State:
 
     def charms_from(self, ch, my_sc=None, foe_scs=None):
         """the charms the game's log says are on (battlerec.charms_now's {by: {sc: {blades, traps, shields, weak,
-        absorb}}, me}) put in: on me (my_sc, else its me) the blades - named by their spells, one of each name -, the
-        enemies' traps, shields and weaknesses on me, my absorbs; on each enemy (foe_scs: its subcircle in foes' order, None
-        for one not matched) my side's traps, its shields and blades. Replaces what the bot's own count said for those (the
-        log sees the party's and the enemies' too). The number of charms put in; never raises"""
+        absorb}}, me}) put in: on me (my_sc, else its me) the blades - named as a hand's card of theirs is (charms_now's
+        name: cards.jsonl's display, as card_of names one - else the log's spell), one of each name -, the enemies' traps,
+        shields and weaknesses on me, my absorbs; on each enemy (foe_scs: its subcircle in foes' order, None for one not
+        matched - what the bot counted on that one kept) my side's traps, its shields and blades. Replaces what the bot's
+        own count said for those (the log sees the party's and the enemies' too). The number of charms put in; never
+        raises"""
         n = 0
         try:
             by = (ch or {}).get("by") or {}
@@ -713,19 +718,25 @@ class State:
                 for x in by[me].get("blades") or []:
                     sch = x.get("schools")
                     b = {s: float(x["pct"]) for s in sch} if sch else {"all": float(x["pct"])}
-                    if all(nm != x.get("spell") for nm, _b in self.blades):
-                        self.blades.append((str(x.get("spell") or "blade"), b))
+                    nm = str(x.get("name") or x.get("spell") or "blade")
+                    if all(nm != had for had, _b in self.blades):
+                        self.blades.append((nm, b))
                 self.mytraps, self.shields, self.myweak = lst(me, "traps"), lst(me, "shields"), lst(me, "weak")
                 self.absorb = int(sum(p for p, _s in lst(me, "absorb")))
                 n += len(self.blades) + len(self.mytraps) + len(self.shields) + len(self.myweak)
             scs = list(foe_scs or [])
             if scs:
-                self.traps = [[{s: float(p) for s in sch} if sch else {"all": float(p)} for p, sch in lst(sc, "traps")]
-                              if sc is not None else [] for sc in scs]
-                self.fshields = [lst(sc, "shields") if sc is not None else [] for sc in scs]
-                self.fblades = [lst(sc, "blades") if sc is not None else [] for sc in scs]
-                n += sum(len(t) for t in self.traps) + sum(len(t) for t in self.fshields) + \
-                    sum(len(t) for t in self.fblades)
+                # (an enemy not matched (None): the log says nothing of it - what the bot counted on it is kept)
+                def put(old, new):
+                    return [new[i] if sc is not None else (old[i] if i < len(old) else []) for i, sc in enumerate(scs)] \
+                        + old[len(scs):]
+                traps = [[{s: float(p) for s in sch} if sch else {"all": float(p)} for p, sch in lst(sc, "traps")]
+                         if sc is not None else [] for sc in scs]
+                fsh = [lst(sc, "shields") if sc is not None else [] for sc in scs]
+                fbl = [lst(sc, "blades") if sc is not None else [] for sc in scs]
+                n += sum(len(x) for x in traps + fsh + fbl)
+                self.traps, self.fshields, self.fblades = put(self.traps, traps), put(self.fshields, fsh), \
+                    put(self.fblades, fbl)
         except Exception:  # noqa: BLE001 - what it got to
             pass
         return n
@@ -770,8 +781,8 @@ class Mate:
     boosts for the side's hitter - its blades on the hitter, its traps on the enemy the hitter goes for -, a healer first
     a heal on the one of us lowest under healat %; a hit only to kill or with nothing else to go), hand ([Card]; None not
     known - its role's way without its cards: a hitter the generic hitter's 100 a pip every other round, a support
-    nothing), pile, pips / power, hp (None: its max), blades on it, opts (its settings - None: the role's own: a support
-    plays no hit but a kill). Never raises on junk"""
+    nothing), pile, pips / power, hp (None: its max; 0: down - it casts nothing and takes no hit), blades on it, opts
+    (its settings - None: the role's own: a support plays no hit but a kill). Never raises on junk"""
 
     def __init__(self, name="", seat=None, me=None, role="hitter", hand=None, pile=None, pips=0, power=0, hp=None,
                  blades=None, opts=None):
@@ -782,7 +793,8 @@ class Mate:
         self.hand = [c for c in hand if isinstance(c, Card)] if isinstance(hand, (list, tuple)) else None
         self.pile = [c for c in (pile or []) if isinstance(c, Card)] if isinstance(pile, (list, tuple)) else []
         self.pips, self.power = max(0, min(MAX_PIPS, _int(pips))), max(0, _int(power))
-        self.hp = _int(hp) or None
+        # (0 is a wizard down - still in the duel, the party's 0 %: not "not known", which is None / "" / junk)
+        self.hp = None if hp is None or hp == "" or _int(hp, None) is None else max(0, _int(hp))
         self.blades = [(str(n), dict(b)) for n, b in (blades or []) if isinstance(b, dict)] \
             if isinstance(blades, (list, tuple)) else []
         self.opts = opts if isinstance(opts, Opts) else Opts(role=self.role)
@@ -1267,33 +1279,59 @@ class _Battle:
         for i in self.alive():
             f = self.foes[i]
             self.fpips[i] = min(MAX_PIPS, self.fpips[i] + 1)
-            dmg, aoe = 0.0, None
+            # (cast: it hit one of my side this round - settled before who of us takes it, so a hit on a wizard not
+            # modelled - alone, Me.team over 1 - is still a round it hit, not one free for what it does besides
+            # (foe_acts: those are learned as a share of the rounds it didn't hit any of us - Foe.dmg_p); on: [(wizard,
+            # damage)] who of us modelled takes what)
+            dmg, aoe, cast, on = 0.0, None, False, None
             if f.spells:
                 dmg, aoe = self.foe_spell(i, f)
+                cast = dmg > 0
                 # (alone: a single-target spell at the wizard 1 in team - the team model picks one of us below)
                 if aoe is False and self.side is None and self.rng.random() >= 1.0 / me.team:
                     dmg = 0.0
             elif f.hits and f.hit_p is not None:
-                # (its hits recorded on the wizard, at the rate they came - the party's share already in it)
-                if self.rng.random() < f.hit_p:
-                    dmg = self.rng.choice(f.hits)
+                # (its hits recorded on the wizard, at the rate they came - the party's share already in it: hit_p is
+                # on me, dmg_p on any of my side - cap the rate it hit one of us (never under hit_p))
+                cap = max(f.hit_p, f.dmg_p or 0.0)
+                if self.side is None:
+                    # (one number: under hit_p it's on me; up to cap on another of my side, not modelled)
+                    u = self.rng.random()
+                    if u < f.hit_p:
+                        dmg = self.rng.choice(f.hits)
+                    cast = u < cap
+                elif self.rng.random() < cap:
+                    # (the team model: each of us up takes one of its hits at the rate I took them - hit_p a wizard,
+                    # as recorded - so the side's total is each one's rate times the wizards, not one hit shared)
+                    cast, on = True, []
+                    for k in self.up():
+                        if self.rng.random() < f.hit_p / cap:
+                            on.append((k, self.rng.choice(f.hits)))
             elif self.rng.random() < GENERIC_CAST:
                 # (the generic hitter: 100 a pip, all its pips, at one wizard of the team)
                 dmg = GENERIC_PER_PIP * max(1, self.fpips[i]) * self.rng.uniform(0.85, 1.15)
                 self.fpips[i] = 0
+                cast = dmg > 0
                 if self.side is None and self.rng.random() >= 1.0 / me.team:
                     dmg = 0.0
-            # (what it does besides - learned from the battles recorded; nothing learned: nothing, no random number)
-            if f.acts:
-                self.foe_acts(i, f, dmg)
-            if dmg > 0:
-                if self.side is None:
-                    if self._hurt(0, i, dmg):
-                        return
+            if on is None:
+                if dmg <= 0:
+                    on = []
+                elif self.side is None:
+                    on = [(0, dmg)]
                 else:
                     up = self.up()
-                    for k in (up if aoe else [self.rng.choice(up)] if up else []):
-                        self._hurt(k, i, dmg)
+                    on = [(k, dmg) for k in up] if aoe else [(self.rng.choice(up), dmg)] if up else []
+            # (what it does besides - learned from the battles recorded; nothing learned: nothing, no random number)
+            if f.acts:
+                self.foe_acts(i, f, cast, [k for k, _d in on])
+            if on:
+                if self.side is None:
+                    if self._hurt(0, i, on[0][1]):
+                        return
+                else:
+                    for k, d in on:
+                        self._hurt(k, i, d)
                     if self.lost():
                         return
 
@@ -1329,17 +1367,19 @@ class _Battle:
             self.dmg_in += int(dmg)
         return w.hp <= 0
 
-    def foe_acts(self, i, f, dmg):
-        """enemy i's doing besides its hits (f.acts - learned): a round it hit, its damage over time on one of us at the
-        rate its hits put one on; a round it didn't, one of ACTS - each at its rate among the rounds it didn't hit"""
+    def foe_acts(self, i, f, cast, on=()):
+        """enemy i's doing besides its hits (f.acts - learned): a round it hit one of my side (cast), its damage over
+        time on one of those it hit (on: the wizards modelled it hit - none: the hit went on a wizard not modelled, and
+        its damage over time with it) at the rate its hits put one on; a round it didn't, one of ACTS - each at its rate
+        among the rounds it didn't hit"""
         A = f.acts
         up = self.up()
         if not up:
             return
-        if dmg > 0:
+        if cast:
             d = A.get("dot")
-            if d and d.get("v") and self.rng.random() < d["p"]:
-                w = self._wiz(up[0] if len(up) == 1 else self.rng.choice(up))
+            if d and d.get("v") and on and self.rng.random() < d["p"]:
+                w = self._wiz(on[0] if len(on) == 1 else self.rng.choice(on))
                 w.mydots.append([float(d["v"]), DOT_TICKS])
             return
         base = max(0.05, 1.0 - (f.dmg_p or 0.0))
@@ -1517,7 +1557,7 @@ class _Battle:
                 w.pile = list(m.pile)
                 rng.shuffle(w.pile)
                 w.pips, w.power = m.pips, min(m.pips, m.power)
-                w.hp = int(m.hp) if m.hp else m.me.hp
+                w.hp = int(m.hp) if m.hp is not None else m.me.hp
                 w.blades = list(m.blades)
                 w.aura, w.boosts_run, w.absorb, w.stun = None, 0, 0, 0
                 w.shields, w.mytraps, w.myweak, w.mydots = [], [], [], []
@@ -2113,6 +2153,13 @@ def _n(v):
 # ============================================================================ decks matched to each enemy group
 DECKFOR_GROUPS = 5          # a zone's enemy groups simulated: the most fought ones
 DECKFOR_N = 60              # battles a deck against each group
+DECKFOR_SEED = 1            # the dice every deck's battles against a group are rolled from (best_decks: seed None)
+
+
+def _card_order(c):
+    """a deck's cards in one order whatever order they were listed in (best_decks: one deck in two Equipment Sets,
+    listed apart, shuffled the same)"""
+    return (str(c.name), str(c.kind), str(c.school), str(c.tid), c.pips, c.value, c.tc, c.item)
 
 
 def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, seed=None, budget_ms=None):
@@ -2122,7 +2169,10 @@ def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, se
     [Foe] (FoeBook.foe with the wiki), n battles a group; the groups weighted by how often they were fought. budget_ms:
     the decks not reached by then left out (said). -> {decks: [{key, name, won, lost, rounds (the won's mean of their
     medians), hp_left, groups, battles, why}] best first (won, then the fewer rounds, then health left), groups: [(names,
-    battles)], why [notes]}. Never raises"""
+    battles)], why [notes]}. Common random numbers: every deck fights a group on the same seed (seed and the group's
+    names - seed None: DECKFOR_SEED), its cards in one order (the game shuffles them anyway) - so two decks with the same
+    cards (one deck in two Equipment Sets) score the same, number for number, and a gap between two decks is theirs, not
+    the dice's (Decks.ahk DeckForZone swaps on a 5-point gap). Never raises"""
     t0 = time.perf_counter()
     out = {"decks": [], "groups": [], "why": []}
     try:
@@ -2145,13 +2195,17 @@ def best_decks(decks, groups, make_foes, me, n=DECKFOR_N, top=DECKFOR_GROUPS, se
             wsum = won = lost = hp = 0.0
             rounds, rw = 0.0, 0.0
             why = []
+            cards = sorted(cards or [], key=_card_order)
             if not any(c.hit for c in cards):
                 why.append("no hit in it")
             for g, c, fs in foes:
                 if not fs:
                     continue
                 o = opts or Opts(boss=any(f.boss for f in fs))
-                r = simulate(cards, me, fs, o, n=n, seed=seed)
+                # (the group's own seed, the same for every deck - random.Random takes a str as it is: the same numbers
+                # in every run, unlike hash())
+                r = simulate(cards, me, fs, o, n=n, seed="%s|%s" % (DECKFOR_SEED if seed is None else seed,
+                                                                    ",".join(map(str, g))))
                 if not r.get("n"):
                     continue
                 wsum += c

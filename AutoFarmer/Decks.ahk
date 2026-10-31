@@ -1560,12 +1560,13 @@ DeckBeatLine(d)
 ;(1 point at least, else as often in a round fewer) - and only when it wins 5 points more than the one picked, or as
 ;often in a round fewer (the one picked not simulated: it's taken). Not: the setting off, the bot off, a boss ahead,
 ;the deck pinned on the Cards tab or a dungeon run's, the zone not known, no battle recorded there yet, the helper
-;still working it out (asked again 10 s on - an answer kept for the zone 10 minutes, here and in the helper). In a
+;still working it out (asked again 10 s on - an answer kept for the zone 10 minutes, here and in the helper; a refresh
+;keeps the last rows till new ones come, and the helper hands its old lines back while it works them out again). In a
 ;battle (inBattle - DeckRound): the answer kept only - nothing asked - and only while the pick's Equipment Set is the
 ;one put on last (its cards are the ones in hand). p as it was, else {deck, why, boss: 0}
 DeckForZone(p, inBattle := false)
 	{
-	static dfzZone := "", dfzAt := 0, dfzAns := "", dfzSaid := ""
+	static dfzZone := "", dfzAt := 0, dfzAns := "", dfzSaid := "", dfzWait := 0
 	if (!Stat("deckzone") || !BotOn || !IsObject(DeckList) || V1At(p, "boss") || !VisionOn || !Stat("navmem") || dualmode == 1)
 		return p
 	if (InStr(p.why, "pinned") || InStr(p.why, "dungeon run"))
@@ -1575,7 +1576,7 @@ DeckForZone(p, inBattle := false)
 		return p
 	dfzSch := V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
 	;(asked again: another zone, 10 minutes on, or 10 s on while the helper was working it out - out of battle only)
-	if (!inBattle && (dfzZ != dfzZone || A_TickCount - dfzAt > (SubStr(dfzAns, 1, 5) = "none|" || dfzAns = "" ? 10000 : 600000)))
+	if (!inBattle && (dfzZ != dfzZone || A_TickCount - dfzAt > (dfzWait || SubStr(dfzAns, 1, 5) = "none|" || dfzAns = "" ? 10000 : 600000)))
 		{
 		dfzQ := "/deckfor?zone=" NavUri(dfzZ) "&school=" dfzSch "&n=60"
 		for dfzI, dfzK in [["hp", "maxhealth"], ["damage", "damage"], ["pierce", "pierce"], ["crit", "critical"], ["block", "block"], ["acc", "accuracy"]]
@@ -1586,7 +1587,15 @@ DeckForZone(p, inBattle := false)
 			if (dfzV != "" && dfzV != 0)
 				dfzQ .= "&" dfzK[1] "=" NavUri(dfzV "")
 			}
-		dfzAns := VisionGet(dfzQ, 3000, true), dfzZone := dfzZ, dfzAt := A_TickCount
+		dfzNew := VisionGet(dfzQ, 3000, true), dfzAt := A_TickCount
+		;(the zone's last rows kept till an answer with rows replaces them: the helper still working it out
+		;("none|working...") or no answer (a time-out while its thread works) keeps them - asked again 10 s on - so a
+		;refresh never drops the zone's deck for a moment (DeckEquip would press DeckPick's set, then this one's again a
+		;minute later); another zone, or the helper's own none| (nothing to simulate there), replaces them)
+		dfzWait := (Trim(dfzNew) = "" || SubStr(dfzNew, 1, 12) = "none|working") ? 1 : 0
+		if (dfzZ != dfzZone || !dfzWait || !InStr("`n" dfzAns, "`ndeckfor|"))
+			dfzAns := dfzNew
+		dfzZone := dfzZ
 		}
 	if (dfzZ != dfzZone || dfzAns = "" || SubStr(dfzAns, 1, 5) = "none|")
 		return p

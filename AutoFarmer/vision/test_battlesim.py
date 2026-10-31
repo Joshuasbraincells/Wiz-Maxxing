@@ -403,6 +403,23 @@ class Dots(unittest.TestCase):
         self.assertEqual((b.fhp[0], b.fdots[0]), (0, []))
 
 
+def foe_rounds(foe, team=1, mates=None, n=3000, seed=1):
+    """enemy foe's rounds alone against my side (nobody ever down): (the share of them it healed in, damage a round on
+    me, on my whole side)"""
+    st = S.State([], [], hp=10 ** 9, fhp=[1000], me_first=False, mates=mates or [])
+    b = S._Battle.from_state(st, S.Me("storm", 10 ** 9, team=team), [foe], S.Opts(), random.Random(seed))
+    heals = on_me = on_side = 0
+    for _ in range(n):
+        b.fhp[0] = 1000
+        hp0 = [b._wiz(k).hp for k in b.wizards()]
+        b.foe_round()
+        hp1 = [b._wiz(k).hp for k in b.wizards()]
+        heals += b.fhp[0] > 1000
+        on_me += hp0[0] - hp1[0]
+        on_side += sum(hp0) - sum(hp1)
+    return heals / float(n), on_me / float(n), on_side / float(n)
+
+
 def enemy_record(acts_round, n_rounds=4, zone="WizardCity/WC_Streets"):
     """a battle record where the enemy (sc 0, 'Shaman') does acts_round's casts (its hang / hp / fx) each round"""
     rounds = []
@@ -472,7 +489,26 @@ class LearnedActs(unittest.TestCase):
         # (a blade on itself and a trap on me: its hits harder)
         bladed = biter("Tank", 4000, passes=True)
         bladed.acts, bladed.dmg_p = {"blade": {"p": 0.5, "v": 100}, "trap": {"p": 0.5, "v": 100}}, 0.5
-        self.assertGreater(S.simulate(cards, me, [bladed], n=120, seed=3)["dmg_in"], plain["dmg_in"] * 0.9)
+        # (the same seed: a blade and a trap that did nothing would leave it as plain's - 100% each: well over)
+        self.assertGreater(S.simulate(cards, me, [bladed], n=120, seed=3)["dmg_in"], plain["dmg_in"] * 1.5)
+
+    def test_acts_not_inflated_by_the_team(self):
+        # (it hits one of my side 80% of the rounds and healed in 20%: 20% whoever of us its hits land on - alone with
+        # Me.team 4 a single hit on another wizard is still a round it hit, not one free for a heal)
+        def foe():
+            f = S.Foe("Ogre", 90000, spells=[(None, 0.2, None), ("Bite", 0.8, {"pips": 0, "min": 10, "max": 10,
+                                                                                 "accuracy": 100})])
+            f.acts, f.dmg_p = {"heal": {"p": 0.2, "v": 100}}, 0.8
+            return f
+        for team in (1, 4):
+            heals, _me, _side = foe_rounds(foe(), team=team)
+            self.assertTrue(0.16 < heals < 0.24, (team, heals))
+        # (known by its hits only, recorded in a party: on me 20% of the rounds, on one of us 80%, a heal 20%)
+        f = S.Foe("Ghoul", 90000, hits=[300] * 10, hit_p=0.2)
+        f.acts, f.dmg_p = {"heal": {"p": 0.2, "v": 100}}, 0.8
+        heals, on_me, _side = foe_rounds(f)
+        self.assertTrue(0.16 < heals < 0.24, heals)
+        self.assertTrue(50 < on_me < 70, on_me)                     # (300 a hit, 20% of the rounds)
 
     def test_stun_skips_my_round(self):
         st = S.State([lord()], [], pips=7, fhp=[5000], me_first=True, stun=1)
@@ -532,6 +568,34 @@ class Charms(unittest.TestCase):
         self.assertEqual((st.traps, st.fshields), ([[], []], [[], []]))
         self.assertEqual(S.State([lord()]).charms_from(None), 0)
         self.assertEqual(S.State([lord()]).charms_from({"by": "junk"}), 0)
+
+    def test_an_enemy_not_matched_keeps_the_bots_count(self):
+        # (the bot's Storm Trap on enemy 0; the log matched to enemy 1 only: enemy 0's trap kept, 1's from the log)
+        import battlerec
+        d = {"me_sc": 4, "rounds": [{"n": 1, "casts": [
+            {"sc": 1, "spell": "Shield", "hang": [[1, "kModifyIncomingDamage", 0, -50]]}]}]}
+        ch = battlerec.charms_now(d, {})
+        st = S.State([lord()], [], fhp=[900, 900], traps=[[{"storm": 30}], [{"fire": 25}]],
+                     fshields=[[(20, None)]], fblades=[[], [(10, None)], [(5, None)]])
+        self.assertEqual(st.charms_from(ch, 4, [None, 1]), 1)
+        self.assertEqual(st.traps, [[{"storm": 30}], []])
+        self.assertEqual(st.fshields, [[(20, None)], [(50, None)]])
+        self.assertEqual(st.fblades, [[], [], [(5, None)]])          # (one past the plates: kept as it was)
+
+    def test_blade_named_as_the_hand_shows_it(self):
+        # (the log names a spell by its template; the hand by its display - the blade on is the hand's card's name, so
+        # a copy in hand is "on already" and never stacked)
+        import battlerec
+        facts = {104: {"tid": 104, "name": "Storm Blade", "display": "Stormblade", "kind": "blade",
+                       "boosts": "storm:35"}}
+        d = {"me_sc": 4, "rounds": [{"n": 1, "casts": [
+            {"sc": 4, "spell": "Storm Blade", "hang": [[4, "kModifyOutgoingDamage", 1, 35]]}]}]}
+        st = S.State([], [])
+        st.charms_from(battlerec.charms_now(d, facts))
+        self.assertEqual(st.blades, [("Stormblade", {"storm": 35.0})])
+        blade = S.card_of({"template_id": 104, "name": "Storm Blade", "display": "Stormblade", "kind": "blade",
+                           "school": "storm", "boosts_text": "storm:35"})
+        self.assertEqual(blade.name, st.blades[0][0])
 
     def test_empty_charms_change_nothing(self):
         hand = [lord(), S.Card("Snake", "damage", "storm", 2, heads={"storm": 150}, tid=2),
@@ -628,6 +692,31 @@ class Team(unittest.TestCase):
         self.assertTrue(lines[1].startswith("order|1|5|Ann|0|7|aoe|all|"), lines)
         self.assertTrue(any(ln.startswith("teamnote|") for ln in lines))
 
+    def test_recorded_hits_on_each_wizard(self):
+        # (known by its hits on me only: half the rounds, 300 - with 3 mates each of us still takes them at that rate,
+        # the side four times it - not my own rate shared out)
+        def foe():
+            return S.Foe("Ghoul", 90000, hits=[300] * 10, hit_p=0.5)
+        _h, alone, _s = foe_rounds(foe())
+        _h, on_me, on_side = foe_rounds(foe(), mates=[mate(nm, s, maxhp=10 ** 9) for nm, s in (("A", 5), ("B", 6),
+                                                                                                ("C", 7))])
+        self.assertTrue(135 < alone < 165 and 135 < on_me < 165, (alone, on_me))
+        self.assertTrue(540 < on_side < 660, on_side)
+
+    def test_a_mate_down(self):
+        # (the party's 0 %: down - still in the duel, never back to full health; not known: its max)
+        self.assertEqual([S.Mate(hp=v).hp for v in (0, "0", None, "", "x", float("nan"), -5, 1200)],
+                         [0, 0, None, None, None, None, 0, 1200])
+        foe = S.Foe("Ogre", 90000, spells=[("Smash", 1.0, {"pips": 0, "min": 400, "max": 400, "accuracy": 100})])
+        st = S.State([], [], hp=3000, fhp=[90000], me_first=False, mates=[mate("Ann", 5, hp=0), mate("Bob", 6)])
+        b = S._Battle.from_state(st, sure(), [foe], S.Opts(), random.Random(2))
+        self.assertEqual([b._wiz(k).hp for k in b.wizards()], [3000, 0, 3000])
+        self.assertEqual(b.up(), [0, 2])
+        for _ in range(6):
+            b.foe_round()
+        self.assertEqual(b.side[1].hp, 0)                           # (Ann soaks no hit)
+        self.assertEqual(b.hp + b.side[2].hp, 6000 - 6 * 400)
+
     def test_team_junk_never_raises(self):
         for st in (S.State([lord()], mates=[mate("", None, "x", ["junk", None])]), S.State(None, mates=[]),
                    S.State([lord()], fhp=[0], mates=[mate("A", 5)])):
@@ -663,6 +752,24 @@ class BestDecks(unittest.TestCase):
         self.assertTrue(lines[0].startswith("deckfor|b2|Strong|"))
         self.assertIn("group|5|Rat,Rat", lines)
         self.assertIn("zone|Z1", lines)
+
+    def test_same_cards_score_the_same(self):
+        # (one deck in two Equipment Sets, its cards listed apart: the same numbers, seed or none - common random
+        # numbers, so DeckForZone's 5-point gap is never the dice's)
+        a = S.deck_cards({"cards": [hit("Storm Lord", 3, 700, count=10), hit("Thunder Snake", 2, 300, count=10)]})
+        b = S.deck_cards({"cards": [hit("Thunder Snake", 2, 300, count=10), hit("Storm Lord", 3, 700, count=10)]})
+        groups = {("Ghoul", "Ghoul", "Wraith"): 12, ("Ghoul",): 5}
+        made = {"Ghoul": 1200, "Wraith": 2000}
+        def run(decks, seed=None):
+            res = S.best_decks(decks, groups, lambda names: [biter(nm, made[nm], 500, 700) for nm in names],
+                               S.Me("storm", 3000), n=30, seed=seed)
+            return [(d["won"], d["lost"], d["rounds"], d["hp_left"]) for d in res["decks"]]
+        for seed in (None, 5):
+            x, y = run([("a", "A", a, S.Opts()), ("b", "B", b, S.Opts())], seed)
+            self.assertEqual(x, y)
+            self.assertLess(x[0], 1.0)                              # (close fights: the dice matter)
+        # (asked again - the helper every 10 minutes: the same answer, not a new roll)
+        self.assertEqual(run([("a", "A", a, S.Opts())]), run([("b", "B", b, S.Opts())]))
 
     def test_no_groups_and_junk(self):
         res = S.best_decks([("a", "A", [], S.Opts())], {}, lambda names: [], S.Me())

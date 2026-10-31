@@ -2372,7 +2372,7 @@ BoostPick()
 		if (RegExMatch(PlanHit, "^hit[1-4]$"))
 			{
 			bpCost := Stat(hitschool "." PlanHit "pips")
-			if (Affordable(PlanHit))
+			if (PipsNow >= 0 && Affordable(PlanHit))
 				PartyHitAt := V1N(BlRound) + 1
 			else if (PipsNow >= 0 && V1IsNum(bpCost) && bpCost > PipsNow)
 				PartyHitAt := V1N(BlRound) + 1 + Ceil((bpCost - PipsNow) / 2)

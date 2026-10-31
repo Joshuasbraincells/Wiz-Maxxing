@@ -410,6 +410,33 @@ class Charms(unittest.TestCase):
         self.assertEqual(len(c["by"][4]["blades"]), 1)          # (a missed hit uses nothing)
         self.assertEqual(c["by"][0]["traps"], [])               # (a REMOVED line took it off)
 
+    def test_a_charms_own_effect_is_no_hit(self):
+        # (were ProcessTargets written for a trap's own effect - kModifyIncomingDamage has "damage" in its name - it's
+        # no hit: my Stormblade and the trap on already stay; a damage effect alone (no ModifyHealth line) still hits)
+        curse = [(4, "kModifyIncomingDamage", 0, 25)]
+        d = duel([cast(4, "Stormblade", [(4, "kModifyOutgoingDamage", 1, 35)]),
+                  cast(5, "Storm Trap", [(0, "kModifyIncomingDamage", 0, 30)]),
+                  cast(0, "Curse", curse, fx=[(4, "kModifyIncomingDamage", 25)])],
+                 [cast(4, "Storm Trap", [(0, "kModifyIncomingDamage", 0, 30)], fx=[(0, "kModifyIncomingDamage", 30)]),
+                  cast(0, "Curse", curse, fx=[(4, "ModifyIncomingDamage", 25)])])
+        c = R.charms_now(d, FACTS)
+        self.assertEqual([x["spell"] for x in c["by"][4]["blades"]], ["Stormblade"])
+        self.assertEqual((len(c["by"][0]["traps"]), len(c["by"][4]["traps"])), (2, 2))
+        d["rounds"].append({"n": 3, "casts": [cast(4, "Storm Lord", fx=[(0, "kDamage", 900)])]})
+        c = R.charms_now(d, FACTS)
+        self.assertEqual((c["by"][4]["blades"], c["by"][0]["traps"]), ([], []))
+
+    def test_named_as_the_hand_shows_it(self):
+        # (the log's spell is the template's name; name: cards.jsonl's display - battlesim.card_of's for a hand card)
+        facts = {104: {"tid": 104, "name": "Storm Blade", "display": "Stormblade", "kind": "blade",
+                       "boosts": "storm:35"}}
+        d = duel([cast(4, "Storm Blade", [(4, "kModifyOutgoingDamage", 1, 35)]),
+                  cast(0, "Dark Shield", [(0, "kModifyIncomingDamage", 0, -50)])])
+        c = R.charms_now(d, facts)
+        b = c["by"][4]["blades"][0]
+        self.assertEqual((b["spell"], b["name"], b["schools"]), ("Storm Blade", "Stormblade", ["storm"]))
+        self.assertEqual(c["by"][0]["shields"][0]["name"], "Dark Shield")    # (not in the facts: the log's)
+
     def test_absorb_soaks_damage(self):
         d = duel([cast(4, "Spirit Armor", [(4, "kAbsorbDamage", 1, 500)])],
                  [cast(0, "Bite", hp=[(4, 3000, -200)])])

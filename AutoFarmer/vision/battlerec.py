@@ -1566,7 +1566,12 @@ def state_at(events, lo, hi):
 # k, matched either way: a charm out (a blade, + ; a weakness, -), a ward in (a trap, + ; a shield, -), an absorb)
 CHARM_KINDS = {"modifyoutgoingdamage": ("blades", "weak"), "modifyincomingdamage": ("traps", "shields"),
                "absorbdamage": ("absorb", "absorb")}
-DAMAGE_FX = re.compile(r"damage|stealhealth", re.I)
+# (a hit's own effects - handmem.py's DAMAGE and DOT, plain (_fx_name), not imported: handmem reads the game's memory.
+# A whitelist, not "damage" anywhere in the name: kModifyOutgoingDamage / kModifyIncomingDamage / kAbsorbDamage are the
+# charms and wards themselves - were a ProcessTargets line written for a blade's or trap's own effect, it would be taken
+# for a hit and use up the charms on before putting the new one on)
+DAMAGE_FX = {"damage", "damagenocrit", "stealhealth", "maxhealthdamage", "damagepertotalpippower", "dividedamage",
+             "damageovertime", "deferreddamage"}
 
 
 def _fx_name(e):
@@ -1612,12 +1617,13 @@ def charms_now(duel, facts=None):
     order: each cast's AddHangingEffect lines (hang [[target sc, effect, charm 1/0, param]]) put one on its target, its
     schools those of the caster's spell in cards.jsonl's facts ({tid: fact}: its boosts, else its school - None not known:
     an enemy's spell, a card never seen in a hand: it fits every school); each hit (a cast with damage on another sc -
-    ModifyHealth's or ProcessTargets' - not missed) uses up the caster's charms out and each target's wards in that fit its
-    schools (the spell's heads in the facts; not known: every one - KillCalc.ahk ConsumeBoosts' rule), absorbs taken off
-    by the damage; a REMOVED line (not seen in a log yet) takes its own off. Identical blades on one wizard don't stack (the
-    game's - one of a spell's name kept); traps and shields do.
-    -> {by: {sc: {blades, traps, shields, weak, absorb: [{pct (an absorb's: the damage it still soaks), schools, spell,
-    by (the caster's sc), round}]}}, me (my sc, None not known), round (the last round seen), n (the charms put on), why
+    ModifyHealth's, or a ProcessTargets damage effect's - DAMAGE_FX -, not missed) uses up the caster's charms out and
+    each target's wards in that fit its schools (the spell's heads in the facts; not known: every one - KillCalc.ahk
+    ConsumeBoosts' rule), absorbs taken off by the damage; a REMOVED line (not seen in a log yet) takes its own off.
+    Identical blades on one wizard don't stack (the game's - one of a spell's name kept); traps and shields do.
+    -> {by: {sc: {blades, traps, shields, weak, absorb: [{pct (an absorb's: the damage it still soaks), schools, spell
+    (the log's - the template's name), name (the card's display in the facts, else the spell), by (the caster's sc),
+    round}]}}, me (my sc, None not known), round (the last round seen), n (the charms put on), why
     [notes]}. Never raises: what it got to"""
     out = {"by": {}, "me": None, "round": None, "n": 0, "why": []}
     try:
@@ -1657,7 +1663,7 @@ def charms_now(duel, facts=None):
                             hit.add(e[0])
                             dmg[e[0]] += -e[2]
                     for e in c.get("fx") or []:
-                        if isinstance(e, (list, tuple)) and len(e) >= 2 and DAMAGE_FX.search(str(e[1])) \
+                        if isinstance(e, (list, tuple)) and len(e) >= 2 and _fx_name(e[1]) in DAMAGE_FX \
                                 and side(e[0]) is not None and side(e[0]) != side(cs):
                             hit.add(e[0])
                     if hit:
@@ -1693,7 +1699,10 @@ def charms_now(duel, facts=None):
                             sch = _schools_of(str(f.get("school")) + ":1")
                     else:
                         unknown += 1
-                    ch = {"pct": abs(e[3]), "schools": sch, "spell": c["spell"], "by": cs, "round": n}
+                    # (name: the card as a hand shows it - cards.jsonl's display, as battlesim.card_of names a hand's
+                    # card - so the planner's "that blade's on already" sees a copy in hand; spell: the log's own)
+                    ch = {"pct": abs(e[3]), "schools": sch, "spell": c["spell"], "by": cs, "round": n,
+                          "name": str((f.get("display") or f.get("name") or c["spell"]) if f else c["spell"])}
                     L = lists(e[0])[k]
                     if k == "blades" and any(x["spell"] == ch["spell"] for x in L):
                         continue
