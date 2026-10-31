@@ -184,7 +184,11 @@ QsNoteBag(bag)
 	qMost := QsIni("markitems")
 	if (bag.items = "")
 		return
-	if (qMost = "" || V1Gt(bag.items, qMost))  ; (v1: quicksell.ini's value compared as text when it isn't a number)
+	;(the bot's own sale - QsBusy: under a dungeon's hold only with the gear pass on, its Deck and Pet groups kept (QsLook) -
+	;isn't a sort: the hold stays, the count noted from here)
+	if (QsBusy)
+		QsIniSet("markitems", bag.items)
+	else if (qMost = "" || V1Gt(bag.items, qMost))  ; (v1: quicksell.ini's value compared as text when it isn't a number)
 		QsIniSet("markitems", bag.items)
 	else if (V1Le(bag.items, V1Sub(qMost, 10)))
 		QsMarkClear("the backpack went from " qMost " down to " bag.items " items (sorted)")
@@ -316,10 +320,9 @@ QsLook(why)
 		}
 	;(Settings: gearswap on - the gear pass first (Gear.ahk GearSellOk): a backpack piece better than what's worn, or one it
 	;couldn't judge, holds the sale (a rehearsal equips nothing: you're told to put it on); every gear piece judged and none
-	;better - it looked through the drops: a dungeon's hold dropped, sold. But the pass judges the seven gear slots only,
-	;never decks or pets (vision\gearrank.py): with a deck, a pet (pets.txt's wanted talents not judging them - QsPetGuard)
-	;or an item of a kind not read in the backpack, the hold stays - held below, as without the pass. Off: as before)
-	qUnj := ""
+	;better - it looked through the gear: sold. A dungeon's hold then stays for what the pass never compares, the decks and
+	;pets (vision\gearrank.py): sold without the Deck and Pet groups (bag.dgKeep - QsCategories), the hold kept for the
+	;next full backpack (QsNoteBag doesn't take the sale's own drop for a sort). Off: as before)
 	if (V1IsFunc("GearMode") && GearMode.Call() && V1IsFunc("GearSellOk"))
 		{
 		qGear := GearSellOk.Call(d.why)
@@ -331,22 +334,13 @@ QsLook(why)
 			return
 			}
 		if (QsHeld())
-			{
-			if (bag.cats.Has("deck") && V1Gt(bag.cats["deck"].n, 0))
-				qUnj := "decks"
-			if (QsPets() && bag.cats.Has("pet") && V1Gt(bag.cats["pet"].n, 0) && QsPetWant(&qPwBad) = "" && qPwBad = "")
-				qUnj .= (qUnj = "" ? "" : ", ") "pets"
-			if (bag.cats.Has("?") && V1Gt(bag.cats["?"].n, 0))
-				qUnj .= (qUnj = "" ? "" : ", ") "items of a kind not read"
-			}
-		if (qUnj = "")
-			QsMarkClear("the gear pass compared every gear piece in it - none better than what's worn")
+			bag.dgKeep := "a dungeon's drops - the gear pass compares gear only, never decks or pets"
 		}
-	if (QsHeld())
+	if (QsHeld() && bag.dgKeep = "")
 		{
 		if (d.full)
 			QsStill := 1
-		if (QsSay("held", d.why " - held: it holds a dungeon's drops" (qUnj != "" ? " (the gear pass compared its gear, never its " qUnj ")" : "") " (not quick sold - look through it, sell it yourself, or tick '...even with a dungeon's drops in it')"))
+		if (QsSay("held", d.why " - held: it holds a dungeon's drops (not quick sold - look through it, sell it yourself, or tick '...even with a dungeon's drops in it')"))
 			AlertSend("inventory", "backpack full", "The backpack is full and holds a dungeon's drops - not quick sold. Look through it, then sell it yourself, or tick '...even with a dungeon's drops in it' (Settings: THE BACKPACK).")
 		return
 		}
@@ -829,6 +823,11 @@ QsCategories(bag, &why)
 		if (qPetKeep != "")
 			qGuard["pet"] := (qGuard.Has("pet") ? qGuard["pet"] ", " : "") "kept: " qPetKeep
 		}
+	;(a dungeon's hold with the gear pass's sale (QsLook - bag.dgKeep): its decks and pets never compared - the Deck and Pet
+	;groups left out, the gear groups sold)
+	if (bag.dgKeep != "")
+		for qi, qk in ["deck", "pet"]
+			qGuard[qk] := (qGuard.Has(qk) ? qGuard[qk] ", " : "") bag.dgKeep
 	;(shopLeft: the groups left out for a Crown-shop item - for the alerts)
 	qOut := V1Obj({list: [], skipped: "", shopLeft: "", gearMax: 0, petMax: 0, crownShop: ""})
 	for qi, qc in qAll

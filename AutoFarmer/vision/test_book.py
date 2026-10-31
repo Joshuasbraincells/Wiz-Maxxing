@@ -225,15 +225,18 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         st = types.SimpleNamespace(close=lambda: None)
         worn = [0xA1]
         reads = []
+        cards = {0xA1: [{"template_id": 7, "count": 3, "side": "main"}, {"template_id": 9, "count": 2, "side": "treasure"}],
+                 0xB2: [{"template_id": 8, "count": 4, "side": "main"}]}
 
         class DM:
             def signature(self_, pace=None):
-                return ("worn", worn[0])
+                return ("worn", worn[0], repr(cards[worn[0]]))
 
             def read(self_, books=False, kinds=True, only_equipped=False, pace=None):
                 reads.append((kinds, only_equipped))
                 decks = [{"gid": g, "where": "equipped" if g == worn[0] else "backpack", "equipped": g == worn[0],
-                          "sets": [n], "kinds": kinds} for n, g in ((1, 0xA1), (2, 0xB2))]
+                          "sets": [n], "kinds": kinds, "cards": [dict(c) for c in cards[g]]}
+                         for n, g in ((1, 0xA1), (2, 0xB2))]
                 if only_equipped:
                     decks = [d for d in decks if d["equipped"]]
                 return {"decks": decks, "equipped": worn[0], "equipped_set": 1 if worn[0] == 0xA1 else 2,
@@ -243,10 +246,10 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         dm.st, dm.hm = st, nm._hand
         nm.st = st
         nm._deck_readers = lambda wait: (st, dm, "")
-        return nm, worn, reads
+        return nm, worn, reads, cards
 
     def test_every_deck_kept_through_a_worn_read(self):
-        nm, worn, reads = self.nav()
+        nm, worn, reads, cards = self.nav()
         # (DeckLearnGame's /decks?fresh=1: every deck with their kinds)
         r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
         self.assertEqual((len(r["decks"]), why), (2, ""))
@@ -277,8 +280,25 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         nm.close()
         self.assertIsNone(nm._deck_all)
 
+    def test_a_worn_deck_edited_since_isnt_answered(self):
+        nm, worn, reads, cards = self.nav()
+        nm.deck(fresh=True, only_equipped=False, kinds=True)
+        # (a treasure card used up in a battle: the worn deck's signature changes, its main cards don't - still answered)
+        cards[0xA1][1]["count"] = 1
+        nm.deck(fresh=True)
+        r, why = nm.deck(only_equipped=False, kinds=True)
+        self.assertEqual(why, "")
+        self.assertEqual(r["decks"][0]["cards"][1]["count"], 2)              # (every deck's reading as it was read)
+        # (its main cards edited: not answered - every deck read again)
+        cards[0xA1][0]["count"] = 4
+        nm.deck(fresh=True)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
+        r, why = nm.deck(fresh=True, only_equipped=False, kinds=True)
+        self.assertEqual(r["decks"][0]["cards"][0]["count"], 4)
+        self.assertEqual(nm.deck(only_equipped=False, kinds=True)[0]["decks"][0]["cards"][0]["count"], 4)
+
     def test_no_every_deck_reading_still_not_read(self):
-        nm, worn, reads = self.nav()
+        nm, worn, reads, cards = self.nav()
         nm.deck(fresh=True)
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
         self.assertIsNone(nm._deck_all)
@@ -288,7 +308,7 @@ class WornReadKeepsEveryDeck(unittest.TestCase):
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))
 
     def test_another_game_not_answered(self):
-        nm, worn, reads = self.nav()
+        nm, worn, reads, cards = self.nav()
         nm.deck(fresh=True, only_equipped=False, kinds=True)
         nm.st = object()
         self.assertEqual(nm.deck(only_equipped=False, kinds=True), (None, "not read yet"))

@@ -2564,7 +2564,7 @@ def deck_lines(fresh):
 
 
 # ---------------------------------------------------------------- the battle simulator (battlesim.py)
-SIM = {'book': None, 'facts': None, 'at': 0.0}
+SIM = {'book': None, 'facts': None, 'at': 0.0, 'refreshing': 0}    # refreshing: paced reads of the battles running
 SIM_LOCK = threading.Lock()
 SIM_BOOK_S = 600        # the battles recorded read again this often
 
@@ -2582,25 +2582,31 @@ def sim_book(paced=False):
     """(FoeBook, facts): the battles recorded by enemy and cards.jsonl's card facts (AutoFarmer\\learned\\battles) -
     read again every SIM_BOOK_S. paced (a background thread's - /deckfor's): read again pausing for each battle while a
     gated request is in flight (gate_wait), OUTSIDE SIM_LOCK - a gated /decks or /sim waiting on that lock is in flight
-    itself, so a pause under it would only wait it out"""
+    itself, so a pause under it would only wait it out. While a paced read runs (SIM refreshing - _plan_load's too) the
+    old book answers: a gated /sim or /decks never reads the whole archive again meanwhile (none yet: read here)"""
     import battlesim
     base = os.path.join(ROOT, 'learned', 'battles')
     with SIM_LOCK:
-        if SIM['book'] is not None and time.monotonic() - SIM['at'] <= SIM_BOOK_S:
+        if SIM['book'] is not None and (time.monotonic() - SIM['at'] <= SIM_BOOK_S or SIM['refreshing']):
             return SIM['book'], SIM['facts']
         if not paced:
             SIM['book'], SIM['facts'] = battlesim.FoeBook(base), battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
             SIM['at'] = time.monotonic()
             return SIM['book'], SIM['facts']
+        SIM['refreshing'] += 1
 
     def feed():
         for b in battlesim.FoeBook._read(base, 120):
             gate_wait()
             yield b
-    book = battlesim.FoeBook(battles=feed())
-    facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
-    with SIM_LOCK:
-        SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+    try:
+        book = battlesim.FoeBook(battles=feed())
+        facts = battlesim.load_facts(os.path.join(base, 'cards.jsonl'))
+        with SIM_LOCK:
+            SIM['book'], SIM['facts'], SIM['at'] = book, facts, time.monotonic()
+    finally:
+        with SIM_LOCK:
+            SIM['refreshing'] -= 1
     return book, facts
 
 
@@ -2845,6 +2851,9 @@ def _plan_load():
     import battlesim
     base = os.path.join(ROOT, 'learned', 'battles')
     plays = battlelearn.Plays()
+    # (a paced read running: sim_book's callers keep the old book meanwhile)
+    with SIM_LOCK:
+        SIM['refreshing'] += 1
     try:
         def feed():
             for b in battlelearn.read(base, days=120):
@@ -2861,6 +2870,9 @@ def _plan_load():
                                                                       ('; ' + book.why) if book.why else ''))
     except Exception as e:  # noqa: BLE001 - planned with what there is
         log('/plan: the battles recorded could not be read (%r)' % (e,))
+    finally:
+        with SIM_LOCK:
+            SIM['refreshing'] -= 1
     PLAN['plays'], PLAN['at'] = plays, time.monotonic()
 
 

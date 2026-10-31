@@ -1080,6 +1080,12 @@ class _Attached:
         return pts if len(pts) == cnt else None
 
 
+def _main_cards(deck):
+    """a deck reading's main cards as Counter({(template id, count): n}) - NavMem._deck_cached's check that a worn deck
+    wasn't edited since every deck was read"""
+    return Counter((c.get("template_id"), c.get("count")) for c in deck.get("cards") or [] if c.get("side") == "main")
+
+
 # ============================================================================ the reader
 class NavMem:
     """Attaches to the game (the foreground client if there are several), re-attaching when it is
@@ -1922,7 +1928,8 @@ class NavMem:
         where it was). A reading with an item card's names not all read isn't kept by its signature (read again).
         only_equipped: the backpack's decks left out - such a reading never takes the place of every deck's with their
         kinds (_deck_all): asked for every deck after one (fresh False), that last reading of them answers, the decks worn
-        marked as the newer one has them, its sig None (fresh True: read again). kinds: each card's kind, value, heads
+        marked as the newer one has them, its sig None (fresh True: read again) - unless a deck worn has other main cards
+        in the newer one (edited since: "not read yet"). kinds: each card's kind, value, heads
         and boosts too (handmem's reading of its effects - the battle simulator's, vision\\battlesim.py; slower the first
         time a card is seen): a reading without them doesn't answer it (read again). books: the spellbook and the
         treasure book too (deckmem.read(books=True) - /book): such a reading has its own cache (the decks' is left as it
@@ -1977,6 +1984,11 @@ class NavMem:
                 return a
             wr = c["r"]
             worn = {d.get("gid") for d in wr.get("decks") or [] if d.get("equipped")}
+            # (a deck worn whose main cards aren't that reading's - edited since: not answered, every deck read again;
+            # its treasure cards used up in a battle aren't a change here - /deckfor's key leaves them out too)
+            now = {d.get("gid"): _main_cards(d) for d in wr.get("decks") or [] if d.get("equipped")}
+            if any(d.get("gid") in now and _main_cards(d) != now[d.get("gid")] for d in a["r"].get("decks") or []):
+                return None
             decks = [dict(d, equipped=d.get("gid") in worn, where="equipped" if d.get("gid") in worn else "backpack")
                      for d in a["r"].get("decks") or []]
             on = [d["gid"] for d in decks if d["equipped"]]

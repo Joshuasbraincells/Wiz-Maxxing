@@ -960,9 +960,59 @@ class DeckFor(unittest.TestCase):
             with mock.patch.object(S.FoeBook, "_read", staticmethod(lambda base, days: 1 / 0)):
                 self.assertIs(V.sim_book(paced=True)[0], book)
                 self.assertIs(V.sim_book()[0], book)
+            self.assertEqual(V.SIM["refreshing"], 0)
         finally:
             V.SIM.clear()
             V.SIM.update(keep)
+
+    def test_old_book_while_a_paced_read_runs(self):
+        # (a gated /sim or /decks while /deckfor's - or the planner's - paced read runs: the old book, never the whole
+        # archive read again inside the request; none at all: read there)
+        V = self.V
+        old = S.FoeBook(battles=[])
+        keep = dict(V.SIM)
+        try:
+            V.SIM.update(book=old, facts={"f": 1}, at=0.0, refreshing=1)
+            with mock.patch.object(S, "FoeBook", lambda *a, **kw: 1 / 0):
+                self.assertEqual(V.sim_book(), (old, {"f": 1}))
+                self.assertEqual(V.sim_book(paced=True), (old, {"f": 1}))
+            V.SIM.update(book=None, refreshing=1)
+            with mock.patch.object(S, "load_facts", lambda path: {}):
+                self.assertIsNotNone(V.sim_book()[0])
+            # (a paced read that fails: the count put back)
+            V.SIM.update(book=None, at=0.0, refreshing=0)
+            with mock.patch.object(S.FoeBook, "_read", staticmethod(lambda base, days: iter([]))), \
+                    mock.patch.object(S, "load_facts", lambda path: 1 / 0):
+                with self.assertRaises(ZeroDivisionError):
+                    V.sim_book(paced=True)
+            self.assertEqual(V.SIM["refreshing"], 0)
+        finally:
+            V.SIM.clear()
+            V.SIM.update(keep)
+
+    def test_thread_reads_paced_and_pauses(self):
+        # (the deckfor thread's own wiring: sim_book(paced=True) and best_decks(pause=gate_wait))
+        V = self.V
+        c = self.ctx()
+        asked = {}
+
+        def book(paced=False):
+            asked["paced"] = paced
+            return c["book"], c["facts"]
+
+        def best(*a, **kw):
+            asked["pause"] = kw.get("pause")
+            return {"decks": [], "groups": [], "why": []}
+        keep = dict(V.DECKFOR["cache"])
+        try:
+            V.DECKFOR["cache"].clear()
+            with mock.patch.object(V, "sim_book", book), mock.patch.object(V, "enemy_state", lambda: (None, None)), \
+                    mock.patch.object(S, "best_decks", best):
+                V.deckfor_lines_for({"zone": "Z/Graveyard", "n": "10"}, {"decks": c["decks"], "why": ""}, wait=True)
+            self.assertEqual(asked, {"paced": True, "pause": V.gate_wait})
+        finally:
+            V.DECKFOR["cache"].clear()
+            V.DECKFOR["cache"].update(keep)
 
     def test_route(self):
         """/deckfor on a local server: the decks' last reading, the battles recorded and the wiki stood in for"""
