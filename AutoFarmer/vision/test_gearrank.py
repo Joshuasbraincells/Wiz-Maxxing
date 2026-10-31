@@ -203,6 +203,35 @@ class Plan(unittest.TestCase):
         self.assertEqual(got["amulet"], (0x30, "empty"))                 # (nothing worn there)
         self.assertNotIn("deck", got)
 
+    def test_unread_slots(self):
+        # (a backpack item whose template couldn't be read - slot None: judged unknown, never left out - and /gear's item line
+        # says so: Gear.ahk GearSellOk counts it and holds the sale)
+        worn = [item(0x10, "hat", [stat("CanonicalFireDamage", 8)])]
+        unread = {"gid": 0x99, "tid": 99, "name": None, "adjs": None, "slot": None, "effects": None, "reqs": None}
+        notgear = {"gid": 0x98, "tid": 98, "name": "Reagent", "adjs": ["Reagent"], "slot": "", "effects": None}
+        r = G.swap_plan(worn, [unread, notgear], TOTALS, "fire", 60)
+        v = {j["gid"]: (j["slot"], j["verdict"]) for j in r["judged"]}
+        self.assertEqual(v, {0x99: (None, "unknown")})                                   # (the reagent: not planned)
+        self.assertEqual(G.item_slot(unread), None)
+        self.assertEqual(G.item_slot(notgear), "")
+        self.assertEqual(G.item_slot({"adjs": ["Hat"]}), "hat")
+        lines = G.answer({"worn": worn, "bag": [unread, notgear], "bag_gids": [0x99, 0x98], "level": 60}, "",
+                         {"school": "fire"})
+        items = {ln.split("|")[1]: ln.split("|") for ln in lines if ln.startswith("item|")}
+        self.assertEqual((items["99"][5], items["99"][6]), ("", "unknown"))
+        self.assertIn("template couldn't be read", items["99"][9])
+        self.assertEqual(items["98"][6], "not planned")
+        # (a WORN piece not read: a slot with nothing else worn isn't "empty" - its pieces unknown, nothing planned there)
+        worn2 = worn + [{"gid": 0x11, "tid": 11, "name": None, "adjs": None, "slot": None, "effects": None, "reqs": None}]
+        bag = [item(0x20, "robe", [stat("CanonicalMaxHealth", 300)]), item(0x21, "hat", [stat("CanonicalFireDamage", 12)])]
+        r = G.swap_plan(worn2, bag, TOTALS, "fire", 60)
+        v = {j["gid"]: j["verdict"] for j in r["judged"]}
+        self.assertEqual(v, {0x20: "unknown", 0x21: "better"})                           # (the hat: worn and read)
+        self.assertEqual([p["slot"] for p in r["plan"]], ["hat"])
+        self.assertTrue(any("worn piece couldn't be read" in n for n in r["notes"]))
+        # (and without it: the robe slot empty - better, basis empty)
+        self.assertEqual(G.swap_plan(worn, bag, TOTALS, "fire", 60)["plan"][1]["basis"], "empty")
+
     def test_no_level_note(self):
         r = G.swap_plan([], [item(0x20, "hat", [stat("CanonicalFireDamage", 1)])], TOTALS, "fire", None)
         self.assertEqual(r["judged"][0]["verdict"], "unknown")
@@ -234,10 +263,10 @@ class Drops(unittest.TestCase):
         book = G.DropBook(self.dir)
         hat0 = item(0x10, "hat", [], tid=100)
         start = [item(0x50, "robe", [], tid=500)]
-        # (no mark yet: nothing counted, the backpack kept)
+        # (no mark yet: nothing counted, the backpack kept - not a dry run either: its drops weren't known)
         out = book.run_end("Waterworks", self.reading(start, [hat0]), [], ["hat"], 3, "t0")
         self.assertFalse(out["marked"])
-        self.assertEqual((out["new"], out["runs"], out["dry"]), ([], 1, 1))
+        self.assertEqual((out["new"], out["runs"], out["dry"]), ([], 1, 0))
         # (run 2: a hat and a reagent dropped - the hat logged; it's in the plan: an upgrade)
         new_hat = item(0x60, "hat", [], tid=600, name="Hat-WW")
         rd = self.reading(start + [new_hat], [hat0], extra_gids=[0x61])
@@ -262,6 +291,39 @@ class Drops(unittest.TestCase):
         with open(book.path("Waterworks", ".txt"), "rb") as f:
             data = f.read()
         self.assertIn(b"\r\n600|Hat-WW|hat||t1|1\r\n", data)
+
+    def test_stale_before_not_taken(self):
+        # (session 1: marked, a run's end keeps the backpack - [robe]; days later a hat picked up elsewhere; session 2's mark
+        # failed (or gearswap was off at the start): nomark - the old before= isn't this run's start: the hat is NOT a drop)
+        book = G.DropBook(self.dir)
+        robe = item(0x50, "robe", [], tid=500)
+        book.mark("WW", self.reading([robe]), "t0")
+        book.run_end("WW", self.reading([robe]), [], ["hat"], 30, "t1")
+        hat = item(0x70, "hat", [], tid=700, name="x70")
+        out = book.run_end("WW", self.reading([robe, hat]), [], ["hat"], 30, "t9", marked=False)
+        self.assertEqual((out["marked"], out["new"], out["dry"]), (False, [], 1))      # (dry kept: 1 from run 1)
+        self.assertEqual(book.load_drops("WW"), {})
+        # (the backpack kept afresh: the next run's drops counted from here)
+        boots = item(0x80, "shoes", [], tid=800)
+        out = book.run_end("WW", self.reading([robe, hat, boots]), [], ["hat"], 30, "t10")
+        self.assertTrue(out["marked"])
+        self.assertEqual([it["tid"] for it in out["new"]], [800])
+        # (/gear's nomark=1 says so)
+        r = {"worn": [], "bag": [robe, hat, boots], "bag_gids": [0x50, 0x70, 0x80, 0x90], "level": 50}
+        lines = G.answer(r, "", {"run": "WW", "end": "1", "nomark": "1"}, self.dir, "", when="t11")
+        self.assertTrue(next(ln for ln in lines if ln.startswith("run|")).endswith("|0|0"))
+        self.assertTrue(any("no backpack noted at this run's start" in ln for ln in lines))
+
+    def test_unread_new_item_not_dry(self):
+        # (a new item whose template couldn't be read: not logged, and the run isn't dry - it may have been an upgrade)
+        book = G.DropBook(self.dir)
+        robe = item(0x50, "robe", [], tid=500)
+        book.mark("WW", self.reading([robe]), "t0")
+        unread = {"gid": 0x51, "tid": 99, "name": None, "adjs": None, "slot": None, "effects": None, "reqs": None}
+        out = book.run_end("WW", self.reading([robe, unread]), [], ["hat"], 30, "t1")
+        self.assertEqual((out["new"], out["unread"], out["dry"]), ([], 1, 0))
+        out = book.run_end("WW", self.reading([robe, unread]), [], ["hat"], 30, "t2")
+        self.assertEqual((out["unread"], out["dry"]), (0, 1))                         # (no longer new)
 
     def test_dry_runs_end_it(self):
         book = G.DropBook(self.dir)

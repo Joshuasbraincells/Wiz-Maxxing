@@ -44,8 +44,8 @@ press F9 and name it. Pick it and click Run (so many times, or 0 = until you
 stop it): the bot walks the same way by the zone's map, presses X where you
 did, fights every battle (the bot on, F6), Spaces through dialogues and starts
 over. F8 pauses it. A defeat or a potion run that leaves the wizard in an
-earlier zone of the run: on from the nearest step there (3 times a run at
-most). Somewhere the run doesn't go, or stuck for good: it stops and says why
+earlier zone of the run: on from the nearest step of its first visit there,
+never on to the way back out (3 times a run at most). Somewhere the run doesn't go, or stuck for good: it stops and says why
 (the tab, debug.log "Dungeons: ...", Discord) - counted badly stuck on the
 dashboard. An X at a sigil that didn't load twice: home and back first, once a
 run, if you switch sigilhome on (see "A sigil that won't start").
@@ -1496,8 +1496,16 @@ read-only):
 	  The bot never saves a set. "...plan pieces of an Equipment Set too"
 	  (gearsets) plans them like any other.
 	- PlayerStats.txt: gearmargin:2 (the % a piece must be better by),
-	  gearweights:off:1,def:0.5,pip:0.3,heal:0 (what counts), gearlevel:N
-	  (your level, if the game's memory doesn't give it).
+	  gearlevel:N (your level, if the game's memory doesn't give it), and
+	  what counts - one number a line, each left out keeps your role's:
+	  gearweight.off:1, gearweight.def:0.5, gearweight.pip:0.3,
+	  gearweight.heal:0, gearweight.cards:0.002, gearweight.eblock:200 (an
+	  enemy's block rating, for a critical's worth).
+	- A piece whose details couldn't be read from the game's memory is "not
+	  judged": it holds the quick sell like a better one, and a dungeon run
+	  with one among its new pieces isn't counted as a run with no upgrade.
+	  A dungeon run whose start couldn't be noted (gearswap switched on
+	  midway, the backpack not read then) has its drops left out once.
 	- What it reads, from the command line (read-only, nothing sent):
 	      python vision\gearmem.py --effects --out gear.txt
 	  each piece you wear and each gear piece in the backpack, its stats and

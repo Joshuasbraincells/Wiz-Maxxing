@@ -1294,16 +1294,18 @@ NavGuiTree(under := "", withHidden := false, depth := "", timeoutMs := 1500)
 ;The worn gear and the backpack's from the game's memory, with the helper's swap plan (its /gear - READ-ONLY,
 ;vision\gearmem.py and gearrank.py: nothing in the game is written, injected or hooked; no key, click or window - the
 ;stats are NOT CONFIRMED in the game yet: the plan is advice). query: /gear's arguments without the "?" (Gear.ahk
-;GearQuery: school, level, role, the totals; run=&mark=1 / end=1 for a dungeon run's drop log). An object: wornN, bagN
-;(gear of the planned slots), bagItems (every item), level, school, role, setsOk, why (gear| line), worn ([{slot, gid, tid,
-;name, display, level, stats, sets}]), items ([{gid, tid, name, display, slot, verdict (better, not better, can't wear, in a
-;set, unknown), delta, basis, why, stats, reqs, crowns, nosell, sets}]), plan ([{slot, gid, tid, name, wornGid, wornName,
-;delta (% - basis stats; levels - basis level), basis (stats, level, empty), held (1: the worn piece is in an Equipment
-;Set), why}]), notes ([text]), drops ([{tid, name, slot, display, count, first}]: a run's new pieces), run ({name, runs,
-;dry, stopafter, done, why, new, marked} - "" without run=), better / unknown / judged (the items' verdicts counted:
-;judged - every verdict but unknown). "" when it can't be read - navmem:0, the helper not running or older (no /gear),
-;dual mode, "none|<why>" (not in the world, the reader being made - once a game, about a second): NavGearWhy says why
-;(after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s)
+;GearQuery: school, level, role, the totals; run=&mark=1 / end=1 (nomark=1) for a dungeon run's drop log). An object:
+;wornN, bagN (gear of the planned slots - and pieces whose template couldn't be read: verdict unknown, slot ""),
+;bagItems (every item), level, school, role, setsOk, why (gear| line), worn ([{slot, gid, tid, name, display, level,
+;stats, sets}]), items ([{gid, tid, name, display, slot, verdict (better, not better, can't wear, in a set, unknown),
+;delta, basis, why, stats, reqs, crowns, nosell, sets}]), plan ([{slot, gid, tid, name, wornGid, wornName, delta (% -
+;basis stats; levels - basis level), basis (stats, level, empty), held (1: the worn piece is in an Equipment Set),
+;why}]), notes ([text]), drops ([{tid, name, slot, display, count, first}]: a run's new pieces - count read as V1At(d,
+;"count"): d.count is the Map's own Count), run ({name, runs, dry, stopafter, done, why, new, marked} - "" without
+;run=), better / unknown / judged (the items' verdicts counted: judged - every verdict but unknown). "" when it can't be
+;read - navmem:0, the helper not running or older (no /gear), dual mode, "none|<why>" (not in the world, the reader
+;being made - once a game, about a second): NavGearWhy says why (after an ERR or no answer not asked again for 5 s; an
+;older helper's "unknown request": 60 s)
 NavGear(query := "", timeoutMs := 5000)
 	{
 	global NavGearWhy, NavGearWaitUntil ; (v1 globals it sets)

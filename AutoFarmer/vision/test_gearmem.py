@@ -359,6 +359,33 @@ class Reader(unittest.TestCase):
         self.assertEqual(f, {"m_effectName": "CanonicalFireDamage", "m_lookupIndex": 3})
         self.assertEqual(r["worn"][0]["reqs"]["list"][0]["fields"]["m_numericValue"], 50.0)     # (either: a float)
 
+    def test_unreadable_template_kept(self):
+        # (a backpack item whose template the hand's map doesn't give: kept in bag with slot None - never left out as "not
+        # gear" - and gearrank judges it unknown: a full backpack holding it isn't sold on the gear pass's word)
+        w = wizard()
+        w.p.put_list(w.inv + 0x70, [w.item(0x221, 3), w.item(0x222, 4), w.item(0x223, 5), w.item(0x224, 99)])
+        r, why = self.make(w).read()
+        self.assertEqual(why, "")
+        self.assertEqual(r["bag_gids"], [0x221, 0x222, 0x223, 0x224])
+        self.assertEqual([(d["gid"], d["slot"]) for d in r["bag"]], [(0x221, "hat"), (0x222, "robe"), (0x224, None)])
+        self.assertEqual((r["bag"][2]["effects"], r["bag"][2]["reqs"]), (None, None))
+        M.finish(r, w.hm.lang_text)
+        lines = G.answer(r, "", {"school": "fire"})
+        item = next(ln for ln in lines if ln.startswith("item|224|")).split("|")
+        self.assertEqual((item[5], item[6]), ("", "unknown"))
+        self.assertEqual(sum(1 for ln in lines if ln.startswith("item|")), 3)
+        # (its adjective list unreadable - longer than str_list's cap - the same)
+        w2 = wizard()
+        w2.template(6, "Hat-Odd", ["Hat"] + ["Adj%d" % k for k in range(45)])
+        w2.p.put_list(w2.inv + 0x70, [w2.item(0x231, 6)])
+        r2, _ = self.make(w2).read()
+        self.assertEqual([(d["gid"], d["slot"]) for d in r2["bag"]], [(0x231, None)])
+        # (a WORN piece not read: its slot None too)
+        w3 = wizard()
+        w3.p.put_list(w3.eq + 0x78, [w3.item(0x111, 1), w3.item(0x113, 77)])
+        r3, _ = self.make(w3).read()
+        self.assertEqual([d["slot"] for d in r3["worn"]], ["hat", None])
+
     def test_unknown_effect_type(self):
         w = wizard()
         e = w.obj("BrandNewEffectInfo", 0x100)

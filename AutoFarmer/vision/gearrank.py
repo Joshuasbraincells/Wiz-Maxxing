@@ -12,6 +12,7 @@ itself - the vision helper hands it what gearmem.py read (vision.py /gear) - and
     book = DropBook(folder)                                # learned\\drops: <run>.txt (drops), <run>.state (an .ini)
     book.mark(run, reading, when)                          # the backpack's ids at a run's start
     out = book.run_end(run, reading, plan, slots, stopafter, when)   # this run's drops logged, dry runs, done?
+                                                           # (marked=False: its start wasn't noted - not counted)
 
     python gearrank.py --demo                              # a made-up wizard and backpack through swap_plan
 
@@ -29,7 +30,7 @@ the worn piece's stats taken off and the candidate's added. offence = the damage
 the hit chance (the school's own accuracy + accuracy, at most 100 %) x a critical's worth on average (crit_chance /
 crit_mult against ENEMY_BLOCK) x what's left of ENEMY_RESIST after pierce; defence = health / (1 - resist) x incoming
 healing; pips = 1 + half the power-pip chance + 0.1 a starting pip; healing = 1 + outgoing healing %. Each by its log, the
-role's weights (ROLE_WEIGHTS - hitter, healer, blader; PlayerStats gearweights:off:1,def:0.5,... overrides), item cards
+role's weights (ROLE_WEIGHTS - hitter, healer, blader; PlayerStats gearweight.off:1, gearweight.def:0.5... override), item cards
 a small bonus each.
 """
 import math
@@ -76,7 +77,7 @@ LEVEL_PROPS = ("m_numericValue", "m_level", "m_magicLevel", "m_value")
 SCHOOL_PROPS = ("m_magicSchool", "m_schoolName", "m_school", "m_sSchool")
 
 ENEMY_RESIST = B.ENEMY_RESIST        # % an enemy resists the wizard's hits (the bot's enemyresist default)
-ENEMY_BLOCK = 200                    # an enemy's block rating (a guess for the crit's worth - gearweights eblock:N)
+ENEMY_BLOCK = 200                    # an enemy's block rating (a guess for the crit's worth - gearweight.eblock:N)
 RESIST_CAP = 90
 ROLE_WEIGHTS = {"hitter": {"off": 1.0, "def": 0.5, "pip": 0.3, "heal": 0.0, "cards": 0.002},
                 "healer": {"off": 0.1, "def": 0.8, "pip": 0.3, "heal": 1.0, "cards": 0.002},
@@ -93,6 +94,16 @@ def slot_of(adjs):
         return None
     have = set(adjs)
     return next((slot for adj, slot in SLOT_ADJ if adj in have), "")
+
+
+def item_slot(it):
+    """an item's slot: its own slot field, else its adjectives' (slot_of) - "" read and not a slot's, None NOT READ (gearmem:
+    its template or adjective list couldn't be read - judged "unknown", never taken for "not gear" or an empty slot)"""
+    s = (it or {}).get("slot")
+    if s:
+        return s
+    a = slot_of((it or {}).get("adjs"))
+    return a if a is not None else ("" if s == "" else None)
 
 
 def parse_stat(name):
@@ -318,7 +329,8 @@ def level_req(reqs):
 
 # ============================================================================ the score
 def parse_weights(text):
-    """{key: number} of gearweights' "off:1,def:0.5,..." (also = between); junk left out"""
+    """{key: number} of /gear's weights= "off:1,def:0.5,..." (also = between - Gear.ahk
+    builds it from PlayerStats' gearweight.off:1, gearweight.def:0.5... lines); junk left out"""
     out = {}
     for kv in re.split(r"[,;]", text or ""):
         k, _, v = kv.replace("=", ":").partition(":")
@@ -388,8 +400,7 @@ def _prep(it, school, lookup=None):
     d["scored_unknown"] = scored_unknown(st, unk) if st is not None else ["effects"]
     d["delta"] = delta_of(st, school) if st is not None else None
     d["level_req"] = level_req(it.get("reqs"))
-    if not d.get("slot"):
-        d["slot"] = slot_of(it.get("adjs")) or ""
+    d["slot"] = item_slot(it)            # (None: not read)
     return d
 
 
@@ -419,17 +430,24 @@ def swap_plan(worn, bag, totals, school="", level=None, role="hitter", margin=MA
     worn_name, delta, basis, held, why}] (one a slot at most: the best piece of the backpack better by margin % - basis
     "level": by more levels, "empty": a slot with nothing worn; held 1: the worn piece is in an Equipment Set - a swap
     would be undone by the set's Ctrl+N: re-save the set (allow_sets: gearsets:1 - not held)), judged [{gid, slot,
-    verdict, delta, basis, why}] (every backpack piece of a planned slot: better, not better, can't wear, in a set, unknown),
-    notes [text]}. Decks, pets and mounts are never in it"""
+    verdict, delta, basis, why}] (every backpack piece of a planned slot: better, not better, can't wear, in a set, unknown -
+    and one whose slot couldn't be read: unknown, slot None), notes [text]}. Decks, pets and mounts are never in it. A
+    worn piece whose slot couldn't be read may be any slot's with nothing else worn: those slots' pieces are unknown then,
+    never better than "nothing worn there"."""
     worn_p = [_prep(w, school, lookup) for w in worn or []]
     bag_p = [_prep(b, school, lookup) for b in bag or []]
     by_slot = {}
     for w in worn_p:
         if w["slot"] in SLOTS and w["slot"] not in by_slot:
             by_slot[w["slot"]] = w
+    worn_unread = [w for w in worn_p if w["slot"] is None]
     plan, judged, notes = [], [], []
     if level is None:
         notes.append("your level isn't known: a piece with a level requirement can't be judged")
+    if worn_unread:
+        notes.append("%d worn piece%s couldn't be read (%s): a slot with nothing else worn isn't judged as empty" %
+                     (len(worn_unread), "" if len(worn_unread) == 1 else "s",
+                      ", ".join("%x" % w["gid"] if w.get("gid") else "?" for w in worn_unread[:3])))
     for slot in SLOTS:
         w = by_slot.get(slot)
         held = bool(w and w.get("sets")) and not allow_sets
@@ -446,6 +464,10 @@ def swap_plan(worn, bag, totals, school="", level=None, role="hitter", margin=MA
                 continue
             if c.get("sets") and not allow_sets:
                 j.update(verdict="in a set", why="in Equipment Set %s (kept for it)" % ",".join(str(n) for n in c["sets"]))
+                continue
+            if w is None and worn_unread:
+                j.update(verdict="unknown", why="nothing read as worn there, but a worn piece couldn't be read - it may be "
+                                                "this slot's")
                 continue
             delta, basis, cwhy = compare(w, c, totals, role, school, level, weights)
             j.update(delta=delta, basis=basis, why=cwhy)
@@ -465,6 +487,11 @@ def swap_plan(worn, bag, totals, school="", level=None, role="hitter", margin=MA
                      "delta": delta, "basis": basis, "held": held,
                      "why": cwhy + ("; the worn piece is in Equipment Set %s - re-save the set after a swap (or gearsets:1)"
                                     % ",".join(str(n) for n in w["sets"]) if held else "")})
+    # (a backpack piece whose slot couldn't be read - its template or adjectives: not judged, so a full backpack holding
+    # it is never sold on the plan's word - Gear.ahk GearSellOk counts it)
+    for c in (b for b in bag_p if b["slot"] is None):
+        judged.append({"gid": c.get("gid"), "slot": None, "verdict": "unknown", "delta": None, "basis": None,
+                       "why": "its template couldn't be read - its slot, stats and requirements aren't known"})
     return {"plan": plan, "judged": judged, "notes": notes}
 
 
@@ -638,22 +665,26 @@ class DropBook:
         self.save_state(run, st)
         return st
 
-    def run_end(self, run, reading, plan, slots, stopafter, when):
+    def run_end(self, run, reading, plan, slots, stopafter, when, marked=True):
         """a run done: {new [items], drops, runs, dry, done, why, marked (False: no backpack ids from its start - its
-        drops not counted this time)} - this run's new gear logged, an upgrade (a new piece in the plan, or a slot now
-        worn with a drop of this run's that wasn't before) resets dry, else +1; done_check; the backpack's ids kept for
-        the next run. reading: gearmem's (bag - gear items -, bag_gids - every item -, worn)"""
+        drops not counted this time), unread (its new items whose slot couldn't be read), upgrade} - this run's new gear
+        logged, an upgrade (a new piece in the plan, or a slot now worn with a drop of this run's that wasn't before)
+        resets dry, else +1 - not when its drops weren't all known (not marked, or a new item not read): dry kept then;
+        done_check; the backpack's ids kept for the next run. reading: gearmem's (bag - gear items and unread ones -,
+        bag_gids - every item -, worn). marked False (/gear's nomark=1 - Gear.ahk: this run's start wasn't noted, the
+        mark failed or gearswap was off then): the state's before= is an older run's - never taken for this one's start
+        (it would count everything picked up since as this dungeon's drops): not counted, the backpack kept afresh"""
         reading = reading or {}
         st = self.load_state(run)
         drops = self.load_drops(run)
-        marked = st.get("before") is not None
-        new = new_items(st.get("before"), reading.get("bag") or []) if marked else []
-        new = [dict(it, slot=it.get("slot") or slot_of(it.get("adjs")) or "") for it in new]
-        new = [it for it in new if it["slot"] in SLOTS]
+        marked = bool(marked) and st.get("before") is not None
+        new_all = new_items(st.get("before"), reading.get("bag") or []) if marked else []
+        unread = [it for it in new_all if item_slot(it) is None]
+        new = [dict(it, slot=item_slot(it)) for it in new_all if item_slot(it) in SLOTS]
         drops = log_drops(drops, new, when)
         worn_now = {}
         for w in reading.get("worn") or []:
-            slot = w.get("slot") or slot_of(w.get("adjs"))
+            slot = item_slot(w)
             if slot in SLOTS and slot not in worn_now and w.get("tid") is not None:
                 worn_now[slot] = w["tid"]
         new_gids = {it.get("gid") for it in new}
@@ -662,7 +693,8 @@ class DropBook:
         upgrade = any(p.get("gid") in new_gids for p in plan or []) or bool(st["worn"]) and any(
             tid in drops and st["worn"].get(slot) != tid for slot, tid in worn_now.items())
         st["runs"] = st.get("runs", 0) + 1
-        st["dry"] = 0 if upgrade else st.get("dry", 0) + 1
+        # (a dry run only when this run's drops are all known: not marked, or one not read - it may have been an upgrade)
+        st["dry"] = 0 if upgrade else st.get("dry", 0) + (1 if marked and not unread else 0)
         worn_list = [{"slot": s, "tid": t} for s, t in worn_now.items()]
         done, why = done_check(slots, worn_list, drops, st["dry"], stopafter)
         st.update(done=done, why=why, at=when, worn=worn_now, before=list(reading.get("bag_gids") or []))
@@ -670,7 +702,7 @@ class DropBook:
             self.save_drops(run, drops)
         self.save_state(run, st)
         return {"new": new, "drops": drops, "runs": st["runs"], "dry": st["dry"], "done": done, "why": why,
-                "marked": marked, "upgrade": upgrade}
+                "marked": marked, "unread": len(unread), "upgrade": upgrade}
 
 
 # ============================================================================ /gear's answer
@@ -723,7 +755,7 @@ def gear_lines(r, why="", plan=None, totals=None, school="", role="", level=None
                         + [cell(level)]))
     for w in worn:
         st, _u, how = item_stats(w.get("effects"))
-        out.append("|".join(["worn", cell(w.get("slot") or slot_of(w.get("adjs"))), "%x" % w["gid"] if w.get("gid") else "",
+        out.append("|".join(["worn", cell(item_slot(w)), "%x" % w["gid"] if w.get("gid") else "",
                              cell(w.get("tid")), cell(w.get("name")), cell(w.get("display")),
                              cell(level_req(w.get("reqs"))), cell(stats_text(st, how)),
                              ",".join(str(n) for n in w.get("sets") or [])]))
@@ -731,9 +763,11 @@ def gear_lines(r, why="", plan=None, totals=None, school="", role="", level=None
     for b in bag:
         st, _u, how = item_stats(b.get("effects"))
         j = jby.get(b.get("gid")) or {}
-        slot = b.get("slot") or slot_of(b.get("adjs"))
+        slot = item_slot(b)
+        # (a slot not read: unknown even with no judged entry - never "not planned", which would let a sale through)
         out.append("|".join(["item", "%x" % b["gid"] if b.get("gid") else "", cell(b.get("tid")), cell(b.get("name")),
-                             cell(b.get("display")), cell(slot), cell(j.get("verdict") or ("" if slot in SLOTS else "not planned")),
+                             cell(b.get("display")), cell(slot), cell(j.get("verdict") or (
+                                 "unknown" if slot is None else "" if slot in SLOTS else "not planned")),
                              cell(j.get("delta")), cell(j.get("basis")), cell(j.get("why")), cell(stats_text(st, how)),
                              cell(reqs_text(b.get("reqs"))), cell(bool(b.get("crowns"))), cell(bool(b.get("nosell"))),
                              ",".join(str(n) for n in b.get("sets") or [])]))
@@ -769,7 +803,8 @@ def totals_of(q):
 def answer(r, why, q, drops_dir=None, known_text="", when=None):
     """/gear's lines for gearmem's reading r and the query q (vision.py: school, level, role, weights, margin, sets,
     the totals; run, mark=1 / end=1, slots, stopafter) - the drop log in drops_dir, the catalogue known_text
-    (resources\\dungeons_known.txt) for a run with no slots. Never raises"""
+    (resources\\dungeons_known.txt) for a run with no slots; end=1&nomark=1: this run's start wasn't noted - Gear.ahk's
+    mark failed or gearswap was off then - its drops not counted, the backpack kept afresh). Never raises"""
     try:
         if not r:
             return gear_lines(None, why)
@@ -814,11 +849,14 @@ def answer(r, why, q, drops_dir=None, known_text="", when=None):
                     stopafter = int(float(q.get("stopafter") or STOPAFTER))
                 except ValueError:
                     stopafter = STOPAFTER
-                run = book.run_end(name, r, plan["plan"], slots, stopafter, when)
+                run = book.run_end(name, r, plan["plan"], slots, stopafter, when, marked=q.get("nomark") != "1")
                 run.update(name=name, stopafter=stopafter)
                 if not run["marked"]:
-                    plan["notes"].append("no backpack ids from this run's start (gearswap was off, or the helper "
-                                         "restarted): its drops aren't counted this time")
+                    plan["notes"].append("no backpack noted at this run's start (gearswap was off then, or the backpack "
+                                         "couldn't be read): its drops aren't counted this time - the next run's are")
+                if run.get("unread"):
+                    plan["notes"].append("%d of this run's new items couldn't be read (their templates): not logged, and "
+                                         "the run isn't counted as dry" % run["unread"])
         ms = round((time.perf_counter() - t0) * 1000, 1)
         return gear_lines(r, why, plan, totals, school, role, level, run, ms)
     except Exception as e:  # noqa: BLE001 - never into the server

@@ -45,6 +45,7 @@ WHAT IS READ (offsets by name each attach):
   worn          ClientEquipmentBehavior.m_itemList - std::list {head, size} of SharedPointer<WizClientObjectItem> (node:
                   next, prev, the item at +0x10)
   backpack      InventoryBehaviorBase.m_itemList (bagmem's) - every item's global id; details for gear of the planned slots
+                  (an item whose template or adjectives can't be read: kept with slot None - gearrank: "unknown")
   sets          ClientWizEquipmentBehavior.m_equipmentSets: std::list of EquipmentSet - m_serializedItems (u16 n, n u64
                   global ids), m_isEquipped (bagmem's)
   an item       CoreObject.m_globalID.m_full, m_templateID.m_full -> handmem's template map -> its template:
@@ -476,9 +477,10 @@ class GearMem:
 
     # ------------------------------------------------------------------ the read
     def read(self):
-        """({worn [item], bag [item - gear of the planned slots], bag_gids [every backpack item's id], bag_size, sets
-        [{n, equipped, ids}], sets_ok, level, player_gid, ms}, "") or (None, why). item: {gid, tid, name (object name),
-        display_key, adjs, slot, crowns, nosell, effects, reqs, sets [n...], where}. Never raises"""
+        """({worn [item], bag [item - gear of the planned slots, and any whose slot couldn't be read], bag_gids [every
+        backpack item's id], bag_size, sets [{n, equipped, ids}], sets_ok, level, player_gid, ms}, "") or (None, why).
+        item: {gid, tid, name (object name), display_key, adjs, slot ("" not a slot's, None not read), crowns, nosell,
+        effects, reqs, sets [n...], where}. Never raises"""
         t0 = time.perf_counter()
         try:
             r, why = self._read()
@@ -494,7 +496,9 @@ class GearMem:
         tid = self.u32(it + CO["m_templateID.m_full"])
         name, adjs, key = self.template_info(tid)
         slot = G.slot_of(adjs)
-        d = {"gid": gid or None, "tid": tid, "name": name, "display_key": key, "adjs": adjs, "slot": slot or "",
+        # (slot: "hat"..., "" read and not a slot's, None its template or adjective list NOT read - not known, never taken
+        # for "not gear": gearrank judges such a piece "unknown", which holds a quick sell)
+        d = {"gid": gid or None, "tid": tid, "name": name, "display_key": key, "adjs": adjs, "slot": slot,
              "crowns": adjs is None or "FLAG_CrownsOnly" in adjs or name is None or name.startswith(("Crown-", "Crowns-")),
              "nosell": adjs is not None and "FLAG_NoSell" in adjs, "effects": None, "reqs": None, "sets": [],
              "where": where}
@@ -537,7 +541,9 @@ class GearMem:
             if gid:
                 r["bag_gids"].append(gid)
             d = self._item(it, "backpack", True)
-            if d["slot"] in G.SLOTS:
+            # (gear of the planned slots - and an item whose slot couldn't be read: kept, not judged, never left out as if
+            # it weren't gear - a full backpack holding it isn't quick sold on the gear pass's word)
+            if d["slot"] in G.SLOTS or d["slot"] is None:
                 r["bag"].append(d)
         # the Equipment Sets (bagmem's) - each item's sets
         so, ES = self.off("ClientWizEquipmentBehavior", "m_equipmentSets"), self.P["EquipmentSet"]

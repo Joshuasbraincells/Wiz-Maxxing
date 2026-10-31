@@ -327,7 +327,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              without all=1); capped 1: cut short (with matches 0: the window may be past
                                              where finding it stopped - not "no such window")
   /gear[?school=&level=&role=hitter|healer|blader&weights=off:1,def:0.5,...&margin=2&sets=1&hp=&damage=&pierce=&crit=
-       &block=&acc=&resist=&pp=&heal=&incheal=][&run=<name>&mark=1|&end=1&slots=hat,robe,...&stopafter=30]
+       &block=&acc=&resist=&pp=&heal=&incheal=][&run=<name>&mark=1|&end=1&slots=hat,robe,...&stopafter=30&nomark=1]
                                           -> the worn gear and the backpack's from the game's memory (read-only -
                                              vision\gearmem.py: each piece's equip effects and requirements, NOT
                                              CONFIRMED in the game yet) and the swap plan for the wizard's totals given
@@ -339,7 +339,9 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              AutoFarmer\learned\drops (mark=1 at its start: the backpack's ids kept;
                                              end=1 at its end: drop|tid|name|slot|display|count|first a new piece,
                                              run|name|runs|dry|stopafter|done|why|new|marked - slots none: the
-                                             dungeon's from resources\dungeons_known.txt); or "none|<why>"
+                                             dungeon's from resources\dungeons_known.txt; nomark=1: its start wasn't
+                                             noted - not counted, the backpack kept afresh); a piece whose template
+                                             couldn't be read: item|...|<slot blank>|unknown|...; or "none|<why>"
   /goal                                   -> the quest's active goal, read from the game's memory (read-only, see
                                              vision\questmem.py) - exact, unlike the OCR of the screen - one line each:
                                                text|<the goal line>|<from>   (as the game shows it under the arrow:

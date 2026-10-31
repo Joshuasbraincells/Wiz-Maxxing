@@ -10,6 +10,8 @@ versions skip those lines (DgLoad keeps only name|, deck| and the steps). Pure P
     run = parse_run(text, "Waterworks")            # {name, deck, steps [{kind, zone, x, y, z, line}], slots, ...}
     issues = lint(run, runs={"Darkmoor"}, decks={"large"}, cat=gearrank.catalogue(known))   # [(level, step, text)]
     print("\\n".join(lint_lines(run, issues)))
+    zone_choice(run["steps"], i, zone, (x, y))     # Dungeons.ahk DungeonStep's rule when the wizard turns up in another
+                                                   # zone: ("resume" / "ahead" / "stop", step) - kept the same as it
 
     python dglint.py [file or folder ...] [--decks <folder>] [--known <dungeons_known.txt>] [--out lint.txt]
                      (no file: AutoFarmer\\dungeons; decks: AutoFarmer\\decks; known: resources\\dungeons_known.txt)
@@ -89,6 +91,42 @@ def _d(a, b):
     if None in (a["x"], a["y"], b["x"], b["y"]):
         return None
     return math.hypot(a["x"] - b["x"], a["y"] - b["y"])
+
+
+def nearest_first_visit(steps, zone, pos):
+    """Dungeons.ahk DgNearest: the step (1...) of zone's FIRST visit - steps in a row there - nearest pos (x, y); 1 when
+    that's step 1 and it's within 300 (the start); 0 when no step is in zone"""
+    best, best_d, in_block = 0, None, False
+    for i, s in enumerate(steps, 1):
+        if s["zone"] != zone:
+            if in_block:
+                break
+            continue
+        in_block = True
+        d = math.hypot((s["x"] or 0) - pos[0], (s["y"] or 0) - pos[1])
+        if i == 1 and d < 300:
+            return 1
+        if best_d is None or d < best_d:
+            best, best_d = i, d
+    return best
+
+
+def zone_choice(steps, i, zone, pos, from_zone="", resumes=0):
+    """Dungeons.ahk DungeonStep's rule (kept the same - this is it in Python, tested) when the wizard is in zone, not
+    the zone of step i (1... - the step walked to), and not waiting for a load out of from_zone: ("resume", k) - an
+    EARLIER zone of the run (its first visit before step i: a defeat's respawn, a potion run's Recall back): on from k,
+    that first visit's step nearest pos (nearest_first_visit), 3 times a run (resumes: so far - a fourth: ("stop", k));
+    ("ahead", k) - a zone the run hasn't been in yet: on from its first step after i (DgZoneAhead); ("stop", 0) none.
+    An earlier zone is looked at first: the recorder's "walk back out to where you started" brings the start zone, and
+    often the inner ones, again on the way back - jumping to that later step would walk out and count a run whose boss
+    wasn't beaten"""
+    k = nearest_first_visit(steps, zone, pos)
+    if k and k < i:
+        return ("resume", k) if resumes < 3 else ("stop", k)
+    ahead = next((j for j in range(i + 1, len(steps) + 1) if steps[j - 1]["zone"] == zone), 0)
+    if ahead and zone != from_zone:
+        return "ahead", ahead
+    return "stop", 0
 
 
 def stats(run):

@@ -16,7 +16,7 @@
 ; on: it carries on from there. Walking off (F8), you playing, a battle: it waits. Somewhere the recording doesn't
 ; go (another zone), stuck for good, or the game's memory unreadable: it stops and says why (debug.log "Dungeons: ...",
 ; the Dungeons tab, Discord). A defeat or a potion run that leaves the wizard in an earlier zone of the run (v0.9.0): on
-; from the nearest step there, 3 times a run at most.
+; from the nearest step of that zone's first visit, 3 times a run at most - never on to its later visit on the way back out.
 ;
 ; Between runs (v0.9.0, TODO goal 5): a run that ends back where it starts is "between runs" from its end to its first X
 ; (or another zone) - its drops looked at and the gear pass (Gear.ahk - Settings: gearswap, a rehearsal: the plan logged,
@@ -32,7 +32,8 @@
 ;battle spot), loadUntil (waiting for a loading screen out of zone fromZone), push (a spot past a doorway to walk at
 ;meanwhile), misses, seen (battles at the last look); v0.9.0: between (1 a run just done back at its start - the pass
 ;due, 2 done, "" in the run), resumes (back in an earlier zone this run), slots, stopafter, next, untilgear, bosses
-;([{name, deck}]), gearSaid} - "" when none
+;([{name, deck}]), gearSaid, gearMarked (1 the backpack noted at this run's start - Gear.ahk GearRunMark / GearRunEnd)} - ""
+;when none
 global DgRun
 ;Recording: on, its steps so far, the last spot recorded, its zone, when the Pass button was last up
 global DgRecording, DgRecSteps, DgRecLast, DgRecZone, DgRecBattleAt, DgRecPrev, DgRecOut
@@ -129,8 +130,9 @@ DgFindRun(name)
 	return ""
 	}
 
-;A run's name as its drop log's file name (vision\gearrank.py run_file: no path characters, 80 at most)
-DgRunFile(name)
+;A run's name as its drop log's file name (vision\gearrank.py run_file: no path characters, 80 at most) - not DgRunFile, the
+;Run / Delete buttons' global (a function's name is a global too in v2)
+DgDropFile(name)
 	{
 	drfS := Trim(SubStr(RegExReplace(Trim(name), "[^\w .()-]+", "-"), 1, 80), " .")
 	return drfS != "" ? drfS : "run"
@@ -140,7 +142,7 @@ DgRunFile(name)
 ;with gearswap on): "done", "N runs, M dry", "" none yet - "(until swapped)" when its box is ticked
 DgGearCell(name, untilgear)
 	{
-	dgcF := A_ScriptDir "\learned\drops\" DgRunFile(name) ".state"
+	dgcF := A_ScriptDir "\learned\drops\" DgDropFile(name) ".state"
 	dgcU := untilgear ? "until swapped" : ""
 	if (!FileExist(dgcF))
 		return dgcU
@@ -408,7 +410,7 @@ DgRunStart(file, times, avoid, quiet := false)
 	;(v1: a blank times + 0 - blank: till stopped)
 	DgRun := V1Obj({name: d.name, file: file, steps: d.steps, i: 1, runs: 0, want: V1Add(times, 0), avoid: avoid, misses: 0, seen: battles
 		, fightUntil: 0, loadUntil: 0, push: "", deck: d.deck, between: 0, resumes: 0, slots: d.slots, stopafter: d.stopafter, next: d.next
-		, untilgear: d.untilgear, bosses: d.bosses, gearSaid: 0})
+		, untilgear: d.untilgear, bosses: d.bosses, gearSaid: 0, gearMarked: 0})
 	;(not at the start: on from the nearest spot in this zone)
 	k := DgNearest(nav)
 	if (!k)
@@ -762,7 +764,29 @@ DungeonStep()
 			DgShow()
 			return
 			}
-		;(loaded into a zone further on: on from its first step)
+		;(v0.9.0: an earlier zone of the run - its first visit is before this step: a defeat's respawn, a potion run's Recall back
+		;(the main loop's PotionCheck has had its look before this step): on from the nearest step of that first visit (DgNearest -
+		;its start when that's within 300), 3 times a run at most - a fourth: stopped (defeated again and again?). Looked at BEFORE
+		;a zone further on: the recorder's "walk back out to where you started" brings the start zone, and often the inner ones,
+		;again on the way back - DgZoneAhead would find that later step and walk out, counting a run whose boss wasn't beaten (as
+		;the retry above, never on to the way back). Before v0.9.0 DgZoneAhead alone: the run stopped (or jumped to the way out).
+		;(vision\dglint.py zone_choice is this rule in Python, tested - keep the two the same)
+		k := DgNearest(nav)
+		if (k && k < r.i)
+			{
+			if (V1N(r.resumes) >= 3)
+				{
+				DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone " - back in an earlier zone of the run 3 times this run (defeated again and again?)")
+				return
+				}
+			r.resumes := V1N(r.resumes) + 1
+			DebugLog("Dungeons: in " nav.zone " - an earlier zone of the run (a defeat or a potion run?): on from step " k " (" r.resumes " of 3 this run)")
+			r.i := k, r.push := "", r.loadUntil := 0, r.loadTries := 0, r.fightUntil := 0
+			DgFresh()
+			DgShow()
+			return
+			}
+		;(loaded into a zone further on - one the run hasn't been in yet: on from its first step)
 		k := DgZoneAhead(nav.zone)
 		if (k && nav.zone != r.fromZone)
 			{
@@ -772,21 +796,7 @@ DungeonStep()
 			DgShow()
 			return
 			}
-		;(v0.9.0: an earlier zone of the run - a defeat's respawn, a potion run's Recall back (the main loop's PotionCheck has had
-		;its look before this step): on from the nearest step of that zone's first visit (DgNearest - its start when that's within
-		;300), 3 times a run at most - a fourth: stopped (defeated again and again?). DgZoneAhead only looks ahead: it used to stop
-		;here at the first defeat)
-		k := DgNearest(nav)
-		if (k && V1N(r.resumes) < 3)
-			{
-			r.resumes := V1N(r.resumes) + 1
-			DebugLog("Dungeons: in " nav.zone " - an earlier zone of the run (a defeat or a potion run?): on from step " k " (" r.resumes " of 3 this run)")
-			r.i := k, r.push := "", r.loadUntil := 0, r.loadTries := 0, r.fightUntil := 0
-			DgFresh()
-			DgShow()
-			return
-			}
-		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone (k ? " - back in an earlier zone of the run 3 times this run (defeated again and again?)" : " (a potion run, a defeat, or a door that didn't load?)"))
+		DgStop("the wizard is in " nav.zone ", but the run's next step is in " st.zone " (a potion run, a defeat, or a door that didn't load?)")
 		return
 		}
 	if (r.loadUntil)

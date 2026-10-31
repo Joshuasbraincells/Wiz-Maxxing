@@ -13,9 +13,10 @@
 ; TODO; read as 1, said once). gearsets - 1: a slot whose worn piece is in an Equipment Set is planned like any other (you
 ; re-save the set yourself: the bot never saves one); 0 (the default): such a plan line is "held" and you're asked once to
 ; re-save the set after a swap (GearSetGuard) - Decks.ahk's Ctrl+N would put the old piece back. Hidden (PlayerStats.txt):
-; gearmargin:N (2 - the % a piece must be better by), gearweights:off:1,def:0.5,pip:0.3,heal:0,cards:0.002 (the score's
-; weights - your party battle role's out of the box: Hitter, Blader, Healer), gearlevel:N (your level when the game's memory
-; doesn't give it).
+; gearmargin:N (2 - the % a piece must be better by), gearweight.off:1, gearweight.def:0.5, gearweight.pip:0.3,
+; gearweight.heal:0, gearweight.cards:0.002, gearweight.eblock:200 (the score's weights, one number a line - KillCalc.ahk
+; ParseStat reads only key:number; each left out: your party battle role's - Hitter, Blader, Healer), gearlevel:N (your
+; level when the game's memory doesn't give it).
 ; Never anything that could spend Crowns: nothing is clicked at all (a Crown-shop piece may be planned - wearing one spends
 ; nothing). debug.log: "Gear: ..."; a better piece: a tray tip once; a held one: a Discord alert once.
 
@@ -101,8 +102,14 @@ GearQuery(extra := "")
 		gqQ .= "&hp=" NavUri(gqHp "")
 	if (Stats.Has("gearmargin"))
 		gqQ .= "&margin=" NavUri(Stats["gearmargin"] "")
-	if (Stats.Has("gearweights"))
-		gqQ .= "&weights=" NavUri(Stats["gearweights"] "")
+	;(the score's weights: gearweight.off / .def / .pip / .heal / .cards / .eblock lines - one number each, as ParseStat reads
+	;them - sent as weights=off:1,def:0.5 (vision\gearrank.py parse_weights); each left out keeps the role's)
+	gqW := ""
+	for gqI, gqK in ["off", "def", "pip", "heal", "cards", "eblock"]
+		if (Stats.Has("gearweight." gqK))
+			gqW .= (gqW = "" ? "" : ",") gqK ":" Stats["gearweight." gqK]
+	if (gqW != "")
+		gqQ .= "&weights=" NavUri(gqW)
 	if (GearSets())
 		gqQ .= "&sets=1"
 	return gqQ extra
@@ -178,7 +185,8 @@ GearUnknownText(g)
 			gutOut .= "; ..."
 			break
 			}
-		gutOut .= (gutOut = "" ? "" : "; ") (gutT.display != "" ? gutT.display : gutT.name) ": " gutT.why
+		;(one whose template couldn't be read has no name: its id)
+		gutOut .= (gutOut = "" ? "" : "; ") (gutT.display != "" ? gutT.display : gutT.name != "" ? gutT.name : "item " gutT.gid) ": " gutT.why
 		}
 	return gutOut
 	}
@@ -216,20 +224,26 @@ GearReport(g, why, always := false)
 ;The Equipment Set guard: a plan line whose worn piece is in an Equipment Set (held - gearsets off) - a swap would be undone
 ;by that set's Ctrl+N (Decks.ahk DeckEquip): you're asked, once a piece, to re-save the set in the game after you swap it.
 ;The bot never saves a set itself (its window's controls aren't known - and a set is yours). (A Discord alert, not a "needs
-;you" notice: a notice holds the walking and the quick sell till it's answered)
+;you" notice: a notice holds the walking and the quick sell till it's answered.) Every piece new this pass in ONE alert, its
+;kind named by those pieces: AlertSend sends one alert of a kind in 10 minutes - a second "gear" one in the same pass, or a
+;new piece in the next pass, would be dropped and, already marked said, never sent
 GearSetGuard(g)
 	{
 	global GearSetSaid ; (v1 globals it sets)
 	if (!IsObject(GearSetSaid))
 		GearSetSaid := V1Obj()
+	gsgKind := "", gsgText := ""
 	for gsgI, gsgP in g.plan
 		{
 		if (!gsgP.held || GearSetSaid.Has(gsgP.wornGid "|" gsgP.gid))
 			continue
 		GearSetSaid[gsgP.wornGid "|" gsgP.gid] := 1
 		GearLog("the worn " gsgP.slot " (" gsgP.wornName ") is in an Equipment Set - after you put on " gsgP.name ", re-save that set in the game, else its Ctrl+N puts the old one back (gearsets:1 plans it without asking; the bot never saves a set)")
-		AlertSend("gear", "re-save an Equipment Set", "A better " gsgP.slot " is in the backpack: " gsgP.name " (" GearDeltaText(gsgP) " - advice). Your worn one, " gsgP.wornName ", is in an Equipment Set: after you swap it, re-save that set in the game, or its Ctrl+N puts the old one back.")
+		gsgKind .= "|" gsgP.wornGid ":" gsgP.gid
+		gsgText .= (gsgText = "" ? "" : " ") "A better " gsgP.slot " is in the backpack: " gsgP.name " (" GearDeltaText(gsgP) " - advice); your worn one, " gsgP.wornName ", is in an Equipment Set."
 		}
+	if (gsgKind != "")
+		AlertSend("gear" gsgKind, "re-save an Equipment Set", gsgText " After you swap, re-save that set in the game, or its Ctrl+N puts the old piece back.")
 	}
 
 ;---- Quick sell (QuickSell.ahk QsLook) ----
@@ -259,17 +273,22 @@ GearSellOk(why)
 
 ;---- Dungeon runs (Dungeons.ahk) ----
 
-;A dungeon run started (gearswap on): the backpack's items noted - the next GearRunEnd's new pieces are its drops
+;A dungeon run started (gearswap on): the backpack's items noted - the next GearRunEnd's new pieces are its drops.
+;r.gearMarked 1 when noted (GearRunEnd sets it too, its end's backpack noted for the next run). Not noted - the mark failed,
+;or gearswap was off at the start and switched on midway: the first GearRunEnd says nomark=1 and its drops aren't counted -
+;the drop log's .state still holds an older run's backpack (days old, maybe): all picked up since would count as its drops
 GearRunMark(r)
 	{
+	r.gearMarked := 0
 	if (!GearMode())
 		return ""
 	grmG := NavGear(GearQuery("&run=" NavUri(r.name) "&mark=1"))
-	if (!IsObject(grmG))
+	if (!IsObject(grmG) || !IsObject(grmG.run))
 		{
-		GearLog("the run '" r.name "' started - the backpack not noted (" NavGearWhy "): its first run's drops won't be counted")
+		GearLog("the run '" r.name "' started - the backpack not noted (" (IsObject(grmG) ? "no run line" : NavGearWhy) "): its first run's drops won't be counted (the next run's are)")
 		return ""
 		}
+	r.gearMarked := 1
 	GearLog("the run '" r.name "' started - the backpack's " grmG.bagItems " items noted (its drops are the new ones)")
 	return grmG
 	}
@@ -282,7 +301,9 @@ GearRunEnd(r)
 	global GearLast ; (v1 globals it sets)
 	if (!GearMode())
 		return ""
+	;(nomark=1: this run's start wasn't noted (GearRunMark) - the .state's backpack is an older run's, not taken for this one's)
 	greQ := "&run=" NavUri(r.name) "&end=1" (r.slots != "" ? "&slots=" NavUri(r.slots) : "") (r.stopafter != "" ? "&stopafter=" r.stopafter : "")
+		. (r.gearMarked ? "" : "&nomark=1")
 	greG := NavGear(GearQuery(greQ))
 	if (!IsObject(greG))
 		{
@@ -292,9 +313,12 @@ GearRunEnd(r)
 	GearLast := greG
 	if (IsObject(greG.run))
 		{
+		;(the backpack noted at this end: the next run's start)
+		r.gearMarked := 1
 		greD := ""
+		;(a drop's count by brackets: .count is the Map's own Count - its number of keys, V1Compat.ahk)
 		for greI, greP in greG.drops
-			greD .= (greD = "" ? "" : ", ") (greP.display != "" ? greP.display : greP.name) " (" greP.slot (V1Gt(greP.count, 1) ? ", " greP.count " so far" : ", new") ")"
+			greD .= (greD = "" ? "" : ", ") (greP.display != "" ? greP.display : greP.name) " (" greP.slot (V1Gt(V1At(greP, "count"), 1) ? ", " V1At(greP, "count") " so far" : ", new") ")"
 		GearLog("'" r.name "' run " greG.run.runs ": " (greG.run.new ? greG.run.new " new piece" (greG.run.new = 1 ? "" : "s") ": " greD : "no new gear")
 			. (greG.run.marked ? "" : " (no backpack noted at its start: not counted this time)") " - " (greG.run.done ? "its gear is all swapped: " : "") greG.run.why)
 		}

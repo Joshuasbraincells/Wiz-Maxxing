@@ -116,6 +116,43 @@ class Lint(unittest.TestCase):
         self.assertEqual(lines[-1], "ok|0|0")
 
 
+class ZoneChoice(unittest.TestCase):
+    """Dungeons.ahk DungeonStep's choice when the wizard turns up in another zone (dglint.zone_choice - the same rule)"""
+    # A (outside) -> X at the sigil -> B (the entrance) -> C (the boss) -> B -> A: the recorder's "walk back out to where
+    # you started" - A and B come again on the way back
+    RUN = D.parse_run("walk|A|0|0|0\nx|A|100|0|0\n"                          # 1-2   A, the sigil's X
+                      "walk|B|0|0|0\nwalk|B|500|0|0\n"                        # 3-4   B, its doorway into C
+                      "walk|C|0|0|0\nfight|C|800|0|0\nwalk|C|0|50|0\n"        # 5-7   C: the boss, back to the door
+                      "walk|B|500|0|0\nwalk|B|0|0|0\n"                        # 8-9   B again
+                      "walk|A|90|0|0\nwalk|A|10|0|0\n")["steps"]             # 10-11 A again, back at the start
+
+    def test_defeat_at_the_boss(self):
+        # (defeated at C's boss - step 6 walked to: respawned in B, or outside in A - on from that zone's FIRST visit, never
+        # its later step on the way back, which would walk out and count a run whose boss wasn't beaten)
+        self.assertEqual(D.zone_choice(self.RUN, 6, "B", (20, 0)), ("resume", 3))
+        self.assertEqual(D.zone_choice(self.RUN, 6, "B", (480, 0)), ("resume", 4))
+        self.assertEqual(D.zone_choice(self.RUN, 6, "A", (5, 0)), ("resume", 1))           # (the start, within 300)
+        self.assertEqual(D.zone_choice(self.RUN, 6, "A", (900, 900)), ("resume", 2))
+        # (a fourth time this run: stopped)
+        self.assertEqual(D.zone_choice(self.RUN, 6, "B", (20, 0), resumes=3), ("stop", 3))
+
+    def test_ahead_and_nowhere(self):
+        # (a load from A that lands in C - a zone the run hasn't been in yet: on from its first step)
+        self.assertEqual(D.zone_choice(self.RUN, 3, "C", (0, 0), from_zone="A"), ("ahead", 5))
+        # (a zone ahead that is the one a load was waited for out of: not "ahead" - DgZoneAhead's guard)
+        self.assertEqual(D.zone_choice([{"zone": "A", "x": 0, "y": 0}, {"zone": "B", "x": 0, "y": 0},
+                                        {"zone": "C", "x": 0, "y": 0}], 2, "C", (0, 0), from_zone="C"), ("stop", 0))
+        # (a zone the run doesn't go: stopped)
+        self.assertEqual(D.zone_choice(self.RUN, 6, "Z", (0, 0)), ("stop", 0))
+        # (on the way back, in C again after B's later steps began: C's first visit is earlier - resumed there)
+        self.assertEqual(D.zone_choice(self.RUN, 9, "C", (0, 40)), ("resume", 7))
+
+    def test_nearest_first_visit(self):
+        self.assertEqual(D.nearest_first_visit(self.RUN, "B", (0, 0)), 3)         # (the first B block only: 3-4)
+        self.assertEqual(D.nearest_first_visit(self.RUN, "A", (400, 0)), 2)
+        self.assertEqual(D.nearest_first_visit(self.RUN, "Q", (0, 0)), 0)
+
+
 class CommandLine(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp(prefix="dglint_")
