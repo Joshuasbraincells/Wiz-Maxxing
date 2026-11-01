@@ -7,7 +7,7 @@ AutoHotkey bots for Wizard101: **AutoFarmer** (battles, quest walking, card lear
 
 ## Set up a PC
 
-1. Download the newest **Wiz-Maxxing-v#.#.#.zip** (versions are MAJOR.MAIN.BUG: new features go v0.14 → v0.15, bug fixes v0.14 → v0.14.1) from the [Releases](../../releases) page and unzip it anywhere.
+1. Download the newest **Wiz-Maxxing-v#.#.#.zip**
 2. Double-click **Setup.exe**. It shows what's there already and installs what's missing: first it copies the bot
    into your own Programs folder (`%LOCALAPPDATA%\Programs\Wiz-Maxxing` - no admin needed, updates keep working;
    over an earlier install there, its settings and learned cards are kept), then, from there, Python 3 and its
@@ -30,8 +30,3 @@ learned cards, potion routes and the bot's memory are kept. The bot's tray menu 
 
 Edit the `.ahk` scripts, then double-click **build.cmd** to rebuild the exes (needs AutoHotkey v2 with its
 compiler, Ahk2Exe - AutoHotkey's Dash > Compile gets it; close the bot first).
-
-Publishing a release: on GitHub, **Actions > Release > Run workflow** on `main`, with the version in
-`version.txt` (and its notes in `.github/release-notes/<version>.md`). It builds the exes on Windows with
-**build.ps1** and publishes **Wiz-Maxxing-<version>.zip**, the zip the updater downloads. Tick **dry run** to build
-and zip only, on any branch: the zip is kept as the run's artifact and nothing is published.
