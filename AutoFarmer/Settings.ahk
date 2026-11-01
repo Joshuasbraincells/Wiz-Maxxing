@@ -210,6 +210,25 @@ CfgList()
 		, help: "A battle with more of the party's wizards on your side: Hitter plays as now. Blader puts its blades on the party's hitter (the wizard set to Hitter, else the leader) and its traps on the enemy the hitter goes for, casting them again after each of its hits, Tower Shield on it, and hits only for a kill or with nothing else to do. Healer heals whichever of you is lowest under 'Heal under this %', shields them, else boosts as a blader. Each wizard's name has to be known: one battle on its own first. One school's wizard its own: <school>.partybattle:2 in PlayerStats.txt. {key:boost} on a plate: the boosts go there (a friend without the bot)."}))
 	list.Push(V1Obj({key: "partyhitround", label: "...a blader or healer times its boosts to the hit (untried)", kind: "check", def: 0
 		, help: "New, not tried in the game yet. The party's hitter says which round its planned hit goes out in (the earliest its pips allow) and each wizard its place in your side's cast order. On (on the blader's or healer's PC): its blades and traps wait till the hit is due - that very round when it casts before the hitter, else the round before - and meanwhile it plays as with none in hand (Tower Shield, a hit only with nothing else to do). debug.log says so ('party hit round: <hitter>'s hit is due in round 6 ...'). The hitter needs this version too (an older one says nothing: boosts as ever). Off: boosts go on as soon as they can, as before."}))
+	list.Push(V1Obj({key: "-", label: "THE OVERLAY (OVER THE GAME)"}))
+	list.Push(V1Obj({key: "overlay", label: "Show the map and the log over the game (untried)", kind: "check", def: 0
+		, help: "New, not tried in the game yet. The zone map round your wizard and the newest log lines (coloured as on the dashboard), drawn see-through over Wizard101 - borderless or windowed, not exclusive full screen - only while Wizard101 is the window in front and not minimised. Clicks go through it to the game, it never takes the focus, and Windows keeps it out of every screen capture: the bot's own screen reading can't see it (nor can your screenshots or recordings). Each time it's switched on a small pink square shows for a moment on the game - the bot checking that. Needs Windows 10 version 2004 or newer and the vision helper (it draws both) - otherwise it stays off and debug.log says why. {key:overlay} or the tray menu switches it too."}))
+	list.Push(V1Obj({key: "overlaymapat", label: "...the map", kind: "pick", def: 2, picks: ["Off", "Top left", "Top right", "Bottom left", "Bottom right"]
+		, help: "Where the map goes over the game, or Off: the dashboard's Map - you (the arrow, the way you face), the path, the planned route, the quest goal, mobs and quest items - see-through, its empty parts clear. With the log in the same corner the log goes next to it (under it at the top, above it at the bottom). dashboard.ini [overlay]: mapdx / mapdy move it by pixels, mapspan is how much of the zone it shows (game units across, 4000) - read when it's switched on."}))
+	list.Push(V1Obj({key: "overlaymapsize", label: "...the map's size (% of the game's height)", kind: "num", lo: 15, hi: 60, def: 28
+		, help: "The map is a square this tall: 28 is a little over a quarter of the game's height."}))
+	list.Push(V1Obj({key: "overlaylogat", label: "...the log", kind: "pick", def: 2, picks: ["Off", "Top left", "Top right", "Bottom left", "Bottom right"]
+		, help: "Where the log goes over the game, or Off: the newest lines of the dashboard's log in its colours (its Colours button), the newest at the bottom, older ones fainter, a line too long cut short. dashboard.ini [overlay]: logdx / logdy move it by pixels."}))
+	list.Push(V1Obj({key: "overlaylines", label: "...the log's lines", kind: "num", lo: 3, hi: 30, def: 10
+		, help: "How many of the newest lines it shows (fewer when they don't fit)."}))
+	list.Push(V1Obj({key: "overlaylogwidth", label: "...the log's width (% of the game's width)", kind: "num", lo: 20, hi: 90, def: 38
+		, help: "Longer lines are cut short with ..."}))
+	list.Push(V1Obj({key: "overlaytext", label: "...the log's text size (%)", kind: "num", lo: 60, hi: 200, def: 100
+		, help: "100 is about 15 pixels on a 1080-high game, bigger on a bigger one."}))
+	list.Push(V1Obj({key: "overlayback", label: "...the dark box behind them (%, 0 none)", kind: "num", lo: 0, hi: 90, def: 35
+		, help: "How dark the rounded box behind the map and the log is: 0 none (only the map's floor and the text), 90 almost solid."}))
+	list.Push(V1Obj({key: "overlayopacity", label: "...how solid it is (%)", kind: "num", lo: 20, hi: 100, def: 90
+		, help: "The map and the log as a whole: 100 as drawn, lower lets more of the game through."}))
 	return list
 	}
 
@@ -221,7 +240,7 @@ CfgSimpleKeys()
 		{
 		keys := V1Obj()
 		for each, k in ["handsoffon", "mouselock", "gamefront", "healat", "potionat", "potionwalk", "fleeon", "quicksell", "enemyspells", "defendat", "battlesonly", "mobavoid", "mousesteer", "speedhack"
-			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle"]
+			, "cardlogic", "healthocr", "drawenchant", "alertson", "partyrole", "partybattle", "overlay"]
 			keys[k] := 1
 		}
 	return keys

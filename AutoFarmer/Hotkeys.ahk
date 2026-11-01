@@ -24,6 +24,7 @@ HkActions()
 		list := [V1Obj({id: "bot", label: "The bot on / off", def: "F6", ctx: "game", run: "MenuBotToggle"})
 			, V1Obj({id: "walk", label: "Walking on / off", def: "F8", ctx: "game", run: "MenuWalk"})
 			, V1Obj({id: "dash", label: "The dashboard (show / hide)", def: "#2", ctx: "", run: "HkDash"})
+			, V1Obj({id: "overlay", label: "The overlay over the game on / off (map and log)", def: "#4", ctx: "game", run: "MenuOverlay"})
 			, V1Obj({id: "restart", label: "Restart the bot", def: "#1", ctx: "", run: "MenuRestart"})
 			, V1Obj({id: "restart2", label: "Restart the bot (a second key)", def: "!Esc", ctx: "", run: "HkRestart2"})
 			, V1Obj({id: "quit", label: "Quit the bot", def: "#Esc", ctx: "", run: "HkQuit"})
@@ -49,7 +50,8 @@ HkAction(id)
 	return ""
 	}
 
-;Action id's key now: yours (dashboard.ini), else its default - "" switched off
+;Action id's key now: yours (dashboard.ini), else its default - "" switched off. Not its default when you gave that
+;key to another action (one new in an update has a default you may have taken already): none, never taken from it
 HkKeyOf(id)
 	{
 	a := HkAction(id)
@@ -59,7 +61,21 @@ HkKeyOf(id)
 	k := Trim(k)
 	if (k = "none")
 		return ""
-	return (k != "" && HkValid(k)) ? k : a.def
+	if (k != "" && HkValid(k))
+		return k
+	;(its default another action's in dashboard.ini - the Keys tab shows none; the default back once that one's changed)
+	sec := ""
+	try sec := IniRead(A_ScriptDir "\dashboard.ini", "hotkeys")
+	Loop Parse, sec, "`n", "`r"
+		{
+		p := InStr(A_LoopField, "=")
+		if (!p)
+			continue
+		other := Trim(SubStr(A_LoopField, 1, p - 1))
+		if (other != id && IsObject(HkAction(other)) && HkSame(Trim(SubStr(A_LoopField, p + 1)), a.def))
+			return ""
+		}
+	return a.def
 	}
 
 ;A key name the Hotkey command takes: modifiers (# ^ ! +) and one key
@@ -261,6 +277,8 @@ HkMenuText(id)
 		return "Walking on/off (" k ")"
 	if (id = "dash")
 		return "Dashboard (" k ")"
+	if (id = "overlay")
+		return "Overlay over the game on/off (" k ")"
 	if (id = "restart")
 		return "Restart (" k ")"
 	if (id = "quit")

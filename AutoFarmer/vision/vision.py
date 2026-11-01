@@ -414,6 +414,26 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              amber; the nearest named). No zone
                                              file: the overlay on a blank background. "ERR <why>" as /nav, or when the
                                              wizard's position can't be read
+  /ovmap?gw=&gh=&mapat=&msize=&logat=&lines=&lw=&text=&back=&mdx=&mdy=&ldx=&ldy=&span=&seq=&force=0|1&out=<.wzov path>
+                                          -> the overlay over the game's map as a .wzov frame (vision\overlay.py, for
+                                             Overlay.ahk): /navmap's picture see-through - clear where nothing is, the
+                                             floor, water and rim faint, a size bigger, in a rounded dark box (back %)
+                                             - placed in the game's client by overlay.layout - "ok|<out>" (written),
+                                             "same|<out>" (unchanged, nothing written - never with force=1) or "ERR
+                                             <why>" (the map is off, the game or the wizard's position can't be read;
+                                             status 400: a bad request). gw, gh the client's size in physical pixels;
+                                             mapat, logat 1 Off, 2 top left, 3 top right, 4 bottom left, 5 bottom
+                                             right; msize the map's side (% of the client's shorter side); lines,
+                                             lw (% of gw), text (%) the log's; back the dark box (%); mdx, mdy, ldx,
+                                             ldy nudges (pixels); span game units across the map; seq echoed in the
+                                             frame; out in the AutoFarmer or the temp folder. The frame: a 32-byte
+                                             header ('<4sIIIIIii': WZOV, 1, w, h, stride w*4, seq, x, y - the part's
+                                             top left in the client), then h rows of premultiplied B,G,R,A, top-down
+  POST /ovlog?<the /ovmap query>          -> the overlay's log as a .wzov frame (overlay.py): the body's lines (text/plain
+                                             us-ascii, oldest first: RRGGBB<tab><the line as BattleRec.ahk BrecEsc
+                                             escapes it><LF> - RRGGBB its dashboard colour) newest at the bottom, older
+                                             ones fainter, one too long cut short with ...; replies as /ovmap's ("ERR
+                                             <why>": the log is off, or there's no room for it with the map)
   POST /rec?ev=round|hello|who|state      -> the battle recorder (vision\battlerec.py - its docstring has the body's
                                              format and the record's): the bot's round lines and state, put on the
                                              recorder's queue as they are (64 KB at most; nothing parsed, written or
@@ -2009,6 +2029,9 @@ MOBS_SHOWN = {}                     # the last /nav's split, for the map: {'ques
 DUELS_SHOWN = {}                    # the last /nav's other players' battles kept out of, for the map: {'list', 'at'}
 MAP_DUEL = (186, 120, 255)          # another player's battle kept out of (duelavoid)
 MAP_WALL = (240, 82, 82)            # a line of mobs' gaps closed (a wall)
+OV_FLOOR_A, OV_WATER_A, OV_RIM_A = 120, 110, 170   # the overlay map's (clear) floor, water and rim alpha
+OV_UNIT_DIV = 170   # its markers and names one size bigger than the dashboard's /240
+OV_TILES_KEPT = 36  # its RGBA tiles kept (256 KB each) - or one picture's, if more (render_navmap)
 
 
 # ---------------------------------------------------------------- the Network tab (netmon.py)
@@ -3895,9 +3918,10 @@ class ZoneLayers:
     """One zone's static map layers - walkable floor, water, obstacles, the nav graph - decoded once, drawn
     in NAV_TILE tiles on first use at a scale (upp: game units per pixel). Pixel (px, py) of the zone's
     picture at a scale is world (px * upp, -py * upp): +X to the right, +Y up. No zone file: no layers
-    (why says why), the map is the overlay on a blank background"""
+    (why says why), the map is the overlay on a blank background. step (the overlay's map - zone_layers): called
+    before each collision shape is decoded and drawn into the layers - it may wait there (gate_wait)"""
 
-    def __init__(self, zone, game_dir=''):
+    def __init__(self, zone, game_dir='', step=None):
         self.zone, self.why = zone, ''
         self.tris = {}          # 'floor' / 'water': (F, 3, 2) world XY triangles, with (F, 4) bounds
         self.polys = {}         # 'floor' / 'obst': [(k, 2) polygon], with (n, 4) bounds
@@ -3908,7 +3932,7 @@ class ZoneLayers:
         self.bounds = None      # x1, y1, x2, y2 of everything
         try:
             import navgeo
-            d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR)
+            d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR, step=step)
         except Exception as e:  # noqa: BLE001 - no map, just the overlay
             self.why = str(e) if isinstance(e, FileNotFoundError) else f"the zone file can't be read ({e!r})"
             return
@@ -3921,6 +3945,8 @@ class ZoneLayers:
         polys = {'floor': [], 'obst': []}
         tz = {'floor': [], 'floorpoly': []}
         for s in bcd:
+            if step is not None:
+                step()
             cat = s['category_flags']
             if s['type'] == 'mesh':
                 kind = 'floor' if cat & 0x2 else 'water' if cat & 0x40 else None
@@ -3966,8 +3992,10 @@ class ZoneLayers:
         else:
             self.why = 'the zone file has no floor or nav graph'
 
-    def tile(self, upp, i, j):
-        """tile (i, j) at upp as an RGB picture, or None if nothing is in it"""
+    def tile(self, upp, i, j, clear=False):
+        """tile (i, j) at upp as an RGB picture, or None if nothing is in it; clear (the overlay over the game -
+        overlay.py): RGBA instead, clear where nothing is, the floor, water and rim see-through (OV_FLOOR_A,
+        OV_WATER_A, OV_RIM_A), the nav graph and obstacles over them as on the dashboard's"""
         T, S = NAV_TILE, NAV_SS
         pad = 3                                                  # (for the floor's rim, then cut off)
         wx1, wx2 = (i * T - pad) * upp, ((i + 1) * T + pad) * upp
@@ -4019,6 +4047,12 @@ class ZoneLayers:
         rgb[g == 2] = MAP_WATER
         rgb[rim] = MAP_RIM
         img = Image.fromarray(rgb).convert('RGBA')
+        if clear:
+            a = np.zeros((size, size), np.uint8)
+            a[g == 1] = OV_FLOOR_A
+            a[g == 2] = OV_WATER_A
+            a[rim] = OV_RIM_A
+            img.putalpha(Image.fromarray(a))
         layer = Image.new('RGBA', (size, size), (0, 0, 0, 0))
         dl = ImageDraw.Draw(layer)
         segs = self.segs
@@ -4037,34 +4071,42 @@ class ZoneLayers:
         for k in np.nonzero(inside(b))[0] if len(b) else ():
             dl.polygon([tuple(q) for q in px(ps[k]).tolist()], fill=MAP_OBST + (105,), outline=MAP_OBST + (215,), width=S)
         img.alpha_composite(layer)
-        img = img.convert('RGB').resize((T + 2 * pad, T + 2 * pad), Image.BOX)
+        # (Pillow premultiplies before an RGBA BOX resize, so the clear one's edges get no dark halo)
+        img = (img if clear else img.convert('RGB')).resize((T + 2 * pad, T + 2 * pad), Image.BOX)
         return img.crop((pad, pad, pad + T, pad + T))
 
 
 NAV_ZONES = collections.OrderedDict()       # zone -> ZoneLayers
 NAV_TILES = collections.OrderedDict()       # (zone, upp, i, j) -> picture or None
+OV_TILES = collections.OrderedDict()        # the overlay's (render_navmap clear=True): the same keys -> RGBA or None
 MAP_LOCK = threading.Lock()
 MAP_FONTS = {}
 
 
-def zone_layers(zone, game_dir):
+def drop_tiles(zone):
+    """a zone's kept tiles let go - the dashboard map's (NAV_TILES) and the overlay's (OV_TILES)"""
+    for tiles in (NAV_TILES, OV_TILES):
+        for k in [k for k in tiles if k[0] == zone]:
+            del tiles[k]
+
+
+def zone_layers(zone, game_dir, step=None):
+    """zone's ZoneLayers (kept: the last NAV_ZONES_KEPT zones) - read now if it isn't kept, with step (ZoneLayers')"""
     z = NAV_ZONES.get(zone)
     # (a zone whose file couldn't be read - still downloading or being written while it loads - is tried
     # again after NAV_RETRY seconds rather than kept as 'no map' for the whole visit)
     if z is not None and z.why and time.time() - getattr(z, 'made', 0) > NAV_RETRY:
         NAV_ZONES.pop(zone, None)
-        for k in [k for k in NAV_TILES if k[0] == zone]:
-            del NAV_TILES[k]
+        drop_tiles(zone)
         z = None
     if z is None:
         t0 = time.perf_counter()
-        z = NAV_ZONES[zone] = ZoneLayers(zone, game_dir)
+        z = NAV_ZONES[zone] = ZoneLayers(zone, game_dir, step)
         z.made = time.time()
         log(f'/navmap: zone {zone} read in {(time.perf_counter() - t0) * 1000:.0f} ms' + (f' - {z.why}' if z.why else ''))
         while len(NAV_ZONES) > NAV_ZONES_KEPT:
             old, _ = NAV_ZONES.popitem(last=False)
-            for k in [k for k in NAV_TILES if k[0] == old]:
-                del NAV_TILES[k]
+            drop_tiles(old)
     NAV_ZONES.move_to_end(zone)
     return z
 
@@ -4092,41 +4134,53 @@ def height_rgb(level):
 
 
 def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, rings_on=False, items=None, duels=None,
-                  walls=None):
+                  walls=None, clear=False):
     """the /navmap picture (RGB, w x h) round the wizard for a navmem reading r (r['pos'] known); route: the
     planned route's answer (navroute) to draw, if any; mobs: the zone's mobs (mobs_now) - red dots, the quest's
     amber, and (rings_on: the walker keeps away from them) a faint ring round the others, mob_near across - a walking
     one (its 'vel') with an arrow the way it walks, as far as it's swept, and its ring's outline there; items: the
     things lying about it a quest has you collect (items_now) - green diamonds, the goal's brighter and named; duels:
     other players' battles kept out of (duels_now) - a violet circle each; walls: the walker's planner field
-    (navroute.Field) - its line of mobs' gaps closed (fill), faintly red"""
+    (navroute.Field) - its line of mobs' gaps closed (fill), faintly red. clear (the overlay over the game - /ovmap,
+    overlay.py): RGBA instead, clear where nothing is - its tiles tile(clear=True), kept apart in OV_TILES (at most
+    OV_TILES_KEPT, or one picture's tiles if that's more) -, the markers and names a size bigger (min(w, h) /
+    OV_UNIT_DIV), the scale bar and "no map for this zone" further in from the edges (the overlay's rounded corners),
+    and a zone not read yet read pausing at each step while a gated request is in flight (gate_wait - the walker's /nav
+    goes first); the default picture is as it always was"""
     from PIL import ImageDraw
     import navroute
     upp = span / min(w, h)
     ukey = round(upp, 4)
     x0, y0 = r['pos'][0], r['pos'][1]
     ox, oy = int(math.floor(x0 / upp - w / 2)), int(math.floor(-y0 / upp - h / 2))
-    img = Image.new('RGB', (w, h), MAP_BG)
+    img = Image.new('RGBA', (w, h), (0, 0, 0, 0)) if clear else Image.new('RGB', (w, h), MAP_BG)
+    tiles, kept = (OV_TILES, OV_TILES_KEPT) if clear else (NAV_TILES, NAV_TILES_KEPT)
     zone = r['zone'] or ''
-    layers = zone_layers(zone, game_dir) if zone else None
+    # (the overlay's map asks every second, whatever the walker does: a zone file read at a zone change - pure Python -
+    # waits at each shape while a /nav is in flight, as placements' builds do; the dashboard's as it always was)
+    layers = zone_layers(zone, game_dir, gate_wait if clear else None) if zone else None
     T = NAV_TILE
+    if clear:
+        # (never fewer than one picture's tiles: a big map would push each one out just before it's drawn again - every
+        # tile drawn afresh every frame)
+        kept = max(kept, ((w + T - 1) // T + 1) * ((h + T - 1) // T + 1))
     if layers is not None and not layers.why:
         for j in range(oy // T, (oy + h - 1) // T + 1):
             for i in range(ox // T, (ox + w - 1) // T + 1):
                 key = (zone, ukey, i, j)
-                if key in NAV_TILES:
-                    NAV_TILES.move_to_end(key)
+                if key in tiles:
+                    tiles.move_to_end(key)
                 else:
-                    NAV_TILES[key] = layers.tile(upp, i, j)
-                    while len(NAV_TILES) > NAV_TILES_KEPT:
-                        NAV_TILES.popitem(last=False)
-                if NAV_TILES[key] is not None:
-                    img.paste(NAV_TILES[key], (i * T - ox, j * T - oy))
+                    tiles[key] = layers.tile(upp, i, j, clear=True) if clear else layers.tile(upp, i, j)
+                    while len(tiles) > kept:
+                        tiles.popitem(last=False)
+                if tiles[key] is not None:
+                    img.paste(tiles[key], (i * T - ox, j * T - oy))
     # the overlay, drawn big and shrunk
     S = NAV_SS
     ov = Image.new('RGBA', (w * S, h * S), (0, 0, 0, 0))
     d = ImageDraw.Draw(ov)
-    unit = max(1.0, min(w, h) / 240) * S                     # line width / marker size unit (big pixels)
+    unit = max(1.0, min(w, h) / (OV_UNIT_DIV if clear else 240)) * S      # line width / marker size unit (big pixels)
 
     def at(p):
         return ((p[0] / upp - ox) * S, (-p[1] / upp - oy) * S)
@@ -4277,19 +4331,56 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
               fill=MAP_ME + (255,), outline=MAP_BG + (255,), width=max(1, int(unit * 0.8)))
     # a scale bar, bottom left
     bar = 1000 if 1000 / upp <= w * 0.4 else 500
-    bx, by, bl = 6 * unit, h * S - 6 * unit, bar / upp * S
+    edge = 10 if clear else 6
+    bx, by, bl = edge * unit, h * S - edge * unit, bar / upp * S
     d.line([(bx, by), (bx + bl, by)], fill=MAP_TEXT + (200,), width=int(unit))
     d.line([(bx, by - 2.5 * unit), (bx, by)], fill=MAP_TEXT + (200,), width=int(unit))
     d.line([(bx + bl, by - 2.5 * unit), (bx + bl, by)], fill=MAP_TEXT + (200,), width=int(unit))
     f = map_font(int(6 * unit))
     d.text((bx + bl + 2.5 * unit, by), str(bar), fill=MAP_TEXT + (220,), font=f, anchor='lm')
     if layers is None or layers.why:
-        d.text((w * S - 4 * unit, h * S - 4 * unit), 'no map for this zone', fill=MAP_TEXT + (200,), font=f, anchor='rs')
+        tedge = 10 if clear else 4
+        d.text((w * S - tedge * unit, h * S - tedge * unit), 'no map for this zone', fill=MAP_TEXT + (200,), font=f, anchor='rs')
     out = img.convert('RGBA')
     if rings is not None:
         out.alpha_composite(rings.resize((w, h), Image.BOX))
     out.alpha_composite(ov.resize((w, h), Image.BOX))
-    return out.convert('RGB')
+    return out if clear else out.convert('RGB')
+
+
+def map_picture(w, h, span=NAV_SPAN, clear=False):
+    """the map round the wizard, w x h, span game units across its shorter side (render_navmap - the dashboard's
+    /navmap; clear: the overlay's /ovmap, RGBA) with the mobs, duels, items, route and walls as the walker last
+    asked: (picture, '') - or (None, why) when the game or the wizard's position can't be read"""
+    nm = nav_reader()
+    r, why = nm.read(path=True)
+    if r is None:
+        return None, why
+    if r['pos'] is None or r['yaw'] is None:
+        return None, "the wizard's position can't be read (" + (r.get('why_player') or '?') + ')'
+    # (the mobs as the walker's last ask split them - the quest's, the ones kept away from)
+    mobs, _ = mobs_now(r)
+    fresh = time.time() - (MOBS_SHOWN.get('at') or 0) < 10
+    for m in mobs:
+        m['quest'] = m['gid'] in MOBS_SHOWN.get('quest', ()) if fresh else False
+    # (other players' battles as the walker's last ask kept out of them - drawn, and in the map's route ask:
+    # the field it may make is the walker's own - map_route)
+    duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
+    route = map_route(r, nm.game_dir, [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None,
+                      duels)
+    # (the quest items as the walker's last /items split them - the items lying about, and any other
+    # thing it took as the quest's: not every object and NPC of the zone)
+    items, _ = items_now()
+    ifresh = time.time() - (ITEMS_SHOWN.get('at') or 0) < 10
+    for it in items:
+        it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
+    items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
+    # (the walker's field's line-of-mobs walls)
+    walls = ROUTER.field if ROUTER is not None else None
+    with MAP_LOCK:
+        img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items,
+                            duels, walls, clear=clear)
+    return img, ''
 
 
 def save_png(img, out):
@@ -4320,6 +4411,57 @@ def inside_temp(path):
 def inside_root(path):
     p = os.path.normcase(os.path.abspath(path))
     return p.startswith(os.path.normcase(ROOT) + os.sep)
+
+
+# ---------------------------------------------------------------- the overlay over the game (overlay.py, Overlay.ahk)
+
+def ov_path_ok(path):
+    """where the overlay's frame files may go: the AutoFarmer folder or the temp folder (as /navmap's pictures)"""
+    return inside_root(path) or inside_temp(path)
+
+
+def ov_yield(limit=0.5):
+    """the overlay's pictures wait (limit s at most) while a request the bot waits on is in flight or just ended
+    (GATE - /nav's 150 ms): its drawing would hold the GIL"""
+    t0 = time.monotonic()
+    while not GATE.idle(0.05) and time.monotonic() - t0 < limit:
+        time.sleep(0.02)
+
+
+def ovmap_reply(q):
+    """/ovmap: (reply text, status) - the overlay's map drawn into its .wzov frame (overlay.py)"""
+    import overlay as OV
+    p, err = OV.parse_request(q, ov_path_ok)
+    if p is None:
+        return err, 400
+    ov_yield()
+    lay = OV.layout(p['gw'], p['gh'], p['args'])
+    if lay['map'] is None:
+        return 'ERR the map is off', 200
+    x, y, w, h = lay['map']
+    img, why = map_picture(w, h, float(p['args']['span']), clear=True)
+    if img is None:
+        return 'ERR ' + why, 200
+    img = OV.finish_map(img, OV.back_alpha(p['args']['back']))
+    out = os.path.abspath(p['out'])
+    return OV.write_frame(out, img, x, y, p['seq'], p['force']) + '|' + out, 200
+
+
+def ovlog_reply(q, body):
+    """POST /ovlog: (reply text, status) - the overlay's log lines (the body) drawn into its .wzov frame (overlay.py)"""
+    import overlay as OV
+    p, err = OV.parse_request(q, ov_path_ok)
+    if p is None:
+        return err, 400
+    ov_yield()
+    lay = OV.layout(p['gw'], p['gh'], p['args'])
+    if lay['log'] is None:
+        return 'ERR ' + (lay['why'] or 'the log is off'), 200
+    x, y, w, h = lay['log']
+    img = OV.render_log(OV.parse_log_body(body), w, h, lay['px'], lay['line_h'], lay['pad'],
+                        OV.back_alpha(p['args']['back']))
+    out = os.path.abspath(p['out'])
+    return OV.write_frame(out, img, x, y, p['seq'], p['force']) + '|' + out, 200
 
 
 # ---------------------------------------------------------------- the server
@@ -4661,36 +4803,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not out.lower().endswith('.png') or not (inside_root(out) or inside_temp(out)):
                     return self.reply('ERR out must be a .png in ' + ROOT + ' or the temp folder', 400)
                 span = min(100000.0, max(500.0, float(q.get('span', NAV_SPAN))))
-                nm = nav_reader()
-                r, why = nm.read(path=True)
-                if r is None:
+                img, why = map_picture(w, h, span)
+                if img is None:
                     return self.reply('ERR ' + why)
-                if r['pos'] is None or r['yaw'] is None:
-                    return self.reply("ERR the wizard's position can't be read (" + (r.get('why_player') or '?') + ')')
-                # (the mobs as the walker's last ask split them - the quest's, the ones kept away from)
-                mobs, _ = mobs_now(r)
-                fresh = time.time() - (MOBS_SHOWN.get('at') or 0) < 10
-                for m in mobs:
-                    m['quest'] = m['gid'] in MOBS_SHOWN.get('quest', ()) if fresh else False
-                # (other players' battles as the walker's last ask kept out of them - drawn, and in the map's route ask:
-                # the field it may make is the walker's own - map_route)
-                duels = DUELS_SHOWN.get('list') if time.time() - (DUELS_SHOWN.get('at') or 0) < 10 else None
-                route = map_route(r, nm.game_dir, [m for m in mobs if not m['quest']] if fresh and MOBS_SHOWN.get('avoid') else None,
-                                  duels)
-                # (the quest items as the walker's last /items split them - the items lying about, and any other
-                # thing it took as the quest's: not every object and NPC of the zone)
-                items, _ = items_now()
-                ifresh = time.time() - (ITEMS_SHOWN.get('at') or 0) < 10
-                for it in items:
-                    it['quest'] = it['gid'] in ITEMS_SHOWN.get('quest', ()) if ifresh else False
-                items = [it for it in items if it.get('kind', 'item') == 'item' or it['quest']]
-                # (the walker's field's line-of-mobs walls)
-                walls = ROUTER.field if ROUTER is not None else None
-                with MAP_LOCK:
-                    img = render_navmap(r, w, h, nm.game_dir, span, route, mobs, bool(fresh and MOBS_SHOWN.get('avoid')), items,
-                                        duels, walls)
                 save_png(img, os.path.abspath(out))
                 return self.reply('ok|' + os.path.abspath(out))
+            if u.path == '/ovmap':
+                return self.reply(*ovmap_reply(q))
             if u.path == '/quit':
                 self.reply('OK bye')
                 party_stop()
@@ -4740,8 +4859,9 @@ class Handler(BaseHTTPRequestHandler):
                 places_busy(False)
 
     def do_POST(self):
-        """/rec only (the bot's round, hello, who and state posts - vision\\battlerec.py): its body (64 KB at most) put on
-        the recorder's queue as it is - no parsing, file or memory read here - "ok", or "off" when the recorder is off"""
+        """/rec and /ovlog. /rec: the bot's round, hello, who and state posts (vision\\battlerec.py) - its body (64 KB at
+        most) put on the recorder's queue as it is - no parsing, file or memory read here - "ok", or "off" when the
+        recorder is off. /ovlog: the overlay's log lines (Overlay.ahk) drawn into its frame file - ovlog_reply"""
         try:
             u = urlparse(self.path)
             q = {k: v[0] for k, v in parse_qs(u.query).items()}
@@ -4757,10 +4877,14 @@ class Handler(BaseHTTPRequestHandler):
                     if not got:
                         break
                     left -= len(got)
+            if u.path == '/ovlog':
+                return self.reply(*ovlog_reply(q, body))
             if u.path != '/rec':
                 return self.reply('ERR unknown request ' + u.path, 404)
             return self.reply(REC.post(q, body) if REC is not None else 'off')
         except Exception as e:  # noqa: BLE001 - the bot never waits on this
+            if not self.path.startswith('/rec'):
+                log(f'ERR {self.path}: {e!r}')
             try:
                 return self.reply('ERR ' + repr(e), 500)
             except Exception:  # noqa: BLE001

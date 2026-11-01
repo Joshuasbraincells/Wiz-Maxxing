@@ -16,8 +16,8 @@ Before you start
 	- Every new setting OFF (they are by default): sigilhome, mobwall,
 	  duelavoid, puzzlestate, puzzlelevers (WALKING); gearswap, gearsets (THE
 	  BACKPACK); memclicks, planner, deckzone (HOW IT PLAYS ITS CARDS);
-	  partytpdoors, partyhitround (PARTY); deckadd, trainspells, spellquests
-	  (not built - leave them off).
+	  partytpdoors, partyhitround (PARTY); overlay (THE OVERLAY); deckadd,
+	  trainspells, spellquests (not built - leave them off).
 	- The commands run in a command prompt in the AutoFarmer folder, with
 	  Wizard101 running and your wizard in the world unless a step says
 	  otherwise. They only read the game's memory or files: nothing in the
@@ -141,7 +141,22 @@ Before you start
 	3.8 partyhitround (the blader or healer, both PCs on this version):
 	    "party hit round: <hitter>'s hit is due in round N ... held till
 	    round M", and the boosts landing just before the hit.
-	3.9 memclicks LAST - only once 2.3's lines say the boxes line up (three
+	3.9 overlay (Windows+4 - Wizard101 borderless, Windows 10 2004 or
+	    newer; it draws only - clicks and types nothing). First start the
+	    bot once with it off: it starts exactly as before. On: the map at
+	    the game's top left and the log under it, see-through; "Overlay:
+	    checked - the bot's screen reading doesn't see it" once (a small
+	    pink square flashes on the game as it checks). Alt+Tab away: both
+	    hide at once and come back with the game; minimised: hidden.
+	    Windowed, make the game smaller: both hide for a moment and come
+	    back in place for the new size (never left outside the game). A
+	    click on the map reaches the game; an hour of battles, walking and
+	    a reconnect go as with it off (the walker never says it's waiting
+	    for Wizard101 to be in front, no new "not found" lines); a
+	    screenshot (Windows+Shift+S) doesn't show it. Send the "Overlay:"
+	    lines, a phone photo if it looks wrong (a screenshot won't show
+	    it), and say what it covers that you need (Settings moves it).
+	3.10 memclicks LAST - only once 2.3's lines say the boxes line up (three
 	    looks in a row within 10 pixels: "trusted"). Cards and plates are
 	    then clicked where the game's memory has them.
 
