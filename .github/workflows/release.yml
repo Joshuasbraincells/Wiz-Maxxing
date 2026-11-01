@@ -1,10 +1,11 @@
-# Release: builds the exes on Windows with the repo's own build.ps1 (AutoHotkey v2 and its compiler, Ahk2Exe,
-# fetched the way AutoHotkey's own installer does), zips the release the way the updater expects and publishes it.
+# Release: builds the exes on Windows with the repo's own build.ps1 (AutoHotkey v2 and its compiler, Ahk2Exe, from
+# their GitHub releases), zips the release the way the updater expects and publishes it.
 #   Wiz-Maxxing-<version>.zip: one Wiz-Maxxing\ folder - every tracked file but TODO.md, byte for byte (no line ending
 #   changes), plus Setup.exe, Wiz-Maxxing.exe, AutoFarmer\Autofarmer.exe, AutoFarmer\StatsReader.exe and
 #   AutoQuester\AutoQuester.exe. The updater (Updater.ahk) reads releases/latest and downloads its .zip asset.
 # Run it from the Actions tab (Release > Run workflow) on main, with the version to publish - it has to be version.txt's.
 # Release notes: .github/release-notes/<version>.md when it's there, else GitHub's generated ones.
+# Dry run: build and zip only, on any branch - the zip kept as the run's artifact, nothing published or deleted.
 name: Release
 
 on:
@@ -16,6 +17,11 @@ on:
         type: string
       prerelease:
         description: "A pre-release (the updater never offers one)"
+        required: false
+        type: boolean
+        default: false
+      dryrun:
+        description: "Dry run: build and zip only - the zip kept as the run's artifact, nothing published"
         required: false
         type: boolean
         default: false
@@ -34,6 +40,7 @@ jobs:
     env:
       VERSION: ${{ inputs.version }}
       PRERELEASE: ${{ inputs.prerelease }}
+      DRYRUN: ${{ inputs.dryrun }}
       GH_TOKEN: ${{ github.token }}
     steps:
       # (the repo's own bytes: some files are CRLF and some LF on purpose - Windows runners turn LF into CRLF otherwise)
@@ -47,8 +54,9 @@ jobs:
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
           if ($env:VERSION -notmatch '^v\d+\.\d+(\.\d+)?$') { throw "'$env:VERSION' isn't a version like v1.0.0" }
-          # (the updater offers every release that isn't a pre-release: those only from main)
-          if ($env:PRERELEASE -ne 'true' -and $env:GITHUB_REF -ne 'refs/heads/main') { throw "Run it on main (or tick pre-release) - this is $env:GITHUB_REF" }
+          # (the updater offers every release that isn't a pre-release: those only from main - a dry run anywhere)
+          $dry = $env:DRYRUN -eq 'true'
+          if (-not $dry -and $env:PRERELEASE -ne 'true' -and $env:GITHUB_REF -ne 'refs/heads/main') { throw "Run it on main (or tick pre-release or dry run) - this is $env:GITHUB_REF" }
           $file = (Get-Content -Raw -LiteralPath version.txt).Trim()
           if ($file -ne $env:VERSION) { throw "version.txt says '$file', not '$env:VERSION' - change version.txt first" }
           # (a published release of that version: stop; a draft one - a run that failed before publishing it: deleted,
@@ -57,7 +65,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "The releases couldn't be read" }
           foreach ($line in @($same | Where-Object { $_ })) {
               $id, $draft = $line -split "`t"
-              if ($draft -ne 'true') { throw "Release $env:VERSION is there already" }
+              if ($draft -ne 'true') { if ($dry) { "Release $env:VERSION is there already (dry run: going on)"; continue }; throw "Release $env:VERSION is there already" }
+              if ($dry) { "A draft $env:VERSION is there (release $id) - a real run would delete it"; continue }
               gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$id" | Out-Null
               if ($LASTEXITCODE -ne 0) { throw "The draft $env:VERSION a failed run left couldn't be deleted" }
               "Deleted the draft $env:VERSION a failed run left (release $id)"
@@ -65,27 +74,39 @@ jobs:
           # (a tag of that name already on another commit: the release would be made from that commit, not this one -
           # an annotated tag's commit is its peeled ^{} ref, asked for by name: a plain pattern never matches it)
           $tag = (git ls-remote --tags origin "refs/tags/$env:VERSION" "refs/tags/$($env:VERSION)^{}") -join "`n"
-          if ($tag -and $tag -notmatch $env:GITHUB_SHA) { throw "Tag $env:VERSION is on another commit ($tag)" }
-          "Publishing $env:VERSION from $env:GITHUB_REF_NAME at $env:GITHUB_SHA"
+          if ($tag -and $tag -notmatch $env:GITHUB_SHA) { if ($dry) { "Tag $env:VERSION is on another commit ($tag) - a real run would stop" } else { throw "Tag $env:VERSION is on another commit ($tag)" } }
+          "$(if ($dry) { 'Dry run of' } else { 'Publishing' }) $env:VERSION from $env:GITHUB_REF_NAME at $env:GITHUB_SHA"
           exit 0
 
       - name: Get AutoHotkey v2 and Ahk2Exe
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          # (both from their GitHub releases - www.autohotkey.com shows runners a browser check, not the file - each
+          # zip's folder holding the exe copied where build.ps1 looks: <AutoHotkey>\v2 and <AutoHotkey>\Compiler, as
+          # AutoHotkey's installer lays them out)
           $root = Join-Path $env:ProgramFiles 'AutoHotkey'
-          New-Item -ItemType Directory -Force -Path (Join-Path $root 'v2'), (Join-Path $root 'Compiler') | Out-Null
-          $zip = Join-Path $env:RUNNER_TEMP 'ahk-v2.zip'
-          Invoke-WebRequest -Uri 'https://www.autohotkey.com/download/ahk-v2.zip' -OutFile $zip
-          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $root 'v2') -Force
-          # (Ahk2Exe isn't in AutoHotkey v2's download: its latest release's zip, as AutoHotkey's install-ahk2exe.ahk does)
-          $rel = gh api repos/AutoHotkey/Ahk2Exe/releases/latest | ConvertFrom-Json
-          $asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
-          if (-not $asset) { throw "Ahk2Exe's latest release ($($rel.tag_name)) has no zip" }
-          $zip = Join-Path $env:RUNNER_TEMP 'ahk2exe.zip'
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
-          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $root 'Compiler') -Force
-          if (-not (Test-Path (Join-Path $root 'Compiler\Ahk2Exe.exe'))) { throw "Ahk2Exe.exe isn't in $($asset.name)" }
-          "AutoHotkey $((Get-Item (Join-Path $root 'v2\AutoHotkey64.exe')).VersionInfo.FileVersion), Ahk2Exe $($rel.tag_name)"
+          function Get-Release($repo, $exe, $dest) {
+              $rel = gh api "repos/$repo/releases/latest" | ConvertFrom-Json
+              if ($LASTEXITCODE -ne 0 -or -not $rel) { throw "$repo's latest release couldn't be read" }
+              $asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+              if (-not $asset) { throw "$repo's latest release ($($rel.tag_name)) has no zip" }
+              $zip = Join-Path $env:RUNNER_TEMP $asset.name
+              Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+              $out = Join-Path $env:RUNNER_TEMP ([IO.Path]::GetFileNameWithoutExtension($asset.name))
+              Expand-Archive -LiteralPath $zip -DestinationPath $out -Force
+              $found = Get-ChildItem -Path $out -Filter $exe -Recurse -File | Select-Object -First 1
+              if (-not $found) { throw "$exe isn't in $($asset.name)" }
+              New-Item -ItemType Directory -Force -Path $dest | Out-Null
+              Copy-Item -Path (Join-Path $found.DirectoryName '*') -Destination $dest -Recurse -Force
+              Write-Host "$repo $($rel.tag_name) ($($asset.name)) -> $dest"
+              return $rel.tag_name
+          }
+          $ahk = Get-Release 'AutoHotkey/AutoHotkey' 'AutoHotkey64.exe' (Join-Path $root 'v2')
+          if ($ahk -notmatch '^v2\.') { throw "AutoHotkey's latest release is $ahk, not a v2 - these scripts are v2" }
+          Get-Release 'AutoHotkey/Ahk2Exe' 'Ahk2Exe.exe' (Join-Path $root 'Compiler') | Out-Null
+          if (-not (Test-Path (Join-Path $root 'Compiler\Ahk2Exe.exe'))) { throw "Ahk2Exe.exe isn't in $root\Compiler" }
+          "AutoHotkey64.exe $((Get-Item (Join-Path $root 'v2\AutoHotkey64.exe')).VersionInfo.FileVersion)"
 
       - name: Build the exes (build.ps1)
         shell: pwsh
@@ -117,7 +138,17 @@ jobs:
               "$($names.Count) files, $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB: $zip"
           } finally { $z.Dispose() }
 
+      - name: Keep the zip (dry run)
+        if: ${{ inputs.dryrun }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: Wiz-Maxxing-${{ inputs.version }}-dryrun
+          path: Wiz-Maxxing-${{ inputs.version }}.zip
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Publish the release
+        if: ${{ !inputs.dryrun }}
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
