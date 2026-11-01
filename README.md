@@ -6,6 +6,19 @@ https://github.com/Braehn/Wiz-Maxxing/releases
 
 Deisnged to play the game for you and Max wizards with very little necessary intervention.
 
+Features:
+   1. Walks and Talks, activates dialogs and spaces through them.
+   2. Plays battles and learned the most efficient strategy per mobs vs bosses.
+   3. Learns how you solve puzzles and saves them.
+   4. Learns Dungeon Runs.
+   5. Can communicate on a lan with 3 other clients and formulate plans and work together.
+   6. Learns new cards and schools.
+   7. Mass card editing and you can manually change how you want it to use those cards.
+   8. Tons of settings for how you want it to operate.
+   9. WIP: Has a 3d Mesh map of the environment read from the game's code for accurate pathing.
+   10. Active Logging and statistic screen.
+   11. Hotkey's tab
+
 Setup:
 
 1. Download the newest **Wiz-Maxxing-v#.#.#.zip**
