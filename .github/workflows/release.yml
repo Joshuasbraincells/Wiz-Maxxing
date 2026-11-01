@@ -54,8 +54,8 @@ jobs:
           gh release view $env:VERSION --repo $env:GITHUB_REPOSITORY *> $null
           if ($LASTEXITCODE -eq 0) { throw "Release $env:VERSION is there already" }
           # (a tag of that name already on another commit: the release would be made from that commit, not this one -
-          # an annotated tag lists its commit on a second, ^{} line)
-          $tag = (git ls-remote --tags origin "refs/tags/$env:VERSION") -join "`n"
+          # an annotated tag's commit is its peeled ^{} ref, asked for by name: a plain pattern never matches it)
+          $tag = (git ls-remote --tags origin "refs/tags/$env:VERSION" "refs/tags/$($env:VERSION)^{}") -join "`n"
           if ($tag -and $tag -notmatch $env:GITHUB_SHA) { throw "Tag $env:VERSION is on another commit ($tag)" }
           "Publishing $env:VERSION from $env:GITHUB_REF_NAME at $env:GITHUB_SHA"
           exit 0
