@@ -1,5 +1,7 @@
 <p align="center"><img src="assets/avatar.png" width="180" alt="Wizard101 bots"></p>
 
+https://github.com/Braehn/Wiz-Maxxing/releases
+
 # Wizard101 Wiz-Maxxer Bot
 
 Deisnged to play the game for you and Max wizards with very little necessary intervention.
