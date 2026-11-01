@@ -2494,6 +2494,12 @@ InteractPrompt()
 	;picks up under it changes from read to read - else all its letters
 	if (RegExMatch(t, "i)\bpress\b") && RegExMatch(t, "i)\bto\s+[a-z]{3,}"))
 		{
+		;(read again at twice the size - at a small UI its name comes out garbled at 1: 2026-11-01 11:50, UI scale 0.86,
+		;'ENGDCERMONTGWRY' and 'MONTGOQYPRESSXTOTALK' for Engineer Montgomery's own prompt - no X, NEEDS YOU; the quest marker's
+		;name over him, read at 2, came out right. Only a "Press X" prompt's: the others are told apart well enough at 1)
+		t2 := OcrRect(Round(GameLeft + GameW / 2 - 330 * s), Round(GameTop + GameH - 300 * s), Round(660 * s), Round(240 * s), "en", 2)
+		if (!ErrorLevel && RegExMatch(t2, "i)\bpress\b") && RegExMatch(t2, "i)\bto\s+[a-z]{3,}"))
+			t := t2, WkPromptText := t2
 		WkPromptDest := RegExMatch(t, "m`n)^\s*([A-Z][A-Z'.\- ]{3,}?)\s*$", &cap) ? WalkLetters(cap[1]) : SubStr(WalkLetters(t), 1, 60)
 		WkPromptVerb := RegExMatch(t, "i)\bpress\b.*?\bto\s+([a-z]{3,})", &verb) ? verb[1] : ""
 		return "press"
@@ -2968,14 +2974,14 @@ WalkTalkGoal()
 	}
 
 ;Is the prompt key (its name's letters - WkPromptDest) the talk goal's NPC (tg: WalkTalkGoal)? Its name like the one the goal
-;names (OCR slips allowed - "EDITHBERHLEY"), or each of its words in the key in any order (WalkNameLike's name); not read: in the
-;goal line
+;names (OCR slips allowed - "EDITHBERHLEY", "ENGDCERMONTGWRY": WalkNpcLike), or each of its words in the key in any order; not
+;read: in the goal line
 WalkIsGoalNpc(key, tg)
 	{
 	if (StrLen(key) < 4 || !IsObject(tg))
 		return false
 	if (tg.npc != "")
-		return WalkNameLike(key, WalkLetters(tg.npc), tg.npc)
+		return WalkNpcLike(key, tg.npc)
 	ignLine := WalkLetters(WkGoalLine)
 	return ignLine != "" && InStr(ignLine, key)
 	}
@@ -3144,7 +3150,8 @@ WalkQuestMarker(key)
 		t := OcrRect(qm[7], V1At(qm, 8), V1At(qm, 9), V1At(qm, 10), "en", 2, , 5)
 		if (ErrorLevel || t = "")
 			continue
-		if (WalkNameLike(WalkLetters(t), key))
+		;(the marker's name reads right - big, green -, the prompt's may be garbled: WalkNpcLike)
+		if (WalkNpcLike(key, t))
 			return Trim(RegExReplace(t, "\s+", " "))
 		WalkLog("quest marker (?) over '" Trim(RegExReplace(t, "\s+", " ")) "' - not the prompt's '" SubStr(key, 1, 30) "'")
 		}
@@ -3161,7 +3168,7 @@ WalkQuestMarkerTalk(key)
 	qmName := WalkQuestMarker(key)
 	if (qmName = "" || !Walking)
 		return false
-	if (InteractPrompt() != "press" || !WalkNameLike(WkPromptDest, key))
+	if (InteractPrompt() != "press" || !(WalkNameLike(WkPromptDest, key) || WalkNpcLike(WkPromptDest, qmName)))
 		{
 		WalkLog("quest marker (?) over " qmName " - its prompt went before X: walking on")
 		return false
@@ -3189,34 +3196,81 @@ WalkNameLike(a, b, name := "")
 		return true
 	if (name = "")
 		return false
-	;(each word: the fewest letters changed, dropped or added that put it somewhere in a - the edit distance with the match free to
-	;start and end anywhere in a)
 	nlGot := 0
 	for each, nlWord in StrSplit(RegExReplace(name, "[^A-Za-z]+", " "), " ")
 		{
 		nlWord := WalkLetters(nlWord), nlLen := StrLen(nlWord)
 		if (nlLen < 3)
 			continue
-		nlCol := []
-		Loop nlLen + 1
-			nlCol.Push(A_Index - 1)
-		nlBest := nlLen
-		Loop Parse, a
-			{
-			nlC := A_LoopField, nlDiag := 0
-			Loop nlLen
-				{
-				nlOld := nlCol[A_Index + 1]
-				nlCol[A_Index + 1] := Min(nlOld + 1, nlCol[A_Index] + 1, nlDiag + (SubStr(nlWord, A_Index, 1) == nlC ? 0 : 1))
-				nlDiag := nlOld
-				}
-			nlBest := Min(nlBest, nlCol[nlLen + 1])
-			}
-		if (nlBest > (nlLen >= 5 ? nlLen // 4 : 0))
+		if (WalkWordIn(nlWord, a) > (nlLen >= 5 ? nlLen // 4 : 0))
 			return false
 		nlGot += nlLen
 		}
 	return nlGot * 4 >= StrLen(b) * 3
+	}
+
+;The fewest letters changed, dropped or added that put word somewhere in a - the edit distance with the match free to start
+;and end anywhere in a (both WalkLetters')
+WalkWordIn(word, a)
+	{
+	wiLen := StrLen(word), wiCol := []
+	Loop wiLen + 1
+		wiCol.Push(A_Index - 1)
+	wiBest := wiLen
+	Loop Parse, a
+		{
+		wiC := A_LoopField, wiDiag := 0
+		Loop wiLen
+			{
+			wiOld := wiCol[A_Index + 1]
+			wiCol[A_Index + 1] := Min(wiOld + 1, wiCol[A_Index] + 1, wiDiag + (SubStr(word, A_Index, 1) == wiC ? 0 : 1))
+			wiDiag := wiOld
+			}
+		wiBest := Min(wiBest, wiCol[wiLen + 1])
+		}
+	return wiBest
+	}
+
+;A prompt's name letters (key) an NPC's (name: as the game writes it, or as its quest marker's green name reads), allowing for
+;OCR at its worst: WalkNameLike's slips; or each of name's words of 3 letters or more somewhere in key with up to 2 letters in 5
+;changed, dropped or added (1 in a word of 5 letters, none in a shorter one), a third of those words' letters at most all told
+;and those words three quarters of name's letters; or its last word - the surname, the part that tells one NPC from another
+;(not ENGINEER, PROFESSOR, SERGEANT) - of 5 letters or more there with up to 3 in 10, one other word at most lost (cut off,
+;garbled past that), the words there half name's letters at least. A small UI's prompt comes out like that (2026-11-01 11:50,
+;UI scale 0.86: 'ENGDCERMONTGWRY', 'MONTGOQYPRESSXTOTALK', 'ERMENGQMONTGWRYPRESSXORYCENTER' for Engineer Montgomery's own
+;prompt - no X, NEEDS YOU); the NPCs by him aren't him (RACE CONRAD ENGINEER; Bartholomew by Edith Benchley). Two of the same
+;surname side by side, one's first name lost, would pass - X at the other: its chatter, a try used (WalkTalkCount)
+WalkNpcLike(key, name)
+	{
+	nkAll := WalkLetters(name)
+	if (WalkNameLike(key, nkAll, name))
+		return true
+	if (StrLen(key) < 4 || StrLen(nkAll) < 4)
+		return false
+	nkWords := [], nkErrs := []
+	for each, nkWord in StrSplit(RegExReplace(name, "[^A-Za-z]+", " "), " ")
+		{
+		nkWord := WalkLetters(nkWord)
+		if (StrLen(nkWord) >= 3)
+			nkWords.Push(nkWord), nkErrs.Push(WalkWordIn(nkWord, key))
+		}
+	if (!nkWords.Length)
+		return false
+	nkLen := 0, nkErr := 0, nkGot := 0, nkLost := 0
+	for nkI, nkWord in nkWords
+		{
+		nkN := StrLen(nkWord), nkLen += nkN
+		if (nkErrs[nkI] <= (nkN >= 6 ? nkN * 2 // 5 : nkN = 5 ? 1 : 0))
+			nkGot += nkN, nkErr += nkErrs[nkI]
+		else
+			nkLost += 1
+		}
+	;(every word there, garbled)
+	if (!nkLost && nkLen * 4 >= StrLen(nkAll) * 3 && nkErr * 3 <= nkLen)
+		return true
+	;(a word lost - the last one there)
+	nkN := StrLen(nkWords[nkWords.Length])
+	return nkN >= 5 && nkErrs[nkWords.Length] <= nkN * 3 // 10 && nkLost <= 1 && nkGot * 2 >= StrLen(nkAll)
 	}
 
 ;How many letters added, dropped or changed turn a into b (Levenshtein)
