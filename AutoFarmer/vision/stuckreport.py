@@ -19,14 +19,14 @@ Counted per run: the walker's unstick tries ("stuck at distance .. try N") and t
 back-ups and their stops (stuck / a way that didn't load), the sigils X'd, the ones that started and the ones that
 didn't - each tied to the last relog before it ("Reconnect: back in the game", "in the world after a character select")
 - and battle time.
-Badly stuck: exact from the walker's own "badly stuck #N (kind): why" lines (v0.9.0 on); an older log's give-up lines
+Badly stuck: exact from the walker's own "badly stuck #N (kind): why" lines (v1.0.0 on); an older log's give-up lines
 within 2 minutes of each other taken as one (a give-up and its Commons teleport or notice: one), said "estimated".
-Time lost: exact from the walker's "stuck over - N s lost" lines (v0.9.0 on; an episode still open at the end of a run
+Time lost: exact from the walker's "stuck over - N s lost" lines (v1.0.0 on; an episode still open at the end of a run
 isn't in them); an older log's estimated - each run of unstick tries from the stall before try 1 (its why: "no closer
 in 4 s", "...for 15 s", "picture not moving" 1.2 s) to "got round" (else the last try's back-up, turn and walk), a give-up
 on to the Commons' arrival or the notice closed (F8 - else the run's end), 3 minutes before a "no closer to the goal"
 teleport, 9 s a dungeon back-up, the wait of each sigil that didn't start - battle time ("Round start" to "Out of
-battle") left out. A sigil that didn't start: exact from "sigil: didn't start" (v0.9.0 on) or "sigil: still here";
+battle") left out. A sigil that didn't start: exact from "sigil: didn't start" (v1.0.0 on) or "sigil: still here";
 likely - another X within 5 minutes with no sign of a zone change between - counted apart."""
 import argparse
 import json
@@ -40,7 +40,7 @@ DEFAULT_FILES = [os.path.join(FARMER, "debug.previous.log"), os.path.join(FARMER
 
 LINE = re.compile(r"^(\d\d):(\d\d):(\d\d) (.*)$")
 START = re.compile(r"^Started (\S*?)\.? Game area|^Started (v\S+)")
-# (the walker's own lines - Walker.ahk; the time-lost and count lines are v0.9.0's)
+# (the walker's own lines - Walker.ahk; the time-lost and count lines are v1.0.0's)
 TRY = re.compile(r"^Walk: stuck at distance (\S+) \((.*?)\): try (\d+) - back up, turn \d+ degrees \w+, walk (\d+) ms")
 GOT_ROUND = re.compile(r"^Walk: got round the obstacle at distance")
 GAVE_UP = re.compile(r"^Walk: stuck: gave up after (\d+) tries")

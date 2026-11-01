@@ -40,7 +40,7 @@ or window name - in another build a place that fails is looked for, and kept onc
              shown: Window.m_Flags bit 0 - on the planning window: the planning phase; on a card: it's on screen (a
                 discarded / not yet dealt card's window is hidden, its old spell still in it; out of a battle the
                 windows read shown with no spell at all - so nothing is read from them out of a battle)
-             box (v0.9.0, NOT CHECKED against the screen yet): a card's place in the root - its m_Window (in the Hand
+             box (v1.0.0, NOT CHECKED against the screen yet): a card's place in the root - its m_Window (in the Hand
                 window's units) plus the left / top of every window on the way down from the root (the root's own left
                 / top not added: bossmem.combatant_windows' rule for the plates) - in GUI units, the root's rect beside
                 it (the client: 1827 x 1027 at 2560x1440). Whether a zoomed card (the mouse on it) or the hand sliding
@@ -1608,7 +1608,7 @@ def card_line(c):
     school pips|enchantment's effect|value with it|template id|text|heads|boosts|l|t|r|b - heads (field 24): a damage
     card's damage by school, every head ("fire:230,ice:230,storm:230" - heads_field); boosts (25): what a blade, trap,
     aura or bubble boosts by school ("ice:35,storm:35,fire:35", "all:25" - boosts_field); "?" either one not to be
-    trusted, "" none. l|t|r|b (26-29, v0.9.0 - after the old ones: an older bot reads its 25): the card's box in the
+    trusted, "" none. l|t|r|b (26-29, v1.0.0 - after the old ones: an older bot reads its 25): the card's box in the
     GUI's root (GUI units, the root's size on answer's root| line - box_in_root; NOT CHECKED against the screen yet), ""
     not read"""
     sp = ",".join("%s:%d" % kv for kv in sorted((c.get("school_pips") or {}).items()))
@@ -1625,7 +1625,7 @@ def card_line(c):
 def answer(r, why=""):
     """/cards' answer: "none|<why>" unless in a battle, in the planning phase and settled; else one me| line, a card|
     line for each card shown (left to right: 29 fields - card_line), root|<w>|<h> (the GUI root's size in GUI units -
-    the cards' boxes are in it; only when it's read - v0.9.0, an older bot skips the line) and hand|<cards>|<ms>"""
+    the cards' boxes are in it; only when it's read - v1.0.0, an older bot skips the line) and hand|<cards>|<ms>"""
     if r is None:
         return "none|" + _f(why or "the game can't be read")
     if not (r.get("in_battle") and r.get("planning") and r.get("settled")):

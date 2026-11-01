@@ -22,7 +22,7 @@
 ; built), no school known (hitter 0). Once a round at most (the log's round and the bot's); the helper keeps to 300 ms
 ; (budget=, the game's reads included), the bot waits 1.5 s at most - a slow or missing answer is never counted against
 ; the helper (VisionGet's noCount).
-; A party battle (v0.9.0, the team model - advice only, as the rest): the party's other wizards on your side go with the
+; A party battle (v1.0.0, the team model - advice only, as the rest): the party's other wizards on your side go with the
 ; question (mates=: each one's seat, school, health and battle role from the party's state - PlannerMates; their hands
 ; aren't known: a hitter is played as the generic hitter, a blader or healer as doing nothing), your seat, and
 ; charms=log: the blades, traps and shields on you and the enemies from the game's log (the party's and the enemies'

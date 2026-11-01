@@ -508,7 +508,7 @@ class DeckMem:
         """[(spell m_name, copies, how)] the cards an item gives: its template's equip effects (ProvideSpellEffectInfo -
         gear) and, for a pet, its level's power cards (PetLevelInfo); None unreadable. A pet whose cards can't be read
         (its classes not in this build, its level or template unreadable) loses only ITS cards: the item's equip effects
-        are kept and the item goes on self.pet_unread (_read's why says so) - before v0.9.0 the whole deck's item cards
+        are kept and the item goes on self.pet_unread (_read's why says so) - before v1.0.0 the whole deck's item cards
         went None with it"""
         if not tpl or self.off("ItemTemplate", "m_equipEffects") is None or \
                 any(self.off("ProvideSpellEffectInfo", k) is None for k in ("m_spellName", "m_numSpells")):

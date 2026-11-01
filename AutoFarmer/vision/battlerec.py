@@ -204,7 +204,7 @@ import traceback
 
 SCHEMA = "wizmaxx-battles"
 V = 1
-RULE_V = 2                   # (2: the planner rule - v0.9.0)
+RULE_V = 2                   # (2: the planner rule - v1.0.0)
 # Phase B groups switched on (each needs its live probe item first - SPEC 8): "snapshot" (LIVE-1..4, 6: a memory
 # snapshot of every participant after each round), "wizstats" (LIVE-5: WizGameStats at the battle's first PrePlanning).
 # None yet: their fields are not written.
@@ -1561,7 +1561,7 @@ def state_at(events, lo, hi):
 
 
 # ============================================================================ the charms on now (from the log)
-# (v0.9.0, TODO goal 3 step 17 - Phase B's memory snapshot not built: the log's AddHangingEffect lines are the only
+# (v1.0.0, TODO goal 3 step 17 - Phase B's memory snapshot not built: the log's AddHangingEffect lines are the only
 # record of what's on whom. Its Effect is the game's SpellEffect type - "kModifyOutgoingDamage" or the same without the
 # k, matched either way: a charm out (a blade, + ; a weakness, -), a ward in (a trap, + ; a shield, -), an absorb)
 CHARM_KINDS = {"modifyoutgoingdamage": ("blades", "weak"), "modifyincomingdamage": ("traps", "shields"),

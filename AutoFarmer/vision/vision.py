@@ -49,11 +49,11 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                   either "?" when it can't be trusted (not all of the card read, a head
                                                   of an odd kind or school), "" none - handmem.heads_field /
                                                   boosts_field; an older helper has no fields 24-25);
-                                                  l|t|r|b (26-29, v0.9.0) the card's box in the GUI's root, GUI units
+                                                  l|t|r|b (26-29, v1.0.0) the card's box in the GUI's root, GUI units
                                                   (its m_Window plus every window's left / top on the way down - NOT
                                                   CHECKED against the screen yet: AutoFarmer's MemBoxCheck logs it
                                                   against /hand's boxes), "" not read
-                                               root|<w>|<h>                  (v0.9.0: the GUI root's size in the same
+                                               root|<w>|<h>                  (v1.0.0: the GUI root's size in the same
                                                                              units - only when it's read)
                                                hand|<cards>|<ms>
   /badge?x1=&y1=&x2=&y2=&scale=&schools=  -> one line per school whose badge is there: "school|x|y|dist",
@@ -291,7 +291,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                                                      player 1 a wizard; gid its owner's global id; x
                                                                      the middle of its plate across the game's window,
                                                                      0..1 (its GUI rect over the root's); l|t|r|b
-                                                                     (v0.9.0) its plate's box across and down the
+                                                                     (v1.0.0) its plate's box across and down the
                                                                      game's window, 0..1 each (NOT CHECKED against the
                                                                      screen yet); hide 1: the game hides its health
                                                                      (m_HideCurrentHP) - "" a field not read)
@@ -470,7 +470,7 @@ Requests (all GET, answers are plain text lines, "ERR <why>" on a problem):
                                              (target: that index; i the card's place in the hand, -1 a pass) +
                                              planned|rollouts|ms|ms in all, or none|<why> (never an ERR)
        [&role=hitter|blader|healer&seat=4-7&mates=name~seat~school~hp~max~role~pips~power~hand|...&teamplan=1&charms=log]
-                                             (v0.9.0 batch 3 - none given: as above) the team model: mates the party's
+                                             (v1.0.0 batch 3 - none given: as above) the team model: mates the party's
                                              other wizards on your side (hand: tid:kind:pips:school:value;... - each
                                              card's kind and value from cards.jsonl's facts when known; empty: not
                                              known, its role's way), each with its own hand, pips and health in your
@@ -2380,7 +2380,7 @@ def plate_x(p):
 def plate_box(p):
     """a participant's plate as fractions of the client: [left, top, right, bottom], each 0..1 (its box - in the root,
     bossmem's GUI units - over the root's width / height, as plate_x), four '' when it isn't read (the wizard's own when
-    no window holds it: source handmem) or is empty. NOT CHECKED against the screen yet (v0.9.0)"""
+    no window holds it: source handmem) or is empty. NOT CHECKED against the screen yet (v1.0.0)"""
     b, r = p.get('box'), p.get('root')
     try:
         w, h = r[2] - r[0], r[3] - r[1]
@@ -2395,7 +2395,7 @@ def battle_lines(parts, why=''):
     """/battle's answer for navmem.battle's reading: part|me|team|name|health|max|boss|title|rank|school|player|gid|x|
     l|t|r|b|hide a participant (the wizard's own first), or none|<why> - x (plate_x) the 13th: an older bot reads the
     first 12; l|t|r|b (plate_box: the plate's box across and down the client, 0..1) and hide (1: the game hides its
-    health - m_HideCurrentHP - its health field may not be what the plate shows; 0 not, '' not read) after it (v0.9.0):
+    health - m_HideCurrentHP - its health field may not be what the plate shows; 0 not, '' not read) after it (v1.0.0):
     a bot before that reads its 13"""
     if not parts:
         return ['none|' + mob_cell(why or 'not in a battle')]

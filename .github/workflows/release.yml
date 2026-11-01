@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to publish, as in version.txt (v0.9.0)"
+        description: "Version to publish, as in version.txt (v1.0.0)"
         required: true
         type: string
       prerelease:
@@ -46,13 +46,22 @@ jobs:
         shell: pwsh
         run: |
           $PSNativeCommandUseErrorActionPreference = $false
-          if ($env:VERSION -notmatch '^v\d+\.\d+(\.\d+)?$') { throw "'$env:VERSION' isn't a version like v0.9.0" }
+          if ($env:VERSION -notmatch '^v\d+\.\d+(\.\d+)?$') { throw "'$env:VERSION' isn't a version like v1.0.0" }
           # (the updater offers every release that isn't a pre-release: those only from main)
           if ($env:PRERELEASE -ne 'true' -and $env:GITHUB_REF -ne 'refs/heads/main') { throw "Run it on main (or tick pre-release) - this is $env:GITHUB_REF" }
           $file = (Get-Content -Raw -LiteralPath version.txt).Trim()
           if ($file -ne $env:VERSION) { throw "version.txt says '$file', not '$env:VERSION' - change version.txt first" }
-          gh release view $env:VERSION --repo $env:GITHUB_REPOSITORY *> $null
-          if ($LASTEXITCODE -eq 0) { throw "Release $env:VERSION is there already" }
+          # (a published release of that version: stop; a draft one - a run that failed before publishing it: deleted,
+          # made again below. Looked up through the API: a draft has no tag yet)
+          $same = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == env.VERSION) | [.id, .draft] | @tsv'
+          if ($LASTEXITCODE -ne 0) { throw "The releases couldn't be read" }
+          foreach ($line in @($same | Where-Object { $_ })) {
+              $id, $draft = $line -split "`t"
+              if ($draft -ne 'true') { throw "Release $env:VERSION is there already" }
+              gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$id" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "The draft $env:VERSION a failed run left couldn't be deleted" }
+              "Deleted the draft $env:VERSION a failed run left (release $id)"
+          }
           # (a tag of that name already on another commit: the release would be made from that commit, not this one -
           # an annotated tag's commit is its peeled ^{} ref, asked for by name: a plain pattern never matches it)
           $tag = (git ls-remote --tags origin "refs/tags/$env:VERSION" "refs/tags/$($env:VERSION)^{}") -join "`n"
@@ -111,11 +120,23 @@ jobs:
       - name: Publish the release
         shell: pwsh
         run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          # (made as a draft with its zip, then published: the updater never sees the release without its zip - a run
+          # that fails in between leaves a draft, which the next run's version check deletes)
           $zip = "Wiz-Maxxing-$env:VERSION.zip"
-          $ghArgs = @($env:VERSION, $zip, '--repo', $env:GITHUB_REPOSITORY, '--title', $env:VERSION, '--target', $env:GITHUB_SHA)
+          $ghArgs = @($env:VERSION, $zip, '--repo', $env:GITHUB_REPOSITORY, '--title', $env:VERSION, '--target', $env:GITHUB_SHA, '--draft')
           $notes = ".github/release-notes/$env:VERSION.md"
           if (Test-Path -LiteralPath $notes) { $ghArgs += @('--notes-file', $notes) } else { $ghArgs += '--generate-notes' }
-          if ($env:PRERELEASE -eq 'true') { $ghArgs += '--prerelease' } else { $ghArgs += '--latest' }
+          if ($env:PRERELEASE -eq 'true') { $ghArgs += '--prerelease' }
           gh release create @ghArgs
           if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
-          gh release view $env:VERSION --repo $env:GITHUB_REPOSITORY --json url,assets --jq '.url + "  " + ([.assets[].name] | join(", "))'
+          $id = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == env.VERSION and .draft) | .id'
+          $id = @($id | Where-Object { $_ })
+          if ($id.Count -ne 1) { throw "The draft $env:VERSION wasn't found to publish ($($id -join ', '))" }
+          $assets = gh api "repos/$env:GITHUB_REPOSITORY/releases/$($id[0])/assets" --jq '[.[] | select(.state == "uploaded") | .name] | join(", ")'
+          if ($assets -notmatch [regex]::Escape($zip)) { throw "The draft has no $zip ($assets) - not published" }
+          # (published: the tag is made on GITHUB_SHA; the newest release the updater reads unless a pre-release)
+          $latest = if ($env:PRERELEASE -eq 'true') { 'false' } else { 'true' }
+          gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/releases/$($id[0])" -F draft=false -f make_latest=$latest --jq '.html_url + "  (" + .tag_name + ")"'
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the draft $env:VERSION failed ($LASTEXITCODE)" }
+          "Assets: $assets"

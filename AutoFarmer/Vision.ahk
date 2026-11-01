@@ -242,7 +242,7 @@ VisionForget()
 ;         template id), text (about as the card says it), heads (a damage card's damage by school, every head of it:
 ;         "fire:230,ice:230,storm:230" - KillCalc.ahk HeadsParse), boosts (what a blade, trap or aura boosts by school:
 ;         "ice:35,storm:35,fire:35", "all:25" - BoostsParse; either "?" not to be trusted, "" none or an older helper), nf
-;         (the line's fields: 23 an older helper's, with no heads or boosts), l, t, r, b (v0.9.0: its box in the game's GUI
+;         (the line's fields: 23 an older helper's, with no heads or boosts), l, t, r, b (v1.0.0: its box in the game's GUI
 ;         root, in the GUI's own units - rootW, rootH below; "" not read or an older helper - VisionCardPx turns it into
 ;         pixels. NOT CHECKED against the screen yet: KillCalc.ahk MemBoxCheck logs it against /hand's boxes)}]
 ;  ms     how long the read took in the helper
@@ -333,7 +333,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 			}
 		else if (V1At(vcF, 1) = "hand")
 			vcOut.ms := V1At(vcF, 3)
-		;(v0.9.0: the GUI root's size the cards' boxes are in - an older helper has no such line)
+		;(v1.0.0: the GUI root's size the cards' boxes are in - an older helper has no such line)
 		else if (V1At(vcF, 1) = "root")
 			vcOut.rootW := NavNum(V1At(vcF, 2)), vcOut.rootH := NavNum(V1At(vcF, 3))
 		}
@@ -346,7 +346,7 @@ VisionCards(waitMs := 1500, maxAgeMs := 0)
 	;(the wizard on screen another school than the game's memory's: another client's - not used. Only while more than one
 	;game runs, though: with one, the memory's can't be another client's, and the badge read by your plate was another
 	;wizard's - a party battle, where player.png can match a teammate's plate (PlayerPlates2) - so the hand is kept, said
-	;once a pair (v0.9.0: before, the whole memory hand was thrown away for the round - every memory cast, false-match drop
+	;once a pair (v1.0.0: before, the whole memory hand was thrown away for the round - every memory cast, false-match drop
 	;and memory pip read lost))
 	if (vcOut.me.school != "" && school != "" && V1IsFunc("BadgeNumber") && BadgeNumber.Call(school) && Format("{:L}", school) != vcOut.me.school)
 		{
@@ -371,7 +371,7 @@ VisionGameClients()
 		return 0
 	}
 
-;Whether the game's memory can be this client's for sure - one game window (v0.9.0 review): navmem attaches to the
+;Whether the game's memory can be this client's for sure - one game window (v1.0.0 review): navmem attaches to the
 ;foreground client, else the first it finds, and stays on it (vision\navmem.py _ensure), so with two or more running it can
 ;be reading another client's battle (dual mode is NavBattle's own refusal). The values the bot acts on that came in with
 ;TODO.md goal 3 ask this first: Autofarmer.ahk RoundBattleMem (your school and plate - written over the badge's, they'd also
@@ -882,7 +882,7 @@ NavItems(goalLine := "", far := false, timeoutMs := 2500)
 ;planning phase: {me: the wizard's own (or ""), foes: the other side's, parts: all} - each {me (1 the wizard's own), team,
 ;name (the mob's - "" a wizard), health, max, boss (1: the game's own boss flag), title, rank, school (its mob's - "" not
 ;known), player (1 a wizard), gid, x (the middle of its plate across the game's window, 0..1 - "" not read or an older
-;helper), l, t, r, b (v0.9.0: its plate's box across and down the game's window, 0..1 each - "" not read or an older
+;helper), l, t, r, b (v1.0.0: its plate's box across and down the game's window, 0..1 each - "" not read or an older
 ;helper; NavPlatePx turns it into pixels - NOT CHECKED against the screen yet), hide (1: the game hides its health -
 ;m_HideCurrentHP: its health may not be what the plate shows; 0 not, "" not read)}. "" when it can't be read - navmem:0,
 ;the helper not running or older (no /battle), dual
@@ -973,7 +973,7 @@ NavPlatePx(p, &x, &y)
 ;inBattle, planning (1/0), shown, own (card windows shown, those but the pet's), size (the hand list's), ms, why}. ""
 ;when it can't be read - navmem:0, the helper not running or older (no /phase), dual mode, the game not read: VisionPhaseWhy
 ;says why (after an ERR or no answer not asked again for 5 s; an older helper's "unknown request": 60 s).
-;v0.9.0: read for the log only (Autofarmer.ahk CastPhaseShadow) - nothing acts on it till what the hand does between a
+;v1.0.0: read for the log only (Autofarmer.ahk CastPhaseShadow) - nothing acts on it till what the hand does between a
 ;card's click and its target's, and after a cast goes out, has been seen in the game (TODO.md goal 3: the cast checks and
 ;the round's start from memory - TargetPending, CastWentOut, BattleLoop's TestRound)
 VisionPhase(timeoutMs := 300)

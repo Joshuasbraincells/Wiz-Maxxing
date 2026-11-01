@@ -1,6 +1,6 @@
-Live checks - what to try in the game (v0.8.0's simulator and v0.9.0)
-=====================================================================
-None of v0.8.0 or v0.9.0 has been run against the live game yet: the Python
+Live checks - what to try in the game (v1.0.0)
+==============================================
+None of v1.0.0 has been run against the live game yet: the Python
 side is unit-tested, the AutoHotkey side was only read. This is the order to
 try it in. Each step says what to run or switch on, what to look for and what
 to send back. Nothing here sends anything itself: you send the files and the

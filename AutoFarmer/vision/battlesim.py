@@ -41,7 +41,7 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
   every wizard on the team, a single-target one the wizard 1 in team; less the wizard's resist. A creature the wiki hasn't
   (yet): its hits recorded on the wizard (the battles' damage each cast) at its recorded cast rate; none recorded: a
   generic hitter (100 a pip, a cast every other round).
-  What it does besides hitting (v0.9.0, batch 3 - Foe.acts, learned by FoeBook from the battles recorded: the hanging
+  What it does besides hitting (v1.0.0, batch 3 - Foe.acts, learned by FoeBook from the battles recorded: the hanging
   effects, health changes and stuns of its casts): a round it didn't hit, a heal on the weakest of its side, a shield or
   blade on itself, a trap or weakness on one of you, a stun (your next cast skipped) - each at the rate it did it in the
   rounds it didn't hit any of your side (a single hit on a wizard of the team not modelled is still a hit); a round it
@@ -57,7 +57,7 @@ THE MODEL (one battle, round by round, until every enemy is dead, the wizard is,
   verdict() says which ones. The party's other wizards: the team model (below) - the planner's; simulate() plays one
   wizard (team splits the enemies' single hits).
 
-THE TEAM MODEL (v0.9.0, batch 3 - TODO goal 3 step 15: the leader plans the team's round)
+THE TEAM MODEL (v1.0.0, batch 3 - TODO goal 3 step 15: the leader plans the team's round)
   State.mates: the party's other wizards on my side (Mate), each its own hand, draw pile, pips, health and blades, my
   side's casts in cast order (seat: the subcircle, lowest first); the enemies' single hits on one of us at random, an AoE
   on each - an enemy known only by its hits recorded on me: each of us takes them at that rate (hit_p a wizard); a mate
@@ -659,7 +659,7 @@ class State:
       round       the battle's round (1 the first); boosts_run the boosts cast since my last hit (boostmax counts them)
       me_first    True / False: my side casts first (the game's initiative); None not known (a coin each rollout)
       fpips       each enemy's pips now, or None (not known: 1-3 as at a battle's start)
-    (v0.9.0, batch 3 - each [] / 0 / None by default: the battle as before)
+    (v1.0.0, batch 3 - each [] / 0 / None by default: the battle as before)
       shields     [(%, schools or None - every school)] on me: an enemy's hit that fits each one less (each used up)
       mytraps     [(%, schools)] the enemies' traps on me - their next hit that fits more; myweak: weaknesses on me -
                   my next hit that fits less
@@ -883,7 +883,7 @@ class _Battle:
         self.round = 1          # (the round now - run / run_from count it)
         self.me_first = None
         self.rounds_run = 0
-        # (v0.9.0 batch 3 - each empty: the battle as before) on me: shields, the enemies' traps and weaknesses
+        # (v1.0.0 batch 3 - each empty: the battle as before) on me: shields, the enemies' traps and weaknesses
         # [(%, schools or None)], an absorb's damage left, damage over time [[a tick, ticks left]], stunned rounds; on each
         # enemy: its shields and blades [(%, schools)], my damage over time on it
         self.shields, self.mytraps, self.myweak = [], [], []

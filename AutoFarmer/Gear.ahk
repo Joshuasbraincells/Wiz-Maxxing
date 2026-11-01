@@ -1,4 +1,4 @@
-; Gear.ahk - gear compared with what's worn (TODO goal 5, "gear dungeons until all gear is swapped", v0.9.0): the worn
+; Gear.ahk - gear compared with what's worn (TODO goal 5, "gear dungeons until all gear is swapped", v1.0.0): the worn
 ; gear and the backpack's read from the game's memory (the vision helper's /gear - READ-ONLY, vision\gearmem.py: each
 ; piece's equip effects and requirements), the best piece a slot worked out for your battle role (vision\gearrank.py: your
 ; stats from PlayerStats.txt - the worn gear in them - with the worn piece's taken off and the candidate's added; the
