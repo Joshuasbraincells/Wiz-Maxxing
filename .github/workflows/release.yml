@@ -119,8 +119,12 @@ jobs:
           $out = Join-Path $env:RUNNER_TEMP 'validate-out.txt'
           $err = Join-Path $env:RUNNER_TEMP 'validate-err.txt'
           $bad = @()
-          foreach ($script in 'Setup.ahk', 'Wiz-Maxxing.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
-              $in = Join-Path $env:GITHUB_WORKSPACE $script
+          # (first a script that can't load - an unclosed bracket and a call to a function that isn't there: it must
+          # fail, else a pass below would mean nothing)
+          $broken = Join-Path $env:RUNNER_TEMP 'validate-selftest.ahk'
+          Set-Content -LiteralPath $broken -Value "x := (1`r`nNoSuchFunction()`r`n" -Encoding ascii
+          foreach ($script in $broken, 'Setup.ahk', 'Wiz-Maxxing.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
+              $in = if ($script -eq $broken) { $broken } else { Join-Path $env:GITHUB_WORKSPACE $script }
               $p = Start-Process -FilePath $ahk -ArgumentList "/ErrorStdOut=UTF-8 /validate `"$in`"" -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
               $null = $p.Handle  # (keeps the exit code readable after it ends)
               if (-not $p.WaitForExit(60000)) {
@@ -130,6 +134,11 @@ jobs:
               }
               $p.WaitForExit()
               $text = (@(Get-Content -LiteralPath $out, $err -Raw -ErrorAction SilentlyContinue) -join "`n").Trim()
+              if ($script -eq $broken) {
+                  if ($p.ExitCode -eq 0) { throw "/validate passed a script that can't load - this check can't be trusted" }
+                  "(self-test: a broken script is refused - exit $($p.ExitCode))"
+                  continue
+              }
               if ($p.ExitCode -ne 0) {
                   $bad += $script
                   Write-Host "::error file=$($script -replace '\\', '/')::$($script) doesn't load: $($text -replace "`r?`n", ' | ')"

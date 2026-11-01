@@ -747,7 +747,7 @@ DashLogKind(line)
 		return "alert"
 	if (RegExMatch(msg, "^(Round start|Round done|Out of battle|In a battle|Battle log|  )"))
 		return "battle"
-	if (RegExMatch(msg, "^(Started|Vision:|UI size|Pictures:|Settings|Play for me|Wait while I play|Bring Wizard101|Walking on|Walking off|Bot )"))
+	if (RegExMatch(msg, "^(Started|Vision:|Overlay:|UI size|Pictures:|Settings|Play for me|Wait while I play|Bring Wizard101|Walking on|Walking off|Bot )"))
 		return "system"
 	return "other"
 	}

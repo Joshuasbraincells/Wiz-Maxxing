@@ -10,6 +10,7 @@ MouseSteerBlank(), PlannerBlank() ; (v2 port: v1 started every variable blank - 
 GearBlank() ; (v2-only: Gear.ahk's globals blank at start too - CONVENTIONS.md "Blank start")
 TrainingBlank() ; (Training.ahk - v2-only globals, blank at start too)
 UsedBlank() ; (v2 port: the battle flags made by name - used0..used52, bladetype, traptype - blank at start too)
+OverlayBlank() ; (Overlay.ahk - v2-only globals, blank at start too)
 InstallMouseHook()
 InstallKeybdHook()
 ;(v1: Settings.ahk's #MaxHotkeysPerInterval 1000 - a directive, in force from the start; v2's default is 70 in 2 s.
@@ -62,6 +63,7 @@ Tray.Add(HkMenu("dash"), MenuDash)
 Tray.Add("Learned spells", MenuSpells)
 Tray.Add("Settings...", MenuSettings)
 Tray.Add("Map of the zone", MenuMap)
+Tray.Add(HkMenu("overlay"), MenuOverlay)
 Tray.Add("Speedhack: press its walking key in 3 s (for Cheat Engine)", MenuSpeedKeyFast)
 Tray.Add("Speedhack: press its 1x key in 3 s (for Cheat Engine)", MenuSpeedKeyNormal)
 Tray.Add("Check for updates", MenuUpdates)
@@ -3287,6 +3289,9 @@ DebugLog(msg)
 	;(the battle recorder: a line of a round open kept for it - BattleRec.ahk; ErrorLevel untouched)
 	if (V1IsFunc("BrecNote"))
 		BrecNote.Call(msg)
+	;(the overlay over the game: the line kept for its next picture - Overlay.ahk; nothing drawn here, ErrorLevel untouched)
+	if (V1IsFunc("OvLogNote"))
+		OvLogNote.Call(now " " msg)
 	}
 
 ;The log copied to OneDrive as well (logmirror:1 - Settings, ALERTS), for help from another PC (OneDrive syncs it
@@ -3403,6 +3408,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\Gear.ahk"
 #Include "%A_ScriptDir%\Hotkeys.ahk"
 #Include "%A_ScriptDir%\Spells.ahk"
+#Include "%A_ScriptDir%\Overlay.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\Walker.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\ArrowReader.ahk"
 #Include "%A_ScriptDir%\..\Watch.ahk"
@@ -3576,6 +3582,14 @@ TrayPicked(A_ThisMenuItem, MyMenu)
 DashMapToggle()
 return
 }
+;##############################################
+;(the tray menu's / Windows+4's overlay over the game - Settings: overlay; Overlay.ahk)
+MenuOverlay(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *)
+	{
+	local v1Keep := V1Thread() ; (v1: each thread had its own ErrorLevel)
+	TrayPicked(A_ThisMenuItem, MyMenu)
+	OverlayToggle()
+	}
 ;##############################################
 MenuUpdates(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
 global
@@ -3997,6 +4011,8 @@ SetTimer(PartyTimer,500)
 ;(the Network tab - Network.ahk: this bot's state to the others on your home network, theirs and commands back)
 SetTimer(NetTick,2000)
 OnExit(VisionOnExit)
+;(the overlay over the game - the map and the log see-through over Wizard101: Overlay.ahk; Settings: overlay, off by default)
+OverlayInit()
 
 ;Initializes modes
 global commandmode := 0

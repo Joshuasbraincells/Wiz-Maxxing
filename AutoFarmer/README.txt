@@ -825,6 +825,29 @@ rank and health, the chance it hits you, its pips, and under it every spell it
 has, likeliest first: the chance it casts it this round, its pips and damage,
 the rounds it cast it this battle, and how often it was seen casting it.
 
+The overlay (Settings > THE OVERLAY, "Show the map and the log over the game";
+overlay:1 in PlayerStats.txt; the tray menu's "Overlay over the game on/off";
+Windows+4): the zone map round your wizard (as the dashboard's Map draws it)
+and the newest lines of the log (in the dashboard's colours) drawn see-through
+over Wizard101 - borderless or windowed, not exclusive full screen - while
+Wizard101 is the window in front; it hides as soon as another window is in
+front or the game is minimised. Clicks go through it to the game and it never
+takes the focus. Windows keeps it out of every screen capture: the bot's own
+screen reading can't see it (so it can't confuse the bot), and neither can
+your screenshots, recordings or the bug report's pictures - a phone photo
+shows it. Needs Windows 10 version 2004 or newer (older: it stays off) and the
+vision helper (it draws both). Each time it's switched on, a small pink square
+shows for a moment on the game: the bot checking that its screen reading can't
+see it; if it can, the overlay stays off. Settings: where each part goes (a
+corner, or Off), the map's size, the log's lines, width and text size, the
+dark box behind them and how solid it is. dashboard.ini [overlay] (read when
+it's switched on): mapdx, mapdy, logdx, logdy move a part by pixels; mapspan
+is how much of the zone the map shows (game units across, 4000). Off by
+default; not tried in the game yet. debug.log: "Overlay: on", "Overlay:
+checked - the bot's screen reading doesn't see it", "Overlay: map not shown -
+..." / "Overlay: log not shown - ..." and, when it can't be used, "Overlay:
+can't be shown - ..." / "Overlay: stopped - ...".
+
 Settings (the dashboard's Settings button, or the tray menu "Settings..."):
 the mouse and the bot's waits, and how it plays its cards, in one window -
 point at a setting to see what it does. Save writes them to PlayerStats.txt
@@ -852,6 +875,9 @@ restart. Defaults fills in the defaults (Save to use them).
 	  kind switched off is discarded when "Discard cards it never plays" is
 	  on), boosting again after each hit, counting traps in the kill check
 	  when you fight alone, saving pips for a finishing hit, and discarding.
+	- The overlay: the map and the log see-through over the game - each
+	  part's corner (or Off), the map's size, the log's lines, width and text
+	  size, the dark box behind them, how solid (see The overlay above).
 
 Smart App Control (Windows 11 - "Smart App Control blocked"): it blocks the
 bot's exes (they aren't signed) and can't be told to allow them. Run the bot as
@@ -1465,15 +1491,15 @@ mouse off it (a card under the mouse is drawn zoomed up); if you move the
 mouse onto the hand meanwhile, no new card is learned that round.
 
 Keys (the dashboard's Keys tab): every action that has a key - the bot on /
-off (F6), walking (F8), the dashboard (Windows+2), restart (Windows+1, Alt+Esc),
-quit (Windows+Esc), stop recording (F9), the battle picks (Alt+1 the boss,
-Alt+2 who your boosts go to, Windows+3 your own plate) and the modes (Alt+E
-loop, Alt+L lore, Alt+D dual, Alt+C command, Alt+S statistic, Alt+R response,
-Windows+Alt+D developer) - with its key, its default and when it works. Pick
-one and click Change (or double-click it), then press the new key, with Ctrl,
-Alt, Shift or Windows if you like (8 s; Esc leaves it as it was). Its default
-and No key (switched off - not for the bot on / off, quit or stop recording),
-All to defaults.
+off (F6), walking (F8), the dashboard (Windows+2), the overlay over the game
+(Windows+4), restart (Windows+1, Alt+Esc), quit (Windows+Esc), stop recording
+(F9), the battle picks (Alt+1 the boss, Alt+2 who your boosts go to, Windows+3
+your own plate) and the modes (Alt+E loop, Alt+L lore, Alt+D dual, Alt+C
+command, Alt+S statistic, Alt+R response, Windows+Alt+D developer) - with its
+key, its default and when it works. Pick one and click Change (or double-click
+it), then press the new key, with Ctrl, Alt, Shift or Windows if you like
+(8 s; Esc leaves it as it was). Its default and No key (switched off - not for
+the bot on / off, quit or stop recording), All to defaults.
 Kept in dashboard.ini [hotkeys]. Not taken: keys the bot presses in the game
 (W A S D, X, Space, Ctrl+O potions, Ctrl+1-9 Equipment Sets), Cheat Engine's
 F13-F24, plain letters, digits and numpad keys (typed in chat), Alt+F4,
