@@ -86,7 +86,7 @@ CfgList()
 	list.Push(V1Obj({key: "collectmem", label: "Collect quest items by the game's memory", kind: "check", def: 1
 		, help: "A 'Collect N <things>' goal whose things lie about the zone (Piece Of Coral in The Grotto): their places are read from the game's memory (read-only) and the nearest is walked to round walls and mobs and picked up, then the next. None seen: it roams and walks into monsters as before. Off: only that. The dashboard's map shows them as green diamonds."}))
 	list.Push(V1Obj({key: "speedhack", label: "Walk faster with Cheat Engine's speedhack", kind: "check", def: 0
-		, help: "Cheat Engine (yours: installed and attached to Wizard101 by you) speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, {key:bot}, and when it stops. In Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Attach Cheat Engine again after Wizard101 restarts: the bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."}))
+		, help: "Cheat Engine speeds the game up: the bot presses its speedhack hotkeys - the walking key while it walks, the 1x key for battles, talking, dialogues, shops, near the goal, getting round an obstacle, when you play, {key:bot}, and when it stops. Setup.exe's 'Cheat Engine speedhack' sets it all up: installs Cheat Engine and puts the bot's script in it - it attaches itself to Wizard101 (again after the game restarts) and the two keys below set the speed - and the bot starts Cheat Engine when this is on. Without that, in Cheat Engine: Settings > Hotkeys - 'Speedhack speed' entries for the two keys below, one at the speed below, one at 1, 'Disable when released' unticked (the tray menu's Speedhack items press a key 3 s after you pick them, to set them there). Not set up by Setup, attach Cheat Engine again after Wizard101 restarts. The bot checks how fast the wizard turns and stops using the speedhack for the run if the game isn't sped up. Risky: KingsIsle may notice."}))
 	list.Push(V1Obj({key: "speedfactor", label: "...the speed its walking key sets (2 = twice as fast)", kind: "num", lo: 1, hi: 50, def: 2
 		, help: "The speed you gave Cheat Engine's walking key: the bot's turn and wait times are divided by it. 2-5 work best; above 5 turns are made at normal speed."}))
 	list.Push(V1Obj({key: "speedkeyfast", label: "...Cheat Engine's walking key", kind: "pick", def: 2, picks: ["F13", "F14", "F15", "F16", "F17", "F18", "F19", "F20", "F21", "F22", "F23", "F24"]
@@ -547,6 +547,10 @@ CfgSaveNow()
 	;(the battle recorder switched on or off at once, the helper told out of a round - BattleRec.ahk BrecHello)
 	if (V1IsFunc("BrecHello"))
 		BrecHello.Call("later")
+	;(the speedhack switched on: Cheat Engine started, when Setup set it up - Autofarmer.ahk SpeedCheatEngine)
+	for each, cfgKv in cfgPairs
+		if (cfgKv[1] = "speedhack" && cfgKv[2] = 1 && V1IsFunc("SpeedCheatEngine"))
+			SpeedCheatEngine.Call("the speedhack switched on in Settings")
 	Cfg["CfgNote"].Value := "Saved " cfgPairs.Length " change" (cfgPairs.Length = 1 ? "" : "s") " - used from now on" (cfgFixed = "" ? "" : " (" SubStr(cfgFixed, 3) ")")
 	}
 

@@ -145,16 +145,27 @@ last minute: W held N% of N s out walking, N stops, N turns on the spot, N
 turns walking on (N by the mouse), N speed keys".
 
 Faster walking with Cheat Engine's speedhack (Settings: "Walk faster with
-Cheat Engine's speedhack", off unless you switch it on): Cheat Engine - yours,
-installed and attached to Wizard101 by you - speeds the game up; the bot only
-presses its speedhack hotkeys (F13-F24, keys no keyboard has): the walking key
-while it walks, the 1x key for battles (pressed at every round), talking,
+Cheat Engine's speedhack", off unless you switch it on): Cheat Engine speeds
+the game up; the bot only presses its speedhack hotkeys (F13-F24, keys no
+keyboard has). Setup.exe's "Cheat Engine speedhack" sets Cheat Engine up for
+it: installs it if it isn't there (its installer from cheatengine.org, opened
+for you to click through - decline the other programs it recommends) and puts
+the bot's script (CheatEngine\wiz-maxxing.lua) in its autorun folder (asks for
+admin). Each time Cheat Engine starts, the script attaches it to Wizard101 -
+again after the game restarts, never over a process you opened yourself - and
+the bot's two keys set the speed, read from PlayerStats.txt (a change in
+Settings needs no restart). With the script there, the bot starts Cheat Engine
+(minimized) when it starts with the speedhack on, or when you switch it on.
+Without it, Cheat Engine is yours to install, attach and set up as below. The
+keys: the walking key while it walks, the 1x key for battles (pressed at every
+round), talking,
 dialogues, shops, near the goal, collecting, dungeon runs, a teleport ahead,
 getting round an obstacle, when you play, F6 and when it stops. Its turn and
 wait times are divided by the speed; above 5x turns are made at 1x. In Cheat
 Engine: Settings > Hotkeys, two "Speedhack speed" entries - the walking speed
-(speedfactor) and 1 - with "Disable when released" unticked; the tray menu's
-"Speedhack: press its ... key in 3 s" items press a key while you're in its
+(speedfactor) and 1 - with "Disable when released" unticked (not needed with
+Setup's script); the tray menu's "Speedhack: press its ... key in 3 s" items
+press a key while you're in its
 hotkey box. If the wizard doesn't turn faster (Cheat Engine not attached after
 Wizard101 restarts, the key not taking) the bot stops using it for the run
 ("speed: off for this run" in debug.log). Risky: KingsIsle may notice.

@@ -28,8 +28,12 @@ Setup:
    over an earlier install there, its settings and learned cards are kept), then, from there, Python 3 and its
    numpy and Pillow packages (for the card matching), unblocks the downloaded files, and adds **Wiz-Maxxing** to the
    Start menu, the desktop, the Run box (Win+R) and your PATH. AutoHotkey v2 and Git are optional (only to change
-   the bot or get updates with `git pull`). At the end it offers to move the download - the unzipped folder and the
-   Wiz-Maxxing zip(s) beside it - to the Recycle Bin.
+   the bot or get updates with `git pull`). So is **Cheat Engine speedhack** (never ticked for you - risky: KingsIsle
+   may notice): it installs Cheat Engine if it isn't there (its installer from cheatengine.org, opened for you to
+   click through - decline the other programs it recommends) and puts the bot's script in Cheat Engine's autorun
+   folder, so Cheat Engine attaches itself to Wizard101 and the bot's speed keys work with nothing set by hand.
+   At the end it offers to move the download - the unzipped folder and the Wiz-Maxxing zip(s) beside it - to the
+   Recycle Bin.
    
 3. Start the bot from the Start menu (search "Wiz-Maxxing") or the desktop shortcut.
    If Windows says "Windows protected your PC", click **More info**, then **Run anyway**.

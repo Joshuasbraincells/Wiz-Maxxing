@@ -3406,6 +3406,7 @@ LogMirrorGameShown()
 #Include "%A_ScriptDir%\..\AutoQuester\Walker.ahk"
 #Include "%A_ScriptDir%\..\AutoQuester\ArrowReader.ahk"
 #Include "%A_ScriptDir%\..\Watch.ahk"
+#Include "%A_ScriptDir%\..\CheatEngine.ahk"
 #Include "%A_ScriptDir%\..\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
 ;###############  (v1: the labels, as functions)  ###############
@@ -3547,6 +3548,24 @@ Send("{" speedKeyName " up}")
 SpeedNow := fast ? SpeedFactor() : 1, SpeedSentAt := A_TickCount
 DebugLog("Speedhack: " speedKeyName " pressed (for Cheat Engine's hotkey box)")
 return
+}
+;Cheat Engine for the speedhack (Settings: speedhack on), when Setup's "Cheat Engine speedhack" put the bot's script in it
+;(CheatEngine.ahk): started, minimized, if it isn't running - the script attaches it to Wizard101 and sets the bot's speed
+;keys by itself. Without the script it's yours to start, attach and set up, as before (said once a run). why: for debug.log
+SpeedCheatEngine(why) {
+static saidNoScript := false
+if (Stat("speedhack") != 1)
+	return
+ceDir := CeDir()
+if (ceDir = "" || !FileExist(CeScriptPath(ceDir)))
+	{
+	if (!saidNoScript)
+		saidNoScript := true, DebugLog("Speedhack: on - " (ceDir = "" ? "Cheat Engine isn't installed" : "Cheat Engine (" ceDir ") doesn't have the bot's script") ": start, attach and set it up yourself, or let Setup.exe's `"Cheat Engine speedhack`" do it")
+	return
+	}
+if (CeRunning())
+	return DebugLog("Speedhack: on - Cheat Engine is running, the bot's script in it (" why ")")
+DebugLog("Speedhack: on - " (CeStart(ceDir) ? "Cheat Engine started, minimized" : "Cheat Engine (" CeExe(ceDir) ") couldn't be started") " (" why "): its Wiz-Maxxing script attaches it to Wizard101 and sets the speed keys")
 }
 ;##############################################
 MenuMap(A_ThisMenuItem:="", A_ThisMenuItemPos:="", MyMenu:="", *) { ; (v1: a label)
@@ -3911,6 +3930,8 @@ WatchShow()
 DebugLog("Started " BotVersion() ". Game area " GameLeft "," GameTop " " GameW "x" GameH)
 ;(the tray menu's picks are logged - TrayPicked: this line says the running program has that, whatever version.txt says)
 DebugLog("Tray: the menu is ready (" DllCall("GetMenuItemCount", "Ptr", A_TrayMenu.Handle, "Int") " items) - each pick is logged")
+;(the speedhack on: Cheat Engine started if Setup's "Cheat Engine speedhack" set it up - SpeedCheatEngine)
+SpeedCheatEngine("the bot started")
 if (PlayForMe)
 	DebugLog("Play for me kept on: started again by an update while it was on")
 LoadPicSets()

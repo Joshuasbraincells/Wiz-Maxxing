@@ -148,6 +148,23 @@ Before you start
 4. Leave off: deckadd, trainspells, spellquests - not built; on, they only
    say so (deckadd also tips about a new spell). Nothing is clicked.
 
+5. Cheat Engine speedhack (v1.1.0 - Setup.exe, optional, risky: KingsIsle may
+   notice). Setup: tick "Cheat Engine speedhack", Install.
+	5.1 Without Cheat Engine: its installer downloads, Setup says whose
+	    signature it has, and it opens for you to click through (decline the
+	    other programs it recommends). With it already: straight to 5.2.
+	5.2 Windows asks for admin once; the log says the script is in
+	    <Cheat Engine>\autorun\wiz-maxxing.lua and names the two keys. Say
+	    yes to switching the speedhack on (the bot closed).
+	5.3 Start the bot: debug.log "Speedhack: on - Cheat Engine started,
+	    minimized". Cheat Engine's title shows WizardGraphicalClient.exe
+	    within a few seconds of the game running - no attaching by hand.
+	5.4 Walking: "speed: 2x - F14 (walking)" and the wizard runs faster;
+	    "speed: 1x - F13" at battles and talking. No "speed: off for this run".
+	5.5 Restart Wizard101 with Cheat Engine open: it attaches to the new one by
+	    itself. A box from Cheat Engine starting "Wiz-Maxxing
+	    (autorun\wiz-maxxing.lua)": send its text.
+
 To send back, in one place
 	gearclass.txt, gear.txt, bag.txt, petread.txt, petclass.txt, book.txt,
 	quests.txt, spells.txt, questbook.txt, trainer.txt, deckpage.txt,

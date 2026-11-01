@@ -22,6 +22,12 @@
 ;   Desktop shortcut  "Wiz-Maxxing" -> Wiz-Maxxing.exe (it starts AutoFarmer\Autofarmer.exe)
 ;   Run box and PATH  this folder on your PATH (type Wiz-Maxxing in a terminal) and Wiz-Maxxing.exe in "App
 ;                     Paths" (type Wiz-Maxxing in Win+R) - yours only, no admin
+;   Cheat Engine speedhack  (optional, never ticked by itself - risky: KingsIsle may notice) the speedhack the bot's
+;                     Settings switch on: Cheat Engine installed if it isn't (its installer from cheatengine.org,
+;                     opened for you to click through - never silently: that takes the other programs it recommends),
+;                     and the bot's script (CheatEngine\wiz-maxxing.lua) put in its autorun folder (Program Files: asks
+;                     for admin) - Cheat Engine then attaches to Wizard101 by itself and the bot's two keys set the
+;                     speed. Then, if you say so, the bot's speedhack setting on: the bot starts Cheat Engine
 ;   AutoHotkey v2     only to change the scripts and rebuild the exes (build.cmd); asks for admin
 ;   Git               only to get updates with git pull; asks for admin
 ;   GitHub updates    a read-only GitHub token, so Wiz-Maxxing can check for and download new versions when you
@@ -33,7 +39,7 @@ V1Start(), SetupBlank(), UpdaterBlank() ; (v2 port: v1 started every variable bl
 SetWorkingDir(A_ScriptDir)
 
 global SuLog, SuPyS, SuPkS, SuUnS, SuShS, SuAhS, SuGiS, SuPy, SuPk, SuUn, SuSh, SuAh, SuGi, SuGo, SuStart, SuSm, SuSmS, SuUp, SuUpS, SuPa, SuPaS
-global SuWa, SuWaS, SuIn, SuInS
+global SuWa, SuWaS, SuIn, SuInS, SuCe, SuCeS
 global SuLogHwnd := 0, SuBusy := 0
 ;(started again from the Programs folder after the copy: the folder it was in, the parts still to do, the old
 ;Setup's pid - /moved <folder> /do <py,pk,...> /oldpid <pid>)
@@ -84,6 +90,8 @@ ogcCheckboxSuPa := Su.Add("Checkbox", "xm y+8 w260 vSuPa", "Run box and PATH (Wi
 ogcTextSuPaS := Su.Add("Text", "x+8 w350 vSuPaS", "...")
 ogcCheckboxSuWa := Su.Add("Checkbox", "xm y+8 w260 vSuWa", "Open with Wizard101 (" WatchBotKey(A_ScriptDir "\AutoFarmer") " starts it)")
 ogcTextSuWaS := Su.Add("Text", "x+8 w350 vSuWaS", "...")
+ogcCheckboxSuCe := Su.Add("Checkbox", "xm y+8 w260 vSuCe", "Cheat Engine speedhack (optional, risky)")
+ogcTextSuCeS := Su.Add("Text", "x+8 w350 vSuCeS", "...")
 ogcCheckboxSuAh := Su.Add("Checkbox", "xm y+8 w260 vSuAh", "AutoHotkey v2 (to rebuild the exes)")
 ogcTextSuAhS := Su.Add("Text", "x+8 w350 vSuAhS", "...")
 ogcCheckboxSuGi := Su.Add("Checkbox", "xm y+8 w260 vSuGi", "Git (to get updates with git pull)")
@@ -116,7 +124,7 @@ SuMovedPrep()
 	;(never copied on again from here; the parts exactly as they were ticked - plus what still points into the old
 	;folder, which may go to the Recycle Bin: the shortcuts, the watcher, the PATH)
 	Su["SuIn"].Value := 0
-	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
+	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ce", "ah", "gi"]
 		Su["Su" code].Value := InStr("," SuMovedDo ",", "," code ",") ? 1 : 0
 	if (SuLinkHere(A_Programs "\Wiz-Maxxing\Wiz-Maxxing.lnk", SuMovedFrom))
 		Su["SuSm"].Value := 1
@@ -124,6 +132,10 @@ SuMovedPrep()
 		Su["SuSh"].Value := 1
 	if (SuLinkHere(WatchLink(), SuMovedFrom))
 		Su["SuWa"].Value := 1
+	;(Cheat Engine's script there, but another folder's - the old one's PlayerStats.txt: put in again for this one)
+	suCeDir := CeDir()
+	if (suCeDir != "" && FileExist(CeScriptPath(suCeDir)) && V1FileRead(CeScriptPath(suCeDir), "UTF-8") !== SuCeScript())
+		Su["SuCe"].Value := 1
 	;(v1's RegRead of a value that isn't there: blank - v2 throws)
 	oldPath := V1Try(RegRead, "HKCU\Environment", "Path")
 	if (SuInPath(oldPath, SuMovedFrom))
@@ -169,6 +181,11 @@ SuCheck(tick := false)
 	SuShow("SuPa", "SuPaS", pa, pa ? "Win+R or a terminal: Wiz-Maxxing" : "not set up", tick)
 	wa := WatchIsOn() && SuLinkHere(WatchLink())
 	SuShow("SuWa", "SuWaS", wa, wa ? "on - the bot opens in standby when the game starts" : WatchIsOn() ? "on, but for another folder" : "off (the bot's tray menu switches it too)", tick, WatchIsOn())
+	;(never ticked by itself - unless the bot's script is in Cheat Engine already, from another folder or older)
+	ce := CeDir()
+	ceIn := ce != "" && FileExist(CeScriptPath(ce)) != ""
+	ceOk := ceIn && V1FileRead(CeScriptPath(ce), "UTF-8") == SuCeScript()
+	SuShow("SuCe", "SuCeS", ceOk, ce = "" ? "not installed (only for the speedhack)" : ceOk ? "set up: attaches to Wizard101, the bot's speed keys" : ceIn ? "found - its Wiz-Maxxing script is older or another folder's" : "found - not set up for the bot yet", tick, ceIn)
 	ahk := SuAhk()
 	SuShow("SuAh", "SuAhS", ahk != "", ahk != "" ? "found: " SuShort(ahk) : "not installed (only needed to rebuild)", tick, false)
 	git := SuWhere("git.exe")
@@ -420,7 +437,7 @@ SuInstallHome()
 		SuLogLine("copied to " home " - with your settings, learned cards and routes")
 		}
 	do := ""
-	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ah", "gi"]
+	for each, code in ["py", "pk", "un", "up", "sm", "sh", "pa", "wa", "ce", "ah", "gi"]
 		if (Su%code%)
 			do .= (do = "" ? "" : ",") code
 	if (!BotRun(home "\Setup", "/moved `"" A_ScriptDir "`" /do " (do = "" ? "-" : do) " /oldpid " DllCall("GetCurrentProcessId") (saved = "" ? "" : " /saved `"" saved "`""), home))
@@ -711,6 +728,197 @@ SuInstallGit()
 	SuLogLine(SuWhere("git.exe") != "" ? "Git is ready (open a new PowerShell window to use it)" : "Git isn't found yet - open a new window, or install it from https://git-scm.com/download/win")
 	}
 
+;Cheat Engine for the bot's speedhack: installed if it isn't (SuGetCheatEngine), the bot's script in its autorun folder
+;(SuCePut), then - if you say so - the bot's speedhack setting on
+SuInstallCe()
+	{
+	SuLogLine("== Cheat Engine speedhack")
+	SuLogLine("Cheat Engine speeds the game up while the bot walks. Risky: KingsIsle may notice")
+	text := SuCeScript()
+	if (text = "")
+		return SuLogLine("CheatEngine\wiz-maxxing.lua isn't in " A_ScriptDir " - download the bot's zip again")
+	ce := CeDir()
+	if (ce = "")
+		ce := SuGetCheatEngine()
+	if (ce = "")
+		return
+	SuLogLine("Cheat Engine: " ce)
+	if (!SuCePut(ce, text))
+		return SuLogLine("the bot's script couldn't be put in " ce "\autorun (admin not given?) - nothing else done")
+	SuLogLine("the bot's script is in its autorun folder (wiz-maxxing.lua): each time Cheat Engine starts it attaches to Wizard101 by itself (again after the game restarts), and the bot's keys set the speed - " SuCeKeys())
+	SuLogLine("Cheat Engine's own Settings > Hotkeys entries for those keys aren't needed now (clear them if you set them before)")
+	if (CeRunning())
+		SuLogLine("Cheat Engine is running - close it and start it again: the script runs when it starts")
+	stats := A_ScriptDir "\AutoFarmer\PlayerStats.txt"
+	if (SuStat(stats, "speedhack") = "1")
+		return SuLogLine("the bot's speedhack setting is on: the bot starts Cheat Engine when it starts")
+	if (MsgBox("Cheat Engine is set up for the bot.`n`nSwitch the bot's speedhack on now (its Settings: `"Walk faster with Cheat Engine's speedhack`")? The bot then starts Cheat Engine when it starts.`n`nRisky: KingsIsle may notice.", "Wizard101 bot setup", 36) != "Yes")
+		return SuLogLine("the bot's speedhack setting left off - switch it on in its Settings when you want it")
+	if (WatchBotRunning())
+		return SuLogLine("the bot is running - switch it on in its Settings window (`"Walk faster with Cheat Engine's speedhack`")")
+	SuLogLine(SuStatSet(stats, "speedhack", 1) ? "the bot's speedhack setting is on (PlayerStats.txt): the bot starts Cheat Engine when it starts" : "couldn't write " stats " - switch it on in the bot's Settings window")
+	}
+
+;Cheat Engine from cheatengine.org: its installer downloaded and opened for you to click through - one of its pages
+;recommends other programs: Decline it. Never silently (/VERYSILENT): that takes those offers. Opened only when Windows
+;finds a valid signature on it, and you've seen whose; otherwise its download page opens (SuCeByHand). Its folder, "" if not
+SuGetCheatEngine()
+	{
+	page := "https://www.cheatengine.org/downloads.php"
+	if (MsgBox("Cheat Engine isn't installed.`n`nSetup downloads its installer from cheatengine.org and opens it for you to click through. One of its pages recommends other programs - Decline them: the bot needs only Cheat Engine. Antivirus programs may warn about Cheat Engine.`n`nUsing its speedhack in Wizard101 is risky: KingsIsle may notice.`n`nDownload Cheat Engine's installer?", "Wizard101 bot setup", 36) != "Yes")
+		return SuSay("Cheat Engine not installed - nothing done", "")
+	html := A_Temp "\su_ce_downloads.html"
+	V1Do(Download, page, html)
+	text := V1FileRead(html)
+	V1Do(FileDelete, html)
+	;(its Windows download: a cloudfront link to an .exe - its name changes with every version)
+	url := RegExMatch(text, "i)https://[a-z0-9.-]+\.cloudfront\.net/[^\x22'<>\s]+\.exe", &suM) ? suM[0] : ""
+	if (url = "" && RegExMatch(text, "i)https://[^\x22'<>\s]+\.exe", &suM))
+		url := suM[0]
+	if (url = "")
+		return SuCeByHand(page, "its download link wasn't found on " page)
+	file := A_Temp "\CheatEngineSetup.exe"
+	SuLogLine("downloading Cheat Engine's installer: " url)
+	V1Do(FileDelete, file)
+	V1Do(Download, url, file)
+	if (ErrorLevel || !FileExist(file) || FileGetSize(file) < 1000000)
+		return SuCeByHand(page, "couldn't download it")
+	signer := SuSigner(file)
+	if (signer = "")
+		{
+		V1Do(FileDelete, file)
+		return SuCeByHand(page, "Windows finds no valid signature on the downloaded installer - not opened")
+		}
+	SuLogLine("its installer is signed by: " signer)
+	if (MsgBox("Cheat Engine's installer is downloaded - signed by:`n" signer "`n`nOpen it? Click through it yourself, and Decline the other programs it recommends.", "Wizard101 bot setup", 36) != "Yes")
+		{
+		V1Do(FileDelete, file)
+		return SuSay("not opened - nothing done", "")
+		}
+	SuLogLine("opening it - Decline the other programs it recommends...")
+	V1RunWait("`"" file "`"")
+	SuLogLine("its installer closed (exit " ErrorLevel ")")
+	;(an installer that starts another and closes: waited for)
+	if (CeDir() = "")
+		MsgBox("Press OK once Cheat Engine's installer has finished.", "Wizard101 bot setup", 64)
+	V1Do(FileDelete, file)
+	ce := CeDir()
+	return ce != "" ? ce : SuCeByHand(page, "Cheat Engine still isn't found")
+	}
+
+;Cheat Engine's download page opened instead: why in the log, and what to do. ""
+SuCeByHand(page, why)
+	{
+	SuLogLine(why)
+	V1Run(page)
+	SuLogLine("its download page is open: install Cheat Engine from there (Decline the other programs its installer recommends), then tick `"Cheat Engine speedhack`" and press Install again")
+	return ""
+	}
+
+;Whose valid signature an exe carries (Windows' Authenticode check), "" if none
+SuSigner(file)
+	{
+	tmp := A_Temp "\su_signer.txt"
+	V1RunWait(A_ComSpec " /c powershell -NoProfile -ExecutionPolicy Bypass -Command `"$s = Get-AuthenticodeSignature -LiteralPath '" StrReplace(file, "'", "''") "'; if ($s.Status -eq 'Valid') { $s.SignerCertificate.GetNameInfo('SimpleName', $false) }`" > `"" tmp "`" 2>nul", , "Hide")
+	out := Trim(V1FileRead(tmp), " `t`r`n")
+	V1Do(FileDelete, tmp)
+	return out
+	}
+
+;The bot's script for Cheat Engine (CheatEngine\wiz-maxxing.lua) with this folder's PlayerStats.txt written in - its short
+;(8.3) path when the path has letters beyond plain English (Cheat Engine's Lua opens files by the old code page). "" if
+;the file isn't here
+SuCeScript()
+	{
+	text := V1FileRead(A_ScriptDir "\CheatEngine\wiz-maxxing.lua", "UTF-8")
+	if (!InStr(text, "[[PLAYERSTATS]]"))
+		return ""
+	stats := A_ScriptDir "\AutoFarmer\PlayerStats.txt"
+	if (RegExMatch(stats, "[^\x01-\x7F]"))
+		Loop Files, stats
+			if (A_LoopFileShortPath != "")
+				stats := A_LoopFileShortPath
+	return StrReplace(text, "[[PLAYERSTATS]]", "[==[" stats "]==]")
+	}
+
+;The bot's script into Cheat Engine's autorun folder: as you, else - Program Files - Windows asks for admin. True if it's
+;there as it should be
+SuCePut(ce, text)
+	{
+	dest := CeScriptPath(ce)
+	tmp := A_Temp "\wiz-maxxing.lua"
+	V1Do(FileDelete, tmp)
+	V1Do(FileAppend, text, tmp, "UTF-8-RAW")
+	if (ErrorLevel)
+		return SuSay("couldn't write " tmp, false)
+	V1Do(DirCreate, ce "\autorun")
+	V1Do(FileCopy, tmp, dest, 1)
+	if (V1FileRead(dest, "UTF-8") !== text)
+		{
+		SuLogLine("putting it in " ce "\autorun (Windows asks for admin)...")
+		V1RunWait("*RunAs `"" A_ComSpec "`" /c mkdir `"" ce "\autorun`" 2>nul & copy /y `"" tmp "`" `"" dest "`"", , "Hide")
+		}
+	ok := V1FileRead(dest, "UTF-8") == text
+	V1Do(FileDelete, tmp)
+	return ok
+	}
+
+;The bot's speed keys and speed for the log, as its Settings have them: "F14 = 2x (walking), F13 = 1x"
+SuCeKeys()
+	{
+	stats := A_ScriptDir "\AutoFarmer\PlayerStats.txt"
+	fast := SuStat(stats, "speedkeyfast"), normal := SuStat(stats, "speedkeynormal"), factor := SuStat(stats, "speedfactor")
+	fast := (IsInteger(fast) && fast >= 1 && fast <= 12) ? fast : 2
+	normal := (IsInteger(normal) && normal >= 1 && normal <= 12) ? normal : 1
+	factor := IsNumber(factor) && factor >= 1 ? Min(factor, 50) : 2
+	return "F" (12 + fast) " = " factor "x (walking), F" (12 + normal) " = 1x"
+	}
+
+;A setting's value in PlayerStats.txt (its plain key:value line, not a school's), "" if it isn't there
+SuStat(file, key)
+	{
+	Loop Parse, V1FileRead(file), "`n", "`r"
+		if (RegExMatch(A_LoopField, "i)^\s*\Q" key "\E\s*:\s*([^;\s]*)", &suM))
+			return suM[1]
+	return ""
+	}
+
+;A setting written in PlayerStats.txt as the bot's Settings window writes it (Settings.ahk CfgWrite): its line changed,
+;comment kept; else added at the end under that window's heading. True if written
+SuStatSet(file, key, value)
+	{
+	text := V1FileRead(file)
+	if (ErrorLevel || !InStr(text, ":"))
+		return false
+	lines := StrSplit(StrReplace(text, "`r"), "`n")
+	if (lines.Length && lines[lines.Length] = "")
+		lines.Pop()
+	found := false
+	for i, line in lines
+		if (RegExMatch(line, "i)^(\s*\Q" key "\E\s*:\s*)[^;\s]*(.*)$", &suM))
+			lines[i] := suM[1] value suM[2], found := true
+	if (!found)
+		{
+		head := "; ---- Set in the Settings window (the dashboard's Settings button) ----"
+		hasHead := false
+		for i, line in lines
+			if (line == head)
+				hasHead := true
+		if (!hasHead)
+			lines.Push(""), lines.Push(head)
+		lines.Push(key ":" value)
+		}
+	out := ""
+	for i, line in lines
+		out .= line "`r`n"
+	V1Do(FileDelete, file ".tmp")
+	V1Do(FileAppend, out, file ".tmp")
+	if (ErrorLevel)
+		return false
+	V1Do(FileMove, file ".tmp", file, 1)
+	return !ErrorLevel
+	}
+
 ;---- finding things ----
 
 ;python.exe whose pythonw.exe the bot's vision helper will find (Vision.ahk: on the PATH or in
@@ -840,6 +1048,7 @@ SuShort(path)
 
 #Include "%A_ScriptDir%\Updater.ahk"
 #Include "%A_ScriptDir%\Watch.ahk"
+#Include "%A_ScriptDir%\CheatEngine.ahk"
 #Include "%A_ScriptDir%\V1Compat.ahk" ; (v2 port: the v1 behaviours it keeps)
 
 ;###############  v1's labels, as functions  ###############
@@ -884,6 +1093,8 @@ SuInstall(A_GuiEvent:="", A_GuiControl:="", Info:="", *) { ; (v1: the label SuIn
 		SuLogLine("== Open with Wizard101")
 		SuLogLine(WatchSet(A_ScriptDir, true) ? "on: a watcher starts with Windows (" WatchLink() ") and opens the bot in standby when Wizard101 starts - press " WatchBotKey(A_ScriptDir "\AutoFarmer") " in the game to start it" : "couldn't make the Startup folder's shortcut")
 		}
+	if (SuCe)
+		SuInstallCe()
 	if (SuAh)
 		SuInstallAhk()
 	if (SuGi)
@@ -936,5 +1147,6 @@ SetupBlank()
 	global SuLog := "", SuPyS := "", SuPkS := "", SuUnS := "", SuShS := "", SuAhS := "", SuGiS := "", SuPy := "", SuPk := "", SuUn := "", SuSh := ""
 	global SuAh := "", SuGi := "", SuGo := "", SuStart := "", SuSm := "", SuSmS := "", SuUp := "", SuUpS := "", SuPa := "", SuPaS := "", SuWa := ""
 	global SuWaS := "", SuIn := "", SuInS := "", SuLogHwnd := "", SuBusy := "", SuMovedFrom := "", SuMovedDo := "", SuMovedPid := ""
+	global SuCe := "", SuCeS := ""
 	global SuMovedSaved := ""
 	}
