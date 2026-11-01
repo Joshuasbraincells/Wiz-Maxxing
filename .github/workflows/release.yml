@@ -108,6 +108,36 @@ jobs:
           if (-not (Test-Path (Join-Path $root 'Compiler\Ahk2Exe.exe'))) { throw "Ahk2Exe.exe isn't in $root\Compiler" }
           "AutoHotkey64.exe $((Get-Item (Join-Path $root 'v2\AutoHotkey64.exe')).VersionInfo.FileVersion)"
 
+      - name: Check every script loads (AutoHotkey /validate)
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          # (Ahk2Exe only packs a script: a syntax or load error would show first when the exe starts on someone's
+          # PC. /validate loads each one - its #Includes too - without running it, /ErrorStdOut sends an error here
+          # instead of a message box. One that hasn't finished in 60 s is stopped: a warning box would hang the run)
+          $ahk = Join-Path $env:ProgramFiles 'AutoHotkey\v2\AutoHotkey64.exe'
+          $out = Join-Path $env:RUNNER_TEMP 'validate-out.txt'
+          $err = Join-Path $env:RUNNER_TEMP 'validate-err.txt'
+          $bad = @()
+          foreach ($script in 'Setup.ahk', 'Wiz-Maxxing.ahk', 'AutoFarmer\Autofarmer.ahk', 'AutoFarmer\StatsReader.ahk', 'AutoQuester\AutoQuester.ahk') {
+              $in = Join-Path $env:GITHUB_WORKSPACE $script
+              $p = Start-Process -FilePath $ahk -ArgumentList "/ErrorStdOut=UTF-8 /validate `"$in`"" -PassThru -NoNewWindow -RedirectStandardOutput $out -RedirectStandardError $err
+              $null = $p.Handle  # (keeps the exit code readable after it ends)
+              if (-not $p.WaitForExit(60000)) {
+                  try { $p.Kill() } catch {}
+                  $bad += "$script (didn't finish in 60 s - a warning box?)"
+                  continue
+              }
+              $p.WaitForExit()
+              $text = (@(Get-Content -LiteralPath $out, $err -Raw -ErrorAction SilentlyContinue) -join "`n").Trim()
+              if ($p.ExitCode -ne 0) {
+                  $bad += $script
+                  Write-Host "::error file=$($script -replace '\\', '/')::$($script) doesn't load: $($text -replace "`r?`n", ' | ')"
+              }
+              "$script - exit $($p.ExitCode)$(if ($text) { ": $text" })"
+          }
+          if ($bad) { throw "These don't load: $($bad -join ', ')" }
+
       - name: Build the exes (build.ps1)
         shell: pwsh
         run: ./build.ps1
