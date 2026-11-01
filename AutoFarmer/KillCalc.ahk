@@ -7,7 +7,7 @@
 ; BossMax, HealthStatus, AppliedBlades, BossTraps (the traps on one enemy: TrapSlot, TrapFoe*), AuraRounds, EnchantedHits,
 ; PipsNow.
 
-;The game's memory's card boxes against the ones the screen shows (MemBoxCheck - v0.9.0): {"<GameW>x<GameH>": {agree (looks
+;The game's memory's card boxes against the ones the screen shows (MemBoxCheck - v1.0.0): {"<GameW>x<GameH>": {agree (looks
 ;in a row they lined up), trusted (3 such: with memclicks:1 the cards are clicked where the memory has them), lastOk}} -
 ;declared only (a top-level := never runs in an #Included file): blank at start, KillCalcBlank
 global MemBox
@@ -789,7 +789,7 @@ BoostMemBox(key, sharp, use1, use2, ench := 0, wait := 300)
 	;(no card zoomed up under the mouse when the hand's boxes are read - CardLearn.ahk; the round's CenterMouse is off it)
 	if (V1IsFunc("LearnMouseClear"))
 		LearnMouseClear.Call()
-	;(v0.9.0: the game's memory's own boxes with memclicks:1, once they've been seen lining up with the screen's at this window
+	;(v1.0.0: the game's memory's own boxes with memclicks:1, once they've been seen lining up with the screen's at this window
 	;size - HandBoxes; else a fresh look at the hand's boxes laid on the game's cards, as ever)
 	bmbAll := HandBoxes(wait)
 	if (!IsObject(bmbAll))
@@ -919,7 +919,7 @@ BoxesLineUp(all, &why)
 	return true
 	}
 
-;---- Cards where the game's memory has them (v0.9.0, TODO.md goal 3: every card cast by the game's memory) ----
+;---- Cards where the game's memory has them (v1.0.0, TODO.md goal 3: every card cast by the game's memory) ----
 ;The helper's /cards gives each card's box in the game's GUI (vision\handmem.py: its window's rect plus every window's
 ;place on the way down from the root - Vision.ahk VisionCardPx turns it into pixels). Never compared with the screen
 ;before, so: MemBoxCheck lays those boxes on the ones the helper's /hand saw this round (CardLearn.ahk LearnCards' look,
@@ -958,7 +958,7 @@ MemBoxCheck(ans)
 	if (!MemBox.Has(mbcKey))
 		MemBox[mbcKey] := V1Obj({agree: 0, trusted: 0, lastOk: ""})
 	mbcS := MemBox[mbcKey]
-	;(not as many: a look that doesn't line up - the run of 3 starts again, as with a card that has no box (v0.9.0 review:
+	;(not as many: a look that doesn't line up - the run of 3 starts again, as with a card that has no box (v1.0.0 review:
 	;before, trust could build across a look the counts told apart))
 	if (mbcBoxes.Length != mbcHand.cards.Length)
 		{
@@ -1002,7 +1002,7 @@ MemBoxCheck(ans)
 
 ;Whether cards may be clicked where the game's memory has them now: memclicks:1 and its boxes seen lining up with the
 ;screen's 3 looks in a row at this window size (MemBoxCheck) - and one game window running (Vision.ahk VisionMemOneClient,
-;v0.9.0 review: with two or more navmem can be on another client, whose hand of as many cards lines up just as well)
+;v1.0.0 review: with two or more navmem can be on another client, whose hand of as many cards lines up just as well)
 MemBoxTrusted()
 	{
 	global MemBox
@@ -1047,7 +1047,7 @@ HandBoxes(wait := 300)
 	}
 
 ;Where the deck's copy of boost key is in hand to discard it - DiscardCard, for a spare blade no picture finds that the
-;game's hand has (BoostMemOnly; before v0.9.0 one was never discarded and stayed in hand): a fresh look at the hand's boxes
+;game's hand has (BoostMemOnly; before v1.0.0 one was never discarded and stayed in hand): a fresh look at the hand's boxes
 ;laid on the game's cards (HandBoxes), only while they line up for sure (BoxesLineUp), the first copy (BoostMatches) of the
 ;deck's - never a treasure card (discarding one uses it up) nor an item card - whose box's picture, if any, can be it
 ;(BoostMemBoxOk). {x, y (its box's middle), n, of, name}; {x: "", why} none
@@ -1077,7 +1077,7 @@ BoostMemDiscard(key)
 ;slot's (flag game=) - the card of that name (of a hit's kind for hit1-4 and the wand). Not one the game says can't be cast
 ;(castable 0 - its picture wouldn't match a greyed card either). ench 1: one with an enchantment on it first (after a
 ;Sharpen, Potent or enchant - MemSettle); ench 0: a plain one first - one that carries an enchantment already only when
-;there's none (BoostMemBox's rule, v0.9.0 review: it can't take a Sharpen, Potent or enchant - the game takes no second
+;there's none (BoostMemBox's rule, v1.0.0 review: it can't take a Sharpen, Potent or enchant - the game takes no second
 ;one; its picture wouldn't match it either). An aura or heal no card's named for, an enchant (MemEnchantFind), Pass: 0 -
 ;by its picture, as before
 MemCardFor(dir, title, hand, ench := 0)
@@ -2365,7 +2365,7 @@ BoostPick()
 		if (PlanHeads.sure)
 			for bpI, bpS in HeadsOrder(PlanHeads.heads)
 				PlanList .= (PlanList = "" ? "" : ",") bpS
-		;(the party's hit round - v0.9.0: the log round the planned hit is likely to go out in, the earliest it can - this
+		;(the party's hit round - v1.0.0: the log round the planned hit is likely to go out in, the earliest it can - this
 		;round's when it's paid for, else when its pips can be there, a new pip a round worth 2 at most (a power pip, your
 		;school's hit). Early is the safe side: a support's blade cast a round early stays on till the hit. A learned hit in
 		;no slot, pips not read: not said - the supports cast as ever. Party.ahk PartyTick sends it, PartyHitHold reads it)
@@ -2764,7 +2764,7 @@ SameHealth(a, b)
 ;Reads every enemy's health off the nameplate strip. Windows OCR sometimes drops a line from a wide
 ;image, so: find the plates from every name and health line seen at two sizes, then read each plate's
 ;health on its own at both sizes. Anything that doesn't add up -> false (health unknown)
-;v0.9.0: the game's memory's health first (EnemyMemHealth) - with memclicks:1 the plates from it too, no OCR at all; else
+;v1.0.0: the game's memory's health first (EnemyMemHealth) - with memclicks:1 the plates from it too, no OCR at all; else
 ;the plates found on the screen as before and each one's health from the memory when every enemy sits on its own plate,
 ;the per-plate reads below skipped. memOnly (the kill check with healthocr:0 and memclicks:1): the memory's alone, no OCR
 ReadEnemyHealth(memOnly := false)
@@ -2894,7 +2894,7 @@ ReadEnemyHealth(memOnly := false)
 		b := IsObject(p.name) ? p.name : p.health
 		EnemyPlates.Push(V1Obj({x: b.x + b.w // 2, y: b.y + b.h // 2, name: IsObject(p.name) ? p.name.text : ""}))
 		}
-	;(v0.9.0: the game's memory's health on these plates - every enemy on its own, left to right, where its plate is -
+	;(v1.0.0: the game's memory's health on these plates - every enemy on its own, left to right, where its plate is -
 	;instead of reading each plate's off the screen: EnemyMemHealth. Each plate's box - TrapFoeSlot finds the traps' enemy by
 	;it - worked out as the reads below work it out)
 	if (EnemyMemHealth(EnemyPlates))
@@ -3018,7 +3018,7 @@ ReadEnemyHealth(memOnly := false)
 	return true
 	}
 
-;The enemies' health from the game's memory (v0.9.0, TODO.md goal 3) - ReadEnemyHealth's first try: NavBattle's enemies
+;The enemies' health from the game's memory (v1.0.0, TODO.md goal 3) - ReadEnemyHealth's first try: NavBattle's enemies
 ;(the helper's /battle, READ-ONLY, read now), used only when every one alive has its health and most health read, none is
 ;hidden by the game (hide: a boss whose health it hides - its plate's number may not be the memory's), there are 1-4 of
 ;them, and no boss was picked with Alt+1 (its plate is the one under your click, by the boxes the screen's reads give - as
@@ -3027,7 +3027,7 @@ ReadEnemyHealth(memOnly := false)
 ;plates from the game's memory too - memclicks:1 only (where a single-target hit and a trap are clicked: NOT TRIED in the
 ;game yet) - each one's box (Vision.ahk NavPlatePx), EnemyPlates [{x, y, name, box}]. Sets EnemyHP ({cur, max}, left to
 ;right) - and EnemyPlates with no onScreen - and HealthStatus: true. False: nothing set - read off the screen, as before
-;Only while one game window runs (Vision.ahk VisionMemOneClient, v0.9.0 review: with two or more navmem can be on another
+;Only while one game window runs (Vision.ahk VisionMemOneClient, v1.0.0 review: with two or more navmem can be on another
 ;client - another battle's enemies laid on these plates)
 EnemyMemHealth(onScreen := "")
 	{

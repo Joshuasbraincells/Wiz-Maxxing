@@ -1,8 +1,8 @@
 """dglint.py - checks a dungeon run's file (AutoFarmer\\dungeons\\<name>.txt - the Dungeons tab's Record a run) before it's
 walked again and again: read the way Dungeons.ahk's DgLoad reads it (the same lines kept, the same ones skipped), then
 what the replay would trip on - a run that doesn't end where it starts, a zone change after a battle step (no doorway to
-walk through), a walk step recorded right after a sigil's X (before v0.9.0 the replay walked on past it - off the sigil,
-which stops its countdown), a coordinate that isn't a number - and the run's own optional lines (v0.9.0): slots| (the
+walk through), a walk step recorded right after a sigil's X (before v1.0.0 the replay walked on past it - off the sigil,
+which stops its countdown), a coordinate that isn't a number - and the run's own optional lines (v1.0.0): slots| (the
 gear slots the dungeon drops), stopafter| (dry runs before its gear counts as done), next| (the run to go on to once it
 is), boss|<name>|<deck id> (the deck for a boss by name), untilgear| (repeat it until its gear is swapped). Older bot
 versions skip those lines (DgLoad keeps only name|, deck| and the steps). Pure Python, nothing read from the game.
@@ -182,7 +182,7 @@ def lint(run, runs=None, decks=None, cat=None):
             d = _d(st[i - 2], prev)
             if d is not None and d <= X_DRIFT:
                 out.append(("warn", i, "a walk step %d from the X before it, into %s: the wizard drifted at a sigil while "
-                                       "recording - since v0.9.0 the replay waits for the load there (older versions walked "
+                                       "recording - since v1.0.0 the replay waits for the load there (older versions walked "
                                        "on past it, off the sigil)" % (d, cur["zone"])))
     if run["slots_raw"] and not run["slots"]:
         out.append(("warn", 0, "slots|%s - none of them is a slot (%s)" % (run["slots_raw"], ", ".join(G.SLOTS))))

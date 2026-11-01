@@ -449,7 +449,7 @@ class TeleportState(PartyCase):
 
 
 class HitRound(PartyCase):
-    """the party's hit round (v0.9.0): the hitter's hitat - the log round its planned hit goes out - and each wizard's
+    """the party's hit round (v1.0.0): the hitter's hitat - the log round its planned hit goes out - and each wizard's
     seat, from AutoFarmer to the party and back (leader| 38-39, member| 24-25)"""
 
     def test_cleaned(self):

@@ -16,7 +16,7 @@ tab (below); the messages then name your keys.
 It only presses movement keys while Wizard101 is the active window. Don't run
 AutoQuester.ahk at the same time.
 
-New in v0.8.0 and v0.9.0 and not tried in the game yet: LIVE_CHECKS.txt
+New in v1.0.0 and not tried in the game yet: LIVE_CHECKS.txt
 (next to this file) says what to try, in what order, and what to send back.
 
 Discord alerts (tray menu "Discord alerts..."): when the wizard needs you, a
@@ -74,7 +74,7 @@ id> (that deck for that boss). Check a run's file with
 (every run in dungeons\, or name one): the steps it reads, a run that doesn't
 end where it starts, a zone change right after a battle, a walk recorded
 right after a sigil's X (the wizard drifted while it counted down: since
-v0.9.0 the bot neither records such a step nor walks off the sigil for one
+v1.0.0 the bot neither records such a step nor walks off the sigil for one
 recorded before), and the lines above.
 
 Open with Wizard101 (tray menu, or Setup.exe): a small watcher starts with
@@ -183,7 +183,7 @@ with no route at all it won't walk the arrow's straight way into a mob's reach
 all of them. The dashboard's Map shows them: red dots with a faint ring (kept
 away from: its shape), the quest's amber, the nearest ones named.
 
-Mobs walking (v0.9.0 work, not tried in the game yet): the helper also works out
+Mobs walking (v1.0.0 work, not tried in the game yet): the helper also works out
 which way and how fast each mob walks from the readings of the last second, and
 a walking one's ring and sight are kept out of along its way - where it will be
 over the next 2.5 s (700 game units at most) - not behind it, so the route
@@ -196,7 +196,7 @@ it will be. "Caught by ..." in debug.log now says whether the mob was walking
 or standing when it noticed you. To tune the numbers (how fast mobs walk, how
 long they stand): vision\navmem.py --mobs --motion 60 in the game.
 
-A line of mobs (v0.9.0 work): a gap narrower than 250 game units between two
+A line of mobs (v1.0.0 work): a gap narrower than 250 game units between two
 mobs' rings or sight is closed - the line is one wall - and the route goes all
 the way round its end (the planned area is widened to take the whole line in;
 a line too long for it - "too long to go round in one window" in vision.log -
@@ -338,7 +338,7 @@ clicks on things aren't seen - press X. A restart keeps a recording under way
 (learned\puzzle_recording.txt), a fight under way, and the wait at a blocked
 way with the hour's tries (generated\puzzle_journal.txt, puzzle_hold.txt).
 debug.log: "Puzzle: ...".
-Puzzles, new in v0.9.0 (not tried in the game yet): a gate's model can stay
+Puzzles, new in v1.0.0 (not tried in the game yet): a gate's model can stay
 in the game's memory once it's open - its collision wall is what goes - so a
 gate still there with no collision wall by it no longer counts as shut: the
 bot walks through to see; any of the doors by the block going from memory
@@ -464,7 +464,7 @@ doesn't publish one). Save keeps it (decks\<name>.txt - updates keep them);
 dungeon run's (its Deck box on the Dungeons tab), a pinned one, the boss's,
 collect's, farming's, anything else's - and logs "Deck: <name> (why)" (the
 dashboard's Deck line shows it too). No deck set up, or one that sets
-nothing: it plays exactly as without. A deck for one boss by name (v0.9.0 -
+nothing: it plays exactly as without. A deck for one boss by name (v1.0.0 -
 a boss's cheats: no traps, one school, hit first... as that deck's own
 settings): a bossname|<name> line in its file (decks\<id>.txt; several with a
 comma between) - that deck for that boss, ahead or in the battle, before the
@@ -519,7 +519,7 @@ Governor Nereus 9000 health: Kraken at its best 2153 with Stormblade, Storm
 Trap - 5 hits"; the deck most likely to win it is the one picked (5 points
 better or more; else the priority), and "no deck for bosses is likely to beat
 it" when none wins 65%. The Cards tab shows each deck's last verdict under its
-damage. In the simulator too (v0.9.0): a hit's damage over time - its ticks
+damage. In the simulator too (v1.0.0): a hit's damage over time - its ticks
 at the start of the next 3 rounds; what each enemy does besides hitting, as
 the battles recorded show it - its heals, its shields and blades on itself,
 its traps, weaknesses and stuns on you, its damage over time's ticks on you
@@ -568,7 +568,7 @@ those battles went - per school, all schools' together while yours has few
 helper remakes them every 10 minutes while the planner is on (learned\
 battles\plays.json); look:
     python vision\battlelearn.py [--school storm]
-In a party battle (v0.9.0) the party's other wizards on your side are in the
+In a party battle (v1.0.0) the party's other wizards on your side are in the
 simulator too - each its seat (the cast order), school, health and battle
 role from the party; the enemies' single hits land on one of you at random
 (an enemy known only by its hits recorded on you: each of you takes them at
@@ -682,7 +682,7 @@ anything: a blader's boosts go to the hitter's plate as its own screen shows it,
 found by the name the game's own log gives for its side. Still to come: teleport
 to friend when the leader is somewhere a door doesn't lead (the follower waits
 and says so - below).
-	- Doors and teleports (v0.9.0): the leader's helper tells a door the leader
+	- Doors and teleports (v1.0.0): the leader's helper tells a door the leader
 	  walked through from a teleport (End, Home, a sigil, a potion run, a
 	  friend's teleport - it stood still before its zone changed) and keeps its
 	  last 3 doors, so a follower a zone or two behind walks door after door.
@@ -1264,7 +1264,7 @@ count then (generic 1, power and your school's pips 2, another school's 1),
 the pip row under your name still read each round, for the log and in case the game can't be read (debug.log:
 "pips=N (from the game; the pip row read M)" when they differ). navmem:0 in
 PlayerStats.txt switches it off with the walker's memory reading.
-Cards and plates by the game's memory (v0.9.0 work, not tried in the game
+Cards and plates by the game's memory (v1.0.0 work, not tried in the game
 yet): the helper also gives each card's box in the game's window (/cards)
 and each name plate's box (/battle), read from the memory the same way.
 	- Read and used now, the screen's reading kept for when the memory

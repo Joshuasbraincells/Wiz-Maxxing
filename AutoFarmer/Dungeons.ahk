@@ -15,10 +15,10 @@
 ; dialogue, and at the end starts over - so many times (0: till you stop it). A loading screen into a zone further
 ; on: it carries on from there. Walking off (F8), you playing, a battle: it waits. Somewhere the recording doesn't
 ; go (another zone), stuck for good, or the game's memory unreadable: it stops and says why (debug.log "Dungeons: ...",
-; the Dungeons tab, Discord). A defeat or a potion run that leaves the wizard in an earlier zone of the run (v0.9.0): on
+; the Dungeons tab, Discord). A defeat or a potion run that leaves the wizard in an earlier zone of the run (v1.0.0): on
 ; from the nearest step of that zone's first visit, 3 times a run at most - never on to its later visit on the way back out.
 ;
-; Between runs (v0.9.0, TODO goal 5): a run that ends back where it starts is "between runs" from its end to its first X
+; Between runs (v1.0.0, TODO goal 5): a run that ends back where it starts is "between runs" from its end to its first X
 ; (or another zone) - its drops looked at and the gear pass (Gear.ahk - Settings: gearswap, a rehearsal: the plan logged,
 ; nothing equipped), and a full backpack quick sold there (QuickSell.ahk - quicksell on; the dungeon's hold still holds it
 ; - with the gear pass on, its Deck and Pet groups only - unless "...even with a dungeon's drops in it" is ticked). "Until its
@@ -31,7 +31,7 @@
 ;The run being walked: {name, file, steps [{kind, zone, x, y, z}], i (the step walked to), runs (done), want (0
 ;till stopped), the step's progress (best, bestLeft, bestAt, unstuck), fightUntil / fightBattles (waiting at a
 ;battle spot), loadUntil (waiting for a loading screen out of zone fromZone), push (a spot past a doorway to walk at
-;meanwhile), misses, seen (battles at the last look); v0.9.0: between (1 a run just done back at its start - the pass
+;meanwhile), misses, seen (battles at the last look); v1.0.0: between (1 a run just done back at its start - the pass
 ;due, 2 done, "" in the run), resumes (back in an earlier zone this run), slots, stopafter, next, untilgear, bosses
 ;([{name, deck}]), gearSaid, gearMarked (1 the backpack noted at this run's start - Gear.ahk GearRunMark / GearRunEnd)} - ""
 ;when none
@@ -45,7 +45,7 @@ global DgAvoid, DgStatus, DgTimesLabel, DgTimesNote, DgDeck, DgDeckT
 global DgRecKey
 ;(the Deck box's decks by their place in it - 2 on; 1 is "(none)")
 global DgDeckIds
-;(v0.9.0: the tab's "Until its gear is swapped" box, its "then" label and list - and the list's runs by their place in it,
+;(v1.0.0: the tab's "Until its gear is swapped" box, its "then" label and list - and the list's runs by their place in it,
 ;2 on; 1 is "(stop)")
 global DgUntilGear, DgNextT, DgNextRun, DgNextNames
 
@@ -74,7 +74,7 @@ DgLoad(file)
 		;(the deck the run's fought with - Decks.ahk; older versions skip the line)
 		else if (f[1] = "deck")
 			deck := RegExReplace(V1At(f, 2), "[^\w-]")
-		;(v0.9.0 - older versions skip these: the gear slots the dungeon drops, the runs with no upgrade before its gear counts
+		;(v1.0.0 - older versions skip these: the gear slots the dungeon drops, the runs with no upgrade before its gear counts
 		;as all swapped, the run after it, "until its gear is swapped", a boss's own deck - Gear.ahk, Decks.ahk DeckPick;
 		;python vision\dglint.py checks them)
 		else if (f[1] = "slots")
@@ -172,7 +172,7 @@ DgListFill()
 		for z in zones
 			nz++
 		when := FormatTime(A_LoopFileTimeModified, "yyyy-MM-dd HH:mm")
-		;(v0.9.0: its gear pass's state after the hidden File column - DgSelected reads the 7th)
+		;(v1.0.0: its gear pass's state after the hidden File column - DgSelected reads the 7th)
 		row := LV.Add("", d.name, d.steps.Length, nz, nx, nf, when, A_LoopFilePath, DgGearCell(d.name, d.untilgear))
 		if (IsObject(DgRun) && DgRun.file = A_LoopFilePath)
 			LV.Modify(row, "Select Focus")
@@ -305,7 +305,7 @@ DgRecTickF()
 	if (nav.zone != DgRecZone)
 		{
 		;(the old zone's last spot - at its doorway - unless it's the last step already: the replay walks on past it. Not right
-		;after an X there, within 100 (v0.9.0): that's the wizard drifting while a sigil counted down, not a doorway - the X took
+		;after an X there, within 100 (v1.0.0): that's the wizard drifting while a sigil counted down, not a doorway - the X took
 		;him through, and a walk step after it had the replay walk on past it, off the sigil, which stops its countdown (DgNext
 		;waits for the load at such a step in a run recorded before))
 		drtDrift := IsObject(DgRecPrev) && DgRecPrev.zone = DgRecZone ? DgDist(DgRecPrev, DgRecLast) : ""
@@ -566,13 +566,13 @@ DgNext()
 		;(the next run: a sigil that won't start may be left and come back to once in it too - DungeonStep's r.sigilLeft; back in an
 		;earlier zone 3 times again - r.resumes)
 		r.i := 1, r.sigilLeft := 0, r.resumes := 0
-		;(v0.9.0: back at the start spot outside - a run that ends where it starts: between runs till its first X or another zone -
+		;(v1.0.0: back at the start spot outside - a run that ends where it starts: between runs till its first X or another zone -
 		;the drops looked at, the gear pass and a full backpack sold there: DgBetweenRuns, at the next step)
 		r.between := DgEndsAtStart(r) ? 1 : 0
 		}
 	nxt := r.steps[r.i]
 	;(a walk step right after an X in the same zone, close by, into another zone - the recorder's doorway step after a sigil's X:
-	;the wizard drifted while it counted down (recorded so before v0.9.0 - DgRecTickF): no walking on past it - walking off a
+	;the wizard drifted while it counted down (recorded so before v1.0.0 - DgRecTickF): no walking on past it - walking off a
 	;sigil stops its countdown -, the loading screen waited for as after the X itself, a try again pressing that X again)
 	pv := ci > 1 ? r.steps[ci - 1] : ""
 	pvD := IsObject(pv) ? DgDist(pv, cur) : ""
@@ -690,7 +690,7 @@ DungeonStep()
 			}
 		return
 		}
-	;(v0.9.0: a run just done, back at its start spot outside: its drops looked at, the gear pass and a full backpack sold -
+	;(v1.0.0: a run just done, back at its start spot outside: its drops looked at, the gear pass and a full backpack sold -
 	;once a run, DgBetweenRuns)
 	if (r.between = 1)
 		{
@@ -765,12 +765,12 @@ DungeonStep()
 			DgShow()
 			return
 			}
-		;(v0.9.0: an earlier zone of the run - its first visit is before this step: a defeat's respawn, a potion run's Recall back
+		;(v1.0.0: an earlier zone of the run - its first visit is before this step: a defeat's respawn, a potion run's Recall back
 		;(the main loop's PotionCheck has had its look before this step): on from the nearest step of that first visit (DgNearest -
 		;its start when that's within 300), 3 times a run at most - a fourth: stopped (defeated again and again?). Looked at BEFORE
 		;a zone further on: the recorder's "walk back out to where you started" brings the start zone, and often the inner ones,
 		;again on the way back - DgZoneAhead would find that later step and walk out, counting a run whose boss wasn't beaten (as
-		;the retry above, never on to the way back). Before v0.9.0 DgZoneAhead alone: the run stopped (or jumped to the way out).
+		;the retry above, never on to the way back). Before v1.0.0 DgZoneAhead alone: the run stopped (or jumped to the way out).
 		;(vision\dglint.py zone_choice is this rule in Python, tested - keep the two the same)
 		k := DgNearest(nav)
 		if (k && k < r.i)
@@ -936,7 +936,7 @@ DgArrive(st)
 	DgNext()
 	}
 
-;---- Between runs (v0.9.0) ----
+;---- Between runs (v1.0.0) ----
 
 ;A run done, back at its start spot outside (DungeonStep, once a run: DgRun.between 1): its drops looked at and the gear pass
 ;(Gear.ahk GearRunEnd - gearswap on: logged, nothing equipped), a full backpack quick sold here (QuickSell.ahk QsLook -
@@ -1042,7 +1042,7 @@ DgDeckPick:
 DgDeckPick()
 	return
 
-;(v0.9.0) The "Until its gear is swapped" box or the "then" list changed: the run's file gets its untilgear| and next| lines
+;(v1.0.0) The "Until its gear is swapped" box or the "then" list changed: the run's file gets its untilgear| and next| lines
 DgGearPick:
 DgGearPick()
 	return
@@ -1097,7 +1097,7 @@ DgDeckSet()
 
 ;A run file's key| line set to value (deck|, untilgear|, next| - "": the line taken out), right after its name| line (else
 ;first) - its steps and other lines kept as they are. Written as it was read (the ANSI code page, as FileAppend recorded it)
-;and its date kept (the list's Recorded). False when it couldn't be written (DgDeckSet's way, v0.9.0 for every such line)
+;and its date kept (the list's Recorded). False when it couldn't be written (DgDeckSet's way, v1.0.0 for every such line)
 DgSetLine(file, key, value)
 	{
 	;(v1: a file that can't be read - blank, ErrorLevel 1; v2 throws)
@@ -1271,7 +1271,7 @@ DgDeckPick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) { ; (v1: a label
 	return
 }
 ;##############################################
-;(v0.9.0, written for v2: the "Until its gear is swapped" box and the "then" list - Dashboard.ahk's OnEvent("Click") /
+;(v1.0.0, written for v2: the "Until its gear is swapped" box and the "then" list - Dashboard.ahk's OnEvent("Click") /
 ;OnEvent("Change"), DgGearPick.Bind("Normal"))
 DgGearPick(A_GuiEvent := "", A_GuiControl := "", Info := "", *) {
 	global

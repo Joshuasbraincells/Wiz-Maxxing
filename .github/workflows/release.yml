@@ -1,0 +1,142 @@
+# Release: builds the exes on Windows with the repo's own build.ps1 (AutoHotkey v2 and its compiler, Ahk2Exe,
+# fetched the way AutoHotkey's own installer does), zips the release the way the updater expects and publishes it.
+#   Wiz-Maxxing-<version>.zip: one Wiz-Maxxing\ folder - every tracked file but TODO.md, byte for byte (no line ending
+#   changes), plus Setup.exe, Wiz-Maxxing.exe, AutoFarmer\Autofarmer.exe, AutoFarmer\StatsReader.exe and
+#   AutoQuester\AutoQuester.exe. The updater (Updater.ahk) reads releases/latest and downloads its .zip asset.
+# Run it from the Actions tab (Release > Run workflow) on main, with the version to publish - it has to be version.txt's.
+# Release notes: .github/release-notes/<version>.md when it's there, else GitHub's generated ones.
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to publish, as in version.txt (v1.0.0)"
+        required: true
+        type: string
+      prerelease:
+        description: "A pre-release (the updater never offers one)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      VERSION: ${{ inputs.version }}
+      PRERELEASE: ${{ inputs.prerelease }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      # (the repo's own bytes: some files are CRLF and some LF on purpose - Windows runners turn LF into CRLF otherwise)
+      - name: Keep the repo's line endings
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v4
+
+      - name: Check the version
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          if ($env:VERSION -notmatch '^v\d+\.\d+(\.\d+)?$') { throw "'$env:VERSION' isn't a version like v1.0.0" }
+          # (the updater offers every release that isn't a pre-release: those only from main)
+          if ($env:PRERELEASE -ne 'true' -and $env:GITHUB_REF -ne 'refs/heads/main') { throw "Run it on main (or tick pre-release) - this is $env:GITHUB_REF" }
+          $file = (Get-Content -Raw -LiteralPath version.txt).Trim()
+          if ($file -ne $env:VERSION) { throw "version.txt says '$file', not '$env:VERSION' - change version.txt first" }
+          # (a published release of that version: stop; a draft one - a run that failed before publishing it: deleted,
+          # made again below. Looked up through the API: a draft has no tag yet)
+          $same = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == env.VERSION) | [.id, .draft] | @tsv'
+          if ($LASTEXITCODE -ne 0) { throw "The releases couldn't be read" }
+          foreach ($line in @($same | Where-Object { $_ })) {
+              $id, $draft = $line -split "`t"
+              if ($draft -ne 'true') { throw "Release $env:VERSION is there already" }
+              gh api -X DELETE "repos/$env:GITHUB_REPOSITORY/releases/$id" | Out-Null
+              if ($LASTEXITCODE -ne 0) { throw "The draft $env:VERSION a failed run left couldn't be deleted" }
+              "Deleted the draft $env:VERSION a failed run left (release $id)"
+          }
+          # (a tag of that name already on another commit: the release would be made from that commit, not this one -
+          # an annotated tag's commit is its peeled ^{} ref, asked for by name: a plain pattern never matches it)
+          $tag = (git ls-remote --tags origin "refs/tags/$env:VERSION" "refs/tags/$($env:VERSION)^{}") -join "`n"
+          if ($tag -and $tag -notmatch $env:GITHUB_SHA) { throw "Tag $env:VERSION is on another commit ($tag)" }
+          "Publishing $env:VERSION from $env:GITHUB_REF_NAME at $env:GITHUB_SHA"
+          exit 0
+
+      - name: Get AutoHotkey v2 and Ahk2Exe
+        shell: pwsh
+        run: |
+          $root = Join-Path $env:ProgramFiles 'AutoHotkey'
+          New-Item -ItemType Directory -Force -Path (Join-Path $root 'v2'), (Join-Path $root 'Compiler') | Out-Null
+          $zip = Join-Path $env:RUNNER_TEMP 'ahk-v2.zip'
+          Invoke-WebRequest -Uri 'https://www.autohotkey.com/download/ahk-v2.zip' -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $root 'v2') -Force
+          # (Ahk2Exe isn't in AutoHotkey v2's download: its latest release's zip, as AutoHotkey's install-ahk2exe.ahk does)
+          $rel = gh api repos/AutoHotkey/Ahk2Exe/releases/latest | ConvertFrom-Json
+          $asset = $rel.assets | Where-Object { $_.name -like '*.zip' } | Select-Object -First 1
+          if (-not $asset) { throw "Ahk2Exe's latest release ($($rel.tag_name)) has no zip" }
+          $zip = Join-Path $env:RUNNER_TEMP 'ahk2exe.zip'
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $root 'Compiler') -Force
+          if (-not (Test-Path (Join-Path $root 'Compiler\Ahk2Exe.exe'))) { throw "Ahk2Exe.exe isn't in $($asset.name)" }
+          "AutoHotkey $((Get-Item (Join-Path $root 'v2\AutoHotkey64.exe')).VersionInfo.FileVersion), Ahk2Exe $($rel.tag_name)"
+
+      - name: Build the exes (build.ps1)
+        shell: pwsh
+        run: ./build.ps1
+
+      - name: Zip the release
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'pkg'
+          $top = Join-Path $stage 'Wiz-Maxxing'
+          New-Item -ItemType Directory -Force -Path $top | Out-Null
+          $files = git -c core.quotepath=false ls-files | Where-Object { $_ -and $_ -ne 'TODO.md' }
+          foreach ($f in $files) {
+              $dst = Join-Path $top $f
+              New-Item -ItemType Directory -Force -Path (Split-Path $dst) | Out-Null
+              Copy-Item -LiteralPath $f -Destination $dst
+          }
+          foreach ($exe in 'Setup.exe', 'Wiz-Maxxing.exe', 'AutoFarmer\Autofarmer.exe', 'AutoFarmer\StatsReader.exe', 'AutoQuester\AutoQuester.exe') {
+              if (-not (Test-Path -LiteralPath $exe)) { throw "$exe wasn't built" }
+              Copy-Item -LiteralPath $exe -Destination (Join-Path $top $exe)
+          }
+          $zip = Join-Path $env:GITHUB_WORKSPACE "Wiz-Maxxing-$env:VERSION.zip"
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          [IO.Compression.ZipFile]::CreateFromDirectory($top, $zip, [IO.Compression.CompressionLevel]::Optimal, $true)
+          $z = [IO.Compression.ZipFile]::OpenRead($zip)
+          try {
+              $names = $z.Entries | ForEach-Object { $_.FullName }
+              if (-not ($names -contains 'Wiz-Maxxing/AutoFarmer/Autofarmer.ahk')) { throw "The zip has no Wiz-Maxxing/AutoFarmer/Autofarmer.ahk" }
+              "$($names.Count) files, $([math]::Round((Get-Item $zip).Length / 1MB, 1)) MB: $zip"
+          } finally { $z.Dispose() }
+
+      - name: Publish the release
+        shell: pwsh
+        run: |
+          $PSNativeCommandUseErrorActionPreference = $false
+          # (made as a draft with its zip, then published: the updater never sees the release without its zip - a run
+          # that fails in between leaves a draft, which the next run's version check deletes)
+          $zip = "Wiz-Maxxing-$env:VERSION.zip"
+          $ghArgs = @($env:VERSION, $zip, '--repo', $env:GITHUB_REPOSITORY, '--title', $env:VERSION, '--target', $env:GITHUB_SHA, '--draft')
+          $notes = ".github/release-notes/$env:VERSION.md"
+          if (Test-Path -LiteralPath $notes) { $ghArgs += @('--notes-file', $notes) } else { $ghArgs += '--generate-notes' }
+          if ($env:PRERELEASE -eq 'true') { $ghArgs += '--prerelease' }
+          gh release create @ghArgs
+          if ($LASTEXITCODE -ne 0) { throw "gh release create failed ($LASTEXITCODE)" }
+          $id = gh api --paginate "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" --jq '.[] | select(.tag_name == env.VERSION and .draft) | .id'
+          $id = @($id | Where-Object { $_ })
+          if ($id.Count -ne 1) { throw "The draft $env:VERSION wasn't found to publish ($($id -join ', '))" }
+          $assets = gh api "repos/$env:GITHUB_REPOSITORY/releases/$($id[0])/assets" --jq '[.[] | select(.state == "uploaded") | .name] | join(", ")'
+          if ($assets -notmatch [regex]::Escape($zip)) { throw "The draft has no $zip ($assets) - not published" }
+          # (published: the tag is made on GITHUB_SHA; the newest release the updater reads unless a pre-release)
+          $latest = if ($env:PRERELEASE -eq 'true') { 'false' } else { 'true' }
+          gh api -X PATCH "repos/$env:GITHUB_REPOSITORY/releases/$($id[0])" -F draft=false -f make_latest=$latest --jq '.html_url + "  (" + .tag_name + ")"'
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the draft $env:VERSION failed ($LASTEXITCODE)" }
+          "Assets: $assets"

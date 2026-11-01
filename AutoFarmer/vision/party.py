@@ -116,7 +116,7 @@ def clean_state(q):
     s['tp'] = tp if tp in TP_STATES else ''
     tpwhy = str(q.get('tpwhy') or '').strip()
     s['tpwhy'] = tpwhy if s['tp'] and HOLD_RE.match(tpwhy) else ''
-    # (the party's hit round - TODO goal 3, v0.9.0: the hitter's planned hit's round in its game's log, the earliest it can
+    # (the party's hit round - TODO goal 3, v1.0.0: the hitter's planned hit's round in its game's log, the earliest it can
     # go out - its supports time their blades and traps to it, Party.ahk PartyHitHold -, and each wizard's seat in the
     # battle: its subcircle 4-7, the cast order of our side. None: not said - an older bot, no hit planned)
     v = _f(q.get('hitat'))
@@ -649,7 +649,7 @@ class Party:
         """party|role|state|why; me|zone|x|y|z|yaw; leader|...; member|... (one per follower, the leader's view).
         AutoHotkey's fields (Party.ahk PartyTick - f[1] the line's kind): the leader's 2-31 as ever, then 32 loading,
         33 dwalk (the door below walked: 1, 0, '' not known), 34 zage (ms in its zone), 35 dage (the door's age, ms), 36
-        port, 37 its why (port_advice), 38 hitat, 39 seat (the party's hit round - v0.9.0); a member's 2-21 as ever, then 22
+        port, 37 its why (port_advice), 38 hitat, 39 seat (the party's hit round - v1.0.0); a member's 2-21 as ever, then 22
         tp, 23 tpwhy, 24 hitat, 25 seat. The door (14-20): the leader's latest out of this wizard's zone (door_from), else
         its last as before. Old bots read only the fields they know (and pad the ones they don't: blank)"""
         def num(v, d=0):

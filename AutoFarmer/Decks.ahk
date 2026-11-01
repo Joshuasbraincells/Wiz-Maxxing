@@ -13,7 +13,7 @@
 ; walked into is found in the battle.
 ; One file per deck: decks\<id>.txt - yours (updates keep them). The dashboard's Cards tab shows and edits them
 ; (Dashboard.ahk). AutoHotkey v2 (ported from v1.1), #Included by Autofarmer.ahk.
-; Decks learned from the game (v0.8.0, TODO goal 3, 2026-10-30): every in-game deck in an Equipment Set read from the
+; Decks learned from the game (v1.0.0, TODO goal 3, 2026-10-30): every in-game deck in an Equipment Set read from the
 ; game's memory (the helper's /decks - READ-ONLY, vision\deckmem.py) becomes a deck here - linked to it by its id (game|
 ; in the file), its Equipment Set, school and the settings its cards call for (no blades in it: blades off...; boost or
 ; hit first; for bosses or anything else - vision\battlesim.py learn_decks); a setting you set yourself is never changed
@@ -191,7 +191,7 @@ DeckLoad(file)
 				d.game := RegExMatch(Trim(m[2]), "i)^[0-9a-f]{1,16}$") ? StrLower(Trim(m[2])) : ""
 			else if (m[1] = "learned")
 				d.learned := RegExReplace(StrLower(m[2]), "[^a-z0-9,!]")
-			;(v0.9.0: the boss it's for by name - "Kraken", several with a comma between - DeckPick: its deck for that boss, a
+			;(v1.0.0: the boss it's for by name - "Kraken", several with a comma between - DeckPick: its deck for that boss, a
 			;cheat-aware profile set with the deck's settings; edited in the file for now - older versions skip the line)
 			else if (m[1] = "bossname")
 				d.bossname := Trim(SubStr(RegExReplace(m[2], "[^\x20-\x7E]|\|", ""), 1, 80))
@@ -271,7 +271,7 @@ DeckPick(inBattle, noBoss := false)
 	if (!IsObject(DeckList) || !DeckList.Length)
 		return V1Obj({deck: "", why: "no decks"})
 	sch := inBattle && hitschool != "" ? hitschool : V1IsFunc("StatsSchoolOf") ? StatsSchoolOf.Call(StatsCharID.Call()) : ""
-	;(v0.9.0: the boss's name - a deck for it by name, a dungeon run's own deck for it: its boss|<name>|<deck id> lines, before
+	;(v1.0.0: the boss's name - a deck for it by name, a dungeon run's own deck for it: its boss|<name>|<deck id> lines, before
 	;its deck| one - held in a battle it isn't known to be in: while that deck's Equipment Set is the one on)
 	dpHeld := 0
 	dpBoss := DeckBossName(inBattle, noBoss, &dpHeld)
@@ -315,7 +315,7 @@ DeckPick(inBattle, noBoss := false)
 		if (!use[2])
 			continue
 		best := "", dpNamed := 0
-		;(v0.9.0: for a boss, a deck for it by name first - its bossname| line, "bosses" ticked or not)
+		;(v1.0.0: for a boss, a deck for it by name first - its bossname| line, "bosses" ticked or not)
 		if (use[1] = "boss" && dpBoss != "")
 			for j, d in DeckList
 				if (DeckNamedFor(d, dpBoss) && DeckFits(d, sch) && DeckBetter(d, best, "boss"))
@@ -341,7 +341,7 @@ DeckPick(inBattle, noBoss := false)
 	return V1Obj({deck: "", why: "no deck for this"})
 	}
 
-;(v0.9.0) The boss's name for DeckPick's by-name match ("" none): a boss in this battle by the game's memory (DeckFoe), else
+;(v1.0.0) The boss's name for DeckPick's by-name match ("" none): a boss in this battle by the game's memory (DeckFoe), else
 ;the boss ahead (DeckBoss, the bot on); held 1: in a battle and not known to be in it (DeckPick's bossHeld - its deck's
 ;settings only while its Equipment Set is the one on: DeckHeldOn). Your Alt+1 pick alone names nobody
 DeckBossName(inBattle, noBoss, &held)
@@ -359,7 +359,7 @@ DeckBossName(inBattle, noBoss, &held)
 	return ""
 	}
 
-;(v0.9.0) want (a deck's bossname or a run's boss| name) names the boss called name: its letters all of name's (Governor
+;(v1.0.0) want (a deck's bossname or a run's boss| name) names the boss called name: its letters all of name's (Governor
 ;Nereus - "Governor Nereus"), or among them when it has 4 or more ("Nereus")
 DeckNameMatch(want, name)
 	{
@@ -369,7 +369,7 @@ DeckNameMatch(want, name)
 	return dnmW = dnmN || (StrLen(dnmW) >= 4 && InStr(dnmN, dnmW))
 	}
 
-;(v0.9.0) Deck d is for the boss called name by its bossname| line (several with a comma between)
+;(v1.0.0) Deck d is for the boss called name by its bossname| line (several with a comma between)
 DeckNamedFor(d, name)
 	{
 	if (d.bossname = "")
@@ -380,7 +380,7 @@ DeckNamedFor(d, name)
 	return false
 	}
 
-;(v0.9.0) A boss deck held in a battle may have its settings only while its in-game deck is the one on: it has an Equipment
+;(v1.0.0) A boss deck held in a battle may have its settings only while its in-game deck is the one on: it has an Equipment
 ;Set and that's the one put on last (DeckEquip's dashboard.ini [decks] eqset<CharID>), or none was put on yet (v1's blank -
 ;DeckPick's rule for a deck for bosses)
 DeckHeldOn(d)
@@ -710,7 +710,7 @@ DeckDamageText(d)
 ;There's a deck for bosses (else there's nothing to look for)
 DeckBossWanted()
 	{
-	;(v0.9.0: a deck for a boss by name, or a dungeon run's boss| lines, want the boss ahead looked for too)
+	;(v1.0.0: a deck for a boss by name, or a dungeon run's boss| lines, want the boss ahead looked for too)
 	for dbwI, dbwD in IsObject(DeckList) ? DeckList : []
 		if (dbwD.when.boss || dbwD.bossname != "")
 			return true
@@ -1286,7 +1286,7 @@ DeckDelClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
 	DeckViewShow(0)
 	}
 
-;---- Decks learned from the game (v0.8.0, TODO goal 3) ----
+;---- Decks learned from the game (v1.0.0, TODO goal 3) ----
 ;
 ;The helper's /decks (READ-ONLY - vision\deckmem.py: every deck the wizard owns, the backpack's too, each card's kind
 ;from its effects; vision\battlesim.py learn_decks) answers a "learn" line for each in-game deck in an Equipment Set:
@@ -1494,7 +1494,7 @@ DeckGameClick(A_GuiEvent := "", A_GuiControl := "", Info := "", *)
 		DeckViewShow(DeckView)
 	}
 
-;---- Can this deck beat it (v0.8.0, TODO goal 3) ----
+;---- Can this deck beat it (v1.0.0, TODO goal 3) ----
 
 ;Deck d fought against foes ([{name, health, school, boss}]) in the battle simulator (the helper's /sim - vision\
 ;battlesim.py: its linked in-game deck's cards, your stats for its school, its settings): {word (yes / likely / risky /
@@ -1622,7 +1622,7 @@ DeckBeatLine(d)
 	return "`nLinked to its in-game deck (" d.game ") - learned from its cards: " (dblL != "" ? StrReplace(dblL, ",", ", ") : "nothing to set")
 	}
 
-;---- Decks matched to the zone's enemies (v0.9.0, TODO goal 3 - Settings: deckzone, off; not tried in the game) ----
+;---- Decks matched to the zone's enemies (v1.0.0, TODO goal 3 - Settings: deckzone, off; not tried in the game) ----
 
 ;The deck DeckPick chose (p - {deck, why, boss}) swapped for the one the battle simulator says does best against the
 ;enemy groups fought most in this zone (the helper's /deckfor - vision\battlesim.py best_decks: each in-game deck in an

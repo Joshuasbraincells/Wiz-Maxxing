@@ -186,7 +186,7 @@ class Book(unittest.TestCase):
 
 
 class Fixes(unittest.TestCase):
-    """v0.9.0: what v0.8.0 got wrong"""
+    """v1.0.0: what the simulator's first build got wrong"""
 
     def test_value_text_from_facts(self):
         # (cards.jsonl keeps handmem's value_text: an item card's kind and value only from there)
@@ -272,7 +272,7 @@ class Fixes(unittest.TestCase):
 
 
 class FromState(unittest.TestCase):
-    """v0.9.0: a battle started in the middle (the planner's round now)"""
+    """v1.0.0: a battle started in the middle (the planner's round now)"""
 
     def cards(self):
         lord = S.Card("Storm Lord", "damage", "storm", 7, heads={"storm": 1000}, tid=1)
@@ -353,7 +353,7 @@ def hit_dict():
     return hit()
 
 
-# ============================================================================ v0.9.0 batch 3: what the simulator lacked
+# ============================================================================ v1.0.0 batch 3: what the simulator lacked
 def lord(tid=1, dot=None, value=1000, pips=7):
     return S.Card("Storm Lord", "damage", "storm", pips, heads={"storm": value}, tid=tid, dot=dot)
 

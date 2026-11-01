@@ -662,7 +662,7 @@ class PlannerRule(unittest.TestCase):
     def test_rule_and_settings_key(self):
         import battlerec
         self.assertIn("planner", battlerec.SETTINGS_KEYS)
-        for k in ("memclicks", "deckzone", "partyhitround"):       # (the battle settings v0.9.0 added)
+        for k in ("memclicks", "deckzone", "partyhitround"):       # (the battle settings v1.0.0 added)
             self.assertIn(k, battlerec.SETTINGS_KEYS)
         self.assertGreaterEqual(battlerec.RULE_V, 2)
         # (advice only - planner:1 - never decides a round: the round is the bot's own rule's)
@@ -679,7 +679,7 @@ class PlannerRule(unittest.TestCase):
 
 # ============================================================================ /sim and /decks on deckmem-shaped decks
 class SimOnGameDecks(unittest.TestCase):
-    """the critic's note (v0.9.0): DeckBeat's /sim and DeckLearnGame's /decks on decks as deckmem reads them, whose item
+    """the critic's note (v1.0.0): DeckBeat's /sim and DeckLearnGame's /decks on decks as deckmem reads them, whose item
     cards (a wand's, a pet's) have no kind of their own - only cards.jsonl's facts, where value is a value_text string"""
 
     @classmethod
@@ -741,7 +741,7 @@ class SimOnGameDecks(unittest.TestCase):
         self.assertEqual((kinds["damage"], kinds["blade"], kinds.get("?", 0)), (12, 5, 0))
 
 
-# ============================================================================ v0.9.0 batch 3: /plan's team, the log's charms
+# ============================================================================ v1.0.0 batch 3: /plan's team, the log's charms
 class PlanTeam(unittest.TestCase):
     """/plan's mates=, role=, seat=, teamplan=1 and charms=log (plan_lines_for with stand-in readers)"""
 

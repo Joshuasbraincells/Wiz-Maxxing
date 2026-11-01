@@ -103,7 +103,7 @@ Loop{
   MouseMove(180 + leftoffset, 570 + topoffset, Mousespeedfast)
   Click()
   MouseMove(A_ScreenWidth/2, A_ScreenHeight/2, Mousespeedslow)
-  ;Your mouse let go while the next round loads (v0.9.0 - it was BlockInput("Off") after the wait, which doesn't end the
+  ;Your mouse let go while the next round loads (v1.0.0 - it was BlockInput("Off") after the wait, which doesn't end the
   ;MouseMove mode: your mouse stayed frozen for as long as the script ran). Each round locks it again at its start
   BlockInput("MouseMoveOff")
   BlockInput("Default")
@@ -111,7 +111,7 @@ Loop{
   Sleep(Loading)
 }
 }
-;Esc closes the trainer, as README.txt says (v0.9.0 - it was Esc::Reload, which restarted it instead): your mouse let go
+;Esc closes the trainer, as README.txt says (v1.0.0 - it was Esc::Reload, which restarted it instead): your mouse let go
 ;first. This Esc isn't passed on to the game (the press that stops the trainer doesn't also close a game window); once
 ;closed, Esc is the game's again
 Esc::

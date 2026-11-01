@@ -407,7 +407,7 @@ QsZekeUp(tips)
 ;In a dungeon: a dungeon run, one being recorded, a zone the walker entered through a sigil or one entered from such a zone
 ;(its deeper zones) - why, else "". A dungeon you went into yourself isn't known as one. A dungeon run between two runs -
 ;back at its start spot outside (Dungeons.ahk's DgRun.between, set when a run that ends where it starts is done, gone at
-;its first X or another zone) - isn't in the dungeon: a full backpack may be sold there (v0.9.0 - it used to read "in the
+;its first X or another zone) - isn't in the dungeon: a full backpack may be sold there (v1.0.0 - it used to read "in the
 ;dungeon run" for the whole of it, so with "Run it 0 times" a full backpack was never sold); the zone's own checks below
 ;still hold, and so does the dungeon's hold (QsHeld)
 QsDungeonNow()

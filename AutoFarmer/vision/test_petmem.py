@@ -570,7 +570,7 @@ class DeckPets(unittest.TestCase):
         dm.brief = lambda tid: {"display": "Minor Crusade"}
         objs = {0x22: (w.worn[0], "equipped", 9003), 0x23: (w.worn[1], "equipped", 9100)}
         cards, n = dm._item_cards([0x22, 0x23], objs, [])
-        self.assertEqual(n, 2)                                          # (before v0.9.0: None, None)
+        self.assertEqual(n, 2)                                          # (before v1.0.0: None, None)
         self.assertEqual([(c["name"], c["count"]) for c in cards], [("Wand-Balance-T4-001", 2)])
         self.assertEqual(dm.pet_unread, [w.worn[0]])
         # (readable: the pet's too, and pet_unread empty again)

@@ -12,7 +12,7 @@
 ; (partybattle), wizard's name, school and hits. State only: nothing one bot sends can make another press anything -
 ; a blader's or healer's boosts go to the party's hitter's plate, found on its own screen by the name the game's log
 ; gives for its own side. Phase 2 (teleport to friend across zones) isn't in yet: a follower whose leader went where it
-; can't follow waits, and says so - "can't follow" (v0.9.0: the helper tells a door the leader walked through from a
+; can't follow waits, and says so - "can't follow" (v1.0.0: the helper tells a door the leader walked through from a
 ; teleport - End, Home, a sigil, a potion run: it stood still before its zone changed; not checked in the game yet, so
 ; only acted on with Settings' partytpdoors on, else logged -, keeps its last 3 doors - a follower two zones behind
 ; walks door after door - and says when a teleport to the leader would be the way: its port_advice. A door that doesn't
@@ -25,7 +25,7 @@
 ; casts them again after each of the hitter's hits, Tower Shield on it, and hits only for a kill or with nothing else to
 ; do; a Healer heals the one of you lowest under healat %, shields them, else boosts as a blader. Anything not sure (no
 ; party state, the hitter not on your side, its plate not read): this wizard hits, as ever.
-; The party's hit round (v0.9.0, TODO goal 3 - Settings: partyhitround, off; not tried in the game): the hitter says the
+; The party's hit round (v1.0.0, TODO goal 3 - Settings: partyhitround, off; not tried in the game): the hitter says the
 ; log round its planned hit goes out in (the earliest it can: KillCalc.ahk BoostPick) and each wizard its seat (its
 ; subcircle - our side's cast order); a blader's or healer's blades and traps wait for it - that round when its seat
 ; casts before the hitter's, else the round before (PartyHitHold). An older bot sends neither: as ever.
@@ -52,7 +52,7 @@ global PartyTgt, PartyStillAt, PartyStillX, PartyStillY, PartyTries, PartyPushUn
 ;since cut that try short: not counted), the door the helper called a teleport last logged (partytpdoors off)
 global PartyTp, PartyTpWhy, PartyCantAt, PartyCantSaid, PartyPortSaid, PartyCantAlerted, PartyDoorKey, PartyDoorTries
 global PartyDoorGave, PartyMyZone, PartyLdZone, PartyStuckAt, PartyDoorGaveAt, PartyDoorBattles, PartyDwalkSaid
-;The party's hit round (v0.9.0, TODO goal 3 - not tried in the game): the log round this wizard's planned hit is
+;The party's hit round (v1.0.0, TODO goal 3 - not tried in the game): the log round this wizard's planned hit is
 ;likely to go out in, the earliest it can (KillCalc.ahk BoostPick sets it - the hitter's), and the battle it's for
 ;(BlDuel) - PartyTick sends it, with this wizard's seat, so a blader's or healer's blades and traps wait for it
 ;(Settings: partyhitround, off - PartyHitHold)
@@ -112,7 +112,7 @@ PartyTick()
 	;(a follower that can't follow says so, and why - the leader stops waiting for it: PartyHoldWhy. Only the characters the
 	;helper takes - vision\party.py HOLD_RE -, 80 at most)
 	q .= "&tp=" (role = "follower" ? PartyTp : "") "&tpwhy=" (role = "follower" ? NavUri(SubStr(RegExReplace(PartyTpWhy, "[^\w .,'()/-]", " "), 1, 80)) : "")
-	;(the party's hit round - v0.9.0: the log round this wizard's planned hit goes out in, the earliest it can, for this
+	;(the party's hit round - v1.0.0: the log round this wizard's planned hit goes out in, the earliest it can, for this
 	;battle only - KillCalc.ahk BoostPick, a hitter's; a blader's or healer's never -, and its seat: its subcircle in the
 	;game's log, our side's cast order (PartySeat). Its supports time their blades and traps to it - PartyHitHold. Blank:
 	;not known - as an older bot's)
@@ -133,7 +133,7 @@ PartyTick()
 		f := StrSplit(A_LoopField, "|")
 		;(v1: a field the line doesn't have - blank. 32-37: the leader's loading flag, its door's walked, its time in its zone,
 		;the door's age, the teleport advice and why; a member's 22-23: its tp and why - an older helper's lines haven't
-		;them: blank. 38-39 / 24-25: the party's hit round - hitat and seat, v0.9.0)
+		;them: blank. 38-39 / 24-25: the party's hit round - hitat and seat, v1.0.0)
 		while (f.Length < 39)
 			f.Push("")
 		if (f[1] = "party")
@@ -181,7 +181,7 @@ PartySeat()
 	return pseAt
 	}
 
-;The party's hit round (Settings: partyhitround, off - v0.9.0, not tried in the game): a blader's or healer's blades and
+;The party's hit round (Settings: partyhitround, off - v1.0.0, not tried in the game): a blader's or healer's blades and
 ;traps held this round while the party's hitter's hit isn't due - "" (cast as ever) or why they're held, for the log
 ;(KillCalc.ahk BoostPick then takes this round's blade and trap flags off). Due: the round the hitter says its planned
 ;hit goes out in (its hitat: the earliest it can - its pips -, its log's round), that very round when your seat casts
@@ -260,7 +260,7 @@ PartyBattleRole()
 	if (!IsObject(p))
 		return PartyRoleNote(h.wiz "'s name plate wasn't read this round - this wizard hits")
 	hammerX := p.x + Px(25), hammerY := p.y + Px(8)
-	;(its school: as it says, else the game's memory's for the wizard at its plate (v0.9.0 - PartyMemAlly), else its plate's
+	;(its school: as it says, else the game's memory's for the wizard at its plate (v1.0.0 - PartyMemAlly), else its plate's
 	;badge - left of its name)
 	pbrM := BadgeNumber(h.school) ? "" : PartyMemAlly(V1IsFunc("NavBattle") ? NavBattle.Call() : "", p.x, false)
 	HammerSchool := BadgeNumber(h.school) ? h.school : (IsObject(pbrM) && BadgeNumber(pbrM.school)) ? pbrM.school
@@ -454,7 +454,7 @@ PartyReblade(h)
 ;The ally on your side lowest on health this round (the healer): each of your side's plates but yours read (Autofarmer.ahk
 ;PlateHealth - a low reading only with 3 of its 4 reads agreeing, as for your own). PartyLowX/Y: its plate (the name),
 ;PartyLowPct, PartyLowName ("" none read). Read once a round. True if one was read
-;v0.9.0: each one's health from the game's memory first (PartyMemAlly - the wizard there by NavBattle, read for sure); the
+;v1.0.0: each one's health from the game's memory first (PartyMemAlly - the wizard there by NavBattle, read for sure); the
 ;plates themselves, where a heal is clicked, still the ones read off the screen (ReadSidePlates)
 PartyLowest()
 	{
@@ -493,12 +493,12 @@ PartyLowest()
 	return PartyLowName != ""
 	}
 
-;An ally in the game's memory (v0.9.0 - b: Vision.ahk NavBattle's battle, READ-ONLY) whose plate is at x (a side plate's
+;An ally in the game's memory (v1.0.0 - b: Vision.ahk NavBattle's battle, READ-ONLY) whose plate is at x (a side plate's
 ;name start, ReadSidePlates'): of the wizards on your side (player, your team, not you) the one whose plate's box holds x
 ;across (its l..r - one only), else - no boxes: an older helper - the one whose plate's middle is nearest, within Px(160).
 ;{cur, max, votes: 3 (read, not guessed: sure enough to heal on), school (its own, lower case - "" not read), src}; "" none
 ;there, or (health 1) its health not read, hidden, or 0 (out of the battle) - or two or more game windows running (Vision.ahk
-;VisionMemOneClient, v0.9.0 review: navmem can be on another client, its battle's plates laid on yours)
+;VisionMemOneClient, v1.0.0 review: navmem can be on another client, its battle's plates laid on yours)
 PartyMemAlly(b, x, health := 1)
 	{
 	if (!IsObject(b) || !IsObject(b.me) || !IsObject(b.parts) || x = "" || b.me.team = "")
@@ -628,7 +628,7 @@ PartyText()
 
 ;The leader's hold (the walker asks: Walker.ahk WalkStep): why it should wait now - a follower (heard from in the last 5 s)
 ;in another zone, farther than partywaitdist, or not ready; "" walk on. One held partywaitmax s isn't waited for again
-;till it's been near once. (v0.9.0: partywaitmax 0 - no waiting at all, as Settings says: it waited for good before. One
+;till it's been near once. (v1.0.0: partywaitmax 0 - no waiting at all, as Settings says: it waited for good before. One
 ;that says it can't follow - tp wait: the leader went where no door it walked through leads from its zone, or its door
 ;didn't take it - or that the game refused its teleport isn't waited for, till it's been near once: holding doesn't bring
 ;it. One teleporting to you is waited for; one stuck on its way as ever, said)
@@ -691,7 +691,7 @@ PartyHoldWhy()
 ;again past twice that; into its battle (its battle spot, mobs not avoided - the battle's own are there); through the
 ;door it took (its last spot in this zone, then 400 on the way it was going). Stuck (its own place hardly moving with W
 ;down for 3 s): back up, turn 90, walk - 4 times at most, then it waits for the leader to come back near
-;(v0.9.0 - TODO goal 1: the door is the leader's latest out of this wizard's zone - two zones behind, door after door; one
+;(v1.0.0 - TODO goal 1: the door is the leader's latest out of this wizard's zone - two zones behind, door after door; one
 ;the helper says the leader didn't walk through - a teleport: End, Home, a sigil, a potion run - isn't walked to with
 ;partytpdoors on (off, the default - the guess isn't checked in the game yet: logged, and walked to as ever); one that
 ;hasn't taken this wizard in 3 tries is given up till its zone changes, or for 6 minutes (a try a battle cut short not
@@ -860,7 +860,7 @@ PartyFollowStep()
 		if (A_TickCount - PartyStillAt > 3000)
 			{
 			;(v1: += chained with a comma kept a blank PartyTries blank - set to 0 only once it's stood by the leader;
-			;blank isn't > 4, and blank & 1 is blank: -90. v0.9.0: a new zone sets it to 0 too - PartyZoneCheck, the first
+			;blank isn't > 4, and blank & 1 is blank: -90. v1.0.0: a new zone sets it to 0 too - PartyZoneCheck, the first
 			;zone read among them - so it counts from the start)
 			PartyTries := V1Add(PartyTries, 1), PartyStillAt := 0
 			if (V1Gt(PartyTries, 4))
@@ -884,7 +884,7 @@ PartyFollowStep()
 	}
 
 ;A new zone - this wizard's or the leader's, each its last read (a blank - a loading screen - isn't a change): the stuck
-;tries start again (v0.9.0 - before, they only started again by the leader: after five in one zone the back-ups and turns
+;tries start again (v1.0.0 - before, they only started again by the leader: after five in one zone the back-ups and turns
 ;were never tried again). This wizard's own: the door tries too, and a door given up may be tried again (the leader's
 ;doesn't make a door out of here that didn't take it work - one it walked through again is a new door: tried)
 PartyZoneCheck()
