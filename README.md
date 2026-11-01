@@ -30,3 +30,7 @@ learned cards, potion routes and the bot's memory are kept. The bot's tray menu 
 
 Edit the `.ahk` scripts, then double-click **build.cmd** to rebuild the exes (needs AutoHotkey v2 with its
 compiler, Ahk2Exe - AutoHotkey's Dash > Compile gets it; close the bot first).
+
+Publishing a release: on GitHub, **Actions > Release > Run workflow** on `main`, with the version in
+`version.txt` (and its notes in `.github/release-notes/<version>.md`). It builds the exes on Windows with
+**build.ps1** and publishes **Wiz-Maxxing-<version>.zip**, the zip the updater downloads.
