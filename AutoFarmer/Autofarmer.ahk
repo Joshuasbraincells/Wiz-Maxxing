@@ -3221,7 +3221,12 @@ StatsAuto()
 		return
 		}
 	msg := StatsWrite(statsGot, statsFor, charNow)
+	;(Critical, as CfgWrite and LearnStatsWrite: no timer - the overlay's OvTick, PartyTimer - reads Stats half
+	;reloaded, its built-in defaults - overlay:0 - before PlayerStats.txt's lines)
+	wasCrit := A_IsCritical
+	Critical()
 	LoadStats(true)
+	CfgUncritical(wasCrit, 0)
 	DebugLog("Stats: " StrReplace(msg, "`n", " "))
 	TrayTip(msg, "Wizard101 bot", 1)
 	}

@@ -50,7 +50,8 @@ HkAction(id)
 	return ""
 	}
 
-;Action id's key now: yours (dashboard.ini), else its default - "" switched off
+;Action id's key now: yours (dashboard.ini), else its default - "" switched off. Not its default when you gave that
+;key to another action (one new in an update has a default you may have taken already): none, never taken from it
 HkKeyOf(id)
 	{
 	a := HkAction(id)
@@ -60,7 +61,21 @@ HkKeyOf(id)
 	k := Trim(k)
 	if (k = "none")
 		return ""
-	return (k != "" && HkValid(k)) ? k : a.def
+	if (k != "" && HkValid(k))
+		return k
+	;(its default another action's in dashboard.ini - the Keys tab shows none; the default back once that one's changed)
+	sec := ""
+	try sec := IniRead(A_ScriptDir "\dashboard.ini", "hotkeys")
+	Loop Parse, sec, "`n", "`r"
+		{
+		p := InStr(A_LoopField, "=")
+		if (!p)
+			continue
+		other := Trim(SubStr(A_LoopField, 1, p - 1))
+		if (other != id && IsObject(HkAction(other)) && HkSame(Trim(SubStr(A_LoopField, p + 1)), a.def))
+			return ""
+		}
+	return a.def
 	}
 
 ;A key name the Hotkey command takes: modifiers (# ^ ! +) and one key

@@ -297,7 +297,7 @@ OvWinMake(part, &why)
 		try ovG.Destroy()
 		return ""
 		}
-	return {part: part, gui: ovG, hwnd: hwnd, hdc: hdc, hbm: 0, old: 0, bits: 0, w: 0, h: 0, ox: 0, oy: 0, sx: -99999, sy: -99999, alpha: -1, shown: 0, have: 0, bad: 0, dirty: 0, err: 0, askAt: 0, gotAt: 0, sentQ: ""}
+	return {part: part, gui: ovG, hwnd: hwnd, hdc: hdc, hbm: 0, old: 0, bits: 0, w: 0, h: 0, ox: 0, oy: 0, sx: -99999, sy: -99999, alpha: -1, shown: 0, have: 0, bad: 0, dirty: 0, err: 0, askAt: 0, gotAt: 0, sentQ: "", drawnQ: ""}
 	}
 
 ;"" when the window is kept out of screen captures (WDA_EXCLUDEFROMCAPTURE read back), else why not
@@ -682,7 +682,7 @@ OvGot(part, text)
 		{
 		why := OvLoad(win, SubStr(text, 4), OvReqSeq)
 		if (why = "")
-			win.have := 1, win.bad := 0, win.gotAt := A_TickCount
+			win.have := 1, win.bad := 0, win.gotAt := A_TickCount, win.drawnQ := win.sentQ
 		else
 			{
 			win.have := 0, win.bad := 1
@@ -692,7 +692,7 @@ OvGot(part, text)
 	else if (InStr(text, "same|") = 1)
 		{
 		if (win.have)
-			win.bad := 0, win.gotAt := A_TickCount
+			win.bad := 0, win.gotAt := A_TickCount, win.drawnQ := win.sentQ
 		else
 			win.sentQ := ""
 		}
@@ -737,7 +737,10 @@ OvShowParts(mapAt, logAt)
 	for each, part in ["map", "log"]
 		{
 		win := OvWin[part]
-		want := (part = "map" ? mapAt : logAt) > 1 && win.have && (!win.bad || A_TickCount - win.gotAt < 3000)
+		;(and drawn for the game's size now: after a resize the old picture's place may be outside the game - hidden
+		;till the new size's comes)
+		want := ((part = "map" ? mapAt : logAt) > 1 && win.have && (!win.bad || A_TickCount - win.gotAt < 3000)
+			&& InStr(win.drawnQ, "gw=" OvGw "&gh=" OvGh "&") = 1)
 		if (!want)
 			{
 			OvHide(win)

@@ -297,8 +297,10 @@ class _Reader:
         return a
 
 
-def load_bcd(data: bytes) -> list[dict[str, Any]]:
-    """Decode a collision.bcd into a list of shape dicts:
+def load_bcd(data: bytes, step=None) -> list[dict[str, Any]]:
+    """Decode a collision.bcd into a list of shape dicts (step, if given, is
+    called before each shape: a caller's thread may wait there - the overlay's
+    map in vision.py, while the walker's memory reads go first):
 
       index, name, material
       type            'box'|'ray'|'sphere'|'cylinder'|'tube'|'plane'|'mesh'
@@ -317,6 +319,8 @@ def load_bcd(data: bytes) -> list[dict[str, Any]]:
     count = r.u32()
     shapes = []
     for i in range(count):
+        if step is not None:
+            step()
         gtype = r.u32()
         cat = r.u32()
         col = r.u32()
@@ -528,11 +532,12 @@ def wad_path(zone_name: str, game_dir: str = GAME_DIR) -> str:
     return os.path.join(game_dir, "Data", "GameData", z + ".wad")
 
 
-def load_zone(zone_name: str, game_dir: str = GAME_DIR, use_katsuba: bool = True) -> dict[str, Any]:
+def load_zone(zone_name: str, game_dir: str = GAME_DIR, use_katsuba: bool = True, step=None) -> dict[str, Any]:
     """Open <GameData>/<zone>.wad read-only (the built-in reader, else katsuba
     if installed) and decode zone.nav and collision.bcd. Either may be None
     when the archive lacks it (or the game hasn't downloaded it yet). Raises
-    OSError when the .wad isn't there, ValueError when it can't be decoded."""
+    OSError when the .wad isn't there, ValueError when it can't be decoded.
+    step: load_bcd's (called before each collision shape)."""
     path = wad_path(zone_name, game_dir)
     if not os.path.isfile(path):
         raise FileNotFoundError(f"no zone file {path}")
@@ -552,7 +557,7 @@ def load_zone(zone_name: str, game_dir: str = GAME_DIR, use_katsuba: bool = True
         "wad": path,
         "reader": reader,
         "nav": load_nav(nav_b) if nav_b else None,
-        "bcd": load_bcd(bcd_b) if bcd_b else None,
+        "bcd": load_bcd(bcd_b, step) if bcd_b else None,
     }
 
 

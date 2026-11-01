@@ -2031,7 +2031,7 @@ MAP_DUEL = (186, 120, 255)          # another player's battle kept out of (duela
 MAP_WALL = (240, 82, 82)            # a line of mobs' gaps closed (a wall)
 OV_FLOOR_A, OV_WATER_A, OV_RIM_A = 120, 110, 170   # the overlay map's (clear) floor, water and rim alpha
 OV_UNIT_DIV = 170   # its markers and names one size bigger than the dashboard's /240
-OV_TILES_KEPT = 36  # its RGBA tiles kept (256 KB each)
+OV_TILES_KEPT = 36  # its RGBA tiles kept (256 KB each) - or one picture's, if more (render_navmap)
 
 
 # ---------------------------------------------------------------- the Network tab (netmon.py)
@@ -3918,9 +3918,10 @@ class ZoneLayers:
     """One zone's static map layers - walkable floor, water, obstacles, the nav graph - decoded once, drawn
     in NAV_TILE tiles on first use at a scale (upp: game units per pixel). Pixel (px, py) of the zone's
     picture at a scale is world (px * upp, -py * upp): +X to the right, +Y up. No zone file: no layers
-    (why says why), the map is the overlay on a blank background"""
+    (why says why), the map is the overlay on a blank background. step (the overlay's map - zone_layers): called
+    before each collision shape is decoded and drawn into the layers - it may wait there (gate_wait)"""
 
-    def __init__(self, zone, game_dir=''):
+    def __init__(self, zone, game_dir='', step=None):
         self.zone, self.why = zone, ''
         self.tris = {}          # 'floor' / 'water': (F, 3, 2) world XY triangles, with (F, 4) bounds
         self.polys = {}         # 'floor' / 'obst': [(k, 2) polygon], with (n, 4) bounds
@@ -3931,7 +3932,7 @@ class ZoneLayers:
         self.bounds = None      # x1, y1, x2, y2 of everything
         try:
             import navgeo
-            d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR)
+            d = navgeo.load_zone(zone, game_dir or navgeo.GAME_DIR, step=step)
         except Exception as e:  # noqa: BLE001 - no map, just the overlay
             self.why = str(e) if isinstance(e, FileNotFoundError) else f"the zone file can't be read ({e!r})"
             return
@@ -3944,6 +3945,8 @@ class ZoneLayers:
         polys = {'floor': [], 'obst': []}
         tz = {'floor': [], 'floorpoly': []}
         for s in bcd:
+            if step is not None:
+                step()
             cat = s['category_flags']
             if s['type'] == 'mesh':
                 kind = 'floor' if cat & 0x2 else 'water' if cat & 0x40 else None
@@ -4087,7 +4090,8 @@ def drop_tiles(zone):
             del tiles[k]
 
 
-def zone_layers(zone, game_dir):
+def zone_layers(zone, game_dir, step=None):
+    """zone's ZoneLayers (kept: the last NAV_ZONES_KEPT zones) - read now if it isn't kept, with step (ZoneLayers')"""
     z = NAV_ZONES.get(zone)
     # (a zone whose file couldn't be read - still downloading or being written while it loads - is tried
     # again after NAV_RETRY seconds rather than kept as 'no map' for the whole visit)
@@ -4097,7 +4101,7 @@ def zone_layers(zone, game_dir):
         z = None
     if z is None:
         t0 = time.perf_counter()
-        z = NAV_ZONES[zone] = ZoneLayers(zone, game_dir)
+        z = NAV_ZONES[zone] = ZoneLayers(zone, game_dir, step)
         z.made = time.time()
         log(f'/navmap: zone {zone} read in {(time.perf_counter() - t0) * 1000:.0f} ms' + (f' - {z.why}' if z.why else ''))
         while len(NAV_ZONES) > NAV_ZONES_KEPT:
@@ -4139,8 +4143,10 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
     other players' battles kept out of (duels_now) - a violet circle each; walls: the walker's planner field
     (navroute.Field) - its line of mobs' gaps closed (fill), faintly red. clear (the overlay over the game - /ovmap,
     overlay.py): RGBA instead, clear where nothing is - its tiles tile(clear=True), kept apart in OV_TILES (at most
-    OV_TILES_KEPT) -, the markers and names a size bigger (min(w, h) / OV_UNIT_DIV), the scale bar and "no map for
-    this zone" further in from the edges (the overlay's rounded corners); the default picture is as it always was"""
+    OV_TILES_KEPT, or one picture's tiles if that's more) -, the markers and names a size bigger (min(w, h) /
+    OV_UNIT_DIV), the scale bar and "no map for this zone" further in from the edges (the overlay's rounded corners),
+    and a zone not read yet read pausing at each step while a gated request is in flight (gate_wait - the walker's /nav
+    goes first); the default picture is as it always was"""
     from PIL import ImageDraw
     import navroute
     upp = span / min(w, h)
@@ -4150,8 +4156,14 @@ def render_navmap(r, w, h, game_dir='', span=NAV_SPAN, route=None, mobs=None, ri
     img = Image.new('RGBA', (w, h), (0, 0, 0, 0)) if clear else Image.new('RGB', (w, h), MAP_BG)
     tiles, kept = (OV_TILES, OV_TILES_KEPT) if clear else (NAV_TILES, NAV_TILES_KEPT)
     zone = r['zone'] or ''
-    layers = zone_layers(zone, game_dir) if zone else None
+    # (the overlay's map asks every second, whatever the walker does: a zone file read at a zone change - pure Python -
+    # waits at each shape while a /nav is in flight, as placements' builds do; the dashboard's as it always was)
+    layers = zone_layers(zone, game_dir, gate_wait if clear else None) if zone else None
     T = NAV_TILE
+    if clear:
+        # (never fewer than one picture's tiles: a big map would push each one out just before it's drawn again - every
+        # tile drawn afresh every frame)
+        kept = max(kept, ((w + T - 1) // T + 1) * ((h + T - 1) // T + 1))
     if layers is not None and not layers.why:
         for j in range(oy // T, (oy + h - 1) // T + 1):
             for i in range(ox // T, (ox + w - 1) // T + 1):

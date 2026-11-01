@@ -463,6 +463,10 @@ class LogPicture(Base):
         for k in range(30):
             self.render([((1, 2, 3), 'render %d.%d' % (k, j)) for j in range(10)], 10, 35)
         self.assertLessEqual(len(OV.STRIPS), OV.STRIPS_KEPT)
+        # (a frame's most lines and its placeholder fit - no thrash -, but not hundreds of lines scrolled off: each
+        # strip is the log's full width, never asked for again once off)
+        self.assertGreater(OV.STRIPS_KEPT, OV.LIMITS['lines'][1])
+        self.assertLessEqual(OV.STRIPS_KEPT, 2 * OV.LIMITS['lines'][1])
 
     def test_empty_placeholder(self):
         a = np.asarray(self.render([], 10, 89))
@@ -548,6 +552,70 @@ class MapPicture(Base):
         self.assertEqual(out.getpixel((20, 50)), OV.BG + (OV.back_alpha(35),))
         self.assertEqual(OV.back_alpha(35), 89)
         self.assertEqual(img.getpixel((20, 50)), (0, 0, 0, 0))             # (the map itself left as it was)
+
+    def test_clear_keeps_a_picture_of_tiles(self):
+        """the overlay's tiles: never fewer kept than one picture needs (else each is pushed out just before it's
+        drawn again - every tile drawn afresh every frame)"""
+        V = self.V
+        self.addCleanup(setattr, V, 'OV_TILES_KEPT', V.OV_TILES_KEPT)
+        V.OV_TILES_KEPT = 1                                 # (200 x 160 round (0, 0) at 37.5 upp: 2 x 2 tiles)
+        V.drop_tiles('Test/Fake')
+        z = fake_layers(V)
+        V.NAV_ZONES['Test/Fake'] = z
+        calls = []
+        real = z.tile
+        z.tile = lambda *a, **kw: calls.append(a) or real(*a, **kw)
+        r = {'pos': (0.0, 0.0, 0.0), 'yaw': 0.5, 'zone': 'Test/Fake', 'goal': None, 'hops': None, 'target': None, 'path': []}
+        first = V.render_navmap(r, 200, 160, '', 6000.0, clear=True)
+        self.assertEqual(len(calls), 4)
+        again = V.render_navmap(r, 200, 160, '', 6000.0, clear=True)
+        self.assertEqual(len(calls), 4)
+        self.assertEqual(digest(first), digest(again))
+
+    def test_cold_zone_steps(self):
+        """a zone read for the overlay's map (clear) pauses at each step while a gated request is in flight
+        (gate_wait); the dashboard's reads it as it always did (no step)"""
+        V = self.V
+        seen = []
+
+        class Cold:
+            def __init__(self, zone, game_dir='', step=None):
+                seen.append((zone, step))
+                self.zone, self.why = zone, 'no zone file (test)'
+        self.addCleanup(setattr, V, 'ZoneLayers', V.ZoneLayers)
+        V.ZoneLayers = Cold
+        for zone, clear in (('Test/ColdOv', True), ('Test/ColdDash', False)):
+            r = {'pos': (0.0, 0.0, 0.0), 'yaw': 0.5, 'zone': zone, 'goal': None, 'hops': None, 'target': None, 'path': []}
+            V.render_navmap(r, 200, 160, '', 6000.0, clear=clear)
+        self.assertEqual(seen, [('Test/ColdOv', V.gate_wait), ('Test/ColdDash', None)])
+
+    def test_zone_read_step_each_shape(self):
+        """navgeo.load_bcd and ZoneLayers call step before each collision shape"""
+        import navgeo
+        V = self.V
+
+        def box(name):
+            nb = name.encode()
+            return (struct.pack('<III', 0, 0x1, 0) + struct.pack('<I', len(nb)) + nb
+                    + struct.pack('<9f', 1, 0, 0, 0, 1, 0, 0, 0, 1) + struct.pack('<3f', 100, 100, 0) + struct.pack('<f', 1.0)
+                    + struct.pack('<I', 0) + struct.pack('<I', 0) + struct.pack('<3f', 50, 50, 50))
+        data = struct.pack('<I', 3) + box('a') + box('b') + box('c')
+        n = []
+        shapes = navgeo.load_bcd(data, lambda: n.append(1))
+        self.assertEqual((len(shapes), len(n)), (3, 3))
+        self.assertEqual(len(navgeo.load_bcd(data)), 3)
+        passed = []
+
+        def fake_load_zone(zone, game_dir='', use_katsuba=True, step=None):
+            passed.append(step)
+            return {'nav': None, 'bcd': shapes}
+        self.addCleanup(setattr, navgeo, 'load_zone', navgeo.load_zone)
+        navgeo.load_zone = fake_load_zone
+        n.clear()
+        z = V.ZoneLayers('Test/Steps', '/nonexistent', lambda: n.append(1))
+        self.assertEqual((len(n), z.why), (3, ''))
+        self.assertEqual(len(z.polys['obst'][0]), 3)
+        self.assertTrue(callable(passed[0]))
 
 
 class Routes(Base):
@@ -815,6 +883,15 @@ class AhkParity(unittest.TestCase):
                     r'WinSetTransparent', r'WinSetTransColor', r'SetLayeredWindowAttributes'):
             self.assertEqual(self.code_lines_matching(bad), [], bad)
 
+    def test_overlay_drawn_for_size(self):
+        """a part is shown only with a picture drawn for the game's client size now (else, after a resize, at its old
+        place - maybe outside the game): OvShowParts tests the start of the query its picture was asked with
+        (drawnQ), which OvQuery must keep starting with gw and gh - else no part would ever show"""
+        self.assertTrue(self.has('return "gw=" OvGw "&gh=" OvGh "&mapat="', True))
+        self.assertTrue(self.has('InStr(win.drawnQ, "gw=" OvGw "&gh=" OvGh "&") = 1', True))
+        self.assertEqual(len(self.code_lines_matching(r'win\.drawnQ := win\.sentQ\s*$')), 2)
+        self.assertTrue(self.has('sentQ: "", drawnQ: ""}', True))
+
     def test_settings(self):
         lines = ahk_lines('Settings.ahk')
         code = ahk_code(lines)
@@ -847,6 +924,14 @@ class AhkParity(unittest.TestCase):
         code = ahk_code(lines)
         self.assertTrue([ln for ln in code if 'id: "overlay"' in ln and 'def: "#4"' in ln and 'run: "MenuOverlay"' in ln])
         self.assertEqual('\n'.join(lines).count('def: "#4"'), 1)
+        # (an action's default you had already given another action - the overlay's, new in an update - isn't taken
+        # from it: HkKeyOf reads the [hotkeys] section and gives none then)
+        start = next(i for i, ln in enumerate(code) if ln.startswith('HkKeyOf(id)'))
+        end = next(i for i, ln in enumerate(code) if i > start and ln == '\t}')
+        body = '\n'.join(code[start:end])
+        self.assertIn('IniRead(A_ScriptDir "\\dashboard.ini", "hotkeys")', body)
+        self.assertIn('HkSame(Trim(SubStr(A_LoopField, p + 1)), a.def)', body)
+        self.assertNotIn('? k : a.def', body)
 
     def test_autofarmer(self):
         code = ahk_code(ahk_lines('Autofarmer.ahk'))
@@ -861,6 +946,14 @@ class AhkParity(unittest.TestCase):
         text = '\n'.join(code)
         self.assertIn('MenuOverlay(A_ThisMenuItem', text)
         self.assertIn('Tray.Add(HkMenu("overlay"), MenuOverlay)', text)
+        # (StatsAuto's reload under Critical, as CfgWrite's and LearnStatsWrite's: OvTick never reads Stats half
+        # reloaded - overlay:0, its default, till PlayerStats.txt's line - and switches the overlay off and on)
+        sa = next(i for i, ln in enumerate(code) if ln.startswith('StatsAuto()'))
+        end = next(i for i, ln in enumerate(code) if i > sa and ln == '\t}')
+        body = [ln.strip() for ln in code[sa:end] if ln.strip()]
+        k = body.index('LoadStats(true)')
+        self.assertEqual(body[k - 2:k + 2], ['wasCrit := A_IsCritical', 'Critical()', 'LoadStats(true)',
+                                             'CfgUncritical(wasCrit, 0)'])
 
     def test_dashboard(self):
         code = ahk_code(ahk_lines('Dashboard.ahk'))

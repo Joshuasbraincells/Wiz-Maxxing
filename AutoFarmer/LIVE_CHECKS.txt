@@ -147,7 +147,9 @@ Before you start
 	    the game's top left and the log under it, see-through; "Overlay:
 	    checked - the bot's screen reading doesn't see it" once (a small
 	    pink square flashes on the game as it checks). Alt+Tab away: both
-	    hide at once and come back with the game; minimised: hidden. A
+	    hide at once and come back with the game; minimised: hidden.
+	    Windowed, make the game smaller: both hide for a moment and come
+	    back in place for the new size (never left outside the game). A
 	    click on the map reaches the game; an hour of battles, walking and
 	    a reconnect go as with it off (the walker never says it's waiting
 	    for Wizard101 to be in front, no new "not found" lines); a

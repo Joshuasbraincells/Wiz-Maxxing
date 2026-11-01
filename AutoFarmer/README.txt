@@ -1505,7 +1505,9 @@ Kept in dashboard.ini [hotkeys]. Not taken: keys the bot presses in the game
 F13-F24, plain letters, digits and numpad keys (typed in chat), Alt+F4,
 Windows' own (Windows+L, D, E, R, G, Tab), the developer's Alt+0 and
 Windows+`, a key another action has, and the key a recording going on now
-stops with.
+stops with. A default you had already given another action (one new in an
+update - the overlay's Windows+4, say) isn't taken from it: the new action
+has no key (the Keys tab shows (none)) till one of the two is changed.
 
 Potions (Potions.ahk - needs the Python vision helper):
 Out of battle the bot reads your health off the red globe. Under potionat %
