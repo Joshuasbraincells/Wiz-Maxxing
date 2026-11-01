@@ -6499,7 +6499,7 @@ NavTurn(h)
 			SpeedMiss += 1
 			if (SpeedMiss >= 2 && SpeedOff = "")
 				{
-				SpeedOff := "the wizard turned at " Round(ratio, 1) "x, not " SpeedNow "x - is Cheat Engine attached to this Wizard101, its walking key set, 'Disable when released' unticked?"
+				SpeedOff := "the wizard turned at " Round(ratio, 1) "x, not " SpeedNow "x - is Cheat Engine running and attached to this Wizard101 (Setup's 'Cheat Engine speedhack' does both), its walking key set, 'Disable when released' unticked?"
 				WalkLog("speed: off for this run - " SpeedOff)
 				SpeedSet(0, "not sped up", true)
 				}
