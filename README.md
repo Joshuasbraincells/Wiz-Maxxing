@@ -33,4 +33,5 @@ compiler, Ahk2Exe - AutoHotkey's Dash > Compile gets it; close the bot first).
 
 Publishing a release: on GitHub, **Actions > Release > Run workflow** on `main`, with the version in
 `version.txt` (and its notes in `.github/release-notes/<version>.md`). It builds the exes on Windows with
-**build.ps1** and publishes **Wiz-Maxxing-<version>.zip**, the zip the updater downloads.
+**build.ps1** and publishes **Wiz-Maxxing-<version>.zip**, the zip the updater downloads. Tick **dry run** to build
+and zip only, on any branch: the zip is kept as the run's artifact and nothing is published.
