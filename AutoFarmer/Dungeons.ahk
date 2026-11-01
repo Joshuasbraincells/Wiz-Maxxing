@@ -78,7 +78,7 @@ DgLoad(file)
 		;as all swapped, the run after it, "until its gear is swapped", a boss's own deck - Gear.ahk, Decks.ahk DeckPick;
 		;python vision\dglint.py checks them)
 		else if (f[1] = "slots")
-			slots := RegExReplace(StrLower(V1At(f, 2)), "[^a-z, ;/]")
+			slots := RegExReplace(StrLower(V1At(f, 2)), "[^a-z, `;/]")  ; (`; - a space and ; would start a comment)
 		else if (f[1] = "stopafter")
 			stopafter := RegExMatch(Trim(V1At(f, 2)), "^\d{1,5}$") ? Trim(V1At(f, 2)) + 0 : ""
 		else if (f[1] = "next")
