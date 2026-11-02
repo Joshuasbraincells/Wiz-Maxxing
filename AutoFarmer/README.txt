@@ -521,23 +521,29 @@ Can this deck beat it (the battle simulator - vision\battlesim.py): when a boss
 is ahead, each deck for bosses linked to an in-game deck is fought against it
 300 times in the simulator - your real cards (shuffled, 7 in hand, pips each
 round, power pips), the bot's way of playing (its card logic, boosts before a
-hit, the kill check, heals under healat), your damage, pierce and critical for
-that school, the boss's max health from the game's memory, its resists and
-block from the battles recorded (learned\battles\), its spells from the wiki
-(else its hits recorded on you). Logged: "Deck: can Large deck beat Governor
-Nereus? likely: 78% won, 2% lost, 20% ran out (about 9 rounds; 300 battles) -
-Governor Nereus 9000 health: Kraken at its best 2153 with Stormblade, Storm
-Trap - 5 hits"; the deck most likely to win it is the one picked (5 points
-better or more; else the priority), and "no deck for bosses is likely to beat
-it" when none wins 65%. The Cards tab shows each deck's last verdict under its
-damage. In the simulator too (v1.0.0): a hit's damage over time - its ticks
-at the start of the next 3 rounds; what each enemy does besides hitting, as
-the battles recorded show it - its heals, its shields and blades on itself,
-its traps, weaknesses and stuns on you, its damage over time's ticks on you
-(an enemy with none recorded does none of it: the verdict says "nothing
-learned yet of what X does besides hitting - optimistic"). Not in it yet:
-your own shields and Tower Shield, enchants, Reshuffle, minions, the stuns
-you cast.
+hit, the kill check - first with no enchant, then with the best one in hand -
+and that enchant on every other hit it casts, defending when the enemies' hits
+could finish you this round (defendat: a heal under 90% health, else Tower
+Shield, else an absorb), heals under healat, and when nothing else goes Tower
+Shield, an absorb that costs no pips or Reshuffle), your damage, pierce and
+critical for that school, the boss's max health from the game's memory, its
+resists and block from the battles recorded (learned\battles\), its spells from
+the wiki (else its hits recorded on you). Logged: "Deck: can Large deck beat
+Governor Nereus? likely: 78% won, 2% lost, 20% ran out (about 9 rounds; 300
+battles) - Governor Nereus 9000 health: Kraken at its best 2153 with
+Stormblade, Storm Trap - 5 hits"; the deck most likely to win it is the one
+picked (5 points better or more; else the priority), and "no deck for bosses is
+likely to beat it" when none wins 65%. The Cards tab shows each deck's last
+verdict under its damage. In the simulator too (v1.0.0): a hit's damage over
+time - its ticks at the start of the next 3 rounds; what each enemy does
+besides hitting, as the battles recorded show it - its heals, its shields and
+blades on itself, its traps, weaknesses and stuns on you, its damage over
+time's ticks on you (an enemy with none recorded does none of it: the verdict
+says "nothing learned yet of what X does besides hitting - optimistic"); an
+enemy's heal spell heals its side (before v1.5.0 it counted as a hit on you).
+Not in it yet (the bot doesn't play them either): minions, and the stuns and
+damage-over-time-only cards you could cast. Treasure cards are shuffled in with
+the main deck, while the bot draws them itself.
 Try it on the command line:
     python vision\battlesim.py --deck deck.json --foe "Governor Nereus:9000:ice"
 Decks matched to the zone's enemies (deckzone - Settings, HOW IT PLAYS ITS
